@@ -1,7 +1,8 @@
 name: Sync upstream main
 
-# Keep this fork's main current with RSPSApp/tsps. Scheduled workflows are
-# disabled on a new fork until this workflow is enabled once in Actions.
+# Keep this fork's main current with RSPSApp/tsps, then merge that main into
+# feat/quests-off-completes-all. Scheduled workflows are disabled on a new
+# fork until this workflow is enabled once in Actions.
 on:
     schedule:
         - cron: "*/15 * * * *"
@@ -19,7 +20,13 @@ jobs:
         if: github.repository == 'Paepay/tsps'
         runs-on: ubuntu-latest
         steps:
-            - name: Merge RSPSApp/tsps main
+            - name: Merge RSPSApp/tsps main into main and the quest branch
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: gh api --method POST repos/Paepay/tsps/merge-upstream -f branch=main
+              run: |
+                  gh api --method POST repos/Paepay/tsps/merge-upstream -f branch=main
+                  gh api --method POST repos/Paepay/tsps/merges \
+                    -f base=feat/quests-off-completes-all \
+                    -f head=main \
+                    -f commit_message='Merge main into feat/quests-off-completes-all' \
+                    --silent
