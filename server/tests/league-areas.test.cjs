@@ -34,6 +34,7 @@ let inCombat = false;
 let worldLeague = 4;
 /** The characters whose first grave's tutorial with Death is running. */
 const inDeathTutorial = new Set();
+let regionLocked = true;
 
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -56,7 +57,11 @@ before(async () => {
   const api = new Proxy({
     core,
     persistAttribute: (key, value) => PlayerSave.persistAttribute(key, value),
-    getPluginConfig: (key, fallback) => (key === "league:type" ? worldLeague : fallback),
+    getPluginConfig: (key, fallback) => {
+      if (key === "league:type") return worldLeague;
+      if (key === "league:regionLocked") return regionLocked;
+      return fallback;
+    },
     setWorldProfile: (profile) => GameConstants.setWorldProfile(profile),
     getSkillManager: () => require("../dist/game/content/skill/SkillManager").SkillManager,
     registerCommand: (name, handler) => (hooks[`command:${name}`] = handler),
@@ -493,7 +498,7 @@ test("the details' Teleport casts to an unlocked area's hub (the cache's coord),
   echoes.setRegistered(false);
 });
 
-test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 80 tasks, its own cast", () => {
+test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 48 tasks, its own cast", () => {
   worldLeague = 6;
   const pacts = character("pactsareas");
   worldLeague = 4;
@@ -502,14 +507,14 @@ test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abys
   assert.deepEqual(SELECTION.map((varbit) => pacts.sent.varbits.get(varbit)), [VARLAMORE, 0, 0, 0, 0, 0]);
   const open = (x, y) => query("league:area-at", { x, y, player: pacts });
   assert.equal(open(3222, 3218).area, MISTHALIN, "Lumbridge is Misthalin's");
-  assert.equal(query("league:areas", { player: pacts }).next?.tasks, 80, "the cache's own thresholds");
+  assert.equal(query("league:areas", { player: pacts }).next?.tasks, 48, "custom world: 60% of the cache's 80/200/300/450");
   assert.equal(areaAt(2412, 4434, { league: 6 }), null, "Zanaris is open from everywhere");
   assert.equal(areaAt(3040, 4839, { league: 6 }), null, "and the Abyss");
   assert.equal(areaAt(2412, 4434, { league: 5 }), MISTHALIN, "Raging Echoes keeps them Misthalin's");
   assert.equal(areaAt(1150, 3420, { league: 6 }), VARLAMORE, "the Stranglewood counts as Varlamore");
 
   openAreas(pacts);
-  completeTasks(pacts, 80);
+  completeTasks(pacts, 48);
   viewArea(pacts, ASGARNIA);
   let [, args] = pacts.sent.scripts.at(-1);
   assert.deepEqual([args[11], args[23]], [3, "Your first new area must be Karamja."], "the first pick is Karamja's");
@@ -831,4 +836,31 @@ test("a reload restores the unlocks and their varbits", () => {
   stranded.moveTo(at(2662, 3305)); // Ardougne
   hooks.onPlayerLogin({ player: stranded, username: "stranded", isNewAccount: false, profile: "league" });
   assert.equal(areaAt(stranded.getLocation().getX(), stranded.getLocation().getY()), MISTHALIN);
+});
+
+test("league:regionLocked false leaves a locked area open and marks every region unlocked", () => {
+  regionLocked = false;
+  try {
+    const league = character("openworld");
+    const alKharid = at(3290, 3180);
+    league.moveTo(alKharid);
+    hooks.onPlayerMapSquareChange({ player: league, previous: at(3222, 3218), location: alKharid });
+    assert.ok(league.getLocation().equals(alKharid));
+    const teleport = { player: league, destination: at(2662, 3305), allow: null };
+    hooks.onCanTeleport(teleport);
+    assert.equal(teleport.allow, null);
+
+    assert.deepEqual(league.getAttribute("league:areas"), [MISTHALIN, KARAMJA], "the saved picks stay the real ones");
+    assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0]);
+    const areas = query("league:areas", { player: league });
+    assert.deepEqual(areas.unlocked, [MISTHALIN, KARAMJA, ASGARNIA, KANDARIN, MORYTANIA, DESERT, TIRANNWN, FREMENNIK, WILDERNESS, KOUREND, VARLAMORE]);
+    assert.equal(areas.available, false, "no pick is offered while every region is open");
+    openAreas(league);
+    viewArea(league, ASGARNIA);
+    assert.equal(league.sent.scripts.at(-1)[1][11], 1, "a locked pick is marked unlocked");
+    viewArea(league, VARLAMORE);
+    assert.equal(league.sent.scripts.at(-1)[1][11], 1, "a region this league does not offer is marked unlocked too");
+  } finally {
+    regionLocked = true;
+  }
 });

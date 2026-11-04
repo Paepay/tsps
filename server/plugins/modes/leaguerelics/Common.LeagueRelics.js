@@ -71,6 +71,13 @@ function catalogFromCache(type) {
       relics, struct: tierStruct, passiveStruct,
     };
   });
+  // Optional `costs` on a fromCache league (custom worlds) replaces the cache's tier points.
+  const costs = data.leagues[type]?.costs;
+  if (Array.isArray(costs)) {
+    tiers.forEach((tier, index) => {
+      if (Number.isFinite(costs[index])) tier.cost = Number(costs[index]);
+    });
+  }
   return { fromCache: true, tiers };
 }
 
