@@ -3,7 +3,9 @@
  * enum, tier structs and relic structs, but the cache only carries the current league's, so this
  * answers LeagueMode's `league:content-rows` with a league's own structs and enums (sent as
  * structOverrides / enumOverrides at login and before the interface opens). A league the cache
- * carries (data `fromCache`) needs none. Icons are the cache's current relics', per tier and slot.
+ * carries (data `fromCache`) needs none, unless its data sets `costs` (custom worlds), which
+ * override only the tier-cost params on the cache's own tier structs. Icons are the cache's
+ * current relics', per tier and slot.
  */
 const Common = require("./Common.LeagueRelics");
 
@@ -63,9 +65,21 @@ function datasets(type) {
 /** `league:content-rows` { league, structs, enums }: this league's rows, unless the cache already has them. */
 function content(query) {
   const type = query?.league;
-  if (!Common.catalog(type) || Common.catalog(type).fromCache) return;
-  query.structs.push(...structRows(type));
-  query.enums.push(...enumRows(type));
+  const catalog = Common.catalog(type);
+  if (!catalog) return;
+  if (!catalog.fromCache) {
+    query.structs.push(...structRows(type));
+    query.enums.push(...enumRows(type));
+    return;
+  }
+  // A fromCache league with `costs` still needs those points on the client (cache param 877).
+  const costs = Common.data.leagues[type]?.costs;
+  if (!Array.isArray(costs)) return;
+  const { tierCost } = Common.data.params;
+  catalog.tiers.forEach((tier, index) => {
+    if (!Number.isFinite(costs[index]) || tier.struct === undefined) return;
+    query.structs.push({ structId: tier.struct, params: { [tierCost]: Number(costs[index]) } });
+  });
 }
 
 module.exports = function attach(api) {

@@ -274,14 +274,20 @@ test("Leagues I-III get their rank thresholds and trophies as overrides, in the 
   assert.ok(reloadedStructs.has(204010), "the relic catalog travels in the same payload");
 });
 
-test("Demonic Pacts' relics come from the cache: nothing is sent and the catalog is the structs'", () => {
+test("Demonic Pacts' relics come from the cache: cost overrides only, catalog is the structs'", () => {
   const pacts = character("pacts", { league: 6 });
-  assert.deepEqual(dataset(pacts, "structOverrides"), [], "no overrides for the league the cache carries");
-  assert.deepEqual(dataset(pacts, "enumOverrides"), [], "an empty payload still goes out, so another league's overrides never linger on the client");
   const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
   const catalog = Common.catalog(6);
+  const customCosts = [0, 360, 720, 1560, 3120, 5100, 9900, 16800];
   assert.equal(catalog.tiers.length, 8);
-  assert.deepEqual(catalog.tiers.map((tier) => tier.cost), [0, 600, 1200, 2600, 5200, 8500, 16500, 28000], "Wiki Demonic_Pacts_League/Relics: the tier points");
+  assert.deepEqual(catalog.tiers.map((tier) => tier.cost), customCosts, "custom world: 60% of Wiki Demonic_Pacts_League/Relics tier points");
+  const costOverrides = dataset(pacts, "structOverrides");
+  assert.deepEqual(
+    costOverrides.map((row) => [row.structId, row.params[877]]),
+    catalog.tiers.map((tier, index) => [tier.struct, customCosts[index]]),
+    "cost overrides land on the cache's own tier structs so the client matches",
+  );
+  assert.deepEqual(dataset(pacts, "enumOverrides"), [], "relic enums stay the cache's; empty so another league's overrides never linger");
   assert.ok(catalog.tiers.every((tier) => tier.relics.length >= 1 && tier.relics.length <= 3));
   assert.ok(catalog.tiers[1].passive.length > 0, "the tier's passive text");
   const first = catalog.tiers[0].relics[0];
