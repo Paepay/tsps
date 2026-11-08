@@ -135,6 +135,12 @@ jobs:
                   DO_RESTART: ${{ steps.plan.outputs.do_restart }}
               run: |
                   set -eu
+                  # Trim copy/paste whitespace from secrets (trailing newlines break SSH).
+                  VPS_HOST=$(printf '%s' "$VPS_HOST" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                  VPS_USER=$(printf '%s' "$VPS_USER" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                  VPS_PATH=$(printf '%s' "$VPS_PATH" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                  VPS_SERVICE=$(printf '%s' "$VPS_SERVICE" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
                   for required in VPS_HOST VPS_USER VPS_PATH VPS_SERVICE; do
                       eval "value=\${$required:-}"
                       if [ -z "$value" ]; then
@@ -157,8 +163,19 @@ jobs:
                   chmod 600 "$key_dir/key"
                   ssh-keygen -lf "$key_dir/key"
                   ssh-keygen -y -f "$key_dir/key" >/dev/null
+                  echo "SSH target user_len=${#VPS_USER} host_len=${#VPS_HOST} path_len=${#VPS_PATH}"
+                  case "$VPS_HOST" in
+                      *@*) echo "VPS_HOST must be host/IP only, not user@host" >&2; exit 1 ;;
+                  esac
 
                   ssh_options="-i $key_dir/key -o IdentitiesOnly=yes -o BatchMode=yes -o PreferredAuthentications=publickey -o StrictHostKeyChecking=accept-new"
+
+                  # shellcheck disable=SC2086
+                  if ! ssh $ssh_options "$VPS_USER@$VPS_HOST" true; then
+                      echo "SSH auth failed for the configured VPS_USER@VPS_HOST with the deploy key above." >&2
+                      echo "Local check that should match secrets: ssh -i gha_vps_deploy -o IdentitiesOnly=yes USER@HOST" >&2
+                      exit 255
+                  fi
 
                   # shellcheck disable=SC2086
                   ssh $ssh_options "$VPS_USER@$VPS_HOST" \
