@@ -1,0 +1,173 @@
+name: Deploy prod
+
+# Fork-only (Paepay/tsps) VPS deploy for the prod branch.
+#
+# Behaviour:
+#   - push to prod → update checkout + yarn install (no restart; live process keeps
+#     running the previous build until the next restart)
+#   - Wednesdays 03:00 America/New_York → pull latest origin/prod, install, restart
+#   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run)
+#
+# Required Actions secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST     Hostname or IP of the VPS
+#   VPS_USER     SSH login user
+#   VPS_SSH_KEY  Private ed25519 key (no passphrase) GitHub Actions uses to log in
+#   VPS_PATH     Absolute checkout path, e.g. /home/user/apps/tsps
+#   VPS_SERVICE  systemd unit name(s) to restart, space-separated for multiple
+#                worlds, e.g. elvarg-web-server  or  world1 world2
+#
+# One-time VPS setup:
+#   1. Generate a keypair for Actions; add the public key to ~/.ssh/authorized_keys
+#      for VPS_USER. Store the private key as VPS_SSH_KEY.
+#   2. Allow passwordless restart/status for those units only, e.g.:
+#        echo 'user ALL=(root) NOPASSWD: /bin/systemctl restart world1, /bin/systemctl restart world2, /bin/systemctl is-active world1, /bin/systemctl is-active world2' \
+#          | sudo tee /etc/sudoers.d/tsps-deploy
+#        sudo chmod 440 /etc/sudoers.d/tsps-deploy
+#   3. Ensure the checkout at VPS_PATH can `git fetch origin prod` (GitHub deploy key
+#      or personal SSH key with repo read access).
+#   4. First checkout / branch (once):
+#        cd "$VPS_PATH" && git fetch origin prod && git checkout -B prod origin/prod
+on:
+    push:
+        branches: [prod]
+    # Both UTC slots; the job keeps only the run that is 03:00 Eastern.
+    schedule:
+        - cron: "0 7 * * 3"
+        - cron: "0 8 * * 3"
+    workflow_dispatch:
+        inputs:
+            mode:
+                description: Update code, restart servers, or both
+                type: choice
+                options:
+                    - update
+                    - restart
+                    - update-and-restart
+                default: update-and-restart
+
+permissions:
+    contents: read
+
+concurrency:
+    group: deploy-prod
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        if: github.repository == 'Paepay/tsps' && (github.event_name != 'push' || github.ref == 'refs/heads/prod')
+        runs-on: ubuntu-latest
+        steps:
+            - name: Decide update vs restart
+              id: plan
+              run: |
+                  set -eu
+                  event="${{ github.event_name }}"
+                  mode="${{ github.event.inputs.mode || '' }}"
+
+                  if [ "$event" = schedule ]; then
+                      eastern="$(TZ=America/New_York date +%u-%H)"
+                      if [ "$eastern" != 3-03 ]; then
+                          echo "Scheduled run at UTC $(date -u +%H:%M); Eastern is $(TZ=America/New_York date). Skipping."
+                          echo "run=false" >> "$GITHUB_OUTPUT"
+                          exit 0
+                      fi
+                      echo "do_update=true" >> "$GITHUB_OUTPUT"
+                      echo "do_restart=true" >> "$GITHUB_OUTPUT"
+                      echo "deploy_sha=" >> "$GITHUB_OUTPUT"
+                      echo "run=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  if [ "$event" = workflow_dispatch ]; then
+                      case "$mode" in
+                          update)
+                              echo "do_update=true" >> "$GITHUB_OUTPUT"
+                              echo "do_restart=false" >> "$GITHUB_OUTPUT"
+                              ;;
+                          restart)
+                              echo "do_update=false" >> "$GITHUB_OUTPUT"
+                              echo "do_restart=true" >> "$GITHUB_OUTPUT"
+                              ;;
+                          update-and-restart)
+                              echo "do_update=true" >> "$GITHUB_OUTPUT"
+                              echo "do_restart=true" >> "$GITHUB_OUTPUT"
+                              ;;
+                          *)
+                              echo "Unknown mode: $mode" >&2
+                              exit 1
+                              ;;
+                      esac
+                      echo "deploy_sha=" >> "$GITHUB_OUTPUT"
+                      echo "run=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  # push to prod: ship code only; weekly/manual restart picks it up
+                  echo "do_update=true" >> "$GITHUB_OUTPUT"
+                  echo "do_restart=false" >> "$GITHUB_OUTPUT"
+                  echo "deploy_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+                  echo "run=true" >> "$GITHUB_OUTPUT"
+
+            - name: Deploy to VPS over SSH
+              if: steps.plan.outputs.run == 'true'
+              env:
+                  VPS_HOST: ${{ secrets.VPS_HOST }}
+                  VPS_USER: ${{ secrets.VPS_USER }}
+                  VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+                  VPS_PATH: ${{ secrets.VPS_PATH }}
+                  VPS_SERVICE: ${{ secrets.VPS_SERVICE }}
+                  DEPLOY_SHA: ${{ steps.plan.outputs.deploy_sha }}
+                  DO_UPDATE: ${{ steps.plan.outputs.do_update }}
+                  DO_RESTART: ${{ steps.plan.outputs.do_restart }}
+              run: |
+                  set -eu
+                  for required in VPS_HOST VPS_USER VPS_SSH_KEY VPS_PATH VPS_SERVICE; do
+                      eval "value=\${$required:-}"
+                      if [ -z "$value" ]; then
+                          echo "Missing secret: $required" >&2
+                          exit 1
+                      fi
+                  done
+
+                  key_dir=$(mktemp -d)
+                  trap 'rm -rf "$key_dir"' EXIT HUP INT TERM
+                  printf '%s\n' "$VPS_SSH_KEY" > "$key_dir/key"
+                  chmod 600 "$key_dir/key"
+
+                  ssh_options="-i $key_dir/key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+
+                  # shellcheck disable=SC2086
+                  ssh $ssh_options "$VPS_USER@$VPS_HOST" \
+                      env \
+                      DEPLOY_SHA="$DEPLOY_SHA" \
+                      VPS_PATH="$VPS_PATH" \
+                      VPS_SERVICE="$VPS_SERVICE" \
+                      DO_UPDATE="$DO_UPDATE" \
+                      DO_RESTART="$DO_RESTART" \
+                      bash -s <<'REMOTE'
+                  set -eu
+                  cd "$VPS_PATH"
+
+                  if [ "$DO_UPDATE" = true ]; then
+                      git fetch origin prod
+                      git checkout prod 2>/dev/null || git checkout -B prod origin/prod
+                      if [ -n "${DEPLOY_SHA:-}" ]; then
+                          git reset --hard "$DEPLOY_SHA"
+                      else
+                          git reset --hard origin/prod
+                      fi
+                      (cd server && corepack enable && yarn install --immutable)
+                      echo "Updated to $(git rev-parse --short HEAD)"
+                  fi
+
+                  if [ "$DO_RESTART" = true ]; then
+                      for service in $VPS_SERVICE; do
+                          sudo systemctl restart "$service"
+                          active=$(sudo systemctl is-active "$service")
+                          echo "Restarted $service; status=$active"
+                          test "$active" = active
+                      done
+                  else
+                      echo "Skipped restart (code will load on the next weekly/manual restart)"
+                  fi
+                  REMOTE
