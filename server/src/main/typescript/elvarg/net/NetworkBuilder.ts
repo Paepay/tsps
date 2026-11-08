@@ -279,6 +279,39 @@ export class NetworkBuilder {
       : undefined;
     const http = createServer((request, response) => {
       response.setHeader("Access-Control-Allow-Origin", "*");
+      // The central platform's control API (character create/summary/delete). A plugin owns
+      // the route and verifies the platform's Ed25519 control token; core only reads the body
+      // and serialises the reply. Handled before everything else, so a control path can never
+      // be shadowed by a content resource or a gateway file.
+      if ((request.url ?? "").startsWith("/api/platform/")) {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk) => chunks.push(chunk as Buffer));
+        request.on("end", () => {
+          void PluginManager.handlePlatformControl({
+            method: request.method ?? "GET",
+            path: request.url ?? "",
+            headers: request.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }).then((result) => {
+            if (!result) {
+              response.statusCode = 404;
+              response.setHeader("Content-Type", "application/json");
+              response.end(JSON.stringify({ ok: false, error: "No platform control handler." }));
+              return;
+            }
+            response.statusCode = result.status;
+            response.setHeader("Content-Type", "application/json");
+            response.end(JSON.stringify(result.body ?? null));
+          }).catch((error) => {
+            console.error("[network] platform control handler failed", error);
+            if (response.headersSent) return;
+            response.statusCode = 500;
+            response.setHeader("Content-Type", "application/json");
+            response.end(JSON.stringify({ ok: false, error: "The world could not complete this request." }));
+          });
+        });
+        return;
+      }
       if (browserHostBridge) {
         if (request.method === "GET" && request.url === "/") {
           response.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -1280,6 +1313,49 @@ export class ClientConnection {
       this.releasePendingName();
       this.failLogin(8, "The login server is busy.");
       return;
+    }
+
+    // A plugin may resolve its own credential (e.g. a central login ticket) and vouch for the
+    // login before the password is checked. Returning a result bypasses password verification;
+    // returning nothing lets the normal password check run. This is how a self-hosted world
+    // accepts a website-issued, single-use ticket without ever seeing a player password.
+    if (this.loginExtension?.preAuthenticate) {
+      let vouched: Awaited<ReturnType<NonNullable<PluginLoginExtension["preAuthenticate"]>>>;
+      try {
+        vouched = await this.loginExtension.preAuthenticate({ typedName, primaryName, profile, flags, password });
+      } catch (error) {
+        this.releasePendingName();
+        this.rejectLoginExtension(error);
+        return;
+      }
+      if (this.closed) {
+        this.releasePendingName();
+        return;
+      }
+      if (vouched) {
+        const credentialName = vouched.credentialName ? Misc.formatDisplayName(vouched.credentialName) : primaryName;
+        const voucherSave = vouched.save ?? null;
+        const voucherUsername = vouched.username ? Misc.formatDisplayName(vouched.username) : credentialName;
+        const voucherPending: PendingLogin = {
+          username: voucherUsername,
+          credentialName,
+          profile,
+          // A ticket login has no password. Keep an existing save's real hash so an empty hash
+          // can never be written back over a legitimate account.
+          passwordHash: vouched.passwordHash ?? String((save ?? credentials ?? voucherSave)?.getPasswordHashWithSalt?.() ?? ""),
+          save: voucherSave,
+          loginTokens: null,
+        };
+        this.reservePendingName(pendingKey(voucherPending.username));
+        this.pending = voucherPending;
+        this.startPendingLoginTimeout();
+        const voucherName = vouched.displayName ?? voucherPending.username;
+        this.send(encodeLoginResponse(true, -1, "", voucherName, ""));
+        try { this.loginExtension?.accepted?.(voucherPending); }
+        catch (error) { this.cleanup("login_extension_error"); this.channel.close(1011, "Login extension failed"); }
+        console.info(`[login] accepted ${voucherPending.username} from ${this.channel.remoteAddress} (vouched)`);
+        return;
+      }
     }
 
     // A new account can't take a name another account shows or still holds (DisplayNames).

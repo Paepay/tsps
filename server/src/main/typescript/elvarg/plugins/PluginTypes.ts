@@ -29,8 +29,43 @@ export interface PluginLoginConnection {
   reject(code: number, message: string): never;
 }
 
+/** The result of a plugin vouching for a login before the password check. */
+export interface PluginLoginVouch {
+  /** The character that enters, once the returned `save` (or none) is applied. */
+  username?: string;
+  /** The primary account name; the credential owner (defaults to `primaryName`). */
+  credentialName?: string;
+  /** The save to enter with, or null to start a fresh character. */
+  save?: any | null;
+  /**
+   * The stored password hash to keep on the save. When omitted, an existing save's own hash
+   * is preserved (never overwrite a real account with an empty hash).
+   */
+  passwordHash?: string;
+  /** The protocol name shown when the login is accepted. */
+  displayName?: string;
+}
+
 /** A plugin can extend an authenticated login without owning credentials or socket cleanup. */
 export interface PluginLoginExtension {
+  /**
+   * Runs after the name/ban/revision checks and before the password is checked, so a plugin may
+   * resolve its own credential (e.g. a central login ticket) and vouch for the login. Return a
+   * result to bypass password verification, or null/undefined to let core check the password.
+   *
+   * `pending` is not yet populated at this point; the plugin sets `pending.username`, `pending.save`
+   * and `pending.passwordHash` through the returned object when it vouches for the login.
+   */
+  preAuthenticate?(
+    credential: {
+      typedName: string;
+      primaryName: string;
+      profile: import("../game/entity/impl/player/persistence/PlayerProfile").PlayerProfile;
+      flags: number;
+      /** The `password` field as sent by the client. */
+      password: string;
+    }
+  ): PluginLoginVouch | null | undefined | false | Promise<PluginLoginVouch | null | undefined | false>;
   authenticated?(pending: PluginLoginPending, event: { typedName: string; flags: number; credentials: any }): string | undefined;
   accepted?(pending: PluginLoginPending): void;
   packet?(packet: import("../net/protocol/ClientProtocol").ClientMessage): boolean | Promise<boolean>;
@@ -1241,6 +1276,21 @@ export interface PluginApi {
    * opens the command to every player - e.g. a spawn-mode plugin granting ::items.
    */
   setCommandRights(command: string, minimumRights: PluginCommandRights): void;
+  /**
+   * Handles a request the central platform sends to this world's control API, routed under
+   * /api/platform/ on the game port. Unlike a content endpoint this may be any method and
+   * carries a body; core only routes it, the plugin verifies the platform's signature itself
+   * (the platform's control token is Ed25519-signed and never a shared secret).
+   * Return { status, body } for a response, or null to fall through (404).
+   */
+  registerPlatformControlHandler(
+    handler: (request: {
+      method: string;
+      path: string;
+      headers: Record<string, string | string[] | undefined>;
+      body: string;
+    }) => Promise<{ status: number; body: unknown } | null> | { status: number; body: unknown } | null
+  ): void;
   /**
    * Serves a read-only JSON resource at /api/<name> on the game port, for interface data
    * that is request/response shaped (searches, lists, lookups) rather than a game event.

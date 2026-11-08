@@ -242,6 +242,7 @@ export class PluginManager {
   private static loadedPlugins: string[] = [];
   private static lastPersistenceOverride: string | null = null;
   private static loginExtensionFactory?: { pluginName: string; factory: (connection: PluginLoginConnection) => PluginLoginExtension | undefined };
+  private static platformControlHandler?: { pluginName: string; handler: (request: { method: string; path: string; headers: Record<string, string | string[] | undefined>; body: string }) => Promise<{ status: number; body: unknown } | null> | { status: number; body: unknown } | null };
   private static loginHooks: PluginHook<PluginPlayerLoginEvent>[] = [];
   private static mapSquareChangeHooks: PluginHook<PluginPlayerMapSquareChangeEvent>[] = [];
   private static disconnectHooks: PluginHook<PluginPlayerDisconnectEvent>[] = [];
@@ -744,6 +745,27 @@ export class PluginManager {
     );
     if (enabledPluginFiles.length > 0 && PluginManager.loadedPlugins.length === 0) {
       console.warn(`[plugins] no valid plugins loaded from ${pluginDirectory}`);
+    }
+  }
+
+  /**
+   * Run a request through the plugin-registered platform control handler. Returns null when no
+   * plugin claimed the route, so the HTTP server falls through to its own handling.
+   */
+  public static async handlePlatformControl(request: {
+    method: string;
+    path: string;
+    headers: Record<string, string | string[] | undefined>;
+    body: string;
+  }): Promise<{ status: number; body: unknown } | null> {
+    const entry = PluginManager.platformControlHandler;
+    if (!entry) return null;
+    try {
+      const result = await entry.handler(request);
+      return result ?? null;
+    } catch (error) {
+      console.error(`[plugins] ${entry.pluginName} platform control handler failed`, error);
+      return { status: 500, body: { ok: false, error: "The world could not complete this request." } };
     }
   }
 
@@ -4165,6 +4187,11 @@ export class PluginManager {
             handler(event);
           },
         });
+      },
+      registerPlatformControlHandler: (handler) => {
+        if (typeof handler !== "function") throw new Error("Platform control handler must be a function");
+        if (PluginManager.platformControlHandler) throw new Error("A platform control handler is already registered");
+        PluginManager.platformControlHandler = { pluginName, handler };
       },
       registerContentEndpoint: (name, handler) => {
         if (typeof name !== "string" || typeof handler !== "function") {

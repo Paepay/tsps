@@ -23,6 +23,7 @@
     "@types/node": "^18.15.5",
     "@types/nodemon": "^1.19.6",
     "@types/ws": "^8.5.4",
+    "javascript-obfuscator": "^5.10.0",
     "nodemon": "^3.1.9",
     "treemap": "^1.0.4",
     "ts-node": "^10.9.2",
@@ -66,7 +67,11 @@
     "sync:weapon-types": "TS_NODE_COMPILER_OPTIONS='{\"target\":\"es2020\"}' ts-node ./scripts/sync-weapon-types.ts",
     "fetch:prices": "node ./scripts/fetch-prices.mjs",
     "generate:league-tasks": "TS_NODE_COMPILER_OPTIONS='{\"target\":\"es2020\"}' ts-node ./scripts/generate-league-tasks.ts",
-    "compare:cache": "tsx scripts/compare-cache.ts"
+    "compare:cache": "tsx scripts/compare-cache.ts",
+    "release:bundle": "node scripts/release/bundle.mjs",
+    "release:publish": "node scripts/release/publish.mjs",
+    "release:test": "node --test scripts/release/release.test.mjs",
+    "release:e2e": "node scripts/release/launcher-e2e.mjs"
   },
   "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"
 }

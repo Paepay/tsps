@@ -99,3 +99,9 @@ server/data/definitions/world.local.json
 /gateway/
 /tools/runelite-gateway/
 /tools/runelite-client/
+
+# Release build output (scripts/release/bundle.mjs): server.exe + staging. Artifacts
+# belong in release storage, never in the repository.
+dist-release/
+server/dist-release/
+server/staging/
