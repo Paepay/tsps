@@ -5,9 +5,10 @@ name: Deploy prod
 # Do not remove those guards or point this workflow at the upstream repo.
 #
 # Behaviour:
-#   - push to prod → update checkout + yarn install (no restart; live process keeps
-#     running the previous build until the next restart)
-#   - Wednesdays 03:00 America/New_York → pull latest origin/prod, install, restart
+#   - push to prod → update checkout + yarn install/build (no restart; live process
+#     keeps running the previous build until the next restart)
+#   - Wednesdays 03:00 America/New_York → pull latest origin/prod, build, restart
+#     user-systemd units via systemctl --user
 #   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run)
 #
 # Required Actions secrets (Settings → Secrets and variables → Actions):
@@ -15,16 +16,15 @@ name: Deploy prod
 #   VPS_USER     SSH login user
 #   VPS_SSH_KEY  Private ed25519 key (no passphrase) GitHub Actions uses to log in
 #   VPS_PATH     Absolute checkout path, e.g. /home/user/apps/tsps
-#   VPS_SERVICE  systemd unit name(s) to restart, space-separated for multiple
-#                worlds, e.g. elvarg-web-server  or  world1 world2
+#   VPS_SERVICE  user-systemd unit name(s), space-separated, e.g. tsps
+#                (restarted via systemctl --user; no sudo)
 #
 # One-time VPS setup:
 #   1. Generate a keypair for Actions; add the public key to ~/.ssh/authorized_keys
 #      for VPS_USER. Store the private key as VPS_SSH_KEY.
-#   2. Allow passwordless restart/status for those units only, e.g.:
-#        echo 'user ALL=(root) NOPASSWD: /bin/systemctl restart world1, /bin/systemctl restart world2, /bin/systemctl is-active world1, /bin/systemctl is-active world2' \
-#          | sudo tee /etc/sudoers.d/tsps-deploy
-#        sudo chmod 440 /etc/sudoers.d/tsps-deploy
+#   2. Install a user unit (~/.config/systemd/user/<name>.service) with an absolute
+#      yarn/node PATH (nvm is not on systemd's default PATH). Enable linger so it
+#      survives logout: loginctl enable-linger "$USER"
 #   3. Ensure the checkout at VPS_PATH can `git fetch origin prod` (GitHub deploy key
 #      or personal SSH key with repo read access).
 #   4. First checkout / branch (once):
@@ -157,6 +157,15 @@ jobs:
                       DO_RESTART="$DO_RESTART" \
                       bash -s <<'REMOTE'
                   set -eu
+                  # Non-interactive SSH has no nvm on PATH; load it for yarn/node.
+                  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+                  if [ -s "$NVM_DIR/nvm.sh" ]; then
+                      # shellcheck disable=SC1090
+                      . "$NVM_DIR/nvm.sh"
+                  fi
+                  # User systemd needs the runtime dir over SSH (linger must be on).
+                  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
                   cd "$VPS_PATH"
 
                   if [ "$DO_UPDATE" = true ]; then
@@ -167,14 +176,14 @@ jobs:
                       else
                           git reset --hard origin/prod
                       fi
-                      (cd server && corepack enable && yarn install --immutable)
+                      (cd server && corepack enable && yarn install --immutable && yarn build)
                       echo "Updated to $(git rev-parse --short HEAD)"
                   fi
 
                   if [ "$DO_RESTART" = true ]; then
                       for service in $VPS_SERVICE; do
-                          sudo systemctl restart "$service"
-                          active=$(sudo systemctl is-active "$service")
+                          systemctl --user restart "$service"
+                          active=$(systemctl --user is-active "$service")
                           echo "Restarted $service; status=$active"
                           test "$active" = active
                       done
