@@ -1,6 +1,8 @@
 name: Deploy prod
 
-# Fork-only (Paepay/tsps) VPS deploy for the prod branch.
+# Paepay/tsps only. Never runs against RSPSApp/tsps (or any other fork): the job
+# `if` and the assert step both require github.repository == 'Paepay/tsps'.
+# Do not remove those guards or point this workflow at the upstream repo.
 #
 # Behaviour:
 #   - push to prod → update checkout + yarn install (no restart; live process keeps
@@ -54,9 +56,18 @@ concurrency:
 
 jobs:
     deploy:
+        # Skip entirely on RSPSApp/tsps and every other repository.
         if: github.repository == 'Paepay/tsps' && (github.event_name != 'push' || github.ref == 'refs/heads/prod')
         runs-on: ubuntu-latest
         steps:
+            - name: Require Paepay/tsps
+              run: |
+                  set -eu
+                  if [ "${{ github.repository }}" != Paepay/tsps ]; then
+                      echo "Refusing to deploy: repository is ${{ github.repository }}, not Paepay/tsps" >&2
+                      exit 1
+                  fi
+
             - name: Decide update vs restart
               id: plan
               run: |
