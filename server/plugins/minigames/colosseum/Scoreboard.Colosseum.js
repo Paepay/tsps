@@ -20,6 +20,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Shared = require("./Shared.Colosseum");
 const Sol = require("./SolHeredit.Colosseum");
+const worldData = require("../../persistence/WorldData");
 
 /** Interface colosseum_scoreboard and its components, by their cache names (rsprox 237/04109). */
 const INTERFACE_NAME = "colosseum_scoreboard";
@@ -52,12 +53,26 @@ const ATTR = {
 let FILE = path.join(process.cwd(), "data", "saves", "colosseum-scoreboard.json");
 let world = null;
 
+// A hosted world keeps the world totals in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "colosseum-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const cache = () => Shared.core().CacheDefinitions;
 const uid = (component) => cache().getComponentId(`${INTERFACE_NAME}:${component}`);
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const saved = source.value;
+    const next = {
+      waves: count(saved?.waves), kills: count(saved?.kills), deaths: count(saved?.deaths),
+      bestTicks: count(saved?.bestTicks), bestGlory: count(saved?.bestGlory),
+    };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -73,6 +88,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(records()));
   } catch (error) {

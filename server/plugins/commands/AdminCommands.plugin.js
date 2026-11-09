@@ -247,6 +247,19 @@ function commandTail(raw, parts) {
   return raw.substring(parts[0].length).trim();
 }
 
+/**
+ * Record a host's own administrative grant for the platform audit trail. This
+ * never gates the action - hosts keep full authority over their world - it only
+ * forwards what already happened. Standalone worlds have nothing listening, so
+ * the emit is a harmless no-op there.
+ */
+function recordAdminAction(player, fields) {
+  PluginManager.emitCustomEvent("persistence:admin-action", {
+    actor: player?.getUsername?.() ?? null,
+    ...fields,
+  });
+}
+
 function normalizePlayerCommandName(value) {
   if (typeof value !== "string") {
     return "";
@@ -577,6 +590,7 @@ function giveItemCommand(core, { player, parts }) {
   }
   const fit = given < amount ? `; only ${given} of ${amount} fit` : "";
   player.sendMessage(`Gave ${target.getDisplayName()} ${gift} (${id})${fit}.`);
+  recordAdminAction(player, { operationType: "admin-item-grant", characterName: target.getUsername(), itemId: id, quantity: given, detail: "give" });
   return true;
 }
 
@@ -623,6 +637,7 @@ function setLevelCommand({ player, parts }) {
     target.sendMessage(`${player.getDisplayName()} set your ${skill.getName()} level to ${level}.`);
   }
   player.sendMessage(`Set ${target.getDisplayName()}'s ${skill.getName()} level to ${level}.`);
+  recordAdminAction(player, { operationType: "admin-skill-grant", characterName: target.getUsername(), detail: `${skill.getName()} -> ${level}` });
   return true;
 }
 
@@ -1125,6 +1140,7 @@ module.exports = {
         }
       }
       api.emitCustomEvent("persistence:save", { player, reason: "bank-copy" });
+      recordAdminAction(player, { operationType: "admin-bank-copy", characterName: player.getUsername(), detail: target.getUsername() });
       return true;
     }, PlayerRights.OWNER, "Copy player bank");
 
@@ -1151,6 +1167,7 @@ module.exports = {
           ? "Spawned 1,000 of each rune type."
           : `Spawned ${given}/${RUNE_IDS.length} rune types - free up inventory space for the rest.`
       );
+      recordAdminAction(player, { operationType: "admin-item-grant", characterName: player.getUsername(), detail: `runes x${given}` });
       return true;
     }, PlayerRights.OWNER, "Add runes");
 
@@ -1177,6 +1194,7 @@ module.exports = {
       }
       WeaponInterfaceManager.assign(player);
       player.getUpdateFlag().flag(Flag.APPEARANCE);
+      recordAdminAction(player, { operationType: "admin-skill-grant", characterName: player.getUsername(), detail: "master" });
       return true;
     }, PlayerRights.OWNER, "Max all skills");
 
@@ -1190,6 +1208,7 @@ module.exports = {
           .setExperience(skill, SkillManager.getExperienceForLevel(level));
       }
       WeaponInterfaceManager.assign(player);
+      recordAdminAction(player, { operationType: "admin-skill-grant", characterName: player.getUsername(), detail: "reset" });
       return true;
     }, PlayerRights.OWNER, "Reset skills");
 
@@ -1629,6 +1648,7 @@ module.exports = {
       const cappedAmount = Math.min(amount, Number.MAX_SAFE_INTEGER);
       player.getInventory().adds(id, cappedAmount);
       player.sendMessage(`Spawned item ${id} x${cappedAmount}.`);
+      recordAdminAction(player, { operationType: "admin-item-grant", characterName: player.getUsername(), itemId: id, quantity: cappedAmount, detail: "item" });
       return true;
     }, PlayerRights.ADMINISTRATOR, "Spawn an item");
 

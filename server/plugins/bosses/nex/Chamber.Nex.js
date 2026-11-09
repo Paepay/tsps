@@ -16,9 +16,13 @@ const fs = require("fs");
 const path = require("path");
 const Common = require("./Common.Nex");
 const Fight = require("./Fight.Nex");
+const worldData = require("../../persistence/WorldData");
 
 /** The scoreboard's world totals, kept as the Doom's are: plugins have no world store. */
 const SCOREBOARD_FILE = path.join(process.cwd(), "data", "saves", "nex-scoreboard.json");
+// A hosted world keeps these totals in the platform's world-state document instead
+// of a file beside server.exe (task10 section 8).
+const SCOREBOARD_STORE_KEY = "nex-scoreboard";
 
 const state = {
   fight: null,
@@ -30,6 +34,14 @@ const state = {
 };
 
 function loadScoreboard() {
+  if (worldData.isHosted()) {
+    const source = worldData.read(SCOREBOARD_STORE_KEY);
+    const saved = source.value;
+    if (saved && typeof saved === "object") {
+      for (const key of ["kills", "deaths", "bestTicks"]) state[key] = Math.max(0, Math.trunc(Number(saved[key]) || 0));
+    }
+    return;
+  }
   try {
     const saved = JSON.parse(fs.readFileSync(SCOREBOARD_FILE, "utf8"));
     for (const key of ["kills", "deaths", "bestTicks"]) state[key] = Math.max(0, Math.trunc(Number(saved[key]) || 0));
@@ -40,6 +52,10 @@ function loadScoreboard() {
 
 function saveScoreboard() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(SCOREBOARD_STORE_KEY, { kills: state.kills, deaths: state.deaths, bestTicks: state.bestTicks });
+      return;
+    }
     fs.mkdirSync(path.dirname(SCOREBOARD_FILE), { recursive: true });
     fs.writeFileSync(SCOREBOARD_FILE, JSON.stringify({ kills: state.kills, deaths: state.deaths, bestTicks: state.bestTicks }, null, 2));
   } catch (error) {

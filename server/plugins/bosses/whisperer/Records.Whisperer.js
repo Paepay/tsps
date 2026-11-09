@@ -1,12 +1,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Common = require('./Common.Whisperer');
+const worldData = require('../../persistence/WorldData');
 const FILE = path.join(process.cwd(), 'data', 'saves', 'whisperer-scoreboard.json');
+// A hosted world keeps these records in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = 'whisperer-scoreboard';
 let world;
 const count = value => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 function records() {
   if (world)
     return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = { kills: count(source.value?.kills), deaths: count(source.value?.deaths), bestTicks: count(source.value?.bestTicks) };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, 'utf8'));
@@ -18,6 +28,10 @@ function records() {
 }
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(records()));
   }

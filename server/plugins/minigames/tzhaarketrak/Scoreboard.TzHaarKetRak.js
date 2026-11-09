@@ -24,6 +24,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const Common = require("./Common.TzHaarKetRak");
+const worldData = require("../../persistence/WorldData");
 
 /** Cache names: the loc and the interface. */
 const SCOREBOARD_LOC = "jad_challenge_scoreboard";
@@ -36,6 +37,10 @@ const DEATHS_ATTRIBUTE = "tzhaar-ket-rak:deaths";
 let FILE = path.join(process.cwd(), "data", "saves", "tzhaar-ket-rak-scoreboard.json");
 let world = null;
 
+// A hosted world keeps the world totals in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "tzhaar-ket-rak-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const cache = () => Common.core.CacheDefinitions;
 
@@ -47,6 +52,17 @@ function perChallenge(saved) {
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const saved = source.value;
+    const next = {
+      completions: perChallenge(saved?.completions),
+      bestTicks: perChallenge(saved?.bestTicks),
+      deaths: perChallenge(saved?.deaths),
+    };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -63,6 +79,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(records()));
     fs.renameSync(`${FILE}.tmp`, FILE);

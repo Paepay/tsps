@@ -16,6 +16,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const Common = require("./Common.MoonsOfPeril");
+const worldData = require("../../persistence/WorldData");
 
 /** The Lunar Chest's own count, kept by Chest.MoonsOfPeril.js. */
 const CHESTS_ATTRIBUTE = "moons-of-peril:chests";
@@ -29,12 +30,22 @@ const DEATHS_ATTRIBUTE = "moons-of-peril:deaths";
 let FILE = path.join(process.cwd(), "data", "saves", "moons-of-peril-scoreboard.json");
 let world = null;
 
+// A hosted world keeps the world totals in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "moons-of-peril-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const cache = () => Common.core.CacheDefinitions;
 const uid = (component) => cache().getComponentId(`${INTERFACE_NAME}:${component}`);
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = { chests: count(source.value?.chests), deaths: count(source.value?.deaths) };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -47,6 +58,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(records()));
     fs.renameSync(`${FILE}.tmp`, FILE);

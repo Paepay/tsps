@@ -5,6 +5,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const common = require("./Common.BarracudaTrials");
+const worldData = require("../../../persistence/WorldData");
 
 const GROUP = 933;
 const MAIN_MODAL = (161 << 16) | 16;
@@ -19,8 +20,18 @@ const SCOREBOARDS = { 58926: "tempor_tantrum", 58927: "jubbly_jive", 58928: "gwe
 let FILE = path.join(process.cwd(), "data", "saves", "barracuda-trials.json");
 let saved;
 
+// A hosted world keeps the totals in the platform's world-state document instead of
+// a file beside server.exe (task10 section 8).
+const STORE_KEY = "barracuda-trials";
+
 function records() {
   if (saved) return saved;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = source.value && typeof source.value === "object" ? source.value : {};
+    if (source.loaded) saved = next;
+    return next;
+  }
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
   } catch {
@@ -31,6 +42,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(records()));
     fs.renameSync(`${FILE}.tmp`, FILE);

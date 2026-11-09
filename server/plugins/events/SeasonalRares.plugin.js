@@ -25,6 +25,7 @@
 const fs = require("fs");
 const path = require("path");
 const configuredRows = require("./data/seasonal-rares.json");
+const worldData = require("../persistence/WorldData");
 
 const CLAIMS_ATTRIBUTE = "seasonal-rares:claims";
 const MAIN_PROFILE = "main";
@@ -37,8 +38,21 @@ let storeFile = path.join(process.cwd(), "data", "saves", "seasonal-rares.json")
 let store = {};
 let storeReadable = true;
 
+// A hosted world keeps the claim counts in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "seasonal-rares";
+
 /** The world record, or null when the file exists but cannot be used (claims then stay shut until it is fixed). */
 function readStore() {
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    // Until the platform copy has loaded, treat the store as unreadable so no claim
+    // can start the counts over (the same guard the "unreadable file" case uses).
+    if (!source.loaded) return null;
+    const saved = source.value;
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) return saved;
+    return {};
+  }
   try {
     const saved = JSON.parse(fs.readFileSync(storeFile, "utf8"));
     if (saved && typeof saved === "object" && !Array.isArray(saved)) return saved;
@@ -51,6 +65,10 @@ function readStore() {
 }
 
 function writeStore(next) {
+  if (worldData.isHosted()) {
+    worldData.write(STORE_KEY, next);
+    return;
+  }
   fs.mkdirSync(path.dirname(storeFile), { recursive: true });
   fs.writeFileSync(`${storeFile}.tmp`, JSON.stringify(next));
   fs.renameSync(`${storeFile}.tmp`, storeFile);

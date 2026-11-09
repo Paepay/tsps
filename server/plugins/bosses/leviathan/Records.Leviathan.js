@@ -1,20 +1,32 @@
 const fs = require('fs');
 const path = require('path');
 const Common = require('./Common.Leviathan');
+const worldData = require('../../persistence/WorldData');
 
 // As with the native Nex/Doom scoreboards, plugin world records survive restart.
 // These counts begin with recorded events; there is no fabricated old history.
 const FILE = path.join(process.cwd(), 'data', 'saves', 'leviathan-scoreboard.json');
+// A hosted world keeps these records in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = 'leviathan-scoreboard';
 let world;
 const count = value => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = { kills: count(source.value?.kills), deaths: count(source.value?.deaths), bestTicks: count(source.value?.bestTicks) };
+    // Do not cache an empty default before the platform copy has loaded.
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved;
   try { saved = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { saved = null; }
   return world = { kills: count(saved?.kills), deaths: count(saved?.deaths), bestTicks: count(saved?.bestTicks) };
 }
 function save() {
   try {
+    if (worldData.isHosted()) { worldData.write(STORE_KEY, records()); return; }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(records(), null, 2));
   } catch (error) { Common.api.log(`Leviathan scoreboard could not be saved: ${error.message}`); }

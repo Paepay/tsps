@@ -2,14 +2,25 @@
 // Revision-241 duke_sucellus_scoreboard: text components have no transmit listeners.
 const fs = require('node:fs'), path = require('node:path');
 const Common = require('./Common.DukeSucellus');
+const worldData = require('../../persistence/WorldData');
 const DEATHS = 'duke-sucellus:deaths';
 const FILE = path.join(process.cwd(), 'data', 'saves', 'duke-sucellus-scoreboard.json');
+// A hosted world keeps the world records in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = 'duke-sucellus-scoreboard';
 const INTERFACE = 828;
 let world = null, persist = true;
 const number = value => Math.max(0, Math.trunc(Number(value) || 0));
 function worldRecords() {
   if (world)
     return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const saved = source.value;
+    const next = { kills: number(saved?.kills), deaths: number(saved?.deaths), best: number(saved?.best) };
+    if (source.loaded) world = next;
+    return next;
+  }
   world = { kills: 0, deaths: 0, best: 0 };
   try {
     const saved = JSON.parse(fs.readFileSync(FILE, 'utf8'));
@@ -24,6 +35,10 @@ function save() {
   if (!persist)
     return;
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, worldRecords());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(worldRecords()));
     fs.renameSync(`${FILE}.tmp`, FILE);

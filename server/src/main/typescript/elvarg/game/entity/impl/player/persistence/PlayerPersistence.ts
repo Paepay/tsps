@@ -21,6 +21,49 @@ export interface PlayerSaveRestore {
     pending: boolean;
 }
 
+/**
+ * One character captured for an atomic multi-character commit (a trade or a
+ * shared transfer): its identity, the base revision this process last saw, and
+ * the document to persist. `state`/`serialized` are backend-shaped; the hosted
+ * adapter fills both.
+ */
+export interface TransactionParticipant {
+    username: string;
+    profile: PlayerProfile;
+    characterId: string;
+    revision: number;
+    state: unknown;
+    serialized?: string;
+}
+
+/** The platform's outcome for a committed participant. */
+export interface TransactionParticipantResult {
+    characterId: string;
+    profile?: string;
+    fromRevision: number;
+    toRevision: number;
+    itemDelta?: Record<string, number>;
+    currencyDelta?: number;
+}
+
+/** The platform's outcome for an atomic commit. */
+export interface EconomyCommitResult {
+    ok: boolean;
+    replayed?: boolean;
+    transactionId?: string;
+    kind?: string;
+    participants: TransactionParticipantResult[];
+}
+
+/** The input for an atomic multi-character commit. */
+export interface EconomyCommitInput {
+    kind: string;
+    idempotencyKey: string;
+    participants: TransactionParticipant[];
+    administrativeActor?: string | null;
+    metadata?: unknown;
+}
+
 export abstract class PlayerPersistence {
     /** The profiles, for the backends in plugins/persistence (which reach core through this class). */
     public static readonly MAIN_PROFILE: PlayerProfile = MAIN_PROFILE;
@@ -147,6 +190,49 @@ export abstract class PlayerPersistence {
     /** Whether this backend keeps a history of saves to roll back to. */
     public supportsHistory(): boolean {
         return false;
+    }
+
+    /**
+     * Whether this backend can commit a multi-character exchange atomically. The
+     * local JSON/SQLite backends cannot, so they return false and gameplay keeps
+     * its original per-player save order; the hosted platform backend overrides
+     * this and commits every participant in one platform transaction.
+     */
+    public supportsAtomicExchange(): boolean {
+        return false;
+    }
+
+    /**
+     * Capture the identity, base revision and current document of a participant
+     * for an atomic commit. Only called when supportsAtomicExchange() is true.
+     */
+    public captureTransactionParticipant(_player: Player, _profile: PlayerProfile = MAIN_PROFILE): TransactionParticipant {
+        throw new Error("This persistence backend does not support atomic transactions");
+    }
+
+    /**
+     * Commit every participant's resulting state in one atomic operation. Returns
+     * the platform result. Throws when the transaction did not commit, so the
+     * caller can roll the live players back.
+     */
+    public commitEconomyTransaction(_input: EconomyCommitInput): EconomyCommitResult {
+        throw new Error("This persistence backend does not support atomic transactions");
+    }
+
+    /** Adopt a committed transaction result so later autosaves start from it. */
+    public applyEconomyResult(_participants: TransactionParticipant[], _result: EconomyCommitResult): void {
+        // No-op for backends without atomic transactions.
+    }
+
+    /**
+     * Durably commit a single character's change (a bank deposit or withdrawal)
+     * before it is acknowledged as complete. Returns "committed" when the change
+     * is durable, "unsupported" when this backend has no such guarantee (the
+     * caller then keeps its existing save behaviour), or "rollback" when the
+     * commit failed and the caller must restore the captured `before` save.
+     */
+    public commitCharacterChange(_player: Player, _before: PlayerSave, _kind: string): string {
+        return "unsupported";
     }
 
     /** A player's snapshots, newest first. */

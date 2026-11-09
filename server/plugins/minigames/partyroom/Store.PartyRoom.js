@@ -1,11 +1,13 @@
 /**
  * The Falador Party Room's chest, the one chest of the world: what's in it, and which players' offers
- * it has taken (confirmed), kept in data/saves/party-room[.<profile>].json.
+ * it has taken (confirmed), kept in data/saves/party-room[.<profile>].json, or on the PaeScape platform
+ * (task10 section 8) when the world is hosted.
  *
  * The file is the commit point of a deposit. A change is built as a new value, written (temp file,
  * fsync, rename) and only then assigned, so a failed write leaves the memory and the file as they were.
  * A file that can't be read is kept as it is (a copy named .corrupt-<time>) and the chest refuses every
- * change until it reads again: starting empty and writing would destroy what's in it.
+ * change until it reads again: starting empty and writing would destroy what's in it. A hosted chest whose
+ * platform copy can't be read behaves the same way: it refuses every change rather than start empty.
  *
  * "216 individual items" (Wiki: Party chest): a stackable id is one item however many there are
  * (coins, noted items); anything else counts each. Stacks of one id merge.
@@ -13,6 +15,10 @@
 
 const fs = require("fs");
 const path = require("path");
+const worldData = require("../../persistence/WorldData");
+
+/** The platform world-state store for the party chest (hosted worlds only). */
+const STORE_KEY = "party-room";
 
 const CAPACITY = 216;
 const MAX_STACK = 2147483647;
@@ -40,6 +46,7 @@ function validEntry(entry) {
 }
 
 function readFile(keepCopy) {
+  if (worldData.isHosted()) return readHosted();
   let text;
   try {
     text = fs.readFileSync(filePath(), "utf8");
@@ -60,6 +67,22 @@ function readFile(keepCopy) {
         // The original stays where it is either way.
       }
     }
+    return { status: "corrupt", error };
+  }
+}
+
+/** The chest from the platform's world-state document, validated like the file. */
+function readHosted() {
+  const source = worldData.read(STORE_KEY);
+  // Unloaded (or failed) is the unreadable-file contract: refuse changes, retry later.
+  if (!source.loaded) return { status: "corrupt", error: source.error };
+  const saved = source.value;
+  if (saved === undefined || saved === null) return { status: "ok", chest: [], confirmed: {} };
+  try {
+    if (!Array.isArray(saved?.chest) || !saved.chest.every(validEntry)) throw new Error("the chest is not a list of {id, amount}");
+    const confirmed = saved.confirmed && typeof saved.confirmed === "object" && !Array.isArray(saved.confirmed) ? saved.confirmed : {};
+    return { status: "ok", chest: saved.chest.map(({ id, amount }) => ({ id, amount })), confirmed: { ...confirmed } };
+  } catch (error) {
     return { status: "corrupt", error };
   }
 }
@@ -92,6 +115,12 @@ function confirmedId(account) {
 
 /** Temp file, fsync, rename: a crash leaves the old file or the new one, never half of either. */
 function write(next) {
+  if (worldData.isHosted()) {
+    // Synchronous: the platform write is the commit point, so a change is only kept
+    // once the platform holds it (throws otherwise, and the caller refuses the change).
+    worldData.writeNow(STORE_KEY, { version: 1, chest: next.chest, confirmed: next.confirmed });
+    return;
+  }
   fs.mkdirSync(path.dirname(filePath()), { recursive: true });
   const temp = `${filePath()}.tmp`;
   const fd = fs.openSync(temp, "w");

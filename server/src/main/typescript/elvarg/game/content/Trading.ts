@@ -10,9 +10,20 @@ import { StackType } from "../model/container/StackType";
 import { Inventory } from "../model/container/impl/Inventory";
 import { Misc } from "../../util/Misc";
 import { PluginManager } from "../../plugins/PluginManager";
+import { PlayerSave } from "../entity/impl/player/persistence/PlayerSave";
 import { encodeChatMessage, encodeTradeClose, encodeTradeOpen, encodeTradeRequest, encodeTradeUpdate, TradePartyView } from "../../net/protocol/ClientProtocol";
 
 const ATTR_SKIP_PERSISTENCE = "bot-skip-persistence";
+
+/** A unique idempotency key for one final trade handoff. */
+function transactionKey(): string {
+    try {
+        const { randomUUID } = require("crypto") as typeof import("crypto");
+        return randomUUID();
+    } catch {
+        return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    }
+}
 
 class PlayerItemContainer extends ItemContainer {
     constructor(player, private readonly execFunc: Function) {
@@ -300,6 +311,14 @@ export class Trading {
                     short.getTrading().getInteract().sendMessage("@or3@" + short.getDisplayName() + " will not be able to hold that item.");
                     return;
                 }
+                // Capture both authoritative states *before* changing anything, so
+                // a platform failure can restore exactly what each player had.
+                const persistence = GameConstants.PLAYER_PERSISTENCE;
+                const atomic = typeof persistence.supportsAtomicExchange === "function" && persistence.supportsAtomicExchange();
+                const beforeA = atomic ? PlayerSave.fromPlayer(this.player) : null;
+                const beforeB = atomic ? PlayerSave.fromPlayer(interact_) : null;
+                const participantA = atomic ? persistence.captureTransactionParticipant(this.player) : null;
+                const participantB = atomic ? persistence.captureTransactionParticipant(interact_) : null;
                 // Give items to both players...
                 const receivingItems = interact_.getTrading().getContainer().getValidItems();
                 for (const item of receivingItems) {
@@ -330,8 +349,52 @@ export class Trading {
                 // Reset attributes for both players...
                 this.resetAttributes();
                 interact_.getTrading().resetAttributes();
-                Trading.save(this.player);
-                Trading.save(interact_);
+                if (atomic) {
+                    try {
+                        const participantA2 = persistence.captureTransactionParticipant(this.player);
+                        const participantB2 = persistence.captureTransactionParticipant(interact_);
+                        // Keep the captured base revisions; only the resulting
+                        // documents change after the handoff.
+                        participantA2.revision = participantA.revision;
+                        participantB2.revision = participantB.revision;
+                        const result = persistence.commitEconomyTransaction({
+                            kind: "trade",
+                            idempotencyKey: participantA.characterId + ":" + participantB.characterId + ":" + transactionKey(),
+                            participants: [participantA2, participantB2],
+                        });
+                        persistence.applyEconomyResult([participantA2, participantB2], result);
+                    } catch (error) {
+                        // The transaction did not commit. Restore both live players
+                        // from the snapshots taken before the handoff and make the
+                        // failure explicit; neither side keeps the items.
+                        try {
+                            beforeA.applyToPlayer(this.player);
+                            beforeB.applyToPlayer(interact_);
+                            this.player.getInventory().refreshItems();
+                            this.player.getEquipment().refreshItems();
+                            interact_.getInventory().refreshItems();
+                            interact_.getEquipment().refreshItems();
+                        } catch (restoreError) {
+                            console.error("[trade] failed to restore a player after a failed atomic commit", restoreError);
+                        }
+                        const message = "Your trade could not be completed. No items were exchanged.";
+                        this.player.sendMessage(message);
+                        interact_.sendMessage(message);
+                        console.error("[trade] atomic commit failed", error);
+                        this.player.getSession().sendClientPacket(encodeTradeClose(message));
+                        interact_.getSession().sendClientPacket(encodeTradeClose(message));
+                        this.player.getPacketSender().sendInterfaceRemoval();
+                        interact_.getPacketSender().sendInterfaceRemoval();
+                        this.button_delay.start(1);
+                        return;
+                    }
+                }
+                // The atomic commit already wrote both resulting documents. A
+                // second save is unnecessary and would only add a redundant write.
+                if (!atomic) {
+                    Trading.save(this.player);
+                    Trading.save(interact_);
+                }
                 this.player.getSession().sendClientPacket(encodeTradeClose("Trade accepted!"));
                 interact_.getSession().sendClientPacket(encodeTradeClose("Trade accepted!"));
                 // Send interface removal for both players...

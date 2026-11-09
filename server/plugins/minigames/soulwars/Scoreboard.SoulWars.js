@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Common = require("./Common.SoulWars");
 const Match = require("./Match.SoulWars");
+const worldData = require("../../persistence/WorldData");
 
 const SCOREBOARD_LOC = "soul_wars_scoreboard";
 const INTERFACE_NAME = "soul_wars_stats";
@@ -26,11 +27,21 @@ const TEXT_COMPONENT = "soul_wars_stats:scroll_text";
 let FILE = path.join(process.cwd(), "data", "saves", "soul-wars-scoreboard.json");
 let world = null;
 
+// A hosted world keeps the world totals in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "soul-wars-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const number = (value) => count(value).toLocaleString("en-US");
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = { games: count(source.value?.games), playersKilled: count(source.value?.playersKilled), avatarsKilled: count(source.value?.avatarsKilled) };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -43,6 +54,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(records()));
     fs.renameSync(`${FILE}.tmp`, FILE);

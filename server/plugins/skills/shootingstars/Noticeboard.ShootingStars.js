@@ -12,6 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const Common = require("./Common.ShootingStars");
+const worldData = require("../../persistence/WorldData");
 
 const { DATA } = Common;
 const board = DATA.noticeboard;
@@ -20,8 +21,18 @@ const file = path.join(process.cwd(), "data", "saves", "shooting-stars.json");
 let records = null;
 let persist = true;
 
+// A hosted world keeps the noticeboard in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "shooting-stars-noticeboard";
+
 function load() {
   if (records) return records;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = Array.isArray(source.value?.stars) ? source.value.stars.slice(-board.size) : [];
+    if (source.loaded) records = next;
+    return next;
+  }
   records = [];
   try {
     const saved = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -35,6 +46,10 @@ function load() {
 function save() {
   if (!persist) return;
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, { stars: load() });
+      return;
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ stars: load() }, null, 2));
   } catch (error) {

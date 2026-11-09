@@ -12,6 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const Shared = require("./Shared.Gauntlet");
+const worldData = require("../../persistence/WorldData");
 
 const INTERFACE = 639;
 const PANELS = { regular: { title: "The Gauntlet", first: 5 }, corrupted: { title: "The Corrupted Gauntlet", first: 18 } };
@@ -20,12 +21,23 @@ const MODES = ["regular", "corrupted"];
 let file = path.join(process.cwd(), "data", "saves", "gauntlet-scoreboard.json");
 let global = null;
 
+// A hosted world keeps the world totals in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "gauntlet-scoreboard";
+
 function emptyTotals() {
   return { regular: { completions: 0, deaths: 0, bestTicks: -1 }, corrupted: { completions: 0, deaths: 0, bestTicks: -1 } };
 }
 
 function totals() {
   if (global) return global;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = emptyTotals();
+    for (const mode of MODES) next[mode] = { ...next[mode], ...(source.value?.[mode] ?? {}) };
+    if (source.loaded) global = next;
+    return next;
+  }
   global = emptyTotals();
   try {
     const saved = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -38,6 +50,10 @@ function totals() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, totals());
+      return;
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(totals(), null, 2));
   } catch (error) {

@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const worldData = require("../../persistence/WorldData");
 
 /**
  * Who the AI bots are, kept in data/saves/ai-bots.json (plugins have no world store, as for
@@ -12,12 +13,20 @@ const DEFAULT_FILE = path.join(process.cwd(), "data", "saves", "ai-bots.json");
 const MAX_NOTES = 12;
 const MAX_NOTE_LENGTH = 120;
 const SAVE_DELAY_MS = 2000;
+// A hosted world keeps the roster in the platform's world-state document instead of
+// a file beside server.exe (task10 section 8).
+const STORE_KEY = "ai-bots";
 
 class AiBotRoster {
   constructor(file = DEFAULT_FILE) {
     this.file = file;
     this.bots = [];
     this.saveTimer = null;
+    if (worldData.isHosted()) {
+      const source = worldData.read(STORE_KEY);
+      this.bots = Array.isArray(source.value?.bots) ? source.value.bots.filter((bot) => typeof bot?.name === "string") : [];
+      return;
+    }
     try {
       const raw = JSON.parse(fs.readFileSync(file, "utf8"));
       this.bots = Array.isArray(raw?.bots) ? raw.bots.filter((bot) => typeof bot?.name === "string") : [];
@@ -80,6 +89,10 @@ class AiBotRoster {
 
   write() {
     try {
+      if (worldData.isHosted()) {
+        worldData.write(STORE_KEY, { bots: this.bots });
+        return;
+      }
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const temp = `${this.file}.tmp`;
       fs.writeFileSync(temp, `${JSON.stringify({ bots: this.bots }, null, 2)}\n`);

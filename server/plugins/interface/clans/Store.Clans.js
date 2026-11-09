@@ -2,9 +2,13 @@
 
 const fs = require("fs");
 const path = require("path");
+const worldData = require("../../persistence/WorldData");
 
 const FILE_ENV = "TSPS_CLANS_FILE";
 const DEFAULT_FILE = path.join("data", "saves", "clans.json");
+// A hosted world keeps the clans in the platform's world-state document instead of
+// a file beside server.exe (task10 section 8).
+const STORE_KEY = "clans";
 
 let clans = null;
 let nextKey = 1;
@@ -15,6 +19,17 @@ function file() {
 
 function load() {
   if (clans) return clans;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    // Like an unreadable file, an unloaded platform copy refuses to be replaced:
+    // throw rather than start from empty, so save() cannot overwrite real clans.
+    if (!source.loaded) throw new Error("the platform's clan store is not loaded");
+    const loaded = new Map();
+    for (const clan of source.value?.clans ?? []) loaded.set(clan.key, clan);
+    clans = loaded;
+    nextKey = source.value?.nextKey ?? 1;
+    return clans;
+  }
   const loaded = new Map();
   let saved;
   try {
@@ -32,6 +47,10 @@ function load() {
 }
 
 function save() {
+  if (worldData.isHosted()) {
+    worldData.write(STORE_KEY, { nextKey, clans: [...load().values()] });
+    return;
+  }
   const target = file();
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.tmp`;

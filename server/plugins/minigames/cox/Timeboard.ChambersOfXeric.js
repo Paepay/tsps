@@ -21,6 +21,7 @@
 const fs = require("fs");
 const path = require("path");
 const Shared = require("./Shared.ChambersOfXeric");
+const worldData = require("../../persistence/WorldData");
 
 /** Cache: the score board on Mount Quidamortem (Read). */
 const LOC = 32544;
@@ -30,6 +31,10 @@ const MADE_IT = "<col=ef20ff>Your team has made it onto this world's Challenge T
 
 let FILE = path.join(process.cwd(), "data", "saves", "cox-timeboard.json");
 let board = null;
+
+// A hosted world keeps the timeboard in the platform's world-state document instead
+// of a file beside server.exe (task10 section 8).
+const STORE_KEY = "cox-timeboard";
 
 /** The team-size brackets the Wiki's table has. */
 function bracket(size) {
@@ -44,27 +49,42 @@ function empty() {
   return { world: [], global: {} };
 }
 
+/** Build the board from a stored document (a file's or the platform's). */
+function normalize(saved) {
+  const entries = Array.isArray(saved?.world)
+    ? saved.world.filter((entry) => Number.isFinite(entry?.ticks) && entry.ticks > 0)
+    : [];
+  entries.sort((a, b) => a.ticks - b.ticks);
+  return {
+    world: entries.slice(0, TOP).map((entry) => ({ ticks: entry.ticks, leader: String(entry.leader ?? ""), size: Number(entry.size) || 1 })),
+    global: typeof saved?.global === "object" && saved.global ? { ...saved.global } : {},
+  };
+}
+
 function records() {
   if (board) return board;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = normalize(source.value);
+    if (source.loaded) board = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
   } catch {
     saved = null;
   }
-  const entries = Array.isArray(saved?.world)
-    ? saved.world.filter((entry) => Number.isFinite(entry?.ticks) && entry.ticks > 0)
-    : [];
-  entries.sort((a, b) => a.ticks - b.ticks);
-  board = {
-    world: entries.slice(0, TOP).map((entry) => ({ ticks: entry.ticks, leader: String(entry.leader ?? ""), size: Number(entry.size) || 1 })),
-    global: typeof saved?.global === "object" && saved.global ? { ...saved.global } : {},
-  };
+  board = normalize(saved);
   return board;
 }
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(records()));
   } catch (error) {

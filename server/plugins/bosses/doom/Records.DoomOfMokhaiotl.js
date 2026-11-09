@@ -10,6 +10,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const worldData = require("../../persistence/WorldData");
 
 const ATTR = {
   COMPLETIONS: "doom:completions",
@@ -23,12 +24,23 @@ const file = path.join(process.cwd(), "data", "saves", "doom-scoreboard.json");
 let world = null;
 let persist = true;
 
+// A hosted world keeps the world records in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "doom-scoreboard";
+
 function empty() {
   return { completions: {}, best: {}, deaths: 0, deepest: 0, bestRun: 0 };
 }
 
 function worldRecords() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = empty();
+    if (source.value && typeof source.value === "object") Object.assign(next, source.value);
+    if (source.loaded) world = next;
+    return next;
+  }
   world = empty();
   try {
     Object.assign(world, JSON.parse(fs.readFileSync(file, "utf8")));
@@ -41,6 +53,10 @@ function worldRecords() {
 function save() {
   if (!persist) return;
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, worldRecords());
+      return;
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(worldRecords(), null, 2));
   } catch (error) {

@@ -48,9 +48,16 @@ function fail(message) {
   process.exit(1);
 }
 
-const bytes = fs.readFileSync(exePath);
-const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
-console.log(`[publish] ${path.basename(exePath)} ${bytes.length} bytes sha256=${sha256}`);
+// Hash the executable as a stream so a 533 MB build never loads into memory.
+const size = fs.statSync(exePath).size;
+const sha256 = await new Promise((resolve, reject) => {
+  const hash = crypto.createHash("sha256");
+  const input = fs.createReadStream(exePath);
+  input.on("data", (chunk) => hash.update(chunk));
+  input.on("end", () => resolve(hash.digest("hex")));
+  input.on("error", reject);
+});
+console.log(`[publish] ${path.basename(exePath)} ${size} bytes sha256=${sha256}`);
 
 const common = { "content-type": "application/json", authorization: `Bearer ${token}` };
 
@@ -62,7 +69,7 @@ const create = await fetch(`${platformUrl}/platform/api/releases`, {
     channel,
     sourceCommit,
     protocolVersion,
-    files: [{ path: "server.exe", bytes: bytes.length, sha256 }],
+    files: [{ path: "server.exe", bytes: size, sha256 }],
     makeCurrent: false,
   }),
 });
@@ -71,10 +78,15 @@ if (!create.ok) fail(`release was refused (${create.status}): ${created?.error ?
 const releaseId = created.release.id;
 console.log(`[publish] created release ${releaseId} generation ${created.release.generation}`);
 
+// Stream the bytes to the platform. Content-Length is set so the server can
+// reject an oversized upload before reading it; the body is a file stream so the
+// executable is never buffered, and the request is marked half-duplex.
+const { Readable } = await import("node:stream");
 const upload = await fetch(`${platformUrl}/platform/api/releases/${releaseId}/artifacts?path=server.exe`, {
   method: "PUT",
-  headers: { "content-type": "application/octet-stream", authorization: `Bearer ${token}` },
-  body: bytes,
+  headers: { "content-type": "application/octet-stream", "content-length": String(size), authorization: `Bearer ${token}` },
+  body: Readable.toWeb(fs.createReadStream(exePath)),
+  duplex: "half",
 });
 const uploaded = await upload.json();
 if (!upload.ok) fail(`upload was refused (${upload.status}): ${uploaded?.error ?? "unknown error"}`);

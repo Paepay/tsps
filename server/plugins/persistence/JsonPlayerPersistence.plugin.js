@@ -3,6 +3,7 @@ const fsp = fs.promises;
 const path = require("path");
 const { promisify } = require("util");
 const { isBrowserHost } = require("./IndexedDbPersistenceHandoff");
+const { isHostedPersistence } = require("./PaeScapePersistenceMode");
 const { PrayerData } = require("../../src/main/typescript/elvarg/game/content/PrayerHandler");
 const { Skills } = require("../../src/main/typescript/elvarg/game/content/skill/SkillManager");
 const { PlayerPersistence } = require("../../src/main/typescript/elvarg/game/entity/impl/player/persistence/PlayerPersistence");
@@ -642,9 +643,19 @@ let SkillManager;
 
 module.exports = {
   name: "JsonPlayerPersistence",
+  /** Inject the SkillManager for reuse of this serializer outside register(). */
+  setSkillManager(manager) {
+    SkillManager = manager;
+  },
   register(api) {
     SkillManager = api.getSkillManager();
     if (isBrowserHost()) {
+      return;
+    }
+    // In PaeScape hosted mode the platform owns authoritative character state; a
+    // local backend must not take over or leave save files beside the executable.
+    if (isHostedPersistence()) {
+      api.log("hosted platform persistence is active; the local JSON backend is skipped");
       return;
     }
     api.setPlayerPersistence(new JsonPlayerPersistence());

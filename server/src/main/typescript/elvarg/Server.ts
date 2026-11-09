@@ -37,6 +37,23 @@ export class Server {
   private static shuttingDown = false;
   private static gracefulHandlersInstalled = false;
 
+  /**
+   * Process exit codes the host launcher's supervisor interprets. A launcher that
+   * sees EXIT_UPDATE_REQUIRED knows to download and install the current release and
+   * start the server again; any other non-zero code is a failure it must not loop on.
+   */
+  public static readonly EXIT_NORMAL = 0;
+  public static readonly EXIT_UPDATE_REQUIRED = 10;
+  public static readonly EXIT_AUTH_FAILURE = 11;
+  public static readonly EXIT_CONFIG_FAILURE = 12;
+  public static readonly EXIT_FATAL = 13;
+  /**
+   * Set when a plugin asks for the server to stop so the host can install a newer
+   * release. The shutdown path exits with EXIT_UPDATE_REQUIRED so the supervisor
+   * distinguishes "update and restart" from an operator stopping the server.
+   */
+  private static updateRequired = false;
+
   private static setupFileLogging() {
     if (Server.consolePatched) return;
     ServerLogger.install(path.join(process.cwd(), "logs", "server.log"));
@@ -190,7 +207,7 @@ export class Server {
       return;
     }
 
-    process.exit(0);
+    process.exit(Server.exitCode);
   }
 
   public static async main(args: string[]): Promise<void> {
@@ -283,10 +300,29 @@ export class Server {
     Server.updating = isUpdating;
   }
 
-  /** Trigger the graceful shutdown sequence (persist players, then exit the process). */
-  public static shutdown(reason: string = "shutdown"): void {
+  /**
+   * Ask the server to shut down gracefully. A plugin that has detected a newer
+   * approved release calls shutdownForUpdate() instead, which exits with a distinct
+   * code so the host's supervisor updates the executable and restarts the server.
+   */
+  public static shutdown(reason: string = "shutdown", exitCode: number = Server.EXIT_NORMAL): void {
+    Server.exitCode = exitCode;
     void Server.gracefulShutdown(reason, "exit");
   }
+
+  /** Shut down because the platform published a newer release the host must install. */
+  public static shutdownForUpdate(reason: string = "paescape-update"): void {
+    Server.updateRequired = true;
+    Server.shutdown(reason, Server.EXIT_UPDATE_REQUIRED);
+  }
+
+  /** True when a plugin requested an update-and-restart rather than an ordinary stop. */
+  public static isUpdateRequired(): boolean {
+    return Server.updateRequired;
+  }
+
+  /** Exit code used after a completed graceful shutdown (set by shutdownForUpdate). */
+  private static exitCode: number = Server.EXIT_NORMAL;
 
   public static getFlooder() {
     return Server.flooder;

@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Shared = require("./Shared.Araxxor");
 const Area = require("./Area.Araxxor");
+const worldData = require("../../persistence/WorldData");
 
 /** Cache names: the loc, interface araxxor_scoreboard and its components (rsprox 237/01076). */
 const SCOREBOARD_LOC = "araxxor_scoreboard_multi";
@@ -30,11 +31,24 @@ let FILE = path.join(process.cwd(), "data", "saves", "araxxor-scoreboard.json");
 let world = null;
 let cache = null;
 
+// Standalone mode reads and writes FILE as before; a hosted world (task10 section 8)
+// keeps the records in the platform's world-state document instead of beside
+// server.exe, so nothing authoritative is written to the host's disk.
+const STORE_KEY = "araxxor-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const uid = (component) => cache.getComponentId(`${INTERFACE_NAME}:${component}`);
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    // Until the platform copy has loaded, do not cache: caching would pin an empty
+    // default over the authoritative copy once it arrives.
+    const next = { kills: count(source.value?.kills), deaths: count(source.value?.deaths), bestTicks: count(source.value?.bestTicks) };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -47,6 +61,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(FILE, JSON.stringify(records()));
   } catch (error) {

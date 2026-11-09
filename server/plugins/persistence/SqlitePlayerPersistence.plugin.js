@@ -16,6 +16,7 @@ const { DonatorRights } = require("../../src/main/typescript/elvarg/game/model/r
 const { PlayerRights } = require("../../src/main/typescript/elvarg/game/model/rights/PlayerRights");
 const { Misc } = require("../../src/main/typescript/elvarg/util/Misc");
 const { SqliteSaveHistory, PRE_ROLLBACK_REASON, ROLLBACK_REASON } = require("./SaveHistory.SqlitePlayerPersistence");
+const { isHostedPersistence } = require("./PaeScapePersistenceMode");
 
 /** Consecutive startup failures before flushing reports an unavailable writer. */
 const MAX_WRITER_FAILURES = 3;
@@ -751,6 +752,13 @@ module.exports = {
   name: "SqlitePlayerPersistence",
   register(api) {
     SkillManager = api.getSkillManager();
+    // In PaeScape hosted mode the platform owns authoritative character state, so
+    // this backend must not run: it would create a local players.sqlite beside the
+    // executable and could silently take over from the platform store.
+    if (isHostedPersistence()) {
+      api.log("hosted platform persistence is active; the local SQLite backend is skipped");
+      return;
+    }
     const persistence = new SqlitePlayerPersistence();
     api.setPlayerPersistence(persistence);
     api.log("registered", {

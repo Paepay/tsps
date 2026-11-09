@@ -32,11 +32,14 @@ function canonical(value) {
 }
 
 /* --- A tiny real executable built with Node SEA so the launcher can run it. */
-function buildTinyExe(marker) {
+function buildTinyExe(marker, exitCode = 0) {
   const dir = path.join(workRoot, "tiny-" + marker);
   fs.mkdirSync(dir, { recursive: true });
   const main = path.join(dir, "main.js");
-  fs.writeFileSync(main, `console.log("TINY-EXE-RAN:" + "${marker}");`);
+  // A tiny stand-in for server.exe. It prints its marker so the test can prove
+  // which build actually ran, then exits with the code the supervisor interprets
+  // (0 normal, 10 update required, 11 auth failure, ...).
+  fs.writeFileSync(main, `console.log("TINY-EXE-RAN:" + "${marker}"); process.exit(${exitCode});`);
   const cfg = path.join(dir, "sea.json");
   const blob = path.join(dir, "sea.blob");
   fs.writeFileSync(cfg, JSON.stringify({ main, output: blob, disableExperimentalSEAWarning: true }));
@@ -63,6 +66,8 @@ let currentExe = buildTinyExe("v1");
 let generation = 1;
 let tamperSignature = false;
 let corruptDownload = false;
+/** Called after a download is served; lets a test advance the current release. */
+let afterDownload = null;
 
 function manifestFor(gen, exeBytes) {
   return {
@@ -94,7 +99,10 @@ const server = http.createServer((req, res) => {
   if (url.pathname.endsWith("/api/releases/download")) {
     const bytes = corruptDownload ? Buffer.concat([currentExe, Buffer.from("XX")]) : currentExe;
     res.writeHead(200, { "content-type": "application/octet-stream" });
-    res.end(bytes);
+    res.end(bytes, () => {
+      const hook = afterDownload;
+      if (hook) { afterDownload = null; hook(); }
+    });
     return;
   }
   res.writeHead(404); res.end();
@@ -113,13 +121,13 @@ function freshServerDir() {
   return dir;
 }
 
-function launch(dir, platformUrl) {
+function launch(dir, platformUrl, extraEnv = {}) {
   // Async so the in-process mock release server keeps serving while the launcher
   // (a separate process) makes its requests.
   return new Promise((resolve) => {
     const child = spawn("cmd", ["/c", path.join(dir, "StartServer.bat")], {
       cwd: dir,
-      env: { ...process.env, PAESCAPE_PLATFORM_URL: platformUrl, PAESCAPE_CHANNEL: "stable", PAESCAPE_NO_PAUSE: "1" },
+      env: { ...process.env, PAESCAPE_PLATFORM_URL: platformUrl, PAESCAPE_CHANNEL: "stable", PAESCAPE_NO_PAUSE: "1", ...extraEnv },
     });
     let out = "";
     child.stdout.on("data", (d) => { out += d; });
@@ -186,6 +194,70 @@ await withServer(async (platformUrl) => {
     const r = await launch(dir4, "http://127.0.0.1:1");
     assert.match(r.stdout + r.stderr, /Could not reach the PaeScape release service/);
     assert.doesNotMatch(r.stdout, /TINY-EXE-RAN/);
+  });
+
+  // --- Supervisor: the launcher stays alive and reacts to the server's exit code.
+
+  await check("exit code 10 makes the supervisor install the new release and restart", async () => {
+    const dir5 = freshServerDir();
+    // Generation 1 asks for an update (exits 10). The moment its executable is
+    // downloaded, the mock service advances to generation 2, which runs normally.
+    currentExe = buildTinyExe("sup-a", 10);
+    generation = 1;
+    afterDownload = () => { currentExe = buildTinyExe("sup-b", 0); generation = 2; };
+    const r = await launch(dir5, platformUrl, { PAESCAPE_UPDATE_BACKOFF_SECONDS: "1" });
+    // The server asked for an update, the supervisor re-checked, installed
+    // generation 2, and ran it - in one launcher invocation.
+    assert.match(r.stdout, /TINY-EXE-RAN:sup-b/, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /more than 5 times/);
+    const state = JSON.parse(fs.readFileSync(path.join(dir5, "paescape-installed.json"), "utf8"));
+    assert.equal(state.generation, 2);
+    afterDownload = null;
+    currentExe = buildTinyExe("v1"); generation = 1;
+  });
+
+  await check("a normal shutdown (exit 0) stops the supervisor without restarting", async () => {
+    const dir6 = freshServerDir();
+    currentExe = buildTinyExe("stop-ok", 0);
+    generation = 1;
+    const r = await launch(dir6, platformUrl, { PAESCAPE_UPDATE_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout, /server stopped normally/);
+    assert.match(r.stdout, /TINY-EXE-RAN:stop-ok/);
+    assert.equal((r.stdout.match(/TINY-EXE-RAN:stop-ok/g) || []).length, 1, "the server runs once, not in a loop");
+    currentExe = buildTinyExe("v1"); generation = 1;
+  });
+
+  await check("an authentication failure (exit 11) is terminal and never loops", async () => {
+    const dir7 = freshServerDir();
+    currentExe = buildTinyExe("auth-fail", 11);
+    generation = 1;
+    const r = await launch(dir7, platformUrl, { PAESCAPE_UPDATE_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout + r.stderr, /could not authenticate/);
+    assert.equal((r.stdout.match(/TINY-EXE-RAN:auth-fail/g) || []).length, 1, "the server is not restarted after an auth failure");
+    currentExe = buildTinyExe("v1"); generation = 1;
+  });
+
+  await check("a fatal error (exit 13) is not restarted", async () => {
+    const dir8 = freshServerDir();
+    currentExe = buildTinyExe("fatal", 13);
+    generation = 1;
+    const r = await launch(dir8, platformUrl, { PAESCAPE_UPDATE_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout + r.stderr, /fatal error/);
+    assert.equal((r.stdout.match(/TINY-EXE-RAN:fatal/g) || []).length, 1);
+    currentExe = buildTinyExe("v1"); generation = 1;
+  });
+
+  await check("repeated update requests are capped, not looped forever", async () => {
+    const dir9 = freshServerDir();
+    // The server always asks for an update; the supervisor must give up after a
+    // bounded number of cycles instead of spinning.
+    currentExe = buildTinyExe("loop", 10);
+    generation = 1;
+    const r = await launch(dir9, platformUrl, { PAESCAPE_UPDATE_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout + r.stderr, /restart loop|more than 5 times/);
+    const runs = (r.stdout.match(/TINY-EXE-RAN:loop/g) || []).length;
+    assert.ok(runs >= 2 && runs <= 6, `the server ran a bounded number of times, saw ${runs}`);
+    currentExe = buildTinyExe("v1"); generation = 1;
   });
 });
 

@@ -13,6 +13,7 @@ import { BonusManager } from "../../equipment/BonusManager";
 import { EnteredSyntaxAction } from "../../EnteredSyntaxAction";
 import { Sound } from "../../../Sound";
 import { Sounds } from "../../../Sounds";
+import { PlayerSave } from "../../../entity/impl/player/persistence/PlayerSave";
 const getPluginManager = () =>
     require("../../../../plugins/PluginManager").PluginManager as typeof import("../../../../plugins/PluginManager").PluginManager;
 
@@ -22,6 +23,39 @@ const WITHDRAW_PARTIAL_MESSAGE = "You don't have enough inventory space to withd
 const NEW_TAB_MESSAGE = "To create a new tab, drag items from your bank onto this tab.";
 
 export class Bank extends ItemContainer {
+    /**
+     * Commit a completed bank change before it is acknowledged as durable. In
+     * hosted mode the platform writes the whole resulting character document at
+     * a checked revision; a failure restores the captured pre-change save and
+     * refreshes the player's containers. Local backends return "unsupported" and
+     * keep their existing autosave behaviour.
+     */
+    private static commitBankChange(player: Player, before: PlayerSave, kind: string): boolean {
+        const persistence = GameConstants.PLAYER_PERSISTENCE;
+        if (typeof persistence.commitCharacterChange !== "function") return true;
+        let outcome: string;
+        try {
+            outcome = persistence.commitCharacterChange(player, before, kind);
+        } catch (error) {
+            console.error("[bank] failed to commit a bank change", error);
+            outcome = "rollback";
+        }
+        if (outcome === "rollback") {
+            try {
+                before.applyToPlayer(player);
+                player.getInventory().refreshItems();
+                for (let tab = 0; tab < Bank.TOTAL_BANK_TABS; tab++) {
+                    if (tab !== Bank.BANK_SEARCH_TAB_INDEX) player.getBank(tab)?.refreshItems();
+                }
+                player.getPacketSender().sendItemContainer(player.getBank(player.getCurrentBankTab()), Bank.CONTAINER_START);
+            } catch (error) {
+                console.error("[bank] failed to restore a player after a failed commit", error);
+            }
+            player.sendMessage("The bank change could not be saved. Nothing was moved.");
+            return false;
+        }
+        return true;
+    }
     full(): ItemContainer {
         const event = { player: this.getPlayer(), message: "Not enough space in bank." };
         getPluginManager().emitCustomEvent(Bank.FULL_EVENT, event);
@@ -259,6 +293,10 @@ export class Bank extends ItemContainer {
     public static withdraw(player: Player, item: number, slot: number, amount: number, fromBankTab: number) {
         if (Bank.isOpen(player)) {
 
+            const before = GameConstants.PLAYER_PERSISTENCE.supportsAtomicExchange?.()
+                ? PlayerSave.fromPlayer(player)
+                : null;
+
             // The client names the exact tab and slot; a search result can come
             // from any tab.
             const itemTab = player.isSearchingBank() ? Bank.getTabForItem(player, item) : fromBankTab;
@@ -339,6 +377,7 @@ export class Bank extends ItemContainer {
 
             // Refresh inventory.
             player.getInventory().refreshItems();
+            if (before) Bank.commitBankChange(player, before, "bank-withdraw");
         }
     }
 
@@ -376,6 +415,10 @@ export class Bank extends ItemContainer {
 
             const tab = Bank.getTabForItem(player, item);
 
+            const before = GameConstants.PLAYER_PERSISTENCE.supportsAtomicExchange?.()
+                ? PlayerSave.fromPlayer(player)
+                : null;
+
             Bank.depositFromSlots(player, player.getBank(tab), slot, amount);
             if (!player.isSearchingBank()) {
                 player.getBank(tab).refreshItems();
@@ -388,6 +431,7 @@ export class Bank extends ItemContainer {
 
             // Refresh inventory
             player.getInventory().refreshItems();
+            if (before) Bank.commitBankChange(player, before, "bank-deposit");
         }
     }
 
@@ -1139,6 +1183,9 @@ export class Bank extends ItemContainer {
                 return;
             }
         }
+        const before = GameConstants.PLAYER_PERSISTENCE.supportsAtomicExchange?.()
+            ? PlayerSave.fromPlayer(player)
+            : null;
         let movedAny = false;
         for (let item of from.getValidItems()) {
             if (only && !only(item)) continue;
@@ -1163,6 +1210,7 @@ export class Bank extends ItemContainer {
             BonusManager.update(player);
             player.getUpdateFlag().flag(Flag.APPEARANCE);
         }
+        if (movedAny && before) Bank.commitBankChange(player, before, "bank-deposit-all");
     }
 
     /**

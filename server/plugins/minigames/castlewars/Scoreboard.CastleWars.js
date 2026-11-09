@@ -18,6 +18,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const worldData = require("../../persistence/WorldData");
 
 const SCOREBOARD_LOC = "castlewars_scoreboard";
 const INTERFACE_NAME = "castlewars_score";
@@ -35,11 +36,21 @@ let FILE = path.join(process.cwd(), "data", "saves", "castle-wars-scoreboard.jso
 let world = null;
 let core = null;
 
+// A hosted world keeps the teams' wins in the platform's world-state document
+// instead of a file beside server.exe (task10 section 8).
+const STORE_KEY = "castle-wars-scoreboard";
+
 const count = (value) => (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0);
 const cache = () => core.CacheDefinitions;
 
 function records() {
   if (world) return world;
+  if (worldData.isHosted()) {
+    const source = worldData.read(STORE_KEY);
+    const next = { saradomin: count(source.value?.saradomin), zamorak: count(source.value?.zamorak) };
+    if (source.loaded) world = next;
+    return next;
+  }
   let saved = null;
   try {
     saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
@@ -52,6 +63,10 @@ function records() {
 
 function save() {
   try {
+    if (worldData.isHosted()) {
+      worldData.write(STORE_KEY, records());
+      return;
+    }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(records()));
     fs.renameSync(`${FILE}.tmp`, FILE);

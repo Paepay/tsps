@@ -7,6 +7,7 @@
 // the "report:abuse" custom event. See server/docs/social-chat-and-following.md.
 const fs = require("fs");
 const path = require("path");
+const { isHostedPersistence } = require("../persistence/PaeScapePersistenceMode");
 
 const REPORT_PLAYER_OPTION_SLOT = 8;
 const REPORT_PLAYER_OPTION = "Report";
@@ -121,12 +122,18 @@ function receiveReport(event) {
     rule,
     mute: packet.mute === true && isStaff(player),
   };
-  try {
-    const file = reportsFile();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${JSON.stringify(report)}\n`);
-  } catch (error) {
-    pluginApi?.log?.(`could not record a report: ${error?.message ?? error}`);
+  // Hosted worlds store reports centrally on the platform, through the
+  // "report:abuse" event the PaeScape plugin forwards to /api/server/abuse-reports.
+  // The local file is standalone-only: a hosted world must never fall back to
+  // disk, and the forwarded event still fires either way.
+  if (!isHostedPersistence()) {
+    try {
+      const file = reportsFile();
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${JSON.stringify(report)}\n`);
+    } catch (error) {
+      pluginApi?.log?.(`could not record a report: ${error?.message ?? error}`);
+    }
   }
   pluginApi?.emitCustomEvent("report:abuse", { ...report, reporter: player });
 }

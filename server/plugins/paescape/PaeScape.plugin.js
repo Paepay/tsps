@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 /**
  * PaeScape Realms world-server integration.
@@ -44,6 +44,8 @@ const { GameConstants } = require("../../src/main/typescript/elvarg/game/GameCon
 const { Accounts } = require("../../src/main/typescript/elvarg/game/entity/impl/player/Accounts");
 const { MAIN_PROFILE, LEAGUE_PROFILE } = require("../../src/main/typescript/elvarg/game/entity/impl/player/persistence/PlayerProfile");
 const { SkillManager } = require("../../src/main/typescript/elvarg/game/content/skill/SkillManager");
+const bridge = require("./PaeScapeBridge.js");
+const worldData = require("../persistence/WorldData");
 
 /** The control-token path prefix the core routes to this plugin. */
 const CONTROL_PREFIX = "/api/platform/";
@@ -63,6 +65,8 @@ let sessionTimer = null;
 let userAccountPath = "";
 /** platform userId -> the game account key (primary character name) it owns on this world. */
 let userAccounts = {};
+/** username (lower-case) -> { token, characterId, expiresAt, timer } for hosted gameplay sessions. */
+const characterSessions = new Map();
 
 /**
  * Hosted-mode state. A distributed server.exe has no world secret, so it enrolls
@@ -80,6 +84,12 @@ let worldConfigRevision = 0;
 let outdated = false;
 /** Path of the installation identity (hosted mode only). */
 const INSTALLATION_FILE = "paescape-installation.json";
+/** Override the directory holding the installation identity (defaults to data/). */
+function installationPath() {
+  return process.env.PAESCAPE_INSTALLATION_FILE
+    ? path.resolve(process.env.PAESCAPE_INSTALLATION_FILE)
+    : path.join(process.cwd(), "data", INSTALLATION_FILE);
+}
 
 function log(message) {
   console.log(`[paescape] ${message}`);
@@ -87,6 +97,25 @@ function log(message) {
 
 function warn(message) {
   console.warn(`[paescape] ${message}`);
+}
+
+/**
+ * Exit with a distinct supervisor code. The launcher treats these as terminal and
+ * will not restart in a loop: an auth failure (11) or config failure (12) needs the
+ * host to act, unlike the update-required code (10) which the launcher acts on.
+ */
+function fatalExit(code, message) {
+  console.error(`[paescape] FATAL: ${message}`);
+  // Prefer a graceful shutdown so online players are saved; Server.shutdown takes
+  // the exit code the launcher's supervisor interprets. Fall back to a direct exit
+  // if the core is unavailable.
+  try {
+    if (api?.core?.Server?.shutdown) {
+      api.core.Server.shutdown(`paescape-fatal-${code}`, code);
+      return;
+    }
+  } catch { /* fall through to a direct exit */ }
+  setTimeout(() => process.exit(code), 250).unref?.();
 }
 
 /* --------------------------------------------------------------- config --- */
@@ -106,18 +135,42 @@ function readBuildMetadata() {
     const value = process.env[key];
     return value === undefined || value === "" ? fallback : value;
   };
+  // A packaged server.exe stamps the release generation and protocol beside its
+  // extracted application (scripts/release/bundle.mjs writes paescape-app.json, and
+  // server-bootstrap.cjs chdirs into that directory). Without this the handshake
+  // would report generation 0 and the platform would refuse the build as outdated.
+  let stamped = {};
+  try {
+    const candidates = [
+      process.env.PAESCAPE_EXTRACTED_APP && path.join(process.env.PAESCAPE_EXTRACTED_APP, "paescape-app.json"),
+      path.join(process.cwd(), "paescape-app.json"),
+      path.join(__dirname, "..", "..", "paescape-app.json"),
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (!fs.existsSync(candidate)) continue;
+      stamped = JSON.parse(fs.readFileSync(candidate, "utf8")) || {};
+      break;
+    }
+  } catch { /* a source checkout has no stamped metadata */ }
+  const fromStamp = (key, fallback) => {
+    const value = stamped[key];
+    return value === undefined || value === null || value === "" ? fallback : value;
+  };
   return {
-    generation: Number(fromEnv("PAESCAPE_RELEASE_GENERATION", "0")) || 0,
-    version: String(fromEnv("PAESCAPE_BUILD_VERSION", "dev")),
-    protocolVersion: Number(fromEnv("PAESCAPE_PROTOCOL_VERSION", "1")) || 1,
+    generation: Number(fromEnv("PAESCAPE_RELEASE_GENERATION", String(fromStamp("generation", "0")))) || 0,
+    version: String(fromEnv("PAESCAPE_BUILD_VERSION", String(fromStamp("version", "dev")))),
+    protocolVersion: Number(fromEnv("PAESCAPE_PROTOCOL_VERSION", String(fromStamp("protocolVersion", "1")))) || 1,
   };
 }
+
+/** The embedded build metadata, read once at module load. */
+const BUILD = readBuildMetadata();
 
 /* -------------------------------------------- hosted-mode identity ----- */
 
 /** Load or create the installation identity, stored beside the executable. */
 function loadInstallation() {
-  const file = path.join(process.cwd(), "data", INSTALLATION_FILE);
+  const file = installationPath();
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     if (parsed && typeof parsed.key === "string" && parsed.key.length >= 16) {
@@ -133,7 +186,7 @@ function loadInstallation() {
 
 function persistInstallation(value) {
   try {
-    const file = path.join(process.cwd(), "data", INSTALLATION_FILE);
+    const file = installationPath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ key: value.key, credential: value.credential ?? null }, null, 2), { mode: 0o600 });
   } catch (error) {
@@ -446,31 +499,278 @@ function verifyAction(pathname, method) {
 
 /* --------------------------------------------------------- login ticket --- */
 
-async function preAuthenticate({ typedName, password }) {
-  if (!TICKET_PATTERN.test(password)) return undefined;
-  let redeemed;
-  try {
-    const { token, path: ticketPath } = await worldEndpoint("/tickets/redeem");
-    if (!token) return undefined;
-    redeemed = await platformFetch(ticketPath, { method: "POST", token, body: { ticket: password } });
-  } catch (error) {
-    warn(`ticket redemption failed: ${error.message}`);
+/**
+ * Resolve a login before the password is checked. A hosted world (a distributed
+ * server.exe with a platform URL and no world secret) accepts only a website-issued
+ * single-use ticket: the platform is the sole authority on who may play, the host
+ * cannot vouch for a character, and a password login must never create a character
+ * the platform does not own. Anything else fails closed. A configured/standalone
+ * world keeps the old behaviour: try a ticket, otherwise fall back to the password.
+ */
+async function preAuthenticate({ typedName, password }, connection) {
+  const hosted = Boolean(platform.url) && !platform.worldSecret;
+  const refused = { reason: null };
+  const attempt = await redeemLoginTicket(password, hosted, refused);
+  if (!attempt.ok) {
+    // Hosted worlds never fall back to a password: a failed ticket is a refusal.
+    if (hosted && connection) connection.reject(refused.code ?? 3, refused.reason ?? "This login link has expired or is invalid. Please return to the PaeScape website.");
     return undefined;
   }
-  if (!redeemed.ok || !redeemed.json?.character) return undefined; // not a ticket: fall back to a password
 
-  const characterName = String(redeemed.json.character.name);
+  const characterName = attempt.characterName;
+  // Hosted worlds enforce the platform's ban decisions and one-session rule
+  // before any authoritative state is loaded. A ban is never inferred locally.
+  if (hosted) {
+    const blocked = await moderationFor(characterName);
+    if (blocked) {
+      if (connection) connection.reject(4, blocked);
+      return undefined;
+    }
+  }
   const accountKey = Accounts.accountOf(characterName) ?? Accounts.key(characterName);
   if (!Accounts.entryOf(accountKey)) {
     try {
       Accounts.ensure(characterName);
-    } catch {
+    } catch (error) {
+      warn(`could not register the ticket character ${characterName}: ${error.message}`);
+      if (hosted && connection) connection.reject(8, "The login server is busy.");
       return undefined;
     }
   }
+  // The character's authoritative save comes from the platform (the hosted store).
   const save = GameConstants.PLAYER_PERSISTENCE.load(characterName, MAIN_PROFILE) ?? null;
+  if (hosted) {
+    try {
+      const characterId = await characterIdFor(characterName);
+      const issued = characterId ? await openCharacterSession(characterId, characterName) : null;
+      if (issued) characterSessions.set(accountKey, issued);
+    } catch (error) {
+      // A duplicate live session is a refusal: the platform is authoritative.
+      if (error && error.status === 409) {
+        if (connection) connection.reject(5, "This character is already logged in.");
+        return undefined;
+      }
+      warn(`could not open a gameplay session for ${characterName}: ${error.message}`);
+      if (connection) connection.reject(8, "The PaeScape platform is unavailable; please try again shortly.");
+      return undefined;
+    }
+  }
   log(`ticket login for ${characterName}`);
   return { username: characterName, credentialName: characterName, save, passwordHash: String(save?.getPasswordHashWithSalt?.() ?? "") };
+}
+
+/** The platform's character id for a name on this world, or null. */
+async function characterIdFor(characterName) {
+  const local = GameConstants.PLAYER_PERSISTENCE;
+  if (local && typeof local.resolveCharacterId === "function") return local.resolveCharacterId(characterName);
+  const result = await platformFetch(`/api/server/characters/by-name/${encodeURIComponent(characterName)}`, { token: lease.token });
+  return result.ok && result.json?.character?.id ? String(result.json.character.id) : null;
+}
+
+/**
+ * The platform's ban decision for a character: null when they may play, or a
+ * message when login must be refused. The moderation route resolves the name on
+ * this world, so a world ban is scoped to the world this lease belongs to and a
+ * platform ban is reported as such.
+ */
+async function moderationFor(characterName) {
+  if (!lease) return null;
+  try {
+    const result = await platformFetch(
+      `/api/server/characters/none/moderation?name=${encodeURIComponent(characterName)}`,
+      { token: lease.token },
+    );
+    if (!result.ok) return null;
+    const moderation = result.json?.moderation;
+    if (!moderation || moderation.action !== "ban") return null;
+    return moderation.scope === "platform"
+      ? "Your PaeScape account is banned. " + (moderation.reason ?? "")
+      : "You are banned from this world. " + (moderation.reason ?? "");
+  } catch (error) {
+    warn(`moderation lookup failed for ${characterName}: ${error.message}`);
+    return "The PaeScape platform is unavailable; please try again shortly.";
+  }
+}
+
+/** Create a live platform session and schedule its renewal. */
+async function openCharacterSession(characterId, characterName) {
+  const result = await platformFetch("/api/server/character-sessions", {
+    method: "POST", token: lease.token,
+    body: { characterId, ttlSeconds: 900 },
+  });
+  if (!result.ok || !result.json?.token) {
+    const error = new Error(result.json?.error ?? `session creation failed (${result.status})`);
+    error.status = result.status;
+    throw error;
+  }
+  const issued = {
+    token: String(result.json.token),
+    characterId,
+    username: characterName,
+    expiresAt: Date.parse(result.json.session?.expiresAt) || Date.now() + 900_000,
+    timer: null,
+  };
+  scheduleCharacterSessionRenewal(issued);
+  return issued;
+}
+
+function scheduleCharacterSessionRenewal(issued) {
+  if (issued.timer) clearInterval(issued.timer);
+  issued.timer = setInterval(async () => {
+    if (!lease) return;
+    const result = await platformFetch(`/api/server/character-sessions/${encodeURIComponent(issued.token)}/renew`, {
+      method: "POST", token: lease.token, body: { ttlSeconds: 900 },
+    });
+    if (result.ok) {
+      issued.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 900_000;
+      return;
+    }
+    // A revoked or expired lease is a hard logout: the platform is authoritative.
+    characterSessions.delete(Accounts.key(issued.username));
+    if (issued.timer) clearInterval(issued.timer);
+    const player = api.core.World.getPlayerByName?.(issued.username);
+    if (player) player.requestLogout?.();
+  }, 300_000);
+  issued.timer.unref?.();
+}
+
+/** End a player's hosted gameplay session (logout, disconnect or ban). */
+async function closeCharacterSession(username) {
+  const key = Accounts.key(username);
+  const issued = characterSessions.get(key);
+  if (!issued) return;
+  characterSessions.delete(key);
+  if (issued.timer) clearInterval(issued.timer);
+  if (!lease) return;
+  try {
+    await platformFetch(`/api/server/character-sessions/${encodeURIComponent(issued.token)}?reason=logout`, {
+      method: "DELETE", token: lease.token,
+    });
+  } catch (error) {
+    warn(`could not end the gameplay session for ${username}: ${error.message}`);
+  }
+}
+
+/**
+ * Forward any administrative audit events the world emits to the platform, so a
+ * host's own grants are recorded centrally. This never gates the action: hosts
+ * keep full authority and the audit is best-effort.
+ */
+async function recordAdministrativeAudit(event) {
+  if (!lease || !platform.url || platform.worldSecret) return;
+  const payload = event && typeof event === "object" ? event : {};
+  const characterName = payload.characterName ?? payload.player?.getUsername?.() ?? null;
+  // The audit route keys on the platform character id, so resolve the name the
+  // host already acts on. A name that is not registered on this world is audited
+  // without a character rather than dropped.
+  let characterId = null;
+  if (characterName) {
+    try {
+      characterId = await characterIdFor(characterName);
+    } catch (error) {
+      warn(`could not resolve ${characterName} for an administrative audit: ${error.message}`);
+    }
+  }
+  try {
+    await platformFetch("/api/server/economy/administrative", {
+      method: "POST",
+      token: lease.token,
+      body: {
+        characterId,
+        operationType: payload.operationType ?? payload.kind ?? "admin",
+        itemId: payload.itemId ?? null,
+        quantity: payload.quantity ?? null,
+        currencyAmount: payload.currencyAmount ?? null,
+        actor: payload.actor ?? payload.player?.getUsername?.() ?? "world-host",
+        detail: payload.detail ?? null,
+      },
+    });
+  } catch (error) {
+    warn(`could not record an administrative audit event: ${error.message}`);
+  }
+}
+
+/**
+ * Store an in-game abuse report in the platform database (hosted mode). A
+ * standalone world keeps writing the local JSON-lines file; hosted mode must
+ * never fall back to local storage.
+ */
+async function recordHostedAbuseReport(event) {
+  if (!lease || !platform.url || platform.worldSecret) return;
+  if (!event || !event.reported) return;
+  try {
+    await platformFetch("/api/server/abuse-reports", {
+      method: "POST",
+      token: lease.token,
+      body: {
+        reporterName: String(event.reporter ?? ""),
+        reportedName: String(event.reported),
+        category: mapAbuseCategory(event.ruleId),
+        ruleId: event.ruleId ?? null,
+        details: String(event.rule ?? ""),
+      },
+    });
+  } catch (error) {
+    warn(`could not store an abuse report centrally: ${error.message}`);
+  }
+}
+
+/** Map the OSRS rule id to the platform's report category. */
+function mapAbuseCategory(ruleId) {
+  switch (Number(ruleId)) {
+    case 3: case 6: case 7: case 11: return "cheating";
+    case 4: case 12: case 17: case 18: case 20: return "abuse";
+    case 5: case 8: case 14: case 21: return "scam";
+    case 10: case 16: return "spam";
+    case 15: case 19: return "harassment";
+    default: return "other";
+  }
+}
+
+/**
+ * Redeem a login password as a platform ticket. Returns { ok: true, characterName }
+ * or { ok: false }; `refused` carries the rejection code and message a hosted world
+ * should report. Never throws, so the caller decides how to fail.
+ */
+async function redeemLoginTicket(password, hosted, refused) {
+  if (!TICKET_PATTERN.test(password)) {
+    refused.code = 3;
+    refused.reason = "Please sign in through the PaeScape website to play this world.";
+    return { ok: false };
+  }
+  // An outdated world is draining: it must not accept new gameplay sessions.
+  if (hosted && outdated) {
+    refused.code = 4;
+    refused.reason = "This world is restarting to install an update. Please try again in a moment.";
+    return { ok: false };
+  }
+  if (hosted && !lease) {
+    refused.code = 4;
+    refused.reason = "This world is not authorised with the PaeScape platform yet. Please try again shortly.";
+    return { ok: false };
+  }
+  let redeemed;
+  try {
+    const { token, path: ticketPath } = await worldEndpoint("/tickets/redeem");
+    if (!token) {
+      refused.code = 4;
+      refused.reason = "This world is not authorised with the PaeScape platform yet. Please try again shortly.";
+      return { ok: false };
+    }
+    redeemed = await platformFetch(ticketPath, { method: "POST", token, body: { ticket: password } });
+  } catch (error) {
+    warn(`ticket redemption failed: ${error.message}`);
+    // The platform could not be asked. Never fall back to a local character: fail closed.
+    refused.code = 8;
+    refused.reason = "The PaeScape platform is unavailable; please try again shortly.";
+    return { ok: false };
+  }
+  if (!redeemed.ok || !redeemed.json?.character) {
+    refused.code = 3;
+    refused.reason = "This login link has expired or is invalid. Please return to the PaeScape website.";
+    return { ok: false };
+  }
+  return { ok: true, characterName: String(redeemed.json.character.name) };
 }
 
 /* ------------------------------------------------------------ ::link ------ */
@@ -572,6 +872,12 @@ async function handshake() {
     markOutdated(result.json?.error ?? "This server is outdated.");
     return null;
   }
+  if (result.status === 401 && installation.credential) {
+    // We are enrolled but the platform refused the credential: it was revoked or
+    // rotated on the website. This is terminal - restarting cannot fix it.
+    fatalExit(11, `the installation credential was refused: ${result.json?.error ?? "revoked or invalid"}. Re-enroll this server on the website.`);
+    return null;
+  }
   if (!result.ok || !result.json?.lease?.token) {
     warn(`handshake refused: ${result.json?.error ?? result.status}`);
     return null;
@@ -671,6 +977,22 @@ function playerCount() {
   return api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0;
 }
 
+/**
+ * Warm the authoritative world-state mirror (scoreboards, records, clans, the
+ * party chest) once a lease exists, so a plugin's first read on a game tick is a
+ * memory lookup rather than a blocking platform round trip. Safe to call more than
+ * once: WorldData loads only until the mirror is populated.
+ */
+function prefetchWorldData() {
+  try {
+    const loaded = worldData.prefetch();
+    if (loaded) log("world state loaded from the platform");
+    else if (worldData.isHosted()) warn("world state is not loaded yet; hosted plugins will refuse writes until it is");
+  } catch (error) {
+    warn(`could not load world state: ${error && error.message ? error.message : error}`);
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -685,25 +1007,69 @@ function markOutdated(message) {
   outdated = true;
   warn(`OUTDATED: ${message}`);
   if (leaseTimer) clearTimeout(leaseTimer);
-  if (lease) lease = null;
+  // Keep the old lease for a moment: the platform rejects stale leases on the
+  // persistence routes, so we exchange it for a short, bounded "drain" lease
+  // that only permits character saves. Without this the final save during an
+  // automatic update would be refused and the server could not shut down safely.
+  const staleLease = lease ? lease.token : null;
+  if (staleLease) {
+    void platformFetch("/api/server/lease/drain", { method: "POST", token: staleLease })
+      .then((result) => {
+        if (result.ok && result.json?.token) {
+          lease = {
+            token: String(result.json.token),
+            expiresAt: String(result.json.expiresAt),
+            generation: Number(result.json.generation) || 0,
+            configRevision: Number(lease?.configRevision) || 0,
+            contentRevision: lease?.contentRevision ?? null,
+            drain: true,
+          };
+          log("obtained a bounded drain lease for final character saves");
+        } else {
+          warn(`could not obtain a drain lease (${result.status}${result.json?.error ? `: ${result.json.error}` : ""}); final saves may be refused`);
+        }
+      })
+      .catch((error) => warn(`could not obtain a drain lease: ${error.message}`));
+  }
   try {
     api.core.World.sendMessage("The server is updating to a new version and will restart shortly. Please log out safely.");
   } catch { /* world not ready */ }
   setTimeout(() => {
     log("shutting down for an update; the launcher will restart the server");
     try {
-      api.core.Server.shutdown("paescape-update");
+      // Exit with the supervisor's distinct "update required" code so the host
+      // launcher knows to install the new release and start the server again.
+      if (typeof api.core.Server.shutdownForUpdate === "function") {
+        api.core.Server.shutdownForUpdate("paescape-update");
+      } else {
+        api.core.Server.shutdown("paescape-update");
+      }
     } catch (error) {
       warn(`graceful shutdown failed, exiting: ${error.message}`);
-      process.exit(0);
+      process.exit(10);
     }
   }, 5_000).unref?.();
 }
 
 /* ------------------------------------------------------------- lifecycle --- */
 
+/**
+ * Publish the platform origin, config reader and a live lease-token getter to the
+ * shared bridge (plugins/paescape/PaeScapeBridge.js). The persistence adapter reads
+ * through these closures, so it always sees the current lease, including one obtained
+ * after the hosted enrollment handshake completed.
+ */
+function publishPlatformAccess() {
+  bridge.setPlatformAccess({
+    platformOrigin: () => platform.url,
+    leaseToken: () => (lease ? lease.token : null),
+    readConfig,
+  });
+}
+
 function start() {
   platform = readConfig();
+  publishPlatformAccess();
   if (!platform.url) {
     log("no PAESCAPE_PLATFORM_URL; running standalone");
     return;
@@ -726,6 +1092,7 @@ function start() {
 function startConfigured() {
   authenticate()
     .then(() => fetchPublicKey())
+    .then(() => prefetchWorldData())
     .then(() => heartbeat())
     .catch((error) => warn(`startup handshake failed: ${error.message}`));
   heartbeatTimer = setInterval(() => void heartbeat(), HEARTBEAT_INTERVAL_MS);
@@ -749,12 +1116,13 @@ async function startHosted() {
       const result = await handshake();
       if (result) await fetchContentManifest();
     }
+    if (lease) prefetchWorldData();
     if (!installation.credential || !lease) {
       // Retry until the host claims the code (or the world is outdated).
       enrollmentTimer = setInterval(() => {
         if (lease || outdated) return;
         void beginEnrollment().then((enrolled) => {
-          if (enrolled?.credential) return handshake().then(() => fetchContentManifest());
+          if (enrolled?.credential) return handshake().then(() => fetchContentManifest()).then(() => prefetchWorldData());
           return undefined;
         });
       }, 60_000);
@@ -769,14 +1137,27 @@ module.exports = {
   enabled: false,
   register(pluginApi) {
     api = pluginApi;
-    pluginApi.registerLoginExtension(() => ({ preAuthenticate }));
+    publishPlatformAccess();
+    pluginApi.registerLoginExtension((connection) => ({ preAuthenticate: (event) => preAuthenticate(event, connection) }));
     pluginApi.registerCommand("link", linkCommand, pluginApi.core.PlayerRights.NONE, "Link this character to your PaeScape account");
     pluginApi.onServerStartup(() => start());
+    // A logout or disconnect ends the platform gameplay session. The account's
+    // other characters cannot log in while a fresh session is live; a crash
+    // leaves a stale lease the 60-second reclaim window recovers.
+    pluginApi.onPlayerLogout((event) => void closeCharacterSession(event.username));
+    pluginApi.onPlayerDisconnect((event) => void closeCharacterSession(event.username));
+    // Forward administrative actions to the platform audit trail. Hosts keep
+    // full control; this only records what a host already did.
+    pluginApi.onCustomEvent("persistence:admin-action", (event) => void recordAdministrativeAudit(event));
+    pluginApi.onCustomEvent("report:abuse", (event) => void recordHostedAbuseReport(event));
     pluginApi.onServerShutdown(() => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (sessionTimer) clearTimeout(sessionTimer);
       if (leaseTimer) clearTimeout(leaseTimer);
       if (enrollmentTimer) clearInterval(enrollmentTimer);
+      for (const issued of characterSessions.values()) {
+        if (issued.timer) clearInterval(issued.timer);
+      }
     });
   },
 };
