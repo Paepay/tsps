@@ -66,9 +66,20 @@ let currentExe = buildTinyExe("v1");
 let generation = 1;
 let tamperSignature = false;
 let corruptDownload = false;
+/**
+ * How many more downloads should be cut short mid-body (simulating a proxy RST).
+ * Each served download decrements it once; once it reaches zero, downloads run
+ * to completion so a test can prove the resume path finishes.
+ */
+let interruptDownloads = 0;
+/** When true, answer a Range request as a full 200 (ignore the range). */
+let ignoreRange = false;
+/** When true, answer a Range request with a deliberately wrong Content-Range. */
+let badContentRange = false;
+/** When true, report an entry size that disagrees with the signed manifest. */
+let tamperEntryBytes = false;
 /** Called after a download is served; lets a test advance the current release. */
 let afterDownload = null;
-
 function manifestFor(gen, exeBytes) {
   return {
     format: "paescape-server-release", formatVersion: 1, releaseId: "rel_" + gen, generation: gen,
@@ -88,7 +99,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({
       ok: true, channel: "stable", generation, version: "1.0." + generation, protocolVersion: 1, apiMinVersion: 1,
-      publishedAt: manifest.publishedAt, entry: "server.exe", entrySha256: manifest.files[0].sha256, entryBytes: currentExe.length,
+      publishedAt: manifest.publishedAt, entry: "server.exe", entrySha256: manifest.files[0].sha256, entryBytes: tamperEntryBytes ? currentExe.length + 7 : currentExe.length,
       files: manifest.files, manifestPayload: payload,
       signature: crypto.sign(null, Buffer.from(payload, "utf8"), crypto.generateKeyPairSync("ed25519").privateKey).toString("base64"),
       releaseSignature: tamperSignature ? Buffer.from("tampered").toString("base64") : sig, key: { algorithm: "ecdsa-p256", x: jwk.x, y: jwk.y },
@@ -97,8 +108,41 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname.endsWith("/api/releases/download")) {
-    const bytes = corruptDownload ? Buffer.concat([currentExe, Buffer.from("XX")]) : currentExe;
-    res.writeHead(200, { "content-type": "application/octet-stream" });
+    const bytes = corruptDownload ? (() => { const b = Buffer.from(currentExe); b[Math.floor(b.length / 2)] ^= 0xff; return b; })() : currentExe;
+    const total = bytes.length;
+    const rangeHeader = req.headers.range;
+    // A deliberately broken Content-Range proves the launcher rejects a lying
+    // proxy instead of appending arbitrary bytes.
+    if (rangeHeader && badContentRange) {
+      const m = Number(/bytes=(\d+)-/.exec(rangeHeader)?.[1] ?? 0);
+      res.writeHead(206, { "content-type": "application/octet-stream", "content-range": `bytes ${m + 7}-${total - 1}/${total}`, "content-length": total - (m + 7) });
+      res.end(bytes.subarray(m + 7));
+      return;
+    }
+    // ignoreRange simulates a proxy that drops the Range header and answers 200.
+    if (rangeHeader && !ignoreRange) {
+      const m = /bytes=(\d+)-(\d*)/.exec(rangeHeader);
+      const start = Number(m[1]);
+      const end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
+      const slice = bytes.subarray(start, end + 1);
+      res.writeHead(206, { "content-type": "application/octet-stream", "content-range": `bytes ${start}-${end}/${total}`, "content-length": slice.length });
+      if (interruptDownloads > 0) {
+        // Send a partial body then destroy the socket, as a reset mid-transfer.
+        interruptDownloads -= 1;
+        res.write(slice.subarray(0, Math.max(1, Math.floor(slice.length / 2))));
+        setTimeout(() => res.destroy(), 10);
+        return;
+      }
+      res.end(slice, () => { const hook = afterDownload; if (hook) { afterDownload = null; hook(); } });
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": total });
+    if (interruptDownloads > 0) {
+      interruptDownloads -= 1;
+      res.write(bytes.subarray(0, Math.max(1, Math.floor(total / 2))));
+      setTimeout(() => res.destroy(), 10);
+      return;
+    }
     res.end(bytes, () => {
       const hook = afterDownload;
       if (hook) { afterDownload = null; hook(); }
@@ -108,6 +152,44 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end();
 });
 
+/**
+ * A second mock origin that serves ONLY the download route, to prove the
+ * launcher fetches the manifest from PAESCAPE_PLATFORM_URL and the large
+ * executable from a distinct PAESCAPE_DOWNLOAD_URL (the DNS-only publishing
+ * host in production). Every request to it must be a Range GET; a non-range
+ * request is refused so the split is unambiguous.
+ */
+function downloadOnlyServer(bytes) {
+  let rangeRequests = 0;
+  let nonRangeRequests = 0;
+  const srv = http.createServer((req, res) => {
+    if (req.url.includes("/api/releases/download")) {
+      const rangeHeader = req.headers.range;
+      if (!rangeHeader) {
+        nonRangeRequests += 1;
+        res.writeHead(200, { "content-type": "application/octet-stream", "content-length": bytes.length });
+        if (interruptDownloads > 0) {
+          interruptDownloads -= 1;
+          res.write(bytes.subarray(0, Math.max(1, Math.floor(bytes.length / 2))));
+          setTimeout(() => res.destroy(), 10);
+          return;
+        }
+        res.end(bytes);
+        return;
+      }
+      rangeRequests += 1;
+      const m = /bytes=(\d+)-(\d*)/.exec(rangeHeader);
+      const start = Number(m[1]);
+      const end = m[2] ? Math.min(Number(m[2]), bytes.length - 1) : bytes.length - 1;
+      const slice = bytes.subarray(start, end + 1);
+      res.writeHead(206, { "content-type": "application/octet-stream", "content-range": `bytes ${start}-${end}/${bytes.length}`, "content-length": slice.length });
+      res.end(slice);
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  return { srv, stats: () => ({ rangeRequests, nonRangeRequests }) };
+}
 async function withServer(fn) {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
@@ -259,7 +341,111 @@ await withServer(async (platformUrl) => {
     assert.ok(runs >= 2 && runs <= 6, `the server ran a bounded number of times, saw ${runs}`);
     currentExe = buildTinyExe("v1"); generation = 1;
   });
-});
+  // --- Resumable download and metadata-binding regressions (task19).
+
+  await check("an interrupted download resumes over Range requests and installs the exact file", async () => {
+    const dir10 = freshServerDir();
+    // Generation 1 is up to date once installed; start from nothing so an update
+    // runs. Cut three failed (interrupted) transfers, then let it complete.
+    interruptDownloads = 3;
+    const expectedSha = crypto.createHash("sha256").update(currentExe).digest("hex");
+    const r = await launch(dir10, platformUrl, { PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1", PAESCAPE_DOWNLOAD_ATTEMPTS: "8" });
+    assert.match(r.stdout, /download complete and verified/, r.stdout + r.stderr);
+    assert.match(r.stdout, /TINY-EXE-RAN:v1/, r.stdout + r.stderr);
+    // The installed exe is bit-for-bit the release, and no partial files remain.
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(path.join(dir10, "server.exe"))).digest("hex"), expectedSha);
+    assert.ok(!fs.existsSync(path.join(dir10, "server.exe.part")), "no partial file is left behind");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir10, "paescape-installed.json"), "utf8")).generation, 1);
+    interruptDownloads = 0;
+  });
+
+  await check("a proxy that ignores Range (full 200) never corrupts the partial file", async () => {
+    // Serve a partial 206 first (interrupted), then answer the resume with a
+    // full 200. The launcher must restart from zero, not append.
+    const dir11 = freshServerDir();
+    interruptDownloads = 1;
+    ignoreRange = true;
+    const expectedSha = crypto.createHash("sha256").update(currentExe).digest("hex");
+    const r = await launch(dir11, platformUrl, { PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout + r.stderr, /server ignored the resume request/, r.stdout + r.stderr);
+    assert.match(r.stdout, /TINY-EXE-RAN:v1/, r.stdout + r.stderr);
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(path.join(dir11, "server.exe"))).digest("hex"), expectedSha);
+    interruptDownloads = 0; ignoreRange = false;
+  });
+
+  await check("a response with a wrong Content-Range is refused, never appended", async () => {
+    const dir12 = freshServerDir();
+    interruptDownloads = 1;
+    badContentRange = true;
+    // All attempts get a bogus Content-Range; the download must never complete.
+    const r = await launch(dir12, platformUrl, { PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1", PAESCAPE_DOWNLOAD_ATTEMPTS: "2" });
+    assert.match(r.stdout + r.stderr, /unexpected Content-Range|did not complete after/, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /TINY-EXE-RAN/);
+    assert.ok(!fs.existsSync(path.join(dir12, "server.exe")), "nothing unverified is installed");
+    interruptDownloads = 0; badContentRange = false;
+  });
+
+  await check("a partial download from a different release is discarded, not resumed", async () => {
+    // Plant a partial file plus metadata for a different generation/sha; the
+    // launcher must not resume it.
+    const dir13 = freshServerDir();
+    const stale = Buffer.from("this belongs to an older release");
+    fs.writeFileSync(path.join(dir13, "server.exe.part"), stale);
+    fs.writeFileSync(path.join(dir13, "server.exe.part.json"), JSON.stringify({ generation: 99, sha256: "0".repeat(64), bytes: 999999999, url: "https://example.invalid/x" }));
+    const r = await launch(dir13, platformUrl, { PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1" });
+    assert.match(r.stdout, /download complete and verified/, r.stdout + r.stderr);
+    assert.match(r.stdout, /TINY-EXE-RAN:v1/, r.stdout + r.stderr);
+    assert.ok(fs.statSync(path.join(dir13, "server.exe")).size > stale.length, "the stale partial was not reused");
+  });
+
+  await check("unsigned metadata that disagrees with the signed manifest is refused", async () => {
+    const dir14 = freshServerDir();
+    // Tamper only the unsigned sibling field, leaving the signature valid.
+    tamperEntryBytes = true;
+    const r = await launch(dir14, platformUrl);
+    assert.match(r.stdout + r.stderr, /file size disagrees with the signed manifest/, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /TINY-EXE-RAN/);
+    assert.ok(!fs.existsSync(path.join(dir14, "server.exe")));
+    tamperEntryBytes = false;
+  });
+
+  await check("a corrupt body that hashes wrong is refused and nothing is installed", async () => {
+    const dir15 = freshServerDir();
+    corruptDownload = true;
+    const r = await launch(dir15, platformUrl, { PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1", PAESCAPE_DOWNLOAD_ATTEMPTS: "2" });
+    assert.match(r.stdout + r.stderr, /checksum|failed its checksum/, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /TINY-EXE-RAN/);
+    assert.ok(!fs.existsSync(path.join(dir15, "server.exe")), "a corrupt download is never installed");
+    corruptDownload = false;
+  });
+
+  await check("the manifest comes from the platform host and the executable from the download host", async () => {
+    // Requirement: normal API/manifest traffic stays on PAESCAPE_PLATFORM_URL,
+    // while the large executable is fetched from PAESCAPE_DOWNLOAD_URL. A
+    // distinct, download-only origin proves the two are not conflated.
+    const { srv, stats } = downloadOnlyServer(currentExe);
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    const downloadUrl = `http://127.0.0.1:${srv.address().port}`;
+    try {
+      const dir16 = freshServerDir();
+      interruptDownloads = 1;
+      // The mock platform server answers the manifest; the download host only
+      // answers the artifact. Both must be used for the run to succeed.
+      const r = await launch(dir16, platformUrl, {
+        PAESCAPE_DOWNLOAD_URL: downloadUrl,
+        PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1",
+      });
+      assert.match(r.stdout, /TINY-EXE-RAN:v1/, r.stdout + r.stderr);
+      const s = stats();
+      assert.ok(s.rangeRequests >= 1, `the resumed leg used a Range request (${JSON.stringify(s)})`);
+      // The full manifest download is a single 0- range request; the mock
+      // platform download route must not have been used at all.
+      assert.match(r.stdout, new RegExp("downloading server.exe .* from " + downloadUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), r.stdout);
+    } finally {
+      interruptDownloads = 0;
+      await new Promise((r) => srv.close(r));
+    }
+  });});
 
 console.log(failures === 0 ? "\nlauncher e2e: all checks passed" : `\nlauncher e2e: ${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

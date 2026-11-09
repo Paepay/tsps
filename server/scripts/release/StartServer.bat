@@ -16,14 +16,23 @@ rem  launcher is this one file.
 rem
 rem  Configuration (optional, via environment):
 rem    PAESCAPE_PLATFORM_URL   override the platform origin
+rem    PAESCAPE_DOWNLOAD_URL   override the large-download origin (default: publish.paescape.online)
 rem    PAESCAPE_CHANNEL        release channel (default: stable)
 rem ============================================================================
 setlocal enabledelayedexpansion
-set "PAESCAPE_LAUNCHER_VERSION=2"
+set "PAESCAPE_LAUNCHER_VERSION=3"
+set "PAESCAPE_PLATFORM_URL_SET="
+if defined PAESCAPE_PLATFORM_URL set "PAESCAPE_PLATFORM_URL_SET=1"
 if not defined PAESCAPE_PLATFORM_URL set "PAESCAPE_PLATFORM_URL=https://paescape.online"
 if not defined PAESCAPE_CHANNEL set "PAESCAPE_CHANNEL=stable"
+rem The ~533 MB signed executable downloads from the DNS-only publishing host,
+rem which the origin serves directly with a publicly trusted certificate, so a
+rem Cloudflare edge reset cannot kill an in-flight transfer.
+rem Precedence: PAESCAPE_DOWNLOAD_URL, else an explicit PAESCAPE_PLATFORM_URL,
+rem else the DNS-only publishing host.
+if not defined PAESCAPE_DOWNLOAD_URL if not defined PAESCAPE_PLATFORM_URL_SET set "PAESCAPE_DOWNLOAD_URL=https://publish.paescape.online"
+if not defined PAESCAPE_DOWNLOAD_URL set "PAESCAPE_DOWNLOAD_URL=%PAESCAPE_PLATFORM_URL%"
 set "PAESCAPE_SERVER_DIR=%~dp0"
-
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $f='%~f0'; $t=[IO.File]::ReadAllText($f); $nl=[char]10; $a=$t.IndexOf($nl+'#:PS-START'); $b=$t.IndexOf($nl+'#:PS-END'); if($a -lt 0 -or $b -lt 0){ Write-Host 'Launcher payload is missing.' -ForegroundColor Red; exit 2 }; $code=$t.Substring($a+1,$b-$a-1); $tmp=Join-Path $env:TEMP ('paescape-launcher-' + [Guid]::NewGuid().ToString('N') + '.ps1'); [IO.File]::WriteAllText($tmp,$code); try { & powershell -NoProfile -ExecutionPolicy Bypass -File $tmp; exit $LASTEXITCODE } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }"
 
 set "RC=%ERRORLEVEL%"
@@ -57,6 +66,14 @@ $EXIT_FATAL = 13
 
 $PlatformUrl = ($env:PAESCAPE_PLATFORM_URL).TrimEnd('/')
 $Channel     = if ($env:PAESCAPE_CHANNEL) { $env:PAESCAPE_CHANNEL } else { 'stable' }
+
+# The large signed executable downloads from the DNS-only publishing host; the
+# apex host stays the default for the website, the API and the manifest.
+$DownloadBase = ($env:PAESCAPE_DOWNLOAD_URL).TrimEnd('/')
+# Bounded download retry tuning. Defaults are modest; tests shrink them.
+$DownloadMaxAttempts = if ($env:PAESCAPE_DOWNLOAD_ATTEMPTS) { [int]$env:PAESCAPE_DOWNLOAD_ATTEMPTS } else { 8 }
+$DownloadIdleTimeoutSeconds = if ($env:PAESCAPE_DOWNLOAD_IDLE_TIMEOUT_SECONDS) { [int]$env:PAESCAPE_DOWNLOAD_IDLE_TIMEOUT_SECONDS } else { 60 }
+$DownloadBackoffSeconds = if ($env:PAESCAPE_DOWNLOAD_BACKOFF_SECONDS) { [int]$env:PAESCAPE_DOWNLOAD_BACKOFF_SECONDS } else { 2 }
 $Root        = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Root) { $Root = (Get-Location).Path }
 # When extracted the script lives in %TEMP%; the server directory is %~dp0 of the
@@ -124,11 +141,227 @@ function Get-FileSha256([string]$Path) {
 }
 
 <#
+ Parse a Content-Range response header ("bytes start-end/total", or "bytes */total"
+ for a 416). Returns $null when the header is absent or malformed.
+#>
+function Parse-ContentRange([string]$Value) {
+  if (-not $Value) { return $null }
+  $m = [regex]::Match($Value, '^\s*bytes\s+(\d+)-(\d+)/(\d+)\s*$')
+  if (-not $m.Success) { return $null }
+  return @{
+    Start = [long]$m.Groups[1].Value
+    End   = [long]$m.Groups[2].Value
+    Total = [long]$m.Groups[3].Value
+  }
+}
+
+<#
+ Parse the canonical signed manifest payload and bind the entry executable's
+ checksum, size and generation to it. The signature covers manifestPayload, so
+ those are the trusted values; the unsigned sibling fields on the document
+ (generation, entrySha256, entryBytes) are accepted only when they agree with
+ the signed manifest, and any disagreement aborts the update.
+#>
+function Resolve-SignedEntry($Doc) {
+  $manifest = $null
+  try {
+    $manifest = ([string]$Doc.manifestPayload) | ConvertFrom-Json
+  } catch {
+    throw "The signed manifest payload could not be parsed. Refusing to continue."
+  }
+  if ($null -eq $manifest -or $null -eq $manifest.files) {
+    throw "The signed manifest has no file list. Refusing to continue."
+  }
+  $entryPath = [string]$manifest.entry
+  if (-not $entryPath) { $entryPath = [string]$manifest.files[0].path }
+  $entryFile = $null
+  foreach ($file in $manifest.files) { if ([string]$file.path -eq $entryPath) { $entryFile = $file; break } }
+  if ($null -eq $entryFile) { throw "The signed manifest has no entry file. Refusing to continue." }
+  $signedGeneration = [int]$manifest.generation
+  $signedSha256 = ([string]$entryFile.sha256).ToLower()
+  $signedBytes = [long]$entryFile.bytes
+  if ($signedGeneration -le 0 -or $signedBytes -le 0 -or $signedSha256.Length -ne 64) {
+    throw "The signed manifest entry is incomplete. Refusing to continue."
+  }
+  # The unsigned launcher metadata must agree with the signed manifest: a
+  # mismatch means the document was altered after it was signed.
+  if ($Doc.generation -ne $null -and [int]$Doc.generation -ne $signedGeneration) {
+    throw "The launcher generation disagrees with the signed manifest. Refusing to continue."
+  }
+  if ($Doc.entrySha256 -and ([string]$Doc.entrySha256).ToLower() -ne $signedSha256) {
+    throw "The launcher checksum disagrees with the signed manifest. Refusing to continue."
+  }
+  if ($Doc.entryBytes -ne $null -and [long]$Doc.entryBytes -ne $signedBytes) {
+    throw "The launcher file size disagrees with the signed manifest. Refusing to continue."
+  }
+  return @{
+    Generation = $signedGeneration
+    Version    = [string]$manifest.version
+    Sha256     = $signedSha256
+    Bytes      = $signedBytes
+    Entry      = $entryPath
+    ReleaseId  = [string]$manifest.releaseId
+  }
+}
+
+<#
+ Download the release executable with resumable HTTP range requests.
+
+ The transfer is written to $PartPath; between attempts the partial file is
+ preserved so a dropped connection resumes where it stopped instead of
+ restarting a 500+ MB download. A small sidecar ($MetaPath) records the signed
+ release identity beside the partial file, so a partial download that belongs to
+ a different release is discarded rather than resumed. Every attempt validates
+ the status and Content-Range and refuses to append anything but the exact
+ expected byte window, so a proxy answering a Range request with a full 200 body
+ can never corrupt the file. Retries are bounded with exponential backoff and an
+ idle (per-read) timeout, so a slow but progressing transfer is allowed to
+ finish while a stalled one is retried.
+#>
+function Invoke-ResumableDownload {
+  param(
+    [string]$Url,
+    [string]$PartPath,
+    [string]$MetaPath,
+    [int]$Generation,
+    [string]$ExpectedSha256,
+    [long]$ExpectedBytes,
+    [int]$MaxAttempts = 8,
+    [int]$IdleTimeoutSeconds = 60,
+    [int]$BackoffBase = 2
+  )
+
+  $expectedSha = $ExpectedSha256.ToLower()
+
+  # Only resume a partial file that belongs to this exact signed release.
+  $resume = $false
+  if ((Test-Path -LiteralPath $PartPath) -and (Test-Path -LiteralPath $MetaPath)) {
+    try {
+      $meta = Get-Content -LiteralPath $MetaPath -Raw | ConvertFrom-Json
+      $resume = ([int]$meta.generation -eq $Generation) -and
+                (([string]$meta.sha256).ToLower() -eq $expectedSha) -and
+                ([long]$meta.bytes -eq $ExpectedBytes) -and
+                ([string]$meta.url -eq $Url)
+    } catch { $resume = $false }
+  }
+  if (-not $resume) {
+    if (Test-Path -LiteralPath $PartPath) { Remove-Item -LiteralPath $PartPath -Force }
+    if (Test-Path -LiteralPath $MetaPath) { Remove-Item -LiteralPath $MetaPath -Force }
+  }
+  $metaJson = @{ generation = $Generation; sha256 = $expectedSha; bytes = $ExpectedBytes; url = $Url } | ConvertTo-Json
+  [IO.File]::WriteAllText($MetaPath, $metaJson, (New-Object System.Text.UTF8Encoding($false)))
+
+  $attempt = 0
+  $backoff = [Math]::Max(1, $BackoffBase)
+  while ($true) {
+    $attempt++
+    $offset = 0L
+    if (Test-Path -LiteralPath $PartPath) { $offset = (Get-Item -LiteralPath $PartPath).Length }
+    if ($offset -gt $ExpectedBytes) {
+      Warn2 "the partial download is larger than the expected file; discarding it"
+      Remove-Item -LiteralPath $PartPath -Force
+      $offset = 0
+    }
+    if ($offset -eq $ExpectedBytes) {
+      if ((Get-FileSha256 $PartPath) -eq $expectedSha) { return }
+      Warn2 "the completed download failed its checksum; restarting"
+      Remove-Item -LiteralPath $PartPath -Force
+      $offset = 0
+    }
+
+    $completed = $false
+    $written = $offset
+    try {
+      $req = [System.Net.HttpWebRequest]::Create($Url)
+      $req.Method = 'GET'
+      $req.Timeout = 60000
+      # A per-read idle timeout, not a total-transfer deadline: a slow but
+      # progressing download keeps resetting it and is allowed to finish.
+      $req.ReadWriteTimeout = $IdleTimeoutSeconds * 1000
+      $req.UserAgent = 'paescape-launcher/3'
+      if ($offset -gt 0) { [void]$req.AddRange([long]$offset) }
+      $resp = $req.GetResponse()
+      try {
+        $status = [int]$resp.StatusCode
+        $mode = $null
+        if ($status -eq 206) {
+          $cr = Parse-ContentRange ([string]$resp.Headers['Content-Range'])
+          if ($null -eq $cr -or $cr.Start -ne $offset -or $cr.End -lt $cr.Start -or $cr.End -ge $ExpectedBytes -or $cr.Total -ne $ExpectedBytes) {
+            throw ("the server returned an unexpected Content-Range")
+          }
+          $mode = [System.IO.FileMode]::Append
+        } elseif ($status -eq 200) {
+          if ($offset -ne 0) {
+            # The server ignored the Range request; never append a full body to
+            # a partial file. Discard the partial and take the whole file.
+            Warn2 "the server ignored the resume request; restarting the download"
+            Remove-Item -LiteralPath $PartPath -Force
+            $offset = 0
+            $written = 0
+          }
+          $length = $resp.ContentLength
+          if ($length -ge 0 -and $length -ne $ExpectedBytes) {
+            throw ("the server offered the wrong number of bytes")
+          }
+          $mode = [System.IO.FileMode]::Create
+        } elseif ($status -eq 416) {
+          throw "the server rejected the resume range (416)"
+        } else {
+          throw ("unexpected HTTP status")
+        }
+
+        $stream = $resp.GetResponseStream()
+        $file = New-Object System.IO.FileStream($PartPath, $mode, [System.IO.FileAccess]::Write)
+        try {
+          $buffer = New-Object byte[] 1048576
+          while ($true) {
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            if ($read -le 0) { break }
+            if (($written + $read) -gt $ExpectedBytes) {
+              throw "the server sent more bytes than the release declares"
+            }
+            $file.Write($buffer, 0, $read)
+            $written += $read
+          }
+          $file.Flush()
+        } finally {
+          $file.Close()
+        }
+        if ($written -eq $ExpectedBytes) { $completed = $true }
+      } finally {
+        $resp.Close()
+      }
+    } catch {
+      Warn2 ("download attempt " + $attempt + " failed: " + $_.Exception.Message)
+    }
+
+    if ($completed -and ((Get-FileSha256 $PartPath) -eq $expectedSha)) {
+      Ok "download complete and verified"
+      return
+    }
+    if ($completed) {
+      Warn2 "the downloaded file failed its checksum; restarting"
+      Remove-Item -LiteralPath $PartPath -Force
+    }
+
+    if ($attempt -ge $MaxAttempts) {
+      throw ("the download did not complete after " + $MaxAttempts + " attempts. The partial file is kept; run the launcher again to resume.")
+    }
+    $sleep = [Math]::Min(30, $backoff)
+    Warn2 ("download interrupted; retrying in " + $sleep + " s (attempt " + $attempt + " of " + $MaxAttempts + ")")
+    Start-Sleep -Seconds $sleep
+    $backoff = $backoff * 2
+  }
+}
+
+<#
  Install the current approved release if it is not already installed. Returns
- the generation now on disk. Every download is signature-checked, checksum-
- checked and installed with a rollback copy, so a failed update never leaves a
- broken server.exe behind. The loop re-queries the release after each install
- because another release may have become current while we were downloading.
+ the generation now on disk. The executable's checksum, size and generation come
+ from the cryptographically verified signed manifest, and every download is
+ resumable, checksum-checked and installed with a rollback copy, so a failed or
+ interrupted update never leaves a broken server.exe behind. The loop re-queries
+ the release after each install because another release may have become current
+ while we were downloading.
 #>
 function Install-CurrentRelease {
   $attempts = 0
@@ -145,40 +378,51 @@ function Install-CurrentRelease {
     }
     Ok "signature verified"
 
+    # Bind the executable to the signed manifest; unsigned metadata that
+    # disagrees is refused before a single byte is downloaded.
+    $signed = Resolve-SignedEntry $doc
+
     $installed = Get-Installed
     $installedGeneration = -1
     if ($installed -and $installed.generation -ne $null) { $installedGeneration = [int]$installed.generation }
 
-    if ($installedGeneration -eq [int]$doc.generation -and (Test-Path -LiteralPath $ServerExe)) {
-      # Confirm the bytes on disk still match the manifest before trusting them.
-      if ($doc.entrySha256 -and ((Get-FileSha256 $ServerExe) -eq ([string]$doc.entrySha256).ToLower())) {
-        Ok "installed release matches the current release (generation $($doc.generation))"
-        return [int]$doc.generation
+    if ($installedGeneration -eq $signed.Generation -and (Test-Path -LiteralPath $ServerExe)) {
+      # Confirm the bytes on disk still match the signed manifest before trusting them.
+      if ((Get-FileSha256 $ServerExe) -eq $signed.Sha256) {
+        Ok "installed release matches the current release (generation $($signed.Generation))"
+        return [int]$signed.Generation
       }
       Warn2 "server.exe on disk does not match the current release; re-downloading"
-    } elseif ($installedGeneration -eq [int]$doc.generation) {
+    } elseif ($installedGeneration -eq $signed.Generation) {
       Warn2 "server.exe is missing; re-downloading"
     } else {
-      Info "update required: generation $installedGeneration -> $($doc.generation)"
+      Info "update required: generation $installedGeneration -> $($signed.Generation)"
     }
 
-    # --- Download the executable and verify its checksum before installing.
-    $downloadUrl = "$PlatformUrl/platform/api/releases/download?channel=$Channel"
-    $tempNew = Join-Path $Root 'server.exe.new'
-    if (Test-Path -LiteralPath $tempNew) { Remove-Item -LiteralPath $tempNew -Force }
-    Info "downloading server.exe"
-    try {
-      Invoke-WebRequest -Uri $downloadUrl -OutFile $tempNew -TimeoutSec 300 -UseBasicParsing
-    } catch {
+    # --- Resumable, integrity-checked download of the signed entry file.
+    $downloadUrl = "$DownloadBase/platform/api/releases/download?channel=$Channel"
+    $partPath = Join-Path $Root 'server.exe.part'
+    $metaPath = Join-Path $Root 'server.exe.part.json'
+    $tempNew  = Join-Path $Root 'server.exe.new'
+
+    if ((Test-Path -LiteralPath $tempNew) -and ((Get-FileSha256 $tempNew) -eq $signed.Sha256)) {
+      Ok "reusing the verified download already on disk"
+    } else {
       if (Test-Path -LiteralPath $tempNew) { Remove-Item -LiteralPath $tempNew -Force }
-      throw "Download failed. $($_.Exception.Message)"
+      Info "downloading server.exe ($($signed.Bytes) bytes) from $DownloadBase"
+      $dlParams = @{ Url = $downloadUrl; PartPath = $partPath; MetaPath = $metaPath; Generation = $signed.Generation; ExpectedSha256 = $signed.Sha256; ExpectedBytes = $signed.Bytes; MaxAttempts = $DownloadMaxAttempts; IdleTimeoutSeconds = $DownloadIdleTimeoutSeconds; BackoffBase = $DownloadBackoffSeconds }
+      Invoke-ResumableDownload @dlParams
+      $newHash = Get-FileSha256 $partPath
+      if ($newHash -ne $signed.Sha256) {
+        Remove-Item -LiteralPath $partPath -Force
+        throw "The downloaded server.exe failed its checksum check. Refusing to install it."
+      }
+      Ok "checksum verified"
+      # Promote the verified partial into the install candidate.
+      if (Test-Path -LiteralPath $tempNew) { Remove-Item -LiteralPath $tempNew -Force }
+      Move-Item -LiteralPath $partPath -Destination $tempNew -Force
+      Remove-Item -LiteralPath $metaPath -Force -ErrorAction SilentlyContinue
     }
-    $newHash = Get-FileSha256 $tempNew
-    if ($doc.entrySha256 -and ($newHash -ne ([string]$doc.entrySha256).ToLower())) {
-      Remove-Item -LiteralPath $tempNew -Force
-      throw "The downloaded server.exe failed its checksum check. Refusing to install it."
-    }
-    Ok "checksum verified"
 
     # --- Safe replacement with rollback.
     $backup = Join-Path $Root 'server.exe.bak'
@@ -186,7 +430,7 @@ function Install-CurrentRelease {
     if (Test-Path -LiteralPath $ServerExe) {
       # If this fails, the executable is locked (the server is running).
       try { Move-Item -LiteralPath $ServerExe -Destination $backup -Force }
-      catch { Remove-Item -LiteralPath $tempNew -Force; throw "server.exe is in use - close the running server and run this launcher again." }
+      catch { throw "server.exe is in use - close the running server and run this launcher again. The verified download is kept for the retry." }
     }
     try {
       Move-Item -LiteralPath $tempNew -Destination $ServerExe -Force
@@ -194,10 +438,10 @@ function Install-CurrentRelease {
       if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $ServerExe -Force }
       throw "Could not install the update. The previous version has been restored."
     }
-    $stateJson = @{ generation = [int]$doc.generation; version = [string]$doc.version; sha256 = $newHash; installedAt = (Get-Date).ToString('s') } | ConvertTo-Json
+    $stateJson = @{ generation = [int]$signed.Generation; version = [string]$signed.Version; sha256 = $signed.Sha256; installedAt = (Get-Date).ToString('s') } | ConvertTo-Json
     # Write without a BOM: JSON.parse on other platforms rejects a leading BOM.
     [IO.File]::WriteAllText($StateFile, $stateJson, (New-Object System.Text.UTF8Encoding($false)))
-    Ok "installed version $($doc.version) (generation $($doc.generation))"
+    Ok "installed version $($signed.Version) (generation $($signed.Generation))"
   }
 }
 
