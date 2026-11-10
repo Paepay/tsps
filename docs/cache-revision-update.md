@@ -183,6 +183,30 @@ Reinstall it on the VPS whenever that script changes.
 | 431 object and 23 item names gone or reused | compile errors | identifiers regenerated; plugins renamed (e.g. "Scythe of Vitur") |
 | Eight items renamed outright: 9487–9490 "Wizard blizzard" → "Cocktail glass", 9735/9738 "Desert goat horn" → "Goat horn", 23595/23596 "Berserker ring" → "Berserker ring (i)" | Their `item-gameplay.json` entries were skipped (23595 lost its bonuses) | names updated; 23595 takes the imbued +8 its cache params give |
 
+## What revision 242 changed (osrs-242_2026-11-03)
+
+Compatibility work for the rev-242 release. Only the cache-format item below was a real
+format break; the rest is schema/name drift that the code reads positionally.
+
+| Change | Symptom | Fix |
+|---|---|---|
+| Loc transform/multiloc opcode moved from 77/92 to 97/98. The variant list is now 24-bit signed (`g3s`) loc ids, and opcode 98 also carries a default entry. | `LocType: Opcode 255 not implemented` (and 138, 11, 4, ...) on the new locs: the decoder reads opcode 77/92 as a no-op, so the buffer desyncs and the next bytes look like random opcodes. 4154 of 63320 objects failed to decode, which broke every object lookup (Blood Moon refinery, DT2 medallion desk/portal, Dragon Slayer II rowboat, Song of the Elves rooms). | server and client `LocType`: `opcode === 97 || opcode === 98` reads the two u16 varbit/varp selectors then the signed-24bit transforms (`ByteBuffer.readSignedMedium` = `(readMedium() << 8) >> 8`); 98 reads the default first. All 63334 objects decode again. |
+| `quest` DB table: column `questpoints` (index 17) renamed to `questpoints_override` (same index); the `cr_*` columns shifted | `QuestRuntime` summed `row.questpoints`, which is now 0, so the native quest-points maximum was wrong | `QuestRuntime` reads `questpoints ?? questpoints_override`; re-pinned the native quest-row test to the 242 maxima (flags 219, main total 187, QP 346) |
+| `didyouknow` DB table: `onmobile`/`mobileonly` removed, `extrareq` 5 -> 7 | none: no code reads this table (grep clean) | — |
+| New loc opcodes/counts in the raw stream (255, 138, 11, ...) | these were cascading mis-decodes from the 97/98 change, not new opcodes to implement | resolved by the LocType fix; no additional opcodes needed |
+| Items/NPCs/objects added (item 34766, npc 16876, object 63334 counts) | — | identifiers regenerated as usual; no renames affected custom content |
+
+`yarn compare:cache` reported no other DB-column or interface moves that our code reads by
+position. The three `getDbColumn` consumers (`CharterShips` `chartering_destinations`,
+`ItemStyles`, `HolidayRewards` `item_transmog`, `Omnishop` `omnishop_*`) all target tables that
+are byte-for-byte unchanged in 242.
+
+Reproducing the cache: point `server/target.txt` at `osrs-242_2026-11-03` and run
+`yarn ensure-cache` (or just start the server). `CachePipeline`/`ensure-cache` download the
+exact build from OpenRS2 by revision + date — for 242 that is OpenRS2 cache id **2757**
+(`https://archive.openrs2.org/caches/runescape/2757/disk.zip`, timestamp
+`2026-11-03T10:00:06Z`), which is the entry recorded in `server/caches/caches.json`. A copy on
+another machine is at `C:\RSPSapp\tsps\server\caches\osrs-242_2026-11-03`.
 ## Weekly builds within a revision
 
 Jagex ships content in weekly cache builds without a new revision. OpenRS2 lists each one
