@@ -1,4 +1,4 @@
-﻿"use strict";
+﻿﻿"use strict";
 
 /**
  * PaeScape Realms world-server integration.
@@ -50,6 +50,14 @@ const worldData = require("../persistence/WorldData");
 
 /** The control-token path prefix the core routes to this plugin. */
 const CONTROL_PREFIX = "/api/platform/";
+/**
+ * Every platform call is bounded: a platform (or a host's network) that accepts
+ * the connection but never answers must not stall startup stage 4-6 forever.
+ * A timeout aborts one attempt; callers report it as a transport failure and
+ * retry on their own (the launcher restarts a terminal exit, the enrollment
+ * poll keeps its code) rather than hanging with no line on the console.
+ */
+const PLATFORM_REQUEST_TIMEOUT_MS = Number(process.env.PAESCAPE_REQUEST_TIMEOUT_MS ?? 30_000) || 30_000;
 /** How often the heartbeat reports to the platform. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 /** Refresh the short-lived world session this long before it expires. */
@@ -256,15 +264,34 @@ async function worldEndpoint(path) {
 }
 
 /** A signed request to the platform. Sends the bearer token when given. */
-async function platformFetch(pathname, { method = "GET", token, body, signal } = {}) {
+async function platformFetch(pathname, { method = "GET", token, body, signal, timeoutMs = PLATFORM_REQUEST_TIMEOUT_MS } = {}) {
   const headers = { accept: "application/json", "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`${platform.url}${pathname}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
+  // Fail closed on a stalled request: abort it and let the caller report a
+  // transport failure, never wait indefinitely for a reply.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let response;
+  try {
+    response = await fetch(`${platform.url}${pathname}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted && !(signal?.aborted)) {
+      throw new Error(`the platform did not answer within ${Math.round(timeoutMs / 1000)} s (${pathname})`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await response.text();
   let json = null;
   try {
