@@ -86,6 +86,30 @@ export class Server {
     Server.consolePatched = true;
   }
 
+  /**
+   * Announce a numbered startup stage, matching the launcher's scheme
+   * (server/scripts/release/StartServer.bat) so a world owner reads the launcher
+   * and the server as one timeline. The launcher owns 1-2 (release verification
+   * and download); the core owns 3 (cache); the PaeScape plugin owns 4-7
+   * (platform connectivity, authentication, lease, readiness). Wall-clock
+   * timestamps let the launcher's lines and these interleave legibly.
+   */
+  public static stage(n: number, name: string): void {
+    console.info(`[${Server.timestamp()}] [server] [stage ${n}/7] ${name}`);
+  }
+
+  /** A completed startup-stage outcome, e.g. the cache revision that is now active. */
+  public static ok(n: number, message: string): void {
+    console.info(`[${Server.timestamp()}] [server] stage ${n}/7 complete: ${message}`);
+  }
+
+  /** Local wall-clock HH:MM:SS, matching the launcher's timestamp format. */
+  private static timestamp(): string {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  }
+
   private static installProductionPathResolver() {
     const moduleAny = Module as any;
     if (moduleAny.__elvargProdPathResolverInstalled) {
@@ -293,8 +317,14 @@ export class Server {
         );
       }
 
+      // Startup stage 3/7 (the launcher owns 1-2, the PaeScape plugin owns 4-7).
+      // Reading target.txt first turns a missing or malformed target into a clear
+      // stage outcome instead of a raw stack trace, and names the revision the
+      // server will run.
+      Server.stage(3, "checking the cache revision");
       const cache = await CachePipeline.initialize();
       console.info(`[cache] active ${cache.name} (revision ${cache.revision})`);
+      Server.ok(3, `cache revision ${cache.revision} ready (${cache.name})`);
 
       PluginManager.loadFromDirectory(path.join(process.cwd(), "plugins"));
 
@@ -304,14 +334,34 @@ export class Server {
         } mode`
       );
       // Start game logic (schedules GameEngine ticks, loads definitions, etc.)
+      Server.stage(7, "starting the game loop and listening for players");
       new GameBuilder().initialize();
       Server.releaseStartupMemory();
       new NetworkBuilder().initialize(NetworkConstants.WEBSOCKET_PORT);
     } catch (e) {
-      console.log(e, "error");
-      console.error(`An error occurred while binding the Bootstrap: ${e}`);
+      // A world owner reads the staged line and the remediation first; the raw
+      // error (with its stack) is kept one line below for the support channel.
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[server] startup failed. ${Server.startupRemediation()} (${detail})`
+      );
+      console.error("[server] technical detail:", e);
       process.exit(1);
     }
+  }
+
+  /**
+   * A short, actionable hint for a failed bootstrap, keyed off what the server was
+   * doing. The server cannot always tell which step failed, so the message names
+   * the likely causes rather than guessing one.
+   */
+  private static startupRemediation(): string {
+    return (
+      "The server could not start. Check that the cache directory matches target.txt " +
+      "(the launcher verifies this at startup stage 3/7), that no other process holds " +
+      "port " + NetworkConstants.WEBSOCKET_PORT + ", and that the packaged files were not modified. " +
+      "If it repeats, re-run the launcher so it re-verifies the release."
+    );
   }
 
   /**

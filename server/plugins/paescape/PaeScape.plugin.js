@@ -92,12 +92,20 @@ function installationPath() {
     : path.join(process.cwd(), "data", INSTALLATION_FILE);
 }
 
+// Shared, unit-tested startup logging: a timestamped and redacted timeline, and
+// the numbered startup stages (see StartupLog.js for the scheme).
+const { redact, timestamp: stamp, line: startupLine, stageLine } = require("./StartupLog.js");
+
 function log(message) {
-  console.log(`[paescape] ${message}`);
+  console.log(startupLine("log", message));
 }
 
 function warn(message) {
-  console.warn(`[paescape] ${message}`);
+  console.warn(startupLine("warn", message));
+}
+
+function stage(number, name) {
+  console.log(stageLine(number, name));
 }
 
 /**
@@ -106,7 +114,7 @@ function warn(message) {
  * host to act, unlike the update-required code (10) which the launcher acts on.
  */
 function fatalExit(code, message) {
-  console.error(`[paescape] FATAL: ${message}`);
+  console.error(`[${stamp()}] [paescape] FATAL: ${redact(message)}`);
   // Prefer a graceful shutdown so online players are saved; Server.shutdown takes
   // the exit code the launcher's supervisor interprets. Fall back to a direct exit
   // if the core is unavailable.
@@ -321,17 +329,26 @@ async function heartbeat() {
 
 /** Fetch and cache the platform's Ed25519 public key (base64 DER, SPKI). */
 async function fetchPublicKey() {
-  const result = await platformFetch("/api/platform/public-key");
+  stage(4, `connecting to the PaeScape platform at ${platform.url}`);
+  let result;
+  try {
+    result = await platformFetch("/api/platform/public-key");
+  } catch (error) {
+    warn(`could not reach the PaeScape platform at ${platform.url}: ${error && error.message ? error.message : error}`);
+    warn("check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website (https://paescape.online unless you are on a custom deployment); the launcher will retry");
+    return false;
+  }
   if (result.ok && result.json?.publicKey) {
     publicKey = crypto.createPublicKey({
       key: Buffer.from(result.json.publicKey, "base64"),
       format: "der",
       type: "spki",
     });
-    log("cached the platform control public key");
+    log("stage 4/7: connected to the platform and cached its control public key");
     return true;
   }
-  warn("could not read the platform public key; control requests will be refused");
+  warn(`the platform did not return a control public key (${result.status}); control requests will be refused`);
+  warn("this usually means PAESCAPE_PLATFORM_URL is wrong or the platform is unavailable; check the URL and try the launcher again");
   return false;
 }
 
@@ -813,23 +830,35 @@ async function linkCommand(event) {
  * is claimed and receives a scoped credential (stored on disk).
  */
 async function beginEnrollment() {
-  const begin = await platformFetch("/api/server/enroll/begin", {
-    method: "POST",
-    body: { installationKey: installation.key, label: "server.exe" },
-  });
+  stage(5, "enrolling this world with the PaeScape platform");
+  let begin;
+  try {
+    begin = await platformFetch("/api/server/enroll/begin", {
+      method: "POST",
+      body: { installationKey: installation.key, label: "server.exe" },
+    });
+  } catch (error) {
+    // A transport failure is not an enrollment state: say so, and retry rather
+    // than showing an enrollment code the host cannot claim.
+    warn(`could not reach the PaeScape platform at ${platform.url} to start enrollment: ${error && error.message ? error.message : error}`);
+    warn("check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website; retrying shortly");
+    return null;
+  }
   if (begin.status === 409) {
     // Already enrolled on a previous run: recover the credential from disk.
     if (installation.credential) return installation;
-    warn("this installation is already enrolled but the credential is missing; revoke it in the website and start again");
+    warn("this installation is already enrolled but its credential is missing on disk; revoke it on the PaeScape website and start the launcher again");
     return null;
   }
   if (!begin.ok || !begin.json?.code) {
-    warn(`enrollment could not start: ${begin.json?.error ?? begin.status}`);
+    warn(`enrollment could not start (the platform answered ${begin.status}): ${begin.json?.error ?? "no enrollment code was returned"}`);
+    warn("if this is a platform outage, wait and run the launcher again; if it persists, report it on the PaeScape support channel");
     return null;
   }
   log("");
   log("=========================================================");
-  log("  This server is not set up for a world yet.");
+  log("  This server is not linked to a world yet (startup stage 5/7).");
+  log("  It is waiting for you to claim it. Nothing is running until you do.");
   log("  1. Sign in at the PaeScape website with Discord.");
   log("  2. Open the world you want to run and choose 'Enroll a server'.");
   log(`  3. Enter this code:  ${begin.json.code}`);
@@ -838,19 +867,32 @@ async function beginEnrollment() {
   log("");
   // Poll until the host claims the code.
   const deadline = Date.now() + 15 * 60_000;
+  let lastPollWarning = 0;
   while (Date.now() < deadline && !outdated) {
     await sleep(5000);
-    const complete = await platformFetch("/api/server/enroll/complete", {
-      method: "POST",
-      body: { installationKey: installation.key },
-    });
+    let complete;
+    try {
+      complete = await platformFetch("/api/server/enroll/complete", {
+        method: "POST",
+        body: { installationKey: installation.key },
+      });
+    } catch (error) {
+      // Keep waiting on the same code: a dropped poll must not look like a claim.
+      if (Date.now() - lastPollWarning > 60_000) {
+        lastPollWarning = Date.now();
+        warn(`still waiting for you to claim this server (the platform could not be reached: ${error && error.message ? error.message : error})`);
+        warn("the enrollment code above is still valid; keep this window open and claim it on the PaeScape website");
+      }
+      continue;
+    }
     if (complete.ok && complete.json?.credential) {
       installation.credential = String(complete.json.credential);
       persistInstallation(installation);
-      log(`enrolled with world ${complete.json.worldId}`);
+      log(`stage 5/7: claimed and enrolled with world ${complete.json.worldId}; authenticating next`);
       return installation;
     }
   }
+  warn("this server was not claimed within 15 minutes; run the launcher again for a fresh enrollment code");
   return null;
 }
 
@@ -861,19 +903,35 @@ async function beginEnrollment() {
  * current, so an outdated server is rejected here rather than by the launcher.
  */
 async function handshake() {
-  const nonce = await platformFetch("/api/server/handshake/nonce", {
-    method: "POST",
-    body: { installationKey: installation.key },
-  });
-  if (!nonce.ok || !nonce.json?.nonce) {
-    warn(`handshake nonce refused: ${nonce.json?.error ?? nonce.status}`);
+  stage(6, "authenticating with the platform (handshake and lease)");
+  let nonce;
+  try {
+    nonce = await platformFetch("/api/server/handshake/nonce", {
+      method: "POST",
+      body: { installationKey: installation.key },
+    });
+  } catch (error) {
+    warn(`could not reach the PaeScape platform for the handshake: ${error && error.message ? error.message : error}`);
+    warn("check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website; restarting will retry");
     return null;
   }
-  const result = await platformFetch("/api/server/handshake", {
-    method: "POST",
-    token: installation.credential,
-    body: { nonce: nonce.json.nonce, generation: BUILD.generation, protocolVersion: BUILD.protocolVersion },
-  });
+  if (!nonce.ok || !nonce.json?.nonce) {
+    warn(`the platform refused the handshake nonce (${nonce.status}): ${nonce.json?.error ?? "no nonce was returned"}`);
+    warn("this usually means the installation credential is missing or was revoked; if handshaking keeps failing, re-enroll this server on the PaeScape website");
+    return null;
+  }
+  let result;
+  try {
+    result = await platformFetch("/api/server/handshake", {
+      method: "POST",
+      token: installation.credential,
+      body: { nonce: nonce.json.nonce, generation: BUILD.generation, protocolVersion: BUILD.protocolVersion },
+    });
+  } catch (error) {
+    warn(`could not reach the PaeScape platform to complete the handshake: ${error && error.message ? error.message : error}`);
+    warn("check the server's internet connection and try the launcher again");
+    return null;
+  }
   if (result.status === 409) {
     // The platform published a newer release while we were starting.
     markOutdated(result.json?.error ?? "This server is outdated.");
@@ -882,11 +940,13 @@ async function handshake() {
   if (result.status === 401 && installation.credential) {
     // We are enrolled but the platform refused the credential: it was revoked or
     // rotated on the website. This is terminal - restarting cannot fix it.
-    fatalExit(11, `the installation credential was refused: ${result.json?.error ?? "revoked or invalid"}. Re-enroll this server on the website.`);
+    fatalExit(11, `the platform rejected this server's installation credential (${result.json?.error ?? "revoked or invalid"}). ` +
+      "This server is no longer authorised for its world. Sign in on the PaeScape website, revoke the old server if it is listed, and enroll this server again.");
     return null;
   }
   if (!result.ok || !result.json?.lease?.token) {
-    warn(`handshake refused: ${result.json?.error ?? result.status}`);
+    warn(`the platform refused the handshake (${result.status}): ${result.json?.error ?? "no lease was issued"}`);
+    warn("if this is a platform outage, wait and run the launcher again; if it persists, report it on the PaeScape support channel");
     return null;
   }
   lease = {
@@ -897,7 +957,14 @@ async function handshake() {
     contentRevision: String(result.json.contentRevision ?? ""),
   };
   applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
-  log(`authorised for release generation ${lease.generation} (config revision ${lease.configRevision})`);
+  log(`stage 6/7: authorised for release generation ${lease.generation} (config revision ${lease.configRevision})`);
+  // Distinguish "authorised but not live yet" from a transport failure: a draft
+  // world authenticates fine but the website will not offer it to players until
+  // the owner takes it live. Say so plainly rather than leaving the owner to guess.
+  const worldStatus = String(result.json.world?.status ?? "");
+  if (worldStatus && worldStatus !== "live") {
+    log(`this world is "${worldStatus}" on the platform; players cannot join until you take it live on the PaeScape website`);
+  }
   bridge.setAuthorized(true);
   scheduleLeaseRenewal();
   return result.json;
@@ -984,6 +1051,25 @@ async function fetchContentManifest() {
 
 function playerCount() {
   return api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0;
+}
+
+/**
+ * Report whether a public endpoint is configured. The platform hands players a
+ * login ticket and sends their client to this world's endpoint, so without one
+ * (or with a non-HTTPS one) players cannot join even though the world has a valid
+ * lease. A world owner sees this as a concrete next action, not a silent failure.
+ */
+function reportPublicEndpoint() {
+  const endpoint = platform.endpoint;
+  if (!endpoint) {
+    warn("no PAESCAPE_PUBLIC_ENDPOINT is configured; players cannot join this world from the website until one is set");
+    return;
+  }
+  if (!/^https:\/\//i.test(endpoint)) {
+    warn(`the public endpoint ${endpoint} is not HTTPS; set an https:// address or the platform will refuse to send players here`);
+    return;
+  }
+  log(`public endpoint: ${endpoint} (players join this world through it)`);
 }
 
 /**
@@ -1083,7 +1169,7 @@ function start() {
   platform = readConfig();
   publishPlatformAccess();
   if (!platform.url) {
-    log("no PAESCAPE_PLATFORM_URL; running standalone");
+    log("no PAESCAPE_PLATFORM_URL set; running standalone (no platform connection, no hosted bots)");
     return;
   }
   userAccountPath = path.join(process.cwd(), "data", "paescape-users.json");
@@ -1097,16 +1183,21 @@ function start() {
     // Hosted mode: a distributed server.exe with no local configuration file.
     void startHosted();
   }
-  log("world control API and ticket login are active");
+  log("world control API and ticket login are active; the game loop is running");
 }
 
 /** Legacy/manual mode: exchange a world credential for a session and heartbeat. */
 function startConfigured() {
+  stage(5, "authenticating this world with the PaeScape platform");
   authenticate()
     .then(() => fetchPublicKey())
     .then(() => prefetchWorldData())
     .then(() => heartbeat())
-    .catch((error) => warn(`startup handshake failed: ${error.message}`));
+    .then(() => log("stage 7/7: world is ready; online players will be saved to the platform"))
+    .catch((error) => {
+      warn(`startup handshake failed: ${error && error.message ? error.message : error}`);
+      warn("check PAESCAPE_PLATFORM_URL and the world credential in world.local.json, then restart the server");
+    });
   heartbeatTimer = setInterval(() => void heartbeat(), HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
 }
@@ -1128,20 +1219,33 @@ async function startHosted() {
       const result = await handshake();
       if (result) await fetchContentManifest();
     }
-    if (lease) prefetchWorldData();
+    if (lease) {
+      prefetchWorldData();
+      reportPublicEndpoint();
+      stage(7, "world is ready; bots start once the platform lease is active");
+      log("stage 7/7: world is ready; hosted bots will initialise now and online players will be saved to the platform");
+    }
     if (!installation.credential || !lease) {
       // Retry until the host claims the code (or the world is outdated).
+      log("waiting for the platform lease; this world is not accepting players until enrollment finishes");
       enrollmentTimer = setInterval(() => {
         if (lease || outdated) return;
         void beginEnrollment().then((enrolled) => {
-          if (enrolled?.credential) return handshake().then(() => fetchContentManifest()).then(() => prefetchWorldData());
+          if (enrolled?.credential) {
+            return handshake().then(() => fetchContentManifest()).then(() => {
+              prefetchWorldData();
+              reportPublicEndpoint();
+              if (lease) log("stage 7/7: world is ready; online players will be saved to the platform");
+            });
+          }
           return undefined;
         });
       }, 60_000);
       enrollmentTimer.unref?.();
     }
   } catch (error) {
-    warn(`hosted startup failed: ${error.message}`);
+    warn(`hosted startup failed: ${error && error.message ? error.message : error}`);
+    warn("the launcher will keep the server running and retry; if this repeats, check the server's internet connection and PAESCAPE_PLATFORM_URL");
   }
 }
 module.exports = {

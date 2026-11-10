@@ -394,7 +394,7 @@ export class NetworkBuilder {
       maxPayload: MAX_GAME_MESSAGE_BYTES,
     });
     server?.on("connection", (socket, request) => new ClientConnection(new WebSocketBinaryChannel(socket, request)));
-    server?.on("listening", () => console.info(`[network] client websocket listening on ${port}`));
+    server?.on("listening", () => console.info(`[network] client websocket listening on ${port} (startup stage 7/7: the world is accepting players)`));
     server?.on("error", (error) => console.error("[network] websocket error", error));
     http.listen(port);
     if (!browserHost) {

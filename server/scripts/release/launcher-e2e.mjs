@@ -235,6 +235,21 @@ await withServer(async (platformUrl) => {
     assert.equal(state.generation, 1);
   });
 
+  await check("startup stages are announced in order with timestamps", async () => {
+    const stageDir = freshServerDir();
+    const r = await launch(stageDir, platformUrl);
+    const out = r.stdout + r.stderr;
+    // Every launcher line carries a wall-clock timestamp and the launcher tag, so a
+    // world owner reads the launcher and the server as one timeline.
+    assert.match(out, /\[\d\d:\d\d:\d\d\] \[launcher\] /, out);
+    assert.match(out, /\[launcher\] \[stage 1\/7\] verifying the release manifest and signature/, out);
+    assert.match(out, /stage 1\/7: release manifest and signature verified/, out);
+    assert.match(out, /\[launcher\] \[stage 2\/7\] downloading, resuming and verifying the server files/, out);
+    assert.match(out, /stage 2\/7: installed and verified/, out);
+    // The launcher hands off to the server-side stages 3-7 rather than going silent.
+    assert.match(out, /startup stages 3\/7 through 7\/7/, out);
+  });
+
   await check("a second run is up to date and does not re-download", async () => {
     const before = fs.statSync(path.join(dir, "server.exe")).mtimeMs;
     const r = await launch(dir, platformUrl);
@@ -274,8 +289,42 @@ await withServer(async (platformUrl) => {
   await check("an unreachable release service fails closed", async () => {
     const dir4 = freshServerDir();
     const r = await launch(dir4, "http://127.0.0.1:1");
-    assert.match(r.stdout + r.stderr, /Could not reach the PaeScape release service/);
+    const out = r.stdout + r.stderr;
+    assert.match(out, /Could not reach the PaeScape release service/);
+    // The failure names the stage and tells the owner what to check, with no raw
+    // stack trace forwarded to the console.
+    assert.match(out, /startup stage 1\/7 or 2\/7/);
+    assert.match(out, /PAESCAPE_PLATFORM_URL/);
+    assert.doesNotMatch(out, /at line:/, "no PowerShell stack trace is shown");
     assert.doesNotMatch(r.stdout, /TINY-EXE-RAN/);
+  });
+
+  await check("a credential-shaped value in a URL is redacted from the console", async () => {
+    // The launcher must never echo a token even if one ends up in a URL or an
+    // error message. Point the download host at an unreachable origin whose path
+    // carries a lease-style token; the failure line must not contain it.
+    const dirR = freshServerDir();
+    const secret = "wst_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const r = await launch(dirR, platformUrl, {
+      PAESCAPE_DOWNLOAD_URL: `http://127.0.0.1:1/${secret}`,
+      PAESCAPE_DOWNLOAD_BACKOFF_SECONDS: "1",
+      PAESCAPE_DOWNLOAD_ATTEMPTS: "1",
+    });
+    const out = r.stdout + r.stderr;
+    assert.doesNotMatch(out, new RegExp(secret), "the token never reaches the console");
+  });
+
+  await check("recovery: a transient outage on the first run is resolved by running again", async () => {
+    // A world owner whose platform was briefly unavailable sees a clear stage
+    // failure and no install; running the launcher again against the healthy
+    // platform installs and starts without any manual cleanup.
+    const dirRec = freshServerDir();
+    const failed = await launch(dirRec, "http://127.0.0.1:1");
+    assert.match(failed.stdout + failed.stderr, /Could not reach the PaeScape release service/);
+    assert.ok(!fs.existsSync(path.join(dirRec, "server.exe")), "nothing is installed while the platform is down");
+    const recovered = await launch(dirRec, platformUrl);
+    assert.match(recovered.stdout, /TINY-EXE-RAN:v1/, recovered.stdout + recovered.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dirRec, "paescape-installed.json"), "utf8")).generation, 1);
   });
 
   // --- Supervisor: the launcher stays alive and reacts to the server's exit code.

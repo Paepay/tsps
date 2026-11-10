@@ -85,12 +85,50 @@ $UpdateBackoffBase = if ($env:PAESCAPE_UPDATE_BACKOFF_SECONDS) { [int]$env:PAESC
 $StateFile   = Join-Path $Root 'paescape-installed.json'
 $ServerExe   = Join-Path $Root 'server.exe'
 
-function Info($m)  { Write-Host "[launcher] $m" -ForegroundColor Cyan }
-function Ok($m)    { Write-Host "[launcher] $m" -ForegroundColor Green }
-function Warn2($m) { Write-Host "[launcher] $m" -ForegroundColor Yellow }
+function NowStamp { return (Get-Date).ToString('HH:mm:ss') }
+
+<#
+ Redact anything that could be a secret before it reaches the console or the log
+ file: bearer tokens, the platform's installation/credential/nonce/lease/ticket
+ prefixes (wsk_/wsi_/wsm_/wst_), and credential-looking query parameters. The
+ launcher never needs to print a secret, so this is belt-and-braces for error
+ messages built from URLs or responses.
+#>
+function Redact([string]$m) {
+  if (-not $m) { return $m }
+  $m = [regex]::Replace($m, '(?i)(bearer\s+)[A-Za-z0-9._\-]+', '$1<redacted>')
+  $m = [regex]::Replace($m, '\bws[ikmt]_[A-Za-z0-9_\-]{6,}', 'ws_<redacted>')
+  $m = [regex]::Replace($m, '(?i)([?&](?:token|secret|key|ticket|credential|password|code)=)[^&\s''"]+', '$1<redacted>')
+  return $m
+}
+
+function Write-LauncherLine($m, $color) {
+  Write-Host ("[" + (NowStamp) + "] [launcher] " + (Redact $m)) -ForegroundColor $color
+}
+
+function Info($m)  { Write-LauncherLine $m Cyan }
+function Ok($m)    { Write-LauncherLine $m Green }
+function Warn2($m) { Write-LauncherLine $m Yellow }
 function Die($m, $code = 13) {
-  Write-Host "[launcher] $m" -ForegroundColor Red
+  Write-LauncherLine $m Red
   exit $code
+}
+
+<#
+ Announce a numbered startup stage so a world owner can see where startup is and
+ what happens next. The scheme spans both processes and is named identically on
+ the launcher side (this file) and the server side
+ (plugins/paescape/PaeScape.plugin.js):
+   1 launcher: release manifest and signature validation
+   2 launcher: download, resume and hash verification (and install)
+   3 server:   cache revision check
+   4 server:   platform connectivity and public-key retrieval
+   5 server:   world authentication / enrollment
+   6 server:   handshake and lease
+   7 server:   world readiness and bot initialization
+#>
+function Stage($n, $name) {
+  Write-Host ("[" + (NowStamp) + "] [launcher] [stage " + $n + "/7] " + $name) -ForegroundColor Magenta
 }
 
 function Get-Installed {
@@ -128,11 +166,14 @@ function Test-ManifestSignature($Doc) {
 
 function Get-LauncherDocument {
   $url = "$PlatformUrl/platform/api/releases/launcher?channel=$Channel"
-  Info "checking for updates at $PlatformUrl"
+  Info "checking for updates at $PlatformUrl (channel $Channel)"
   try {
     return Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 30 -UseBasicParsing
   } catch {
-    throw "Could not reach the PaeScape release service. $($_.Exception.Message)"
+    throw ("Could not reach the PaeScape release service at $PlatformUrl. " +
+           "Check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website " +
+           "(https://paescape.online unless you are on a custom or development deployment). " +
+           $_.Exception.Message)
   }
 }
 
@@ -257,6 +298,10 @@ function Invoke-ResumableDownload {
     $attempt++
     $offset = 0L
     if (Test-Path -LiteralPath $PartPath) { $offset = (Get-Item -LiteralPath $PartPath).Length }
+    if ($offset -gt 0 -and $offset -lt $ExpectedBytes) {
+      $percent = [Math]::Floor(100 * $offset / $ExpectedBytes)
+      Info ("resuming the download at $offset of $ExpectedBytes bytes ($percent% already received)")
+    }
     if ($offset -gt $ExpectedBytes) {
       Warn2 "the partial download is larger than the expected file; discarding it"
       Remove-Item -LiteralPath $PartPath -Force
@@ -345,7 +390,8 @@ function Invoke-ResumableDownload {
     }
 
     if ($attempt -ge $MaxAttempts) {
-      throw ("the download did not complete after " + $MaxAttempts + " attempts. The partial file is kept; run the launcher again to resume.")
+      throw ("the download did not complete after " + $MaxAttempts + " attempts. " +
+             "Check the server's internet connection, then run the launcher again: the partial file is kept and the download resumes where it stopped.")
     }
     $sleep = [Math]::Min(30, $backoff)
     Warn2 ("download interrupted; retrying in " + $sleep + " s (attempt " + $attempt + " of " + $MaxAttempts + ")")
@@ -372,11 +418,14 @@ function Install-CurrentRelease {
     $doc = Get-LauncherDocument
     if (-not $doc.ok) { throw "The release service did not return a release document." }
 
+    Stage 1 "verifying the release manifest and signature"
     Info "verifying release $($doc.version) (generation $($doc.generation)) signature"
     if (-not (Test-ManifestSignature $doc)) {
-      throw "The release manifest's signature did not verify. Refusing to continue."
+      throw ("The release manifest's signature did not verify. Refusing to continue. " +
+             "This server is not running an approved PaeScape release; do not bypass this check. " +
+             "Run the launcher again, and if it keeps failing report it on the PaeScape support channel.")
     }
-    Ok "signature verified"
+    Ok "stage 1/7: release manifest and signature verified"
 
     # Bind the executable to the signed manifest; unsigned metadata that
     # disagrees is refused before a single byte is downloaded.
@@ -389,17 +438,18 @@ function Install-CurrentRelease {
     if ($installedGeneration -eq $signed.Generation -and (Test-Path -LiteralPath $ServerExe)) {
       # Confirm the bytes on disk still match the signed manifest before trusting them.
       if ((Get-FileSha256 $ServerExe) -eq $signed.Sha256) {
-        Ok "installed release matches the current release (generation $($signed.Generation))"
+        Ok "stage 2/7: nothing to download; server.exe matches the current release (generation $($signed.Generation))"
         return [int]$signed.Generation
       }
       Warn2 "server.exe on disk does not match the current release; re-downloading"
     } elseif ($installedGeneration -eq $signed.Generation) {
       Warn2 "server.exe is missing; re-downloading"
     } else {
-      Info "update required: generation $installedGeneration -> $($signed.Generation)"
+      Info "update required: generation $installedGeneration -> $($signed.Generation) (installing the current approved release)"
     }
 
     # --- Resumable, integrity-checked download of the signed entry file.
+    Stage 2 "downloading, resuming and verifying the server files"
     $downloadUrl = "$DownloadBase/platform/api/releases/download?channel=$Channel"
     $partPath = Join-Path $Root 'server.exe.part'
     $metaPath = Join-Path $Root 'server.exe.part.json'
@@ -441,11 +491,11 @@ function Install-CurrentRelease {
     $stateJson = @{ generation = [int]$signed.Generation; version = [string]$signed.Version; sha256 = $signed.Sha256; installedAt = (Get-Date).ToString('s') } | ConvertTo-Json
     # Write without a BOM: JSON.parse on other platforms rejects a leading BOM.
     [IO.File]::WriteAllText($StateFile, $stateJson, (New-Object System.Text.UTF8Encoding($false)))
-    Ok "installed version $($signed.Version) (generation $($signed.Generation))"
+    Ok "stage 2/7: installed and verified version $($signed.Version) (generation $($signed.Generation))"
   }
 }
 
-Info "PaeScape Realms server launcher"
+Info "PaeScape Realms server launcher (v$env:PAESCAPE_LAUNCHER_VERSION)"
 
 # --- Supervisor loop: install/verify, launch, then interpret the exit code.
 $updateCycles = 0
@@ -455,10 +505,11 @@ while ($true) {
     $generation = Install-CurrentRelease
   } catch {
     # A bad signature or an unreachable release service is never retried.
-    Die "Could not prepare the current release. $($_.Exception.Message)" $EXIT_FATAL
+    Die "Could not prepare the current release (startup stage 1/7 or 2/7). $($_.Exception.Message)" $EXIT_FATAL
   }
 
-  Info "starting server.exe (generation $generation); it authenticates with PaeScape Realms itself"
+  Info "stage 2/7 complete; starting server.exe (generation $generation)"
+  Info "the server reports its own startup stages 3/7 through 7/7 below (cache, platform, authentication, lease, readiness)"
   Push-Location $Root
   try {
     & $ServerExe
@@ -482,16 +533,20 @@ while ($true) {
       Die "The server asked for an update more than 5 times; stopping to avoid a restart loop." $EXIT_FATAL
     }
     $backoff = [Math]::Min(60, $UpdateBackoffBase * $updateCycles)
-    Warn2 "server requested an update; re-checking the release in $backoff s"
+    Warn2 "this server is outdated; re-checking the current release in $backoff s, then installing and restarting"
     Start-Sleep -Seconds $backoff
     continue
   }
 
   if ($code -eq $EXIT_AUTH_FAILURE) {
-    Die "The server could not authenticate with PaeScape. It will not restart automatically; fix the enrollment and run the launcher again." $EXIT_AUTH_FAILURE
+    Die ("The server could not authenticate with PaeScape (this happens at startup stage 5/7 or 6/7). " +
+         "It will not restart automatically. Check that this installation is enrolled to the right world on the PaeScape website " +
+         "and that its credential has not been revoked, then run the launcher again.") $EXIT_AUTH_FAILURE
   }
   if ($code -eq $EXIT_CONFIG_FAILURE) {
-    Die "The server rejected its configuration. It will not restart automatically; fix the configuration and run the launcher again." $EXIT_CONFIG_FAILURE
+    Die ("The server rejected its configuration (startup stage 5/7 or 6/7). " +
+         "It will not restart automatically. Remove any world.local.json or PAESCAPE_* overrides that disagree with the platform, " +
+         "then run the launcher again.") $EXIT_CONFIG_FAILURE
   }
   if ($code -eq $EXIT_FATAL) {
     Die "The server stopped with a fatal error. It will not restart automatically." $EXIT_FATAL

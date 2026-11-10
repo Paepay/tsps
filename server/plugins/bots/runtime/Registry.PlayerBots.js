@@ -941,6 +941,12 @@ function createBotRegistry(options) {
     // Hosted worlds must not spawn bots (whose name checks read platform-backed
     // persistence) before the enrollment handshake yields a lease; wait for it.
     if (botStartBlocked()) {
+      // Make the deferral visible: the launcher reports startup stage 7/7 as
+      // "ready", and this explains why bots have not started yet on a hosted
+      // world that is still enrolling/waiting for its first lease.
+      if (typeof botApi.log === "function") {
+        botApi.log("bot_startup_deferred", { reason: "waiting for the platform authorization lease" });
+      }
       whenBotStartAuthorized(() => spawnConfiguredBots());
       return;
     }
