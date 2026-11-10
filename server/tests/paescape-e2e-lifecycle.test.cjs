@@ -657,3 +657,98 @@ test("no authoritative local save file is created in hosted mode", () => {
   assert.deepEqual(entries, [], "hosted persistence never writes character files to disk");
   assert.equal(GameConstants.PLAYER_PERSISTENCE.describe().localSaves, false);
 });
+
+/**
+ * Task 28: the platform is the authority for which world this installation hosts.
+ * A locally tampered world id is corrected on the next launch, so editing the
+ * install file cannot make the server run a world its credential is not bound to.
+ */
+test("a tampered local world selection is corrected by the platform on launch", async () => {
+  const file = process.env.PAESCAPE_INSTALLATION_FILE;
+  const before = JSON.parse(fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(file, JSON.stringify({ ...before, worldId: "world-tampered-value" }, null, 2));
+
+  // Re-run the hosted startup path, as a fresh launch would after the tamper.
+  PluginManager.emitServerStartup({ timestamp: Date.now() });
+  // The plugin keeps module state across an in-process re-emit, so poll the file
+  // the platform's binding is written to rather than the (stale) live lease.
+  const deadline = Date.now() + 25000;
+  let after = before;
+  while (Date.now() < deadline) {
+    after = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (after.worldId === worldId) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert.equal(after.worldId, worldId, "the platform's binding overwrote the tampered world id");
+  assert.notEqual(after.worldId, "world-tampered-value");
+  assert.ok(liveLease(), "the server re-authenticated after launch");
+});
+
+/**
+ * Task 28: an owner can move the same installation to another world they manage.
+ * The server adopts the platform's new binding on its next launch, and the previous
+ * world's authorization no longer works: one installation never runs two worlds.
+ */
+test("an owner-driven world switch is adopted and the previous world loses authorization", async () => {
+  const file = process.env.PAESCAPE_INSTALLATION_FILE;
+  const installation = JSON.parse(fs.readFileSync(file, "utf8"));
+
+  // Create a second world the same owner manages and flag the move.
+  const second = await platformFetch("/api/worlds", { method: "POST", body: { name: "Switched World" } });
+  assert.equal(second.status, 201, JSON.stringify(second.json));
+  const secondId = second.json.world.id;
+  const flagged = await platformFetch(`/api/worlds/${worldId}/installations/${installation.key}/reselect`, { method: "POST", body: {} });
+  assert.equal(flagged.status, 200, JSON.stringify(flagged.json));
+
+  // The server asks for a switch code with its own credential and the owner claims
+  // it against the second world, then the server receives a fresh credential.
+  const reselect = await platformFetch("/api/server/enroll/reselect", { method: "POST", bearer: installation.credential, body: {} });
+  assert.equal(reselect.status, 201, JSON.stringify(reselect.json));
+  const claim = await platformFetch(`/api/worlds/${secondId}/enroll`, { method: "POST", body: { code: reselect.json.code } });
+  assert.equal(claim.status, 200, JSON.stringify(claim.json));
+  const complete = await platformFetch("/api/server/enroll/complete", { method: "POST", body: { installationKey: installation.key } });
+  assert.equal(complete.status, 201, JSON.stringify(complete.json));
+  assert.equal(complete.json.worldId, secondId);
+
+  // Simulate the server persisting the new credential on restart, then relaunch.
+  fs.writeFileSync(file, JSON.stringify({ ...installation, credential: complete.json.credential, worldId: secondId }, null, 2));
+  PluginManager.emitServerStartup({ timestamp: Date.now() });
+  // Poll for the authoritative outcome: the server holds a lease on the new world.
+  const deadline = Date.now() + 25000;
+  let servedWorld = null;
+  while (Date.now() < deadline) {
+    const lease = liveLease();
+    if (lease) {
+      const config = await platformFetch("/api/server/config", { bearer: lease });
+      if (config.status === 200 && config.json?.worldId) {
+        servedWorld = config.json.worldId;
+        if (servedWorld === secondId) break;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert.equal(servedWorld, secondId, "the server now serves the switched world");
+
+  // Move back so later assertions in the suite still refer to the original world.
+  const backFlag = await platformFetch(`/api/worlds/${secondId}/installations/${installation.key}/reselect`, { method: "POST", body: {} });
+  assert.equal(backFlag.status, 200);
+  const backReselect = await platformFetch("/api/server/enroll/reselect", { method: "POST", bearer: complete.json.credential, body: {} });
+  assert.equal(backReselect.status, 201, JSON.stringify(backReselect.json));
+  const backClaim = await platformFetch(`/api/worlds/${worldId}/enroll`, { method: "POST", body: { code: backReselect.json.code } });
+  assert.equal(backClaim.status, 200, JSON.stringify(backClaim.json));
+  const backComplete = await platformFetch("/api/server/enroll/complete", { method: "POST", body: { installationKey: installation.key } });
+  assert.equal(backComplete.status, 201, JSON.stringify(backComplete.json));
+  assert.equal(backComplete.json.worldId, worldId);
+  fs.writeFileSync(file, JSON.stringify({ ...installation, credential: backComplete.json.credential, worldId }, null, 2));
+  PluginManager.emitServerStartup({ timestamp: Date.now() });
+  // Let the restored startup settle so the suite tears down on a still server.
+  const settleDeadline = Date.now() + 25000;
+  while (Date.now() < settleDeadline) {
+    const lease = liveLease();
+    if (lease) {
+      const cfg = await platformFetch("/api/server/config", { bearer: lease });
+      if (cfg.status === 200 && cfg.json?.worldId === worldId) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+});

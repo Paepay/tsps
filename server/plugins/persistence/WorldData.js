@@ -381,8 +381,13 @@ function describe() {
   return { hosted: isHosted(), loaded, revision, stores: Object.keys(stores).length, writesCompleted, failures: failures.length };
 }
 
-/** Tests: forget the mirror and the host detection so each case starts clean. */
-function resetForTests({ hosted } = {}) {
+/**
+ * Forget the in-memory mirror so the next prefetch reloads from the platform.
+ * Used when the installation is re-pointed at a different world: the mirror and
+ * its revision belong to one world's document and must never be carried across a
+ * switch. hostedCache is left alone (the persistence mode does not change).
+ */
+function resetMirror() {
   stores = {};
   loaded = false;
   revision = 0;
@@ -390,6 +395,11 @@ function resetForTests({ hosted } = {}) {
   failures.length = 0;
   writesCompleted = 0;
   pendingUpload = null;
+}
+
+/** Tests: forget the mirror and the host detection so each case starts clean. */
+function resetForTests({ hosted } = {}) {
+  resetMirror();
   if (hosted !== undefined) hostedCache = hosted;
 }
 
@@ -403,5 +413,6 @@ module.exports = {
   flush,
   describe,
   WorldDataFailure,
+  resetMirror,
   resetForTests,
 };

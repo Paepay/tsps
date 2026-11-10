@@ -21,6 +21,12 @@
  *     A short-lived lease authorises config/content/persistence calls and is renewed on a
  *     timer; when the platform publishes a newer release the renewal is refused and the
  *     server performs its graceful shutdown so the launcher can update and restart it.
+ *     One universal server.exe hosts whichever world its owner selects: on every launch it
+ *     revalidates the selection with the platform (GET /api/server/installation), which is
+ *     the authority for the credential's current world, and adopts any change. An owner can
+ *     move the same installation to another world they manage; the server then shows a fresh
+ *     code (POST /api/server/enroll/reselect) that the owner claims against the new world.
+ *     A switch rebinds the credential and revokes the previous world's leases.
  *
  *   configured (legacy / local) - PAESCAPE_WORLD_SECRET is set, so the plugin exchanges the
  *     world credential for a world session directly (no enrollment needed).
@@ -72,6 +78,8 @@ let session = null; // { token, expiresAt }
 let heartbeatTimer = null;
 let sessionTimer = null;
 let userAccountPath = "";
+/** The core accepts one platform control handler per process; set once it is registered. */
+let controlHandlerRegistered = false;
 /** platform userId -> the game account key (primary character name) it owns on this world. */
 let userAccounts = {};
 /** username (lower-case) -> { token, characterId, expiresAt, timer } for hosted gameplay sessions. */
@@ -191,12 +199,20 @@ function loadInstallation() {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     if (parsed && typeof parsed.key === "string" && parsed.key.length >= 16) {
-      return { key: parsed.key, credential: typeof parsed.credential === "string" ? parsed.credential : null };
+      return {
+        key: parsed.key,
+        credential: typeof parsed.credential === "string" ? parsed.credential : null,
+        // The selected world is non-secret selection metadata: it records what the
+        // owner chose last so a switch can be detected, but it is never trusted -
+        // the platform re-confirms it on every launch (revalidateInstallation).
+        worldId: typeof parsed.worldId === "string" ? parsed.worldId : "",
+        worldLabel: typeof parsed.worldLabel === "string" ? parsed.worldLabel : "",
+      };
     }
   } catch {
     /* no identity yet */
   }
-  const created = { key: `wsk_${crypto.randomBytes(24).toString("base64url")}`, credential: null };
+  const created = { key: `wsk_${crypto.randomBytes(24).toString("base64url")}`, credential: null, worldId: "", worldLabel: "" };
   persistInstallation(created);
   return created;
 }
@@ -205,7 +221,18 @@ function persistInstallation(value) {
   try {
     const file = installationPath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ key: value.key, credential: value.credential ?? null }, null, 2), { mode: 0o600 });
+    // The credential is secret (0600, hashed on the platform); the world id and
+    // label are non-secret selection metadata kept beside it for diagnosis and
+    // switch detection. Nothing here is ever trusted without platform confirmation.
+    fs.writeFileSync(
+      file,
+      JSON.stringify(
+        { key: value.key, credential: value.credential ?? null, worldId: value.worldId ?? "", worldLabel: value.worldLabel ?? "" },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
   } catch (error) {
     warn(`could not persist the installation identity: ${error.message}`);
   }
@@ -839,13 +866,19 @@ async function linkCommand(event) {
  * Hosted mode: no world secret is configured, so the installation enrolls itself.
  * Step 1 shows a code; the host claims it on the website; step 2 polls until it
  * is claimed and receives a scoped credential (stored on disk).
+ *
+ * `switchMode` is set when an already-enrolled installation has been flagged by its
+ * owner to move worlds: the code is requested through the credential-authenticated
+ * reselect route (so only the server's own owner can start it) and the same poll
+ * receives a fresh credential once the owner claims it against the new world.
  */
-async function beginEnrollment() {
-  stage(5, "enrolling this world with the PaeScape platform");
+async function beginEnrollment(switchMode = false) {
+  stage(5, switchMode ? "selecting a new world for this server with the PaeScape platform" : "enrolling this world with the PaeScape platform");
   let begin;
   try {
-    begin = await platformFetch("/api/server/enroll/begin", {
+    begin = await platformFetch(switchMode ? "/api/server/enroll/reselect" : "/api/server/enroll/begin", {
       method: "POST",
+      token: switchMode ? installation.credential : undefined,
       body: { installationKey: installation.key, label: "server.exe" },
     });
   } catch (error) {
@@ -853,6 +886,12 @@ async function beginEnrollment() {
     // than showing an enrollment code the host cannot claim.
     warn(`could not reach the PaeScape platform at ${platform.url} to start enrollment: ${error && error.message ? error.message : error}`);
     warn("check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website; retrying shortly");
+    return null;
+  }
+  if (switchMode && (begin.status === 401 || begin.status === 403)) {
+    // The credential was revoked before the switch could start.
+    fatalExit(11, `the platform refused to start a world switch (${begin.json?.error ?? "credential revoked or invalid"}). ` +
+      "Sign in on the PaeScape website, revoke the old server if it is listed, and enroll this server again.");
     return null;
   }
   if (begin.status === 409) {
@@ -868,10 +907,14 @@ async function beginEnrollment() {
   }
   log("");
   log("=========================================================");
-  log("  This server is not linked to a world yet (startup stage 5/7).");
+  log(switchMode
+    ? "  This server is being moved to another world (startup stage 5/7)."
+    : "  This server is not linked to a world yet (startup stage 5/7).");
   log("  It is waiting for you to claim it. Nothing is running until you do.");
   log("  1. Sign in at the PaeScape website with Discord.");
-  log("  2. Open the world you want to run and choose 'Enroll a server'.");
+  log(switchMode
+    ? "  2. Open the world you want this server to run and choose 'Enroll a server'."
+    : "  2. Open the world you want to run and choose 'Enroll a server'.");
   log(`  3. Enter this code:  ${begin.json.code}`);
   log(`     (it expires ${new Date(begin.json.expiresAt).toLocaleTimeString()}, or restart for a new one)`);
   log("=========================================================");
@@ -898,6 +941,7 @@ async function beginEnrollment() {
     }
     if (complete.ok && complete.json?.credential) {
       installation.credential = String(complete.json.credential);
+      installation.worldId = String(complete.json.worldId ?? "");
       persistInstallation(installation);
       log(`stage 5/7: claimed and enrolled with world ${complete.json.worldId}; authenticating next`);
       return installation;
@@ -905,6 +949,63 @@ async function beginEnrollment() {
   }
   warn("this server was not claimed within 15 minutes; run the launcher again for a fresh enrollment code");
   return null;
+}
+
+/**
+ * Revalidate the installation's world selection with the platform before doing any
+ * work. The platform is the authority: this returns the world the credential is
+ * *currently* authorised for, so a locally edited world id (or a stale selection
+ * after the owner re-pointed the server) is corrected here rather than trusted.
+ *
+ * Returns the authoritative binding on success, or a discriminated failure the
+ * caller reports with a stage-specific message. It never mutates local state itself.
+ */
+async function revalidateInstallation() {
+  let result;
+  try {
+    result = await platformFetch("/api/server/installation", { token: installation.credential });
+  } catch (error) {
+    return { ok: false, reason: "offline", message: `could not reach the PaeScape platform to confirm this server's world: ${error && error.message ? error.message : error}` };
+  }
+  if (result.status === 401) {
+    return { ok: false, reason: "revoked", message: result.json?.error ?? "this installation credential is invalid or has been revoked" };
+  }
+  if (!result.ok || !result.json?.world?.id) {
+    return { ok: false, reason: "failed", message: result.json?.error ?? `the platform did not confirm a world (${result.status})` };
+  }
+  return {
+    ok: true,
+    world: result.json.world,
+    label: result.json.label ?? "",
+    reselectRequested: Boolean(result.json.reselectRequested),
+  };
+}
+
+/**
+ * Adopt the platform's authoritative binding. The platform is the source of truth
+ * for which world this credential is authorised for; if it disagrees with the
+ * locally recorded selection (the owner switched worlds on the website) that is a
+ * switch, and every world-scoped cache must be dropped so nothing from the previous
+ * world is reused. Any live lease from the old world is dropped too: it was revoked
+ * on the platform when the switch completed.
+ */
+function adoptBinding(binding) {
+  const worldId = String(binding.world.id);
+  const previous = installation.worldId;
+  if (previous && previous !== worldId) {
+    log(`this server was re-pointed from world ${previous} to ${worldId}; resetting world-scoped state`);
+    if (leaseTimer) clearTimeout(leaseTimer);
+    lease = null;
+    try { worldData.resetMirror(); } catch { /* mirror not loaded yet */ }
+    userAccounts = {};
+    try { Accounts.reset(); } catch { /* accounts not loaded yet */ }
+  }
+  installation.worldId = worldId;
+  installation.worldLabel = String(binding.label ?? installation.worldLabel ?? "");
+  persistInstallation(installation);
+  // The platform is authoritative for the control-token world id too: a hosted
+  // server never trusts a configured PAESCAPE_WORLD_ID for this.
+  platform.worldId = worldId;
 }
 
 /**
@@ -967,6 +1068,12 @@ async function handshake() {
     configRevision: Number(result.json.world?.configRevision ?? 0),
     contentRevision: String(result.json.contentRevision ?? ""),
   };
+  // The handshake's world is authoritative: if it differs from the locally recorded
+  // selection the owner re-pointed this server, so adopt it and drop world-scoped
+  // state (never run two worlds under one installation authorization).
+  if (result.json.world?.id) {
+    adoptBinding({ world: result.json.world, label: installation.worldLabel });
+  }
   applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
   log(`stage 6/7: authorised for release generation ${lease.generation} (config revision ${lease.configRevision})`);
   // Distinguish "authorised but not live yet" from a transport failure: a draft
@@ -1185,7 +1292,12 @@ function start() {
   }
   userAccountPath = path.join(process.cwd(), "data", "paescape-users.json");
   loadUserAccounts();
-  api.registerPlatformControlHandler(handleControl);
+  // The core allows one control handler per process. Guard so a re-emitted startup
+  // (a test simulating a relaunch) does not throw; a real restart is a new process.
+  if (!controlHandlerRegistered) {
+    api.registerPlatformControlHandler(handleControl);
+    controlHandlerRegistered = true;
+  }
 
   if (platform.worldSecret) {
     // Configured mode: a legacy/manual deployment with a world credential.
@@ -1227,6 +1339,32 @@ async function startHosted() {
       await beginEnrollment();
     }
     if (installation.credential) {
+      // Revalidate the persisted selection with the platform before doing any work.
+      // The platform is the authority for which world this credential is authorised
+      // for, so a locally edited world id is corrected here, an owner-requested
+      // switch is picked up, and a revoked credential stops the server with a clear
+      // stage-specific message instead of mis-running a world it no longer owns.
+      const revalidated = await revalidateInstallation();
+      if (!revalidated.ok) {
+        if (revalidated.reason === "revoked") {
+          fatalExit(11, `the platform rejected this server's installation credential (${revalidated.message}). ` +
+            "This server is no longer authorised. Sign in on the PaeScape website, revoke the old server if it is listed, and enroll this server again.");
+          return;
+        }
+        warn(`could not confirm this server's world with the platform: ${revalidated.message}`);
+        warn("keeping the last known selection and retrying; check the server's internet connection and PAESCAPE_PLATFORM_URL");
+      } else {
+        adoptBinding(revalidated);
+        log(`platform confirms this server hosts world ${installation.worldId}${revalidated.label ? ` (${revalidated.label})` : ""}`);
+        if (revalidated.reselectRequested) {
+          // The owner asked this server to move worlds: show a fresh code and wait
+          // for them to claim it against another world they manage. If they never
+          // claim it, fall back to serving the current world rather than leaving it
+          // unauthorised.
+          const switched = await beginEnrollment(true);
+          if (!switched) warn("this server was not re-pointed; continuing to serve its current world");
+        }
+      }
       const result = await handshake();
       if (result) await fetchContentManifest();
     }
