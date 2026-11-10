@@ -22,6 +22,9 @@ const WORK_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "paescape-stamp-"));
 process.env.TSPS_ACCOUNTS_FILE = path.join(WORK_DIR, "accounts.json");
 process.env.TSPS_DISPLAY_NAMES_FILE = path.join(WORK_DIR, "display-names.json");
 process.env.PAESCAPE_PLATFORM_URL = PLATFORM_URL;
+// The test platform below mounts at the origin root (PLATFORM_PUBLIC_PATH ''), so
+// tell the world plugin the public path is empty: no /platform prefix.
+process.env.PAESCAPE_PLATFORM_PUBLIC_PATH = "";
 delete process.env.PAESCAPE_WORLD_SECRET;
 delete process.env.PAESCAPE_RELEASE_GENERATION;
 delete process.env.PAESCAPE_BUILD_VERSION;

@@ -45,6 +45,7 @@ const { Accounts } = require("../../src/main/typescript/elvarg/game/entity/impl/
 const { MAIN_PROFILE, LEAGUE_PROFILE } = require("../../src/main/typescript/elvarg/game/entity/impl/player/persistence/PlayerProfile");
 const { SkillManager } = require("../../src/main/typescript/elvarg/game/content/skill/SkillManager");
 const bridge = require("./PaeScapeBridge.js");
+const PlatformUrl = require("./PlatformUrl.js");
 const worldData = require("../persistence/WorldData");
 
 /** The control-token path prefix the core routes to this plugin. */
@@ -202,7 +203,13 @@ function readConfig() {
       return fallback;
     }
   };
-  const url = String(process.env.PAESCAPE_PLATFORM_URL ?? fromPlugin("platformUrl", "")).trim().replace(/\/+$/, "");
+  // The configured value may be a bare origin (`https://paescape.online`), an origin
+  // that already carries the public path (`https://paescape.online/platform`), or an
+  // explicit development/custom base. Normalise it here, once, so every call below
+  // (enrollment, handshake, lease renewal, content, public key, persistence) uses the
+  // same prefixed base and a bare origin is never double-prefixed.
+  const configured = String(process.env.PAESCAPE_PLATFORM_URL ?? fromPlugin("platformUrl", "")).trim();
+  const url = PlatformUrl.normalisePlatformBase(configured);
   return {
     url,
     worldId: String(process.env.PAESCAPE_WORLD_ID ?? fromPlugin("worldId", "")).trim(),
@@ -891,6 +898,7 @@ async function handshake() {
   };
   applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
   log(`authorised for release generation ${lease.generation} (config revision ${lease.configRevision})`);
+  bridge.setAuthorized(true);
   scheduleLeaseRenewal();
   return result.json;
 }
@@ -917,6 +925,7 @@ async function renewLease() {
       return;
     }
     if (result.status === 401) {
+      bridge.setAuthorized(false);
       lease = null;
       await handshake();
       return;
@@ -1005,6 +1014,9 @@ function sleep(ms) {
 function markOutdated(message) {
   if (outdated) return;
   outdated = true;
+  // A draining world no longer holds a valid lease for new work; stop gating callers
+  // (bot startup) on an authorization it cannot deliver.
+  bridge.setAuthorized(false);
   warn(`OUTDATED: ${message}`);
   if (leaseTimer) clearTimeout(leaseTimer);
   // Keep the old lease for a moment: the platform rejects stale leases on the

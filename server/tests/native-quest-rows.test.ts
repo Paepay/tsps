@@ -54,9 +54,9 @@ test("native row ops use canonical journals, metadata map/wiki actions and the l
     }, {get: (target, key) => target[key] ?? (() => sender)});
     const player = {getPacketSender: () => sender, getAttribute: () => 0, sendMessage: (text: string) => messages.push(text)};
     Q.refreshQuestList(player);
-    assert.deepEqual(flags, [[(399<<16)|7, 0, 217, 0x3e]]);
-    assert.equal(varbits.get(11877), 184, "main total excludes miniquests and subquests");
-    assert.equal(varbits.get(1782), 343, "QP maximum includes RFD's ten canonical rewards");
+    assert.deepEqual(flags, [[(399<<16)|7, 0, 219, 0x3e]]);
+    assert.equal(varbits.get(11877), 187, "main total excludes miniquests and subquests");
+    assert.equal(varbits.get(1782), 346, "QP maximum includes RFD's ten canonical rewards");
     assert.equal(varbits.get(14162), 0);
     assert.equal(goblin.isComplete(player), false);
     assert.equal(varbits.get(6347), 1, "header follows the native-published completion, not internal reward timing");

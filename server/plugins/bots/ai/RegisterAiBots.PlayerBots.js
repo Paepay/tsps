@@ -15,6 +15,7 @@ const { chooseName } = require("./Names.PlayerBots");
 const { rollPersona } = require("./Persona.PlayerBots");
 const { attachBrain } = require("../brain/AttachBrain.PlayerBots");
 const { applyLevels, applyOutfit, outfitTier } = require("../brain/SiteSpawner.PlayerBots");
+const { whenAuthorized: whenBotStartAuthorized } = require("../runtime/AuthorizationGate.PlayerBots");
 const PLACES = require("../data/ai-places.json").places;
 
 /**
@@ -289,7 +290,9 @@ function registerAiBots({ api, botApi, runtime, registry, world, resetMovementSt
   api.registerCommand("aibots", listAiBots, core.PlayerRights.OWNER, "List the AI bots and what they're doing");
   api.onServerStartup(() => {
     core.TaskManager.submit(new AiBotTick());
-    setTimeout(() => presence.start(), SPAWN_DELAY_MS);
+    // Hosted worlds wait for platform authorization before AI bots log in, so their
+    // name checks never touch persistence before a lease exists.
+    whenBotStartAuthorized(() => setTimeout(() => presence.start(), SPAWN_DELAY_MS));
   });
   log("ai_bots_enabled", { count: config.count, providers: providers.map((provider) => `${provider.name}:${provider.model}`) });
   return { minds, roster };

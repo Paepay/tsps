@@ -14,6 +14,7 @@ const {
   ATTR_SKIP_PERSISTENCE,
 } = require("./PersistenceConstants.PlayerBots");
 const { SPAWNS_PER_BATCH, SPAWN_BATCH_DELAY_MS, runPaced } = require("./SpawnPacing.PlayerBots");
+const { isBlocked: botStartBlocked, whenAuthorized: whenBotStartAuthorized } = require("./AuthorizationGate.PlayerBots");
 
 const { generateBotName } = require("../lib/BotNames.PlayerBots");
 const { normalizeRegionDensity } = require("../behaviours/pvp/RegionDensity.PlayerBots");
@@ -446,7 +447,14 @@ function createBotRegistry(options) {
 
   /** Whether a bot may not show `name`: an account's name or save, or an online player's name. */
   function botNameTaken(username, name) {
-    if (botApi.core.DisplayNames.refusal(username, name)) return true;
+    // The refusal check reaches platform-backed persistence on a hosted world. If the
+    // lease has gone (or the platform is briefly unreachable) that throws; treat the
+    // name as taken rather than letting the throw crash the server tick.
+    try {
+      if (botApi.core.DisplayNames.refusal(username, name)) return true;
+    } catch {
+      return true;
+    }
     const key = name.toLowerCase();
     // Newly spawned bots share a batch before the world drains its add-player queue.
     for (const online of [...botApi.core.World.getPlayers(), ...botApi.core.World.getAddPlayerQueue()]) {
@@ -509,6 +517,9 @@ function createBotRegistry(options) {
   }
 
   function spawnWildernessBot(plan, assignmentMap, assignmentValue) {
+    // Refuse while a hosted world is not yet authorized: the name/persistence checks
+    // below reach the platform and would fail closed, crashing startup.
+    if (botStartBlocked()) return false;
     if (!plan) {
       return false;
     }
@@ -919,6 +930,12 @@ function createBotRegistry(options) {
   }
 
   function spawnConfiguredBots() {
+    // Hosted worlds must not spawn bots (whose name checks read platform-backed
+    // persistence) before the enrollment handshake yields a lease; wait for it.
+    if (botStartBlocked()) {
+      whenBotStartAuthorized(() => spawnConfiguredBots());
+      return;
+    }
     const spawnStartedAt = Date.now();
     const pendingSpawns = [];
 
@@ -996,7 +1013,7 @@ function createBotRegistry(options) {
     if (Object.keys(regionalTargets).length > 0 && typeof onPlayerMapSquareChange === "function") {
       onPlayerMapSquareChange(regionalBotMoved);
     }
-    setTimeout(() => spawnConfiguredBots(), 0);
+    whenBotStartAuthorized(() => setTimeout(() => spawnConfiguredBots(), 0));
   }
 
   function regionalBotMoved({ player }) {

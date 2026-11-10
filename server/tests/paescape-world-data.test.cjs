@@ -19,6 +19,9 @@ const PLATFORM_URL = `http://127.0.0.1:${PLATFORM_PORT}`;
 // The bridge and the mode guard agree on hosted mode through this env var; set it
 // before anything reads the mode.
 process.env.PAESCAPE_PLATFORM_URL = PLATFORM_URL;
+// The test platform below mounts at the origin root (PLATFORM_PUBLIC_PATH ''), so
+// tell the world plugin the public path is empty: no /platform prefix.
+process.env.PAESCAPE_PLATFORM_PUBLIC_PATH = "";
 delete process.env.PAESCAPE_WORLD_SECRET;
 
 /** The PaeScape platform checkout. Override with PAESCAPE_PLATFORM_DIR. */

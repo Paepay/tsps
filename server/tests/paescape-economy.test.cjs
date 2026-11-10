@@ -18,6 +18,9 @@ const SERVER_DIR = path.resolve(__dirname, "..");
 const PLATFORM_PORT = Number(process.env.TEST_PLATFORM_PORT || 5231);
 const PLATFORM_URL = `http://127.0.0.1:${PLATFORM_PORT}`;
 process.env.PAESCAPE_PLATFORM_URL = PLATFORM_URL;
+// The test platform below mounts at the origin root (PLATFORM_PUBLIC_PATH ''), so
+// tell the world plugin the public path is empty: no /platform prefix.
+process.env.PAESCAPE_PLATFORM_PUBLIC_PATH = "";
 delete process.env.PAESCAPE_WORLD_SECRET;
 
 function resolvePlatformDir() {

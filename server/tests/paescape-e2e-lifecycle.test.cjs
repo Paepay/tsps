@@ -37,6 +37,9 @@ const LOCAL_SAVE_DIR = path.join(WORK_DIR, "characters");
 process.env.TSPS_ACCOUNTS_FILE = path.join(WORK_DIR, "accounts.json");
 process.env.TSPS_DISPLAY_NAMES_FILE = path.join(WORK_DIR, "display-names.json");
 process.env.PAESCAPE_PLATFORM_URL = PLATFORM_URL;
+// The test platform below mounts at the origin root (PLATFORM_PUBLIC_PATH ''), so
+// tell the world plugin the public path is empty: no /platform prefix.
+process.env.PAESCAPE_PLATFORM_PUBLIC_PATH = "";
 delete process.env.PAESCAPE_WORLD_SECRET;
 process.env.PAESCAPE_PUBLIC_ENDPOINT = "https://localhost.invalid:43594";
 process.env.PAESCAPE_INSTALLATION_FILE = path.join(WORK_DIR, "paescape-installation.json");

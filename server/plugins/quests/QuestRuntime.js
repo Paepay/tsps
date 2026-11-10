@@ -146,7 +146,8 @@ function sendQuestHeaderStats(player) {
   }).length;
   // Earned QP remains the saved gameplay value. Native maximum/counts describe the cache list.
   packet.sendConfig(QUEST_POINTS_VARP, Number(player.getAttribute(QUEST_POINTS_ATTRIBUTE)) || 0);
-  packet.sendVarbit(QUEST_POINTS_TOTAL_VARBIT, all.reduce((sum, row) => sum + Number(row.questpoints?.[0] ?? 0), 0));
+  // Rev 242 renamed the quest table column `questpoints` to `questpoints_override` (same id).
+  packet.sendVarbit(QUEST_POINTS_TOTAL_VARBIT, all.reduce((sum, row) => sum + Number((row.questpoints ?? row.questpoints_override)?.[0] ?? 0), 0));
   packet.sendVarbit(QUESTS_COMPLETED_VARBIT, completed(0));
   packet.sendVarbit(QUESTS_TOTAL_VARBIT, main.length);
   packet.sendVarbit(MINIQUESTS_COMPLETED_VARBIT, completed(1));

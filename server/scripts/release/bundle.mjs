@@ -24,7 +24,17 @@ import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// Reuse the plugin's own base-URL normalisation so the packaged exe, the plugin and
+// the website all agree on where the platform API lives (bare origin, prefixed, or
+// explicit development base). Imported from the plugin source, not duplicated.
+const platformUrlSource = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "plugins", "paescape", "PlatformUrl.js");
+const platformUrlModule = await import(pathToFileURL(platformUrlSource).href);
+const normalisePlatformBase = platformUrlModule.normalisePlatformBase ?? platformUrlModule.default?.normalisePlatformBase;
+if (typeof normalisePlatformBase !== "function") {
+  throw new Error("could not load normalisePlatformBase from plugins/paescape/PlatformUrl.js");
+}
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const args = parseArgs(process.argv.slice(2));
@@ -152,6 +162,17 @@ if (fs.existsSync(path.join(serverDir, "target.txt"))) {
 } else {
   throw new Error("target.txt is missing from the server directory; the packaged server cannot select a cache without it.");
 }
+// Fail the build when the packaged cache and target.txt disagree on the revision, or
+// the packaged caches/ does not actually contain the revision target.txt names. Shipping
+// a relabelled-but-241 cache is exactly the bug this guards against.
+{
+  const { verifyCacheConsistency } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "verify-cache.mjs")).href);
+  const check = verifyCacheConsistency({ serverDir, expectedRevision: args.cacheRevision ?? process.env.PAESCAPE_EXPECTED_CACHE_REVISION });
+  if (!check.ok) {
+    throw new Error("cache revision consistency check failed:\n  - " + check.problems.join("\n  - "));
+  }
+  console.log(`[bundle] cache revision ${check.revision} (${check.name}) verified against target.txt and caches/`);
+}
 // Production dependencies only, minus dev tooling, source maps, and type declaration
 // packages. @types packages are compile-time only and, worse, the Node SEA type
 // definitions embed the very sentinel postject searches for, which would make the
@@ -172,20 +193,23 @@ copyTree(
 // package.json sets "type": "module" (as the website repo does). Pin this tree to
 // CommonJS so the compiled server loads as it would from its own checkout.
 fs.writeFileSync(path.join(stagingDir, "package.json"), JSON.stringify({ name: "paescape-server", private: true, type: "commonjs" }, null, 2));
+// Stamp the normalised platform API base (origin + public path) so the packaged exe
+// posts to /platform/api/... on the public website without the host editing anything.
+const platformBase = normalisePlatformBase(process.env.PAESCAPE_PLATFORM_URL ?? "");
 fs.writeFileSync(
   path.join(stagingDir, "paescape-app.json"),
-  JSON.stringify({ version, generation, protocolVersion, platformUrl: process.env.PAESCAPE_PLATFORM_URL ?? "", builtAt: new Date().toISOString() }, null, 2),
+  JSON.stringify({ version, generation, protocolVersion, platformUrl: platformBase, builtAt: new Date().toISOString() }, null, 2),
 );
 // world.json leaves the PaeScape integration plugin disabled (correct for an offline
 // world), but a distributed server.exe is always a hosted world that must enroll and
 // authenticate with the platform without the host editing any file. Write a minimal
-// world.local.json that turns the plugin on and defaults the platform origin. A host can
-// still override either with PAESCAPE_PLATFORM_URL at runtime.
+// world.local.json that turns the plugin on and defaults the platform base. A host can
+// still override it with PAESCAPE_PLATFORM_URL at runtime.
 {
   const local = {
     plugins: { PaeScape: true },
-    pluginConfig: process.env.PAESCAPE_PLATFORM_URL
-      ? { "PaeScape:platformUrl": process.env.PAESCAPE_PLATFORM_URL }
+    pluginConfig: platformBase
+      ? { "PaeScape:platformUrl": platformBase }
       : {},
   };
   fs.writeFileSync(path.join(stagingDir, "data", "definitions", "world.local.json"), JSON.stringify(local, null, 2) + "\n");

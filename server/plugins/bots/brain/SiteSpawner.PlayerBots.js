@@ -9,6 +9,7 @@ const { Flag } = require("../../../src/main/typescript/elvarg/game/model/Flag");
 const { Item } = require("../../../src/main/typescript/elvarg/game/model/Item");
 const { Equipment } = require("../../../src/main/typescript/elvarg/game/model/container/impl/Equipment");
 const { ItemIdentifiers } = require("../../../src/main/typescript/elvarg/util/ItemIdentifiers");
+const { whenAuthorized: whenBotStartAuthorized } = require("../runtime/AuthorizationGate.PlayerBots");
 
 /**
  * A site's `levels` sets every skill (a number) or named skills ({ "all": 40,
@@ -254,7 +255,8 @@ function startBotSites(options = {}) {
   }
 
   if (typeof api?.onServerStartup === "function") {
-    api.onServerStartup(() => setTimeout(start, 1000));
+    // Site bots log in through persistence; hosted worlds wait for authorization.
+    api.onServerStartup(() => whenBotStartAuthorized(() => setTimeout(start, 1000)));
   }
   return { start };
 }

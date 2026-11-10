@@ -27,13 +27,30 @@ Via `world.json` `pluginConfig` (preferred) or environment variables:
 
 | Key | Env | Meaning |
 | --- | --- | --- |
-| `PaeScape:platformUrl` | `PAESCAPE_PLATFORM_URL` | Platform origin, e.g. `https://paescape.online` |
+| `PaeScape:platformUrl` | `PAESCAPE_PLATFORM_URL` | Platform base, e.g. `https://paescape.online` (the public `/platform` path is added automatically) |
 | `PaeScape:worldId` | `PAESCAPE_WORLD_ID` | World id issued by the website |
 | `PaeScape:worldSecret` | `PAESCAPE_WORLD_SECRET` | World credential (issued once) |
 | `PaeScape:publicEndpoint` | `PAESCAPE_PUBLIC_ENDPOINT` | Public HTTPS origin players reach |
 
 The credential is shown once in the website's world page and stored hashed on
 the platform. It is scoped to this world only and can be revoked.
+
+### Platform base URL
+
+The website serves the platform behind a public path prefix (`/platform`); the
+production reverse proxy routes `/platform/*` to the platform service and `/api/*`
+to the cache service. `PAESCAPE_PLATFORM_URL` accepts any of:
+
+- a bare origin (`https://paescape.online`) - the `/platform` path is added;
+- an origin that already carries the path (`https://paescape.online/platform`) -
+  used as-is, never double-prefixed;
+- an explicit development or alternative base (`http://127.0.0.1:5176/backend`) -
+  preserved as configured.
+
+`plugins/paescape/PlatformUrl.js` performs this normalisation once, centrally, so
+enrollment, handshake, lease renewal, content, public-key retrieval and player
+persistence all append to the same base. `PAESCAPE_PLATFORM_PUBLIC_PATH` (or the
+platform's own `PLATFORM_PUBLIC_PATH`) overrides the default `/platform`.
 
 ## Core changes this relies on
 
