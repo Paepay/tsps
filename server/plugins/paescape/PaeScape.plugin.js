@@ -102,7 +102,7 @@ function installationPath() {
 
 // Shared, unit-tested startup logging: a timestamped and redacted timeline, and
 // the numbered startup stages (see StartupLog.js for the scheme).
-const { redact, timestamp: stamp, line: startupLine, stageLine } = require("./StartupLog.js");
+const { redact, timestamp: stamp, line: startupLine, stageLine, boundedFetch } = require("./StartupLog.js");
 
 function log(message) {
   console.log(startupLine("log", message));
@@ -267,31 +267,15 @@ async function worldEndpoint(path) {
 async function platformFetch(pathname, { method = "GET", token, body, signal, timeoutMs = PLATFORM_REQUEST_TIMEOUT_MS } = {}) {
   const headers = { accept: "application/json", "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
-  // Fail closed on a stalled request: abort it and let the caller report a
-  // transport failure, never wait indefinitely for a reply.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  if (typeof timer.unref === "function") timer.unref();
-  if (signal) {
-    if (signal.aborted) controller.abort();
-    else signal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-  let response;
-  try {
-    response = await fetch(`${platform.url}${pathname}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (controller.signal.aborted && !(signal?.aborted)) {
-      throw new Error(`the platform did not answer within ${Math.round(timeoutMs / 1000)} s (${pathname})`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  // Fail closed on a stalled request: boundedFetch aborts it and the caller reports
+  // a transport failure, never waiting indefinitely for a reply.
+  const response = await boundedFetch(`${platform.url}${pathname}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+    timeoutMs,
+  });
   const text = await response.text();
   let json = null;
   try {

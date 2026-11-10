@@ -65,4 +65,39 @@ function stageLine(number, name) {
   return `[${timestamp()}] [paescape] [stage ${number}/7] ${name}`;
 }
 
-module.exports = { REDACTED, redact, timestamp, line, stageLine };
+/**
+ * Run one platform request with a bounded lifetime and merge an optional caller
+ * signal into it. A platform (or a host's network) that accepts the connection
+ * and then never answers must not stall startup stages 4-7 forever: the request
+ * is aborted after `timeoutMs` and the caller sees a plain transport error it can
+ * report and retry. Extracted here (rather than inline in the plugin) so it is
+ * unit-tested without a running server or a live platform.
+ */
+async function boundedFetch(url, { timeoutMs = 30000, signal, fetchImpl = globalThis.fetch, ...init } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  const forward = signal ? () => controller.abort() : null;
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", forward, { once: true });
+  }
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    // Distinguish our own deadline from the caller's cancellation and from a real
+    // transport error (DNS, refused connection), so the console says which.
+    if (controller.signal.aborted && !(signal && signal.aborted)) {
+      const failure = new Error(`the platform did not answer within ${Math.round(timeoutMs / 1000)} s (${url})`);
+      failure.name = "PlatformTimeoutError";
+      failure.code = "PLATFORM_TIMEOUT";
+      throw failure;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (signal && forward) signal.removeEventListener("abort", forward);
+  }
+}
+
+module.exports = { REDACTED, redact, timestamp, line, stageLine, boundedFetch };

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const { redact, timestamp, line, stageLine, REDACTED } = require(path.join(here, "..", "..", "plugins", "paescape", "StartupLog.js"));
+const { redact, timestamp, line, stageLine, boundedFetch, REDACTED } = require(path.join(here, "..", "..", "plugins", "paescape", "StartupLog.js"));
 
 test("a bearer token is redacted wherever it appears", () => {
   const out = redact("refused GET with authorization: Bearer abcDEF123._-xyz");
@@ -68,4 +68,82 @@ test("a stage line names the stage out of seven", () => {
 
 test("the redaction sentinel is a single token", () => {
   assert.equal(REDACTED, "<redacted>");
+});
+
+/** A fetch stub that never answers until its signal aborts. */
+function hangingFetch() {
+  return (url, { signal }) =>
+    new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        reject(error);
+      });
+    });
+}
+
+test("a platform that never answers is bounded instead of hanging", async () => {
+  const started = Date.now();
+  await assert.rejects(
+    boundedFetch("https://platform.test/api/worlds", { timeoutMs: 50, fetchImpl: hangingFetch() }),
+    (error) => {
+      assert.equal(error.code, "PLATFORM_TIMEOUT");
+      assert.equal(error.name, "PlatformTimeoutError");
+      assert.match(error.message, /did not answer within 0 s/);
+      assert.match(error.message, /api\/worlds/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5000, "the timeout must fire promptly");
+});
+
+test("a caller's own cancellation is not reported as a platform timeout", async () => {
+  const controller = new AbortController();
+  const pending = boundedFetch("https://platform.test/api/worlds", {
+    timeoutMs: 30000,
+    signal: controller.signal,
+    fetchImpl: hangingFetch(),
+  });
+  controller.abort();
+  await assert.rejects(pending, (error) => {
+    assert.notEqual(error.code, "PLATFORM_TIMEOUT");
+    assert.equal(error.name, "AbortError");
+    return true;
+  });
+});
+
+test("a real transport failure keeps its own error", async () => {
+  const refused = () => {
+    const error = new Error("connect ECONNREFUSED 127.0.0.1:443");
+    error.code = "ECONNREFUSED";
+    return Promise.reject(error);
+  };
+  await assert.rejects(
+    boundedFetch("https://platform.test/api/worlds", { timeoutMs: 30000, fetchImpl: refused }),
+    (error) => {
+      assert.equal(error.code, "ECONNREFUSED");
+      assert.doesNotMatch(error.message, /did not answer/);
+      return true;
+    },
+  );
+});
+
+test("a reply inside the deadline resolves normally", async () => {
+  const seen = {};
+  const response = await boundedFetch("https://platform.test/api/worlds", {
+    method: "POST",
+    headers: { accept: "application/json" },
+    body: "{}",
+    timeoutMs: 30000,
+    fetchImpl: async (url, init) => {
+      seen.url = url;
+      seen.init = init;
+      return { status: 200 };
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(seen.url, "https://platform.test/api/worlds");
+  assert.equal(seen.init.method, "POST");
+  assert.equal(seen.init.body, "{}");
+  assert.ok(seen.init.signal, "the request must still carry an abort signal");
 });
