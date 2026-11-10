@@ -118,6 +118,7 @@ function diaryCommand({ player, parts }) {
 
 module.exports = {
   name: "AchievementDiaries",
+  description: "Achievement diaries: task lists, progress, tier reward claims and lamps, plus the ::diary command to inspect, complete or reset tiers.",
   members: true,
   register(api) {
     Progress(api);
@@ -128,6 +129,7 @@ module.exports = {
     require("./diaries/Actions.AchievementDiaries")(api);
     require("./diaries/Desert.AchievementDiaries")(api);
     require("./diaries/Morytania.AchievementDiaries")(api);
+    require("./diaries/NotedDrops.AchievementDiaries")(api);
     api.onCustomEvent("diary:task", onTask);
     api.onCustomEvent("diary:is-complete", onIsComplete);
     api.onCustomEvent("diary:is-started", onIsStarted);

@@ -30,11 +30,12 @@ const RiftGuardians = require('../plugins/minigames/guardiansoftherift/RiftGuard
 const Creatures = require('../plugins/minigames/guardiansoftherift/Creatures.GuardiansOfTheRift');
 const RewardsGuardian = require('../plugins/minigames/guardiansoftherift/RewardsGuardian.GuardiansOfTheRift');
 const Apprentices = require('../plugins/minigames/guardiansoftherift/Apprentices.GuardiansOfTheRift');
+const Amulet = require('../plugins/minigames/guardiansoftherift/Amulet.GuardiansOfTheRift');
 
 const hooks = {
   objects: {}, npcs: {}, items: {}, clicks: {}, custom: {}, login: [], logout: [], conditions: [], areas: [], prompts: [],
   dialogues: [], canBankItem: [], beforeObjects: [], itemOnObject: {}, itemOnItem: {}, itemOnNpc: [], drops: [], npcsSpawned: [], npcsRemoved: [],
-  persisted: new Set(), currencies: new Map(),
+  persisted: new Set(), currencies: new Map(), itemHandlers: [],
 };
 
 /** Enough of an NPC for barriers and guardians: hitpoints, transforms, a movement queue. */
@@ -50,9 +51,12 @@ function fakeNpc(definition) {
     heal: (amount) => { npc.hp = Math.min(npc.getMaxHitpoints(), npc.hp + amount); },
     setNpcTransformationId: (id) => { npc.transform = id; return npc; },
     getMovementQueue: () => ({ setBlockMovement() {}, reset() {}, size: () => 0, routes: npc.routes }),
-    performAnimation: (animation) => npc.animations.push(animation.getId?.() ?? animation.id),
+    performAnimation: (animation) => {
+      npc.animations.push(animation.getId?.() ?? animation.id);
+      npc.animationDelays.push(animation.getDelay?.() ?? animation.delay ?? 0);
+    },
     forceChat() {},
-    flags: new Set(), routes: [], animations: [], splats: [],
+    flags: new Set(), routes: [], animations: [], animationDelays: [], splats: [],
     setFlag: (flag) => npc.flags.add(flag),
     getSize: () => Shared.core().NpcDefinition.forId(npc.id).getSize?.() ?? 1,
     setPositionToFace() {},
@@ -92,7 +96,7 @@ function fakeApi() {
       for (const handler of hooks.custom[name] ?? []) handler(payload);
     },
     sendMultiChatboxPrompt: (player, title, ...args) => hooks.prompts.push({ player, title, args }),
-    onItemAction: (name, actions) => { hooks.items[name] = actions; },
+    onItemAction: (name, actions) => { if (typeof name === 'function') hooks.itemHandlers.push(name); else hooks.items[name] = actions; },
     onObjectClick: (ids, clickType, handler) => { hooks.clicks[`${ids}:${clickType}`] = handler; },
     onCanBankItem: (handler) => hooks.canBankItem.push(handler),
     onItemOnObject: (item, object, handler) => { hooks.itemOnObject[`${item}|${object}`] = handler; },
@@ -297,6 +301,7 @@ before(() => {
   Creatures.attach(api);
   RewardsGuardian.attach(api);
   Apprentices.attach(api);
+  Amulet.attach(api);
   Shared.core().PathFinder.calculateWalkRoute = (npc, x, y) => { npc.routes?.push([x, y]); return true; };
   for (const name of Shared.GAME_ITEMS) if (Shared.core().ItemDefinition.forId(Shared.obj(name)).isStackable()) STACKABLE.add(Shared.obj(name));
 });
@@ -1404,6 +1409,34 @@ test('a rift guardian goes after a creature across the temple, not only within 1
   assert.ok(routes.some(([npc, x, y]) => npc === guardian && x === 3606 && y === 9503), 'walks at the far leech');
 });
 
+test('a new rift guardian rises for 4 ticks, then its first step ends the spawn sequence (issue 3837)', () => {
+  const player = fakePlayer();
+  openGame(player);
+  Game._game.phase = Game.PHASE.ATTACK;
+  const leech = fakeNpc({ id: Shared.npc('gotr_abyssal_leech'), x: 3611, y: 9517 });
+  Creatures.creatures.set(leech, { kind: 'leech', nextAttack: Infinity, attacker: null });
+  player.inventory.add(Shared.obj('chisel'), 1);
+  player.inventory.add(CELL(1), 1);
+  hooks.objects['Essence pile (elemental)'].Assemble({ player, objectId: Shared.loc('gotr_guardian_spawn_east') });
+  ticks(5);
+  const guardian = hooks.npcsSpawned.find((npc) => npc.id === Shared.npc('gotr_guardian_air'));
+  assert.ok(guardian, 'the guardian comes to life');
+  const spawn = Shared.seq('rift_guardian_spawn');
+  const reset = Shared.core().Animation.DEFAULT_RESET_ANIMATION.getId();
+  assert.deepEqual(guardian.animations, [spawn]);
+  ticks(3);
+  assert.deepEqual(guardian.routes, [], 'still rising: no step, even with a leech to fight');
+  assert.deepEqual(guardian.animations, [spawn]);
+  ticks(1);
+  // Capture 20261020T162558: the first step carries sequence -1, delay 95. The spawn sequence loops
+  // at priority 10, so left on, the client froze the guardian and dropped its attacks.
+  assert.deepEqual(guardian.animations, [spawn, reset]);
+  assert.equal(guardian.animationDelays.at(-1), 95);
+  assert.equal(guardian.routes.length, 1, 'walks out to its post');
+  ticks(1);
+  assert.deepEqual(guardian.routes.at(-1), [3611, 9517], 'then goes for the leech');
+});
+
 test('full power kills every creature', () => {
   const player = fakePlayer();
   openGame(player);
@@ -1885,4 +1918,50 @@ test('repairing a broken tile: the captured refusal and success lines', () => {
   assert.equal(player.messages.at(-1), 'The magical power of the guardian essence restores the cell tile. It can now fit a charged cell again.');
   assert.equal(player.inventory.getAmount(Shared.obj(Shared.ITEM.FRAGMENTS)), 1);
   assert.equal(tile.broken, false);
+});
+
+test('the Amulet of the Eye teleports to the Temple of the Eye from the inventory and, in any colour, from the worn tab', () => {
+  const { TeleportHandler, Equipment, Item } = Shared.core();
+  const arrivals = [];
+  const { checkReqs, teleport } = TeleportHandler;
+  TeleportHandler.checkReqs = () => true;
+  TeleportHandler.teleport = (player, target) => arrivals.push([target.getX(), target.getY()]);
+  try {
+    const player = fakePlayer('Eye', { x: 3222, y: 3218 });
+    const click = (name, extra) => hooks.itemHandlers.forEach((handler) => handler({ player, itemId: Shared.obj(name), item: new Item(Shared.obj(name), 1), ...extra }));
+    click('gotr_amulet_of_the_eye', { option: 'Teleport', interfaceId: 3214 });
+    assert.deepEqual(arrivals.splice(0), [[Shared.LOBBY_TILE.x, Shared.LOBBY_TILE.y]], 'the inventory Teleport lands in the temple');
+    click('gotr_amulet_of_the_eye', { option: 'Wear', interfaceId: 3214 });
+    assert.deepEqual(arrivals, [], 'Wear does not teleport');
+    for (const colour of ['red', 'green', 'blue']) {
+      click(`gotr_amulet_of_the_eye_${colour}`, { interfaceId: Equipment.INVENTORY_INTERFACE_ID, clickType: 2 });
+      assert.equal(arrivals.length, 1, `the worn ${colour} amulet's Teleport (cache param 451) teleports`);
+      arrivals.length = 0;
+    }
+  } finally {
+    TeleportHandler.checkReqs = checkReqs;
+    TeleportHandler.teleport = teleport;
+  }
+});
+
+test('the Amulet of the Eye teleport made during a game leaves the game on arrival', () => {
+  const { TeleportHandler, Item } = Shared.core();
+  const { checkReqs, teleport } = TeleportHandler;
+  let arrive = null;
+  TeleportHandler.checkReqs = () => true;
+  TeleportHandler.teleport = (player, target, type, warn, onArrival) => { arrive = onArrival; };
+  try {
+    const player = fakePlayer('EyeGame');
+    openGame(player);
+    assert.ok(Game.isPlaying(player));
+    const id = Shared.obj('gotr_amulet_of_the_eye');
+    hooks.itemHandlers.forEach((handler) => handler({ player, itemId: id, item: new Item(id, 1), option: 'Teleport', interfaceId: 3214 }));
+    assert.ok(Game.isPlaying(player), 'still in the game until the teleport lands');
+    arrive();
+    assert.equal(Game.isPlaying(player), false, 'arriving in the temple leaves the game');
+  } finally {
+    TeleportHandler.checkReqs = checkReqs;
+    TeleportHandler.teleport = teleport;
+    resetGame();
+  }
 });

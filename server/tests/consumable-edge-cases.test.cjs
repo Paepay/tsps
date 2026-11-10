@@ -12,7 +12,7 @@ const { ItemIdentifiers } = require("../dist/util/ItemIdentifiers");
 const Potions = require("../plugins/items/Potions.plugin");
 const { Item } = require("../dist/game/model/Item");
 const { PluginManager } = require("../dist/plugins/PluginManager");
-let combinePotions, emptyVessel, staminaFromHook, drinkPotion, core;
+let combinePotions, emptyVessel, staminaFromHook, drinkPotion, core, staminaEffect;
 before(async () => {
   const { CachePipeline } = require("../dist/game/cache/CachePipeline");
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -23,6 +23,7 @@ before(async () => {
       if (key === "onItemAction") emptyVessel = args[0];
       if (key === "onItemFirstAction") drinkPotion = args[0];
       if (key === "onCustomEvent" && args[0] === "potions:apply-stamina") staminaFromHook = args[1];
+      if (key === "emitCustomEvent" && args[0] === "potions:stamina-effect") staminaEffect = { ...args[1] };
       // The Skillcapes plugin answers this; a worn Prayer cape is all these tests need.
       if (key === "emitCustomEvent" && args[0] === "skillcape:has-perk" && args[1].skill === "PRAYER") {
         args[1].result = args[1].player.getEquipment().contains(ItemIdentifiers.PRAYER_CAPE);
@@ -203,6 +204,26 @@ test("a Sanfew dose restores 4 + 30% (prayer 32% with the bonus)", () => {
   applySanfewRestore(player);
   assert.equal(player.levels.get(Skill.ATTACK), 1 + 4 + 29);
   assert.equal(player.levels.get(Skill.PRAYER), 1 + 4 + 31);
+});
+
+test("two divine potions keep their own five minutes: the second doesn't drop the first's boost (Wiki)", (t) => {
+  const player = createPlayer({ current: 99 });
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  applyDivine(player, (p) => p.levels.set(Skill.ATTACK, 118), [Skill.ATTACK], { damage: 0 });
+  now += 60_000;
+  applyDivine(player, (p) => p.levels.set(Skill.RANGED, 112), [Skill.RANGED], { damage: 0 });
+  const skills = () => (player.getAttribute("potions:divine:state")?.targets ?? []).map((entry) => entry.skillIndex).sort();
+  assert.deepEqual(skills(), [Skill.ATTACK.getIndex(), Skill.RANGED.getIndex()].sort(), "both stay pinned");
+  now += 4 * 60_000 + 1; // the first potion's five minutes are over, the second has a minute left
+  processDivine(player);
+  assert.equal(player.levels.get(Skill.ATTACK), 99, "the first potion's boost ends on its own time");
+  assert.equal(player.levels.get(Skill.RANGED), 112, "the second's is still held");
+  assert.deepEqual(skills(), [Skill.RANGED.getIndex()]);
+  now += 60_000;
+  processDivine(player);
+  assert.equal(player.levels.get(Skill.RANGED), 99);
+  assert.equal(player.getAttribute("potions:divine:state"), null);
 });
 
 test("a divine potion's timer pauses while logged out and the state survives a save", () => {
@@ -692,4 +713,24 @@ test("shared stamina requests support timed restorative food without consuming a
  const now=Date.now();staminaFromHook({player,energy:20,durationMs:60000});
  assert.equal(energy,30);assert.equal(attrs.get("potions:stamina:acc"),0);
  assert.ok(attrs.get("potions:stamina:end")>=now+60000&&attrs.get("potions:stamina:end")<=Date.now()+60000);
+});
+
+test("extended stamina potions restore 40% run energy with a 4-minute drain cut and cost a ring two charges", () => {
+  const I = ItemIdentifiers;
+  const chain = [I.EXTENDED_STAMINA_POTION_4_, I.EXTENDED_STAMINA_POTION_3_, I.EXTENDED_STAMINA_POTION_2_, I.EXTENDED_STAMINA_POTION_1_];
+  chain.forEach((id, index) => {
+    const entry = Potions._test.findPotionEntry(id);
+    assert.ok(entry, `dose ${4 - index} is a potion`);
+    assert.equal(entry.doses, 4 - index);
+  });
+  const player = createPlayer();
+  const now = Date.now();
+  Potions._test.findPotionEntry(I.EXTENDED_STAMINA_POTION_4_).potion.effect(player);
+  assert.equal(player.getRunEnergy(), 40);
+  assert.deepEqual([staminaEffect.energy, staminaEffect.durationMs, staminaEffect.charges], [40, 240000, 2]);
+  const end = player.getAttribute("potions:stamina:end");
+  assert.ok(end >= now + 240000 && end <= Date.now() + 240000);
+  // An ordinary dose stays at 20% for 2 minutes and one charge.
+  Potions._test.findPotionEntry(I.STAMINA_POTION_4_).potion.effect(createPlayer());
+  assert.deepEqual([staminaEffect.energy, staminaEffect.durationMs, staminaEffect.charges], [20, 120000, 1]);
 });

@@ -89,6 +89,14 @@ function login({ player }) {
   Core.enterClan(player, clan);
 }
 
+/**
+ * "clans:release-guest" { player }: another group takes the listened slot (the PvP Arena's 1v1
+ * Duels group): the clan up on the Guest Clan tab, and its channel, are let go first.
+ */
+function releaseGuest({ player }) {
+  Core.removeGuestViewer(player);
+}
+
 function logout({ player }) {
   Formation.endSession(player);
   Contents.playerGone(player);
@@ -431,10 +439,12 @@ function attachUnits(api) {
 
 module.exports = {
   name: "Clans",
+  description: "Clans: the Clan Hub, the player's own clan, // clan chat and the Your Clan tab.",
   register(api) {
     attachUnits(api);
     api.onCustomEvent("player:bootstrap-complete", login);
     api.onPlayerLogout(logout);
+    api.onCustomEvent("clans:release-guest", releaseGuest);
     api.onSocialPacket(chat);
     api.onSocialPacket(channelAction);
     api.onInterfaceActionClick(clickYourClan);

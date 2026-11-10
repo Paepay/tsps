@@ -16,10 +16,12 @@ const { PluginManager } = require('../dist/plugins/PluginManager');
 const { ObjectManager } = require('../dist/game/entity/impl/object/ObjectManager');
 
 const WORLD_INSTALLER_QUESTS = [
-  'BeneathCursedSands', 'CrabQuest', 'CurseOfArrav', 'DeathToTheDorgeshuun', 'DefenderOfVarrock',
+  'BeneathCursedSands', 'CurseOfArrav', 'DeathToTheDorgeshuun', 'DefenderOfVarrock',
   'EaglesPeak', 'EyesOfGlouphrie', 'GrimTales', 'InAidOfTheMyreque', 'Pandemonium',
-  'PerilousMoons', 'PryingTimes', 'SecretsOfTheNorth', 'SwanSong', 'WhatLiesBelow',
+  'PerilousMoons', 'PryingTimes', 'SecretsOfTheNorth', 'SwanSong',
 ];
+// WhatLiesBelow installs no world object since 475e73669: its Tunnel of Chaos statue is the cache map's own (the
+// installed copy was a duplicate), and its startup hook now only spawns Surok.
 
 /** The real plugin api, except that hook registrations are captured instead of installed. */
 function capturingApi() {

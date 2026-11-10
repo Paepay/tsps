@@ -192,7 +192,7 @@ class ByteBuffer {
         return bytes;
     }
     readUnsignedBytes(amount) {
-        const bytes = new Uint8Array(this._data.buffer).subarray(this.offset, this.offset + amount);
+        const bytes = new Uint8Array(this._data.buffer, this._data.byteOffset, this._data.byteLength).subarray(this.offset, this.offset + amount);
         this.offset += amount;
         return bytes;
     }

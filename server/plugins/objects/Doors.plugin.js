@@ -30,11 +30,17 @@ const WALK_OVER_MAX_TICKS = 2;
 const DOOR_NAMES = new Set([
   "Door", "Doors", "Large door", "Large doors", "Castle door", "Cell Door", "Cell door",
   "Glass door", "Magic door", "Magic guild door", "Metal door", "Mind Door", "Mithril door", "Tent door", "Wall",
+  // The Ranging Guild's entrance (11665, diagonal, Open only). Its 40 Ranged gate is
+  // areas/RangingGuild.plugin.js; this only swings the leaf.
+  "Guild door",
   "Gate", "Metal gate", "Doorway", "Tree Door", "Storeroom Door", "Ardougne Wall Door",
   "Vitur door", "Myrmel door", "Shadum door", "Jovkai door", "Chained door", "Trapdoor",
   "Longhall door", "Prison door", "Arena Entrance", "Arena Exit",
   // Pollnivneach curtains: closed 1533 "Open" -> open 1534 "Close" (closed id + 1, cache-derived).
   "Curtain",
+  // Tower of Life's entrance (21814): tol_tower_wall_door -> tol_tower_wall_door_open (21815).
+  // TowerOfLife.Quest.js checks the builder's outfit first (door:toggle).
+  "Tower door",
 ]);
 
 // Always name locs by their core.ObjectIdentifiers property (O.DOOR_358), never a raw id: the
@@ -64,6 +70,13 @@ const NAMELESS_DOOR_LEAF_IDS = Object.freeze({
   // inactivepoordoor: Melzar's front door opens onto it (Dragon Slayer I capture 20261106T101002 tick
   // 2070), which the cache doesn't pair by name; ObjectIdentifiers has no property for it.
   MELZAR_DOOR_OPEN: 1539,
+  // grim_inactiveposhdoor: Witch's House front and back doors open onto it (capture 20261108T030409
+  // ticks 154, 389); ObjectIdentifiers has no property for it.
+  WITCH_HOUSE_DOOR_OPEN: 24719,
+  // kebos_farming_guild_door_left_open/_right_open: the Farming Guild entrance's leaves (rsprox 1692
+  // tick 940, 239 tick 1649); nameless in the cache, so ObjectIdentifiers has no property for them.
+  FARMING_GUILD_DOOR_LEFT_OPEN: 34465,
+  FARMING_GUILD_DOOR_RIGHT_OPEN: 34466,
 });
 
 let SELF_OPENING_DOOR_IDS, IN_PLACE_DOOR_IDS, OWN_TILE_DOOR_IDS, SINGLE_DOOR_OPEN_IDS, COMPOSITE_DOOR_OPENINGS, WOODEN_GATES, WOODEN_GATE_BY_ID;
@@ -81,6 +94,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // are nameless with no actions and are never placed, so the pairing below cannot find them.
   SELF_OPENING_DOOR_IDS = new Set([O.DOOR_223, O.DOOR_225, O.DOOR_226, O.DOOR_227, O.DOOR_228, O.DOOR_229, O.DOOR_230, O.DOOR_231,
     O.DOOR_283, // Ardougne Castle's lockpick door has no separate open loc in the cache.
+    // The Ranging Guild's entrance (11665) is Open only; 11666 is a ladder, so there is no
+    // open leaf to pair with and the leaf swings in place.
+    O.GUILD_DOOR,
     O.DOOR_287, O.DOOR_358, O.GATE_52, O.WALL_9, O.DOOR_115, O.LARGE_DOOR_23,
     // The Blood Moon Rises crank-wheel house exit (61824) has no cache Close partner.
     O.DOOR_831,
@@ -111,7 +127,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     // Holy Grail: Merlin's workshop door in Camelot (24, merlinworkshop) and the Draynor Manor
     // whistle-room door (22, whistledoor) are Open-only; their id+1 are a clock spindle and the
     // sacks, and their same-model Close locs (1536, none for 22) belong to other doors.
-    O.DOOR_3, O.DOOR_4]);
+    O.DOOR_3, O.DOOR_4,
+    // Khazard stronghold: Open-only ordinary door models, no distinct open loc.
+    O.DOOR_67]);
   // Single doors the pairing below can't find: the open variant is not closedId + 1 (e.g. Large
   // door 1517 -> 1520, same models), or it has no "Close" (DOOR_181, the open Keldagrim door on
   // the way to the Blast Furnace, shares DOOR_180's model but offers no option). Witch's House's
@@ -144,6 +162,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     // Troll Stronghold's cache has an action-less open loc 3811 with the same
     // model as closed 3810, so it cannot be paired by the normal action scan.
     [O.STOREROOM_DOOR, O.STOREROOM_DOOR + 1],
+    // Tower of Life's door: the open loc 21815 has the same model but no action (cache gameval
+    // tol_tower_wall_door / tol_tower_wall_door_open).
+    [O.TOWER_DOOR, O.TOWER_DOOR + 1],
     // Slepe church crypt gate: its open form 39513 has the same model but no action.
     [O.GATE_210, O.GATE_211],
     // Active cache dump (osrs-241 2026-10-20): 2000/2002 "Door" have Open and
@@ -199,6 +220,8 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     woodenGate(O.GATE_17, O.GATE_167, O.GATE_168, O.GATE_169),
     woodenGate(O.GATE_18, O.GATE_20, O.GATE_19, O.GATE_25),
     woodenGate(O.GATE_21, O.GATE_22, O.GATE_23, O.GATE_24),
+    // Tenzing's gate: RSProx 3252 tick 5732 swings both leaves east.
+    woodenGate(O.GATE_74, O.GATE_75, O.GATE_76, O.GATE_77),
     woodenGate(O.GATE_78, O.GATE_79, O.GATE_80, 4314), // 4314: open extension, nameless in the cache
     woodenGate(O.GATE_83, O.GATE_84, O.GATE_85, O.GATE_86),
     woodenGate(O.GATE_113, O.GATE_114, O.GATE_115, 12819), // 12819: open extension, nameless in the cache
@@ -244,6 +267,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     Object.freeze([O.GATE_40, O.GATE_41, O.GATE_29, O.GATE_30]),
     // Sinclair Mansion: model-639 open leaves have a null cache name but a Close action.
     Object.freeze([O.LARGE_DOOR_79, O.LARGE_DOOR_80, 25749, 25751]),
+    // Murder Mystery's mansion gate (2741/2742,3555): mirrored leaves with different models, so the
+    // generic pairing sees two single gates. 26130/26131 open into 26132/26133 (…openl / …openr).
+    Object.freeze([O.GATE_177, O.GATE_178, O.GATE_179, O.GATE_180]),
     // Sins of the Father Arboretum: closed 39251/39253 "Large door" (Open, model
     // 40489) swing east into the nameless/actionless 39252/39254 leaves on the
     // adjacent tiles (capture 1637; matching cache pair).
@@ -307,6 +333,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     [O.LARGE_DOOR_8, O.LARGE_DOOR_10],
     [O.LARGE_DOOR_79, O.LARGE_DOOR_80],
     [25749, 25751],
+    // Murder Mystery mansion gate (issue 4053): closed 26130/26131, open 26132/26133.
+    [O.GATE_177, O.GATE_178],
+    [O.GATE_179, O.GATE_180],
     // Sins of the Father Arboretum double door (capture 1637).
     [O.LARGE_DOOR_100, O.LARGE_DOOR_101],
   ]);
@@ -350,6 +379,8 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     [O.DOORS_22, O.DOORS_26],
     [O.DOORS_29, O.DOORS_31],
     [O.DOORS_30, O.DOORS_32],
+    [O.GATE_177, O.GATE_179],
+    [O.GATE_178, O.GATE_180],
     [O.LARGE_DOOR_99, O.LARGE_DOOR_18],
     [O.LARGE_DOOR_7, O.LARGE_DOOR_8],
     [O.LARGE_DOOR_9, O.LARGE_DOOR_10],
@@ -360,6 +391,34 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // crossRows is a gate more than one tile thick whose tiles the map blocks: the player is carried
   // across, from the low side to the high side or back, along their own row.
   PASS_THROUGH_GATES = Object.freeze([
+    // Farming Guild entrance (kebos_farming_guild_door_left/right_closed), crossed both ways in rsprox
+    // 239 ticks 1648-1651 (in) and 1692 ticks 939-942 (out): Open puts inviswall 38848 on both doorway
+    // tiles and the open leaves on the tiles south, sound 62, the player steps across in the same tick
+    // and the door is back two ticks later. Its cache open leaves are nameless with no Close, so the
+    // catalog never pairs them. The 45 Farming check is Guild.Farming's (door:toggle).
+    Object.freeze({
+      closed: [[O.DOOR_578, 1248, 3723, 0, 3], [O.DOOR_579, 1249, 3723, 0, 3]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 1249, 3723, 0, 3],
+        [NAMELESS_DOOR_LEAF_IDS.FARMING_GUILD_DOOR_RIGHT_OPEN, 1249, 3722, 0, 2],
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 1248, 3723, 0, 3],
+        [NAMELESS_DOOR_LEAF_IDS.FARMING_GUILD_DOOR_LEFT_OPEN, 1248, 3722, 0, 0],
+      ],
+      crossY: 3723,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
+    // Waterfall guide xWBSnGkQTi4 3:53.2-3:54.4: Golrie's panel opens, the player walks
+    // through, then it closes (~1.2s). Cache 1991 is Open-only model609, with no open loc.
+    Object.freeze({
+      closed: [[O.DOOR_46, 2515, 9575, 0, 1]],
+      opened: [[NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2515, 9575, 0, 1], [O.DOOR_46, 2515, 9576, 0, 2]],
+      crossY: 9576,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
     // Guidor's gate, south-east Varrock (rsprox 1663, 3218, 3220): on Open the leaves swing to the
     // south edges of the two tiles west, the player steps through, and the gate shuts two ticks
     // later. Live also puts a solid inviswall where the closed leaves stood; it is left out, as
@@ -515,6 +574,75 @@ function defineDoorData({ ObjectIdentifiers: O }) {
       closeTicks: 2,
       openSoundId: 46,
     }),
+    // Witch's House, Taverley (revision 242 capture 20261108T030409): the front door (ticks 154-156),
+    // back door (389-391) and shed door (652-654) each swap for INVISWALL on their own tile and an
+    // inactive leaf on the tile across, with sound 62; the player walks one tile and the door is back
+    // two ticks later. The basement shock gate (215-217) opens both leaves the same way with sound 71.
+    // WitchsHouse.Quest's key, stage and gloves checks run before this (door:toggle).
+    Object.freeze({
+      closed: [[O.DOOR_102, 2900, 3473, 0, 2]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2900, 3473, 0, 2],
+        [NAMELESS_DOOR_LEAF_IDS.WITCH_HOUSE_DOOR_OPEN, 2901, 3473, 0, 3],
+      ],
+      crossX: 2901,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
+    Object.freeze({
+      closed: [[O.DOOR_103, 2901, 3465, 0, 1]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2901, 3465, 0, 1],
+        [NAMELESS_DOOR_LEAF_IDS.WITCH_HOUSE_DOOR_OPEN, 2900, 3466, 0, 2],
+      ],
+      crossY: 3466,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
+    Object.freeze({
+      closed: [[O.DOOR_104, 2934, 3463, 0, 0]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2934, 3463, 0, 0],
+        [NAMELESS_DOOR_LEAF_IDS.MELZAR_DOOR_OPEN, 2933, 3463, 0, 1],
+      ],
+      crossX: 2934,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
+    Object.freeze({
+      closed: [[O.GATE_67, 2902, 9873, 0, 2], [O.GATE_66, 2902, 9874, 0, 2]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2902, 9873, 0, 2],
+        [NAMELESS_DOOR_LEAF_IDS.MORT_MYRE_GATE_LEFT_OPEN, 2903, 9873, 0, 3],
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2902, 9874, 0, 2],
+        [NAMELESS_DOOR_LEAF_IDS.MORT_MYRE_GATE_RIGHT_OPEN, 2903, 9874, 0, 1],
+      ],
+      crossX: 2903,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 71,
+    }),
+    // The Ranging Guild's entrance (11665, diagonal, Open only, no open leaf in the cache).
+    // RangingGuild.plugin's 40 Ranged check runs before this (door:toggle). The leaf swings to the
+    // tile north and an inviswall keeps the doorway blocked, so nobody can walk or follow through
+    // it: the opener is carried the two tiles across, from 2657 to 2659 or back.
+    Object.freeze({
+      closed: [[O.GUILD_DOOR, 2658, 3438, 0, 0, 9]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2658, 3438, 0, 0, 9],
+        [O.GUILD_DOOR, 2658, 3439, 0, 1, 9],
+      ],
+      crossBetween: [2657, 2659],
+      crossRows: [3438],
+      // The fence is diagonal, so the side comes from x - y, not x alone: 2658,3439 (the doorman's
+      // tile) shares the leaf's x but is outside, and x alone carried that opener back out.
+      eastwardFrom: (here) => here.getX() - here.getY() <= 2658 - 3438,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
     Object.freeze({
       closed: [[O.WALL_9, 2836, 9600, 0, 3]],
       opened: [
@@ -537,6 +665,8 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // colour door and the exit doors (ticks 2109-2688), crossed both ways with the leaf always on the
   // same side. The quest's key rules run before this (door:toggle) and open them through door:open.
   PASS_THROUGH_FAMILIES = new Map([
+    // Same guide 7:15.37-7:16.50: the Baxtorian doors close behind the walking player.
+    [O.DOOR_48, { open: NAMELESS_DOOR_LEAF_IDS.DOOR_48_OPEN }],
     [O.DOOR_91, { open: NAMELESS_DOOR_LEAF_IDS.MELZAR_DOOR_OPEN }],
     [O.RED_DOOR, {}], [O.ORANGE_DOOR, {}], [O.YELLOW_DOOR, {}], [O.BLUE_DOOR, {}],
     [O.MAGENTA_DOOR, {}], [O.GREEN_DOOR, {}], [O.EXIT_DOOR, {}],
@@ -561,6 +691,9 @@ const COORD_OFFSETS = Object.freeze([
   [1, 0],
   [0, -1],
 ]);
+
+// Normals of each closed diagonal leaf, used to retain the opener's approach side.
+const DIAGONAL_DOOR_NORMALS = Object.freeze([[1, -1], [-1, -1], [-1, 1], [1, 1]]);
 
 // Double-door leaves turn opposite ways when they open: the face each closed face turns to.
 const LEFT_LEAF_OPEN_FACES = Object.freeze([3, 0, 1, 0]);
@@ -1217,20 +1350,38 @@ function handleMappedDoor(player, object, objectId, location) {
   const nextRotation = open ? ((rotation + 1) & 0x3) : rotation;
   const offsetIndex = type === 9 ? ((nextRotation + 1) & 0x3) : nextRotation;
   const [dx, dy] = inPlace || OWN_TILE_DOOR_IDS.has(closedId) ? [0, 0] : (COORD_OFFSETS[offsetIndex] ?? [0, 0]);
+  const approach = DIAGONAL_DOOR_APPROACHES.get(player);
+  DIAGONAL_DOOR_APPROACHES.delete(player);
   const previousObject = activeObject;
-  const nextObject = open && existingState?.closed?.[0]
-    ? objectFromSnapshot(existingState.closed[0])
-    : new core.GameObject(
-      nextId,
-      cloneLocation(
-        (activeLocation.getX?.() ?? activeLocation.x ?? 0) + dx,
-        (activeLocation.getY?.() ?? activeLocation.y ?? 0) + dy,
-        activeLocation.getZ?.() ?? activeLocation.z ?? 0
-      ),
-      type,
-      inPlace ? rotation : open ? ((rotation - 1) & 0x3) : ((rotation + 1) & 0x3),
-      privateArea
+  const closedSnapshot = open ? existingState?.closed?.[0] : null;
+  const nextLocation = closedSnapshot
+    ? cloneLocation(closedSnapshot.location.x, closedSnapshot.location.y, closedSnapshot.location.z)
+    : cloneLocation(
+      (activeLocation.getX?.() ?? activeLocation.x ?? 0) + dx,
+      (activeLocation.getY?.() ?? activeLocation.y ?? 0) + dy,
+      activeLocation.getZ?.() ?? activeLocation.z ?? 0
     );
+  const nextFace = closedSnapshot?.face ?? (inPlace ? rotation : (rotation + (open ? -1 : 1)) & 3);
+  if (type === 9 && player.getLocation().equals(nextLocation)) {
+    // A reachable leaf can swing onto the opener: keep their original approach side clear.
+    const closedLocation = open ? nextLocation : activeLocation;
+    const [normalX, normalY] = DIAGONAL_DOOR_NORMALS[open ? nextFace : rotation];
+    const [stepX, stepY] = open ? [normalX, normalY] : COORD_OFFSETS[rotation];
+    const source = approach?.object === object && approach.area === privateArea && approach.source?.z === nextLocation.getZ()
+      ? approach.source : player.getLocation();
+    const sideOf = (at) => (at.x - closedLocation.getX()) * normalX + (at.y - closedLocation.getY()) * normalY;
+    const normalSide = Math.sign(sideOf(source)) || Math.sign(sideOf(player.getLocation())) || 1;
+    const reverse = normalSide * (stepX * normalX + stepY * normalY) < 0 ? -1 : 1;
+    const steps = [[stepX * reverse, stepY * reverse], [normalX * normalSide, 0], [0, normalY * normalSide]];
+    const destination = steps.map(([x, y]) => cloneLocation(nextLocation.getX() + x,
+      nextLocation.getY() + y, nextLocation.getZ()))
+      .find((at) => sideOf(at) * normalSide > 0 && player.getMovementQueue().canWalkTo(at));
+    if (!destination) return true;
+    player.moveTo(destination);
+  }
+  const nextObject = closedSnapshot
+    ? objectFromSnapshot(closedSnapshot)
+    : new core.GameObject(nextId, nextLocation, type, nextFace, privateArea);
 
   core.ObjectManager.deregister(previousObject, true);
   core.ObjectManager.register(nextObject, true);
@@ -1513,8 +1664,13 @@ const GATE_WALK_ANIMATION = 819;
 function carryAcrossGate(player, gate, y, z) {
   const [low, high] = gate.crossBetween;
   const here = player.getLocation();
-  const row = gate.crossRows.includes(here.getY()) ? here.getY() : y;
-  const eastward = here.getX() < (low + high) / 2;
+  // A single-row gate crosses on that row whatever the clicked leaf's own y is: once the gate is
+  // open the leaf has swung off the passage, and following its y carried the opener along the fence.
+  const row = gate.crossRows.includes(here.getY()) ? here.getY()
+    : gate.crossRows.length === 1 ? gate.crossRows[0] : y;
+  // A diagonal gate's two sides are not the two halves of x: a player standing north of the leaf
+  // shares its x, so the gate says which side is which.
+  const eastward = gate.eastwardFrom ? gate.eastwardFrom(here) : here.getX() < (low + high) / 2;
   const from = cloneLocation(eastward ? low : high, row, z);
   if (Math.abs(here.getX() - from.getX()) > 1 || Math.abs(here.getY() - from.getY()) > 1) return;
   if (!here.equals(from)) player.moveTo(from.clone());
@@ -1686,10 +1842,17 @@ function readDoorState(event) {
   event.objects = [...current];
 }
 
+const DIAGONAL_DOOR_APPROACHES = new WeakMap();
+
 function routeWallDoor(event) {
+  DIAGONAL_DOOR_APPROACHES.delete(event.player);
   const name = event.definition?.getName?.() ?? "";
-  if (event.object?.getType?.() !== 0 ||
-    (!DOOR_NAMES.has(name) && !/\b(?:doors?|doorway|gates?)\b/i.test(name))) return;
+  if (!DOOR_NAMES.has(name) && !/\b(?:doors?|doorway|gates?)\b/i.test(name)) return;
+  if (event.object?.getType?.() === 9) {
+    DIAGONAL_DOOR_APPROACHES.set(event.player, { object: event.object, area: event.player.getPrivateArea?.() ?? null, source: { ...event.sourceLocation } });
+    return;
+  }
+  if (event.object?.getType?.() !== 0) return;
   // A closed straight wall door is used across its face, never from either end of the wall.
   // An open leaf stands across the doorway instead, and the tile inside the doorway is at its
   // end, so it keeps ordinary wall reach: closing it from inside doesn't walk the player out.
@@ -1719,6 +1882,7 @@ function registerWallDoorRoutes() {
 
 module.exports = {
   name: "Doors",
+  description: "Opens and closes doors, gates and double doors, swapping between closed and open locs, with route handling and reapplied state on region load.",
   register: (pluginApi) => {
     api = pluginApi;
     core = pluginApi.core;

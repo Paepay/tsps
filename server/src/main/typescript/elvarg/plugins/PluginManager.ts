@@ -9,6 +9,12 @@ import * as path from "path";
 import { GameConstants } from "../game/GameConstants";
 import { PluginContext } from "./PluginContext";
 import { isMembersWorld, readWorldConfig } from "../game/definition/WorldDefinition";
+import {
+  CORE_CONFIG_DECLARATIONS,
+  ConfigOptionDeclaration,
+  checkConfigValue,
+  validateDeclaration,
+} from "../game/definition/WorldSettingDeclarations";
 import { PlayerRights } from "../game/model/rights/PlayerRights";
 import { MapRegionReplacementManager } from "../game/collision/MapRegionReplacementManager";
 import { DefinitionLoader } from "../game/definition/loader/DefinitionLoader";
@@ -137,12 +143,32 @@ type PluginHook<T> = {
   handler: (event: T) => void;
 };
 
-function normalizePluginName(name: string): string {
+export function normalizePluginName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function pluginNameFromFile(pluginPath: string): string {
+export function pluginNameFromFile(pluginPath: string): string {
   return path.basename(pluginPath).replace(/\.plugin\.js$/i, "");
+}
+
+/**
+ * Whether a plugin is switched on: world.json `plugins` by exported name, then by file name,
+ * then the legacy disabledPlugins default, then the plugin's own `enabled` (default on).
+ * Shared by the loader and the world config catalog so they cannot disagree.
+ */
+export function resolvePluginEnabled(
+  switches: Map<string, boolean>,
+  defaultEnabled: boolean | undefined,
+  exportedName: string,
+  fileName: string,
+  pluginEnabled: boolean | undefined
+): boolean {
+  return (
+    switches.get(normalizePluginName(exportedName)) ??
+    switches.get(normalizePluginName(fileName)) ??
+    defaultEnabled ??
+    pluginEnabled !== false
+  );
 }
 
 function isPluginCustomEventName(value: unknown): value is PluginCustomEventName {
@@ -237,7 +263,7 @@ function applyPluginRegionReplacement(
 
 export class PluginManager {
   private static readonly PERF_EVENT_SAMPLE_LIMIT = 128;
-  private static readonly MAX_PLUGIN_DEPTH = 2;
+  public static readonly MAX_PLUGIN_DEPTH = 2;
   private static initialized = false;
   private static loadedPlugins: string[] = [];
   private static lastPersistenceOverride: string | null = null;
@@ -391,6 +417,10 @@ export class PluginManager {
   private static pluginPerfStats = new Map<string, PluginPerfStat>();
   private static pluginCoreApi: PluginCoreApi | null = null;
   private static pluginConfigCache: Record<string, unknown> | null = null;
+  private static pluginConfigDeclarations = new Map<
+    string,
+    { owner: string; decl: ConfigOptionDeclaration }
+  >();
 
   private static executeHook<T>(
     hook: PluginHook<T>,
@@ -715,14 +745,15 @@ export class PluginManager {
     }
     const membersWorld = isMembersWorld();
     let membersOnlyCount = 0;
-    PluginManager.loadPluginCandidatesWithDependencies(
-      candidates.filter((candidate) => {
+    const toLoad = candidates.filter((candidate) => {
         // The exported name wins over the filename when they differ.
-        const enabled =
-          switchFor(candidate.pluginName) ??
-          switchFor(pluginNameFromFile(candidate.pluginPath)) ??
-          defaultEnabled ??
-          candidate.plugin.enabled !== false;
+        const enabled = resolvePluginEnabled(
+          switches,
+          defaultEnabled,
+          candidate.pluginName,
+          pluginNameFromFile(candidate.pluginPath),
+          candidate.plugin.enabled
+        );
         if (!enabled) {
           disabledCount++;
           return false;
@@ -733,8 +764,14 @@ export class PluginManager {
           return false;
         }
         return true;
-      })
-    );
+      });
+    // Checked before any plugin registers, and only for plugins that will load: a bad or
+    // clashing declaration is logged and dropped, it never stops the server.
+    const acceptedDeclarations = PluginManager.checkConfigDeclarations(toLoad);
+    PluginManager.loadPluginCandidatesWithDependencies(toLoad);
+
+    PluginManager.recordLoadedConfigDeclarations(acceptedDeclarations);
+    PluginManager.warnAboutInvalidConfigValues();
 
     if (PluginManager.lastPersistenceOverride) {
       console.info(PluginManager.lastPersistenceOverride);
@@ -931,6 +968,13 @@ export class PluginManager {
   /** Equipment-tab click 1 is Remove; clicks 2+ are the worn options (item params 451+). */
   private static readonly WORN_OPTION_PARAM = 451;
   private static readonly FIRST_WORN_OPTION_CLICK = 2;
+  private static readonly MAX_WORN_OPTION_CLICK = 10;
+
+  /** Inventory items have five options; an equipped item's worn options (params 451+) run past that. */
+  private static maxItemActionClick(event: PluginItemActionEvent): number {
+    const { Equipment } = require("../game/model/container/impl/Equipment");
+    return event.interfaceId === Equipment.INVENTORY_INTERFACE_ID ? PluginManager.MAX_WORN_OPTION_CLICK : 5;
+  }
 
   /**
    * The option an item click names: a worn option when it came from the equipment tab
@@ -1464,9 +1508,9 @@ export class PluginManager {
     return null;
   }
 
-  public static emitCanBankItem(player: any, item: any): boolean | null {
+  public static emitCanBankItem(player: any, item: any, { quiet = false }: { quiet?: boolean } = {}): boolean | null {
     if (PluginManager.canBankItemHooks.length === 0) return null;
-    const event: PluginCanBankItemEvent = { player, item, allow: null };
+    const event: PluginCanBankItemEvent = { player, item, allow: null, quiet };
     for (const hook of PluginManager.canBankItemHooks) {
       PluginManager.executeHook(hook, event, "can_bank_item", "can_bank_item");
       if (event.allow !== null) return event.allow;
@@ -1957,8 +2001,22 @@ export class PluginManager {
   }
 
   public static emitItemAction(event: PluginItemActionEvent): boolean {
+    // The stack the click covered, read before any handler consumes it ("Open-all" empties it).
+    const covered = Number.isInteger(event?.itemId) ? Number(event?.player?.getInventory?.().getAmount?.(event.itemId) ?? 1) || 1 : 1;
     for (const hook of PluginManager.itemActionHooks) {
       PluginManager.executeHook(hook, event, "item_action", "item_action");
+    }
+    // An inventory action something answered (not a click nothing took): `item:operated`
+    // { player, itemId, option, amount }, the option lower-cased and the amount the stack it covered,
+    // for whatever counts the deed itself (a league task).
+    if (event.handled === true && event.player && Number.isInteger(event.itemId)) {
+      const option = PluginManager.itemActionOption(CacheDefinitions.getItem(event.itemId), event);
+      PluginManager.emitCustomEvent("item:operated", {
+        player: event.player,
+        itemId: event.itemId,
+        option: option === null ? undefined : String(option).toLowerCase(),
+        amount: covered,
+      });
     }
     return event.handled === true;
   }
@@ -2121,7 +2179,7 @@ export class PluginManager {
     return event.handled;
   }
 
-  private static discoverPluginFiles(
+  public static discoverPluginFiles(
     pluginDirectory: string,
     maxDepth: number
   ): string[] {
@@ -2156,7 +2214,14 @@ export class PluginManager {
    * as it always was: what it names is off and everything else on, defaults included.
    */
   private static loadPluginSwitches(): { switches: Map<string, boolean>; defaultEnabled?: boolean } {
-    const config = readWorldConfig() as { plugins?: unknown; disabledPlugins?: unknown };
+    return PluginManager.parsePluginSwitches(readWorldConfig());
+  }
+
+  /** Reads the plugin switches out of an already merged world config. Throws when they are malformed. */
+  public static parsePluginSwitches(
+    worldConfig: unknown
+  ): { switches: Map<string, boolean>; defaultEnabled?: boolean } {
+    const config = worldConfig as { plugins?: unknown; disabledPlugins?: unknown };
     if (config.disabledPlugins !== undefined) {
       if (
         !Array.isArray(config.disabledPlugins) ||
@@ -2223,6 +2288,114 @@ export class PluginManager {
       : (defaultValue as T);
   }
 
+  /** Every option a loaded plugin (or the core) declares, keyed by pluginConfig key. */
+  public static getConfigDeclarations(): Map<
+    string,
+    { owner: string; decl: ConfigOptionDeclaration }
+  > {
+    const all = new Map<string, { owner: string; decl: ConfigOptionDeclaration }>();
+    for (const [key, decl] of Object.entries(CORE_CONFIG_DECLARATIONS)) {
+      all.set(key, { owner: "core", decl });
+    }
+    for (const [key, entry] of PluginManager.pluginConfigDeclarations) {
+      all.set(key, entry);
+    }
+    return all;
+  }
+
+  /**
+   * The valid option declarations of the plugins about to load, in discovery order. A malformed
+   * `config`, an invalid declaration or a key core declares is logged with console.error and
+   * dropped; a key two plugins declare is logged and kept for both, and the first that loads owns it.
+   */
+  private static checkConfigDeclarations(
+    candidates: PluginLoadCandidate[]
+  ): Map<PluginLoadCandidate, Record<string, ConfigOptionDeclaration>> {
+    const accepted = new Map<PluginLoadCandidate, Record<string, ConfigOptionDeclaration>>();
+    const owners = new Map<string, string>();
+    for (const key of Object.keys(CORE_CONFIG_DECLARATIONS)) {
+      owners.set(key, "core");
+    }
+    for (const candidate of candidates) {
+      const config: unknown = candidate.plugin.config;
+      if (config === undefined) {
+        continue;
+      }
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        console.error(
+          `[plugins] ${candidate.pluginName}: config must be an object of option declarations; its config is ignored`
+        );
+        continue;
+      }
+      const kept: Record<string, ConfigOptionDeclaration> = {};
+      for (const [key, decl] of Object.entries(config)) {
+        const problems = validateDeclaration(key, decl);
+        if (problems.length > 0) {
+          console.error(
+            `[plugins] ${candidate.pluginName}: invalid config declaration, ignored: ${problems.join("; ")}`
+          );
+          continue;
+        }
+        const existing = owners.get(key);
+        if (existing === "core") {
+          console.error(
+            `[plugins] config key ${key} is declared by both core and ${candidate.pluginName}; core owns it and ${candidate.pluginName}'s declaration is ignored`
+          );
+          continue;
+        }
+        if (existing !== undefined) {
+          // Not settled here: the first of the claimants that actually loads owns the key.
+          console.error(
+            `[plugins] config key ${key} is declared by both ${existing} and ${candidate.pluginName}; ${existing} is expected to own it, and ownership goes to the first of them that loads`
+          );
+        } else {
+          owners.set(key, candidate.pluginName);
+        }
+        kept[key] = decl as ConfigOptionDeclaration;
+      }
+      accepted.set(candidate, kept);
+    }
+    return accepted;
+  }
+
+  private static recordLoadedConfigDeclarations(
+    accepted: Map<PluginLoadCandidate, Record<string, ConfigOptionDeclaration>>
+  ): void {
+    PluginManager.pluginConfigDeclarations.clear();
+    for (const [candidate, declarations] of accepted) {
+      if (!PluginManager.loadedPlugins.includes(candidate.pluginName)) {
+        continue;
+      }
+      for (const [key, decl] of Object.entries(declarations)) {
+        if (PluginManager.pluginConfigDeclarations.has(key)) {
+          continue; // an earlier loaded claimant owns it
+        }
+        PluginManager.pluginConfigDeclarations.set(key, {
+          owner: candidate.pluginName,
+          decl,
+        });
+      }
+    }
+  }
+
+  /** Warns (never replaces) about configured values that do not fit their declaration. */
+  private static warnAboutInvalidConfigValues(): void {
+    const config = PluginManager.loadPluginConfig();
+    const declarations = PluginManager.getConfigDeclarations();
+    for (const [key, value] of Object.entries(config)) {
+      const entry = declarations.get(key);
+      if (!entry) {
+        continue;
+      }
+      const check = checkConfigValue(entry.decl, value);
+      if (check.ok === false) {
+        console.warn(
+          `[plugins] world.json pluginConfig "${key}" (${entry.owner}) ${check.error}; the value is used as written`
+        );
+      }
+    }
+  }
+
   private static collectPluginLoadCandidates(
     pluginPaths: string[]
   ): PluginLoadCandidate[] {
@@ -2270,7 +2443,7 @@ export class PluginManager {
     return candidates;
   }
 
-  private static normalizePluginDependencies(
+  public static normalizePluginDependencies(
     pluginName: string,
     dependsOn: unknown,
     pluginPath: string
@@ -2395,9 +2568,12 @@ export class PluginManager {
     const combat = "../game/content/combat";
     const model = "../game/model";
     PluginManager.pluginCoreApi = Object.freeze({
+      WorldConfigCatalog: require("./WorldConfigCatalog").WorldConfigCatalog,
+      WorldConfigStore: require("../game/definition/WorldConfigStore").WorldConfigStore,
       MeleeCombatMethod: require(`${combat}/method/impl/MeleeCombatMethod`).MeleeCombatMethod,
       RangedCombatMethod: require(`${combat}/method/impl/RangedCombatMethod`).RangedCombatMethod,
       MagicCombatMethod: require(`${combat}/method/impl/MagicCombatMethod`).MagicCombatMethod,
+      TeleBlock: require(`${combat}/magic/TeleBlock`).TeleBlock,
       CombatMethod: require(`${combat}/method/CombatMethod`).CombatMethod,
       CombatSpecial: require(`${combat}/CombatSpecial`).CombatSpecial,
       CombatFactory: require(`${combat}/CombatFactory`).CombatFactory,
@@ -2503,6 +2679,7 @@ export class PluginManager {
       BoatManager: require("../game/content/sailing/BoatManager").BoatManager,
       BOAT_VIEW_DISTANCE: require("../game/content/sailing/WorldEntitySync").BOAT_VIEW_DISTANCE,
       Sailing: require("../game/content/sailing/Sailing").Sailing,
+      BoatMoveMode: require("../game/content/sailing/Boat").BoatMoveMode,
       GameObject: require("../game/entity/impl/object/GameObject").GameObject,
       PrivateArea: require(`${model}/areas/impl/PrivateArea`).PrivateArea,
       TemplatedInstanceArea: require(`${model}/areas/impl/TemplatedInstanceArea`).TemplatedInstanceArea,
@@ -2563,6 +2740,9 @@ export class PluginManager {
       MultiChatboxPrompt: require("../game/model/menu/MultiChatboxPrompt").MultiChatboxPrompt,
       ChatPacketListener: require("../net/packet/impl/ChatPacketListener").ChatPacketListener,
       TradeState: require("../game/content/Trading").TradeState,
+      controlPlayer: require("../net/NetworkBuilder").controlPlayer,
+      releasePlayerControl: require("../net/NetworkBuilder").releasePlayerControl,
+      endPlayerControl: require("../net/NetworkBuilder").endPlayerControl,
       dispatchClientMessages: require("../net/NetworkBuilder").dispatchClientMessages,
       connectHeadlessClient: require("../net/NetworkBuilder").connectHeadlessClient,
       CachePipeline: require("../game/cache/CachePipeline").CachePipeline,
@@ -4050,7 +4230,7 @@ export class PluginManager {
               return;
             }
             const definition = CacheDefinitions.getItem(event.itemId);
-            if (definition?.name !== handler || event.clickType < 1 || event.clickType > 5) return;
+            if (definition?.name !== handler || event.clickType < 1 || event.clickType > PluginManager.maxItemActionClick(event)) return;
             const option = PluginManager.itemActionOption(definition, event);
             const action = namedActions.get(option);
             if (action && action(event) !== false) event.handled = true;
@@ -4450,7 +4630,7 @@ export class PluginManager {
       emitCanEat: (player, itemId) => PluginManager.emitCanEat(player, itemId),
       emitCanDrink: (player, itemId) => PluginManager.emitCanDrink(player, itemId),
       emitCanBank: (player, source) => PluginManager.emitCanBank(player, source),
-      emitCanBankItem: (player, item) => PluginManager.emitCanBankItem(player, item),
+      emitCanBankItem: (player, item, options) => PluginManager.emitCanBankItem(player, item, options),
       emitShouldKeepItemOnDeath: (player, item) =>
         PluginManager.emitShouldKeepItemOnDeath(player, item),
       emitFiremakingBlocked: (event) => PluginManager.emitFiremakingBlocked(event),

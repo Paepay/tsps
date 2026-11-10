@@ -8,6 +8,7 @@ const Tithe = require("./Tithe.Farming");
 const Rewards = require("./Rewards.Farming");
 const Guild = require("./Guild.Farming");
 const Vault = require("./Vault.Farming");
+const SeedBox = require("./SeedBox.Farming");
 const Hespori = require("./Hespori.Farming");
 const Redwood = require("./Redwood.Farming");
 const Tools = require("./Tools.Farming");
@@ -562,7 +563,9 @@ function fertilize(player, patch, tier, consume = true, xp = [0, 18, 26, 36][tie
         player.getInventory().addItem(new core.Item(Data.itemId("Bucket")));
     }
     treat(player, patch, tier, xp);
-    animate(player, ANIM.COMPOST);
+    // Only a bucket is poured. The spell has already played its own cast animation, and playing
+    // the pour over it is what made Fertile Soil look like a bucket of supercompost (#4024).
+    if (consume) animate(player, ANIM.COMPOST);
     return true;
 }
 function swapForBucket(player, id) {
@@ -1291,6 +1294,9 @@ function attach(api) {
     api.onPlayerLogout(logout);
     api.onPlayerDisconnect(disconnect);
     api.onPlayerLogout(Vault.logout);
+    api.onPlayerLogout(SeedBox.logout);
+    api.onInterfaceActionClick(SeedBox.click);
+    api.onCustomEvent("interface:closed", SeedBox.closed);
     api.onInterfaceActionClick(Vault.click);
     api.onCustomEvent("player:widget-action", Vault.drag);
     api.onPlayerLogout(Geomancy.logout);
@@ -1325,6 +1331,7 @@ function attach(api) {
     api.onCustomEvent("farming:check-health", Guild.completeContract);
     api.onCustomEvent("farming:harvest", Guild.harvestContract);
     api.onCustomEvent("farming:open-seed-vault", Guild.openSeedVault);
+    api.onCustomEvent("door:toggle", Guild.guardGuildDoor);
     api.onCustomEvent("woodcutting:deplete-tree", depleteTree);
     api.onCustomEvent("magic:water-containers", Services.waterContainers);
     api.onCustomEvent("farming:use-water", useWater);

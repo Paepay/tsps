@@ -68,6 +68,8 @@ function handlePrayerAltar(player, fullMessage = "You already have full Prayer p
   Sounds.sendSound(player, Sound.PRAYER_RECHARGE);
   skillManager.setCurrentLevels(Skill.PRAYER, maxPrayer);
   skillManager.updateSkill(Skill.PRAYER);
+  // Wiki: Prayer (5 April 2023) - praying at an altar resets the timer on Prayer point draining effects.
+  player.setPrayerPointDrain(0);
   player.sendMessage("You recharge your Prayer points.");
   return true;
 }
@@ -113,7 +115,11 @@ function lunarAltar({ player }) {
   return handleOccultAltar(player, player.getSpellbook() === MagicSpellbook.LUNAR ? MagicSpellbook.NORMAL : MagicSpellbook.LUNAR);
 }
 
-function darkAltar({ player }) {
+function darkAltar({ player, objectId }) {
+  if (Number.isInteger(objectId) && objectId === core.ObjectIdentifiers?.DARK_ALTAR) {
+    api.emitCustomEvent("runecrafting:dark-altar-venerate", { player });
+    return true;
+  }
   return handleOccultAltar(player, player.getSpellbook() === MagicSpellbook.ARCEUUS ? MagicSpellbook.NORMAL : MagicSpellbook.ARCEUUS);
 }
 
@@ -240,6 +246,7 @@ function arceuusSpellbook({ player }) {
 
 module.exports = {
   name: "Altars",
+  description: "Altar actions: pray to restore Prayer points, switch spellbooks at Ancient, Lunar and Dark altars, and the Chaos, Nature, Guthix and Occult altars.",
   register: (pluginApi) => {
     api = pluginApi;
     core = pluginApi.core;

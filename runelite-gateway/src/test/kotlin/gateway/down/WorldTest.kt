@@ -13,6 +13,7 @@ import net.rsprot.crypto.cipher.NopStreamCipher
 import net.rsprot.protocol.game.outgoing.codec.specific.ObjEnabledOpsSpecificEncoder
 import net.rsprot.protocol.game.outgoing.camera.CamMoveToCyclesV3
 import net.rsprot.protocol.game.outgoing.camera.CamRotateToCoordinateV3
+import net.rsprot.protocol.game.outgoing.camera.CamSkybox
 import net.rsprot.protocol.game.outgoing.camera.util.CameraEaseFunction
 import net.rsprot.protocol.game.outgoing.misc.client.HideNpcOps
 import net.rsprot.protocol.game.outgoing.misc.client.HideObjOps
@@ -30,7 +31,7 @@ import net.rsprot.protocol.message.OutgoingGameMessage
 import net.rsprox.cache.api.CacheProvider
 import net.rsprox.protocol.session.AttributeMap
 import net.rsprox.protocol.session.Session
-import net.rsprox.protocol.v241.ServerPacketDecoderServiceV241
+import net.rsprox.protocol.v242.ServerPacketDecoderServiceV242
 import net.rsprox.protocol.game.outgoing.model.specific.ObjEnabledOpsSpecific as DecodedObjEnabledOpsSpecific
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -117,7 +118,7 @@ class WorldTest {
         world.handle(packet(TspsServerPacket.SOUND, TspsWriter().u16(SOUND).u8(1).u16(3222).u16(3218).u8(0).u8(1).u16(0).u8(5).u8(0)))
         world.handle(packet(TspsServerPacket.SOUND, TspsWriter().u16(SOUND).u8(0).u8(1).u16(0).u8(0).u8(0)))
         assertEquals(SOUND, (sent.single() as SynthSound).id)
-        // Revision 241 only takes SOUND_AREA inside an enclosed zone update.
+        // Revisions 241 and 242 only take SOUND_AREA inside an enclosed zone update.
         world.flushZones()
         assertTrue(sent.last() is UpdateZonePartialEnclosed)
     }
@@ -130,6 +131,13 @@ class WorldTest {
         assertEquals(CameraEaseFunction.EASE_OUT_CUBIC, camera.easing)
         world.handle(packet(TspsServerPacket.HINT_ARROW, TspsWriter().u8(1).u16(NPC_INDEX).u16(0).u8(0).u8(0)))
         assertEquals(NPC_INDEX, ((sent.last() as HintArrow).type as HintArrow.NpcHintArrow).index)
+    }
+
+    @Test
+    fun `cam_skybox carries the model and its explicit clear`() {
+        world.handle(packet(TspsServerPacket.CAMERA_CONTROL, TspsWriter().u8(14).i32(61359)))
+        world.handle(packet(TspsServerPacket.CAMERA_CONTROL, TspsWriter().u8(14).i32(-1)))
+        assertEquals(listOf(61359, -1), sent.map { (it as CamSkybox).model })
     }
 
     @Test
@@ -220,11 +228,11 @@ class WorldTest {
         assertEquals(listOf(ObjCountSpecific::class, ObjEnabledOpsSpecific::class), sent.map { it::class })
         assertEquals(0b01010.toByte(), (sent.last() as ObjEnabledOpsSpecific).opFlags)
         val encoder = ObjEnabledOpsSpecificEncoder()
-        assertEquals(56, encoder.prot.opcode, "revision 241 obj_enabled_ops_specific")
+        assertEquals(42, encoder.prot.opcode, "revision 242 obj_enabled_ops_specific")
         val wire = Unpooled.buffer().toJagByteBuf()
         try {
             encoder.encode(NopStreamCipher, wire, sent.last() as ObjEnabledOpsSpecific)
-            val decoder = ServerPacketDecoderServiceV241(HuffmanCodec.create(Unpooled.wrappedBuffer(TestCache.huffman)), CacheProvider { HeadlessClient.NoCache })
+            val decoder = ServerPacketDecoderServiceV242(HuffmanCodec.create(Unpooled.wrappedBuffer(TestCache.huffman)), CacheProvider { HeadlessClient.NoCache })
             val decoded = decoder.decode(encoder.prot.opcode, wire, Session(0, AttributeMap())) as DecodedObjEnabledOpsSpecific
             assertEquals(0b01010, decoded.opFlags.value)
             assertEquals(PLANK, decoded.id)

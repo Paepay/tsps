@@ -16,6 +16,9 @@ const {
 const { SPAWNS_PER_BATCH, SPAWN_BATCH_DELAY_MS, runPaced } = require("./SpawnPacing.PlayerBots");
 const { isBlocked: botStartBlocked, whenAuthorized: whenBotStartAuthorized } = require("./AuthorizationGate.PlayerBots");
 
+// The crater keeps its own BhBot population; PvP-world roamers stay out of it.
+const BOUNTY_HUNTER_ARENA = require("../../minigames/bountyhunter/data/crater.json").arena;
+
 const { generateBotName } = require("../lib/BotNames.PlayerBots");
 const { normalizeRegionDensity } = require("../behaviours/pvp/RegionDensity.PlayerBots");
 
@@ -303,6 +306,10 @@ function createBotRegistry(options) {
     if (!bounds) {
       return false;
     }
+    const a = BOUNTY_HUNTER_ARENA;
+    if (bounds.z === 0 && bounds.minX <= a.maxX && bounds.maxX >= a.minX && bounds.minY <= a.maxY && bounds.maxY >= a.minY) {
+      return false;
+    }
     return Wilderness.intersectsArea(
       bounds.minX,
       bounds.maxX,
@@ -494,6 +501,7 @@ function createBotRegistry(options) {
       wildernessRegionalPendingDespawn.delete(username);
       return false;
     }
+    if (entry.manuallyControlled || entry.behaviorPaused) return false;
     const combat = player.getCombat?.();
     // Culling a bot mid-fight makes it vanish on the player; retry on the next reconcile.
     if (combat?.getTarget?.() || combat?.getAttacker?.() || player.getCombatFollowing?.() ||

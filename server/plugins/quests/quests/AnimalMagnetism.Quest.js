@@ -124,7 +124,7 @@ module.exports = function registerAnimalMagnetismQuest(api) {
   const TURAEL_NPC_ID = NpcIdentifiers.TURAEL_4; // 13618
   const AYA_NPC_ID = NpcIdentifiers.AYA; // 13619, Turael's replacement after While Guthix Sleeps
   const UNDEAD_TREE_BASE_NPC_ID = 4418; // active cache: nasty_tree, transforms to Tree/Undead tree
-  const UNDEAD_TREE_NPC_ID = NpcIdentifiers.UNDEAD_TREE; // 4417 (spawn 4418 resolves here at stage 150+)
+  const UNDEAD_TREE_NPC_ID = NpcIdentifiers.COL_00FFFF_UNDEAD_TREE_COL; // 4417 (spawn 4418 resolves here at stage 150+)
   const COW31337KILLER_NPC_ID = NpcIdentifiers.COW31337KILLER; // 4420, cutscene only
   const SNEAKY_UNDEAD_FOWL_NPC_ID = NpcIdentifiers.SNEAKY_UNDEAD_FOWL; // 4419, cutscene only
 
@@ -1230,15 +1230,24 @@ module.exports = function registerAnimalMagnetismQuest(api) {
     startTranscript(api, event.player, OLD_CRONE_NPC_ID, PAGE, EQUIP_CRONE_AMULET_VARIANT);
   }
 
-  /** Solid trunks use the existing full-NPC movement collision, including deferred spawns. */
+  // Wiki Undead_tree: 0–3 melee, all combat levels, ordinary tolerance; cache supplies combat stats.
+  // shortcut: four ticks is one rsprox 3153 attack pair (5410/5414), verify with a sustained capture.
+  const TREE_COMBAT = { aggressive: true, maxHit: 3, attackAnim: 73, attackSpeed: 4, huntRange: 1, combatFollowDistance: 0 };
+
+  /** Solid, stationary trunks use ordinary melee and tolerance, including deferred spawns. */
   function handleNpcAdded({ npc }) {
     const id = npc.getId();
-    if (id === UNDEAD_TREE_BASE_NPC_ID || id === NpcIdentifiers.TREE_2 || id === UNDEAD_TREE_NPC_ID) {
+    if (id === UNDEAD_TREE_BASE_NPC_ID || id === NpcIdentifiers.COL_00FFFF_TREE_COL_3 || id === UNDEAD_TREE_NPC_ID) {
       npc.setFlag(NPC.BLOCKS_PLAYERS_FLAG, true);
+      npc.getMovementQueue().setBlockMovement(true).reset();
+      for (const treeId of [UNDEAD_TREE_BASE_NPC_ID, NpcIdentifiers.COL_00FFFF_TREE_COL_3, UNDEAD_TREE_NPC_ID]) {
+        Object.assign(NpcDefinition.forId(treeId), TREE_COMBAT);
+      }
+      npc.isAggressiveTo = () => true;
     }
   }
 
-  /** The undead tree: inert wood until the blessed axe is in the pack. */
+  /** Chopping progress is independent of the tree's ordinary attacks. */
   function handleChopUndeadTree(event) {
     const { player } = event;
     const stage = quest.getStage(player);

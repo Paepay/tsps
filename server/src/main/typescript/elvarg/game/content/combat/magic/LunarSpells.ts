@@ -74,7 +74,7 @@ const WATER_CONTAINERS = new Map<number, number>([
 /** Unstrung -> strung (Wiki: String Jewellery); 4 Crafting XP each. */
 const UNSTRUNG = new Map<number, number>([
     [1673, 1692], [1675, 1694], [1677, 1696], [1679, 1698], [1681, 1700], [1683, 1702],
-    [21099, 21108], [21102, 21111], [21105, 21114], [4082, 4081], [4021, 4022], [1714, 1716], [1720, 1722],
+    [21099, 21108], [21102, 21111], [21105, 21114], [4082, 4081], [4022, 4021], [1714, 1716], [1720, 1722],
 ]);
 const STRING_CRAFTING_XP = 4;
 /** Log -> [plank, coins]: 70% of the sawmill's price (Wiki: Plank Make). */
@@ -418,10 +418,14 @@ export class LunarSpells {
             const item = next();
             if (!item || !spell.pay(player)) return false;
             const [pie, , experience] = PIES.get(item.getId())!;
+            const rawId = item.getId();
             item.setId(pie);
             player.getInventory().refreshItems();
             player.getSkillManager().addExperiences(Skill.MAGIC, spell.baseExperience());
             player.getSkillManager().addExperiences(Skill.COOKING, experience);
+            PluginManager.emitCustomEvent("cooking:success", {
+                player, skill: Skill.COOKING, rawId, itemId: pie, amount: 1, location: player.getLocation().clone(),
+            });
             return next() !== undefined;
         };
         if (bake()) this.repeat(player, BAKE_TICKS, bake);
@@ -498,7 +502,10 @@ export class LunarSpells {
         const key = name?.trim().toLowerCase() ?? "";
         if (!["energy transfer", "heal other", "vengeance other", "stat spy"].includes(key)) return false;
         if (refuseBeforeDreamMentor(player, key)) return true;
-        if (target === player || !this.acceptsAid(target) || !this.sameInstance(player, target) ||
+        // Stat Spy only reads the target's stats: the duel rule is for the spells that aid one.
+        const aid = key !== "stat spy";
+        if (target === player || !this.acceptsAid(target) || (aid && (this.inDuel(player) || this.inDuel(target))) ||
+            !this.sameInstance(player, target) ||
             !player.getLocation().isWithinDistance(target.getLocation(), 10)) return false;
         this.interrupt(player);
         if (key === "vengeance other") return this.castVengeanceOther(player, target);
@@ -694,10 +701,18 @@ export class LunarSpells {
         return spell.cast(player, share.apply);
     }
 
-    /** Players other than the caster within `distance` who accept aid and are alive. */
+    /**
+     * A duel is the two duelists' alone: no one else's Vengeance, healing or energy reaches them (the Duel Arena's open
+     * map would otherwise let a spectator within range aid one, past the No Magic rule too), and a duelist aids no one.
+     */
+    private static inDuel(player: Player): boolean {
+        return player.getDueling?.()?.inDuel?.() === true;
+    }
+
+    /** Players other than the caster within `distance` who accept aid, are alive and aren't in a duel. */
     private static forNearbyPlayers(player: Player, distance: number, effect: (target: Player) => void): void {
         World.getPlayers().forEach(target => {
-            if (target && target !== player && this.acceptsAid(target) && target.getHitpoints() > 0 &&
+            if (target && target !== player && this.acceptsAid(target) && !this.inDuel(target) && target.getHitpoints() > 0 &&
                 this.sameInstance(player, target) &&
                 player.getLocation().isWithinDistance(target.getLocation(), distance)) effect(target);
         });

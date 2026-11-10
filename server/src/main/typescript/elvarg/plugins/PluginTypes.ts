@@ -497,6 +497,8 @@ export interface PluginCanBankItemEvent {
   player: any;
   item: any;
   allow: boolean | null;
+  /** A policy query (e.g. the crew's Bank-cargo): refuse without telling the player why. */
+  quiet?: boolean;
 }
 
 export interface PluginCanShopEvent {
@@ -530,6 +532,8 @@ export interface PluginPlayerDeathItemDropEvent {
   /** Prevent the normal floor-item spawn without stopping later death-drop hooks. */
   suppressDefaultDrop: boolean;
   handled: boolean;
+  /** Items a hook adds to the death's losses (to the grave or the floor with the rest); set by core. */
+  extraDrops?: any[];
 }
 
 /**
@@ -1409,7 +1413,7 @@ export interface PluginApi {
   emitCanEat(player: any, itemId: number): boolean | null;
   emitCanDrink(player: any, itemId: number): boolean | null;
   emitCanBank(player: any, source?: string): boolean | null;
-  emitCanBankItem(player: any, item: any): boolean | null;
+  emitCanBankItem(player: any, item: any, options?: { quiet?: boolean }): boolean | null;
   emitShouldKeepItemOnDeath(player: any, item: any): boolean | null;
   emitFiremakingBlocked(event: PluginFiremakingBlockedEvent): boolean;
   emitObjectInteraction(event: PluginObjectInteractionEvent): boolean;
@@ -1564,9 +1568,12 @@ export interface PluginApi {
  * Typed as `any` on purpose: this is a deliberately thin, evolving surface.
  */
 export interface PluginCoreApi {
+  WorldConfigCatalog: typeof import("./WorldConfigCatalog").WorldConfigCatalog;
+  WorldConfigStore: typeof import("../game/definition/WorldConfigStore").WorldConfigStore;
   MeleeCombatMethod: any;
   RangedCombatMethod: any;
   MagicCombatMethod: any;
+  TeleBlock: any;
   CombatMethod: any;
   CombatSpecial: any;
   CombatFactory: any;
@@ -1667,6 +1674,7 @@ export interface PluginCoreApi {
   Accounts: any;
   BoatManager: any;
   Sailing: any;
+  BoatMoveMode: typeof import("../game/content/sailing/Boat").BoatMoveMode;
   BOAT_VIEW_DISTANCE: number;
   GameObject: any;
   PrivateArea: any;
@@ -1731,6 +1739,10 @@ export interface PluginCoreApi {
   /** Public chat as a client sends it (filter, mute, broadcast): bots speak through it too. */
   ChatPacketListener: any;
   TradeState: any;
+  controlPlayer: (owner: any, target: any, released: () => void) => boolean;
+  releasePlayerControl: (player: any) => boolean;
+  /** The parked owner left the world: release the controlled player and close the owner's connection. */
+  endPlayerControl: (controlled: any) => boolean;
   dispatchClientMessages: (player: any, messages: any[]) => boolean;
   connectHeadlessClient: (username: string, password: string) => Promise<{ player?: any; error?: string }>;
   CachePipeline: typeof import("../game/cache/CachePipeline").CachePipeline;
@@ -1754,6 +1766,10 @@ export interface PluginCoreApi {
 
 export interface PluginModule {
   name: string;
+  /** One line shown beside the plugin on the world config page. */
+  description?: string;
+  /** pluginConfig options this plugin reads, keyed "<namespace>:<key>". */
+  config?: Record<string, import("../game/definition/WorldSettingDeclarations").ConfigOptionDeclaration>;
   dependsOn?: string[];
   /** Members content: not loaded when world.json sets membersWorld false. */
   members?: boolean;

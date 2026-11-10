@@ -233,7 +233,9 @@ test("the infernal harpoon cooks a third of its catch, runs on 5,000 charges and
   // A cooked catch still gives Fishing XP and the pet roll, but no fish.
   const random = Math.random;
   try {
-    Math.random = () => 0;
+    // The first roll is the 1/5,000 big shark (missed here); every later one cooks.
+    let rolls = 0;
+    Math.random = () => (rolls++ === 0 ? 0.5 : 0);
     const landing = player({ weapon: I.INFERNAL_HARPOON });
     landCatch(landing, TOOLS.SHARK_HARPOON, findTool(landing, TOOLS.SHARK_HARPOON), [FISH.SHARK]);
     assert.equal(landing.items.length, 0);
@@ -529,6 +531,8 @@ test("minnow fishing: Wiki catch rates, rotating spots, flying fish and Kylie's 
       }),
       getInventory: () => ({
         contains: (id) => items.some((item) => item.getId() === id),
+        // This stub covers the ordinary exchange below, not capacity limits.
+        getAddableAmount: (item) => item.getAmount(),
         getAmount: (id) => items.filter((item) => item.getId() === id).reduce((sum, item) => sum + item.getAmount(), 0),
         getFreeSlots: () => free,
         isFull: () => free === 0,
@@ -625,7 +629,10 @@ async function fishingLoop() {
   const task = tasks.find((submitted) => submitted.constructor.name === "FishingTask");
 
   function fisher({ level = 99, items = [] } = {}) {
-    const slots = items.map(([id, amount = 1]) => new Item(id, amount));
+    const slots = Array.from({ length: 28 }, (_, index) => {
+      const entry = items[index];
+      return entry ? new Item(entry[0], entry[1] ?? 1) : null;
+    });
     const stackable = (id) => core.ItemDefinition.forId(id).isStackable();
     const p = {
       slots, messages: [], statements: [], animations: [], xp: 0, at: new Location(2900, 3119, 0),
@@ -645,23 +652,27 @@ async function fishingLoop() {
         addExperiences: (skill, amount) => { if (skill === Skill.FISHING) p.xp += amount; },
       }),
       getInventory: () => ({
-        contains: (id) => slots.some((item) => item.getId() === id && item.getAmount() > 0),
-        getAmount: (id) => slots.filter((item) => item.getId() === id).reduce((sum, item) => sum + item.getAmount(), 0),
-        getFreeSlots: () => 28 - slots.length,
-        isFull: () => slots.length >= 28,
+        contains: (id) => slots.some((item) => item?.getId() === id && item.getAmount() > 0),
+        getAmount: (id) => slots.filter((item) => item?.getId() === id).reduce((sum, item) => sum + item.getAmount(), 0),
+        getFreeSlots: () => slots.filter((item) => !item).length,
+        isFull: () => slots.every(Boolean),
         full() {},
         refreshItems() {},
-        getSlotForItemId: (id) => slots.findIndex((item) => item.getId() === id),
+        getSlotForItemId: (id) => slots.findIndex((item) => item?.getId() === id),
         setItem: (slot, item) => { slots[slot] = item; },
         addItem: (item) => {
-          const stack = stackable(item.getId()) && slots.find((held) => held.getId() === item.getId());
+          const stack = stackable(item.getId()) && slots.find((held) => held?.getId() === item.getId());
           if (stack) stack.setAmount(stack.getAmount() + item.getAmount());
-          else if (slots.length < 28) slots.push(item);
+          else {
+            const free = slots.findIndex((held) => !held);
+            if (free >= 0) slots[free] = item;
+          }
         },
         deleteNumber: (id, amount) => {
-          const index = slots.findIndex((held) => held.getId() === id);
+          const index = slots.findIndex((held) => held?.getId() === id);
+          if (index < 0) return;
           const left = slots[index].getAmount() - amount;
-          if (left > 0 && stackable(id)) slots[index].setAmount(left); else slots.splice(index, 1);
+          if (left > 0 && stackable(id)) slots[index].setAmount(left); else slots[index] = null;
         },
       }),
     };
@@ -781,6 +792,54 @@ test("a one-step walk stops fishing even after the route has drained", async () 
   });
 });
 
+test("a used karambwan vessel refills even when another vessel is baited", async () => {
+  const { core, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = core;
+  const p = fisher({ level: 70, items: [[I.KARAMBWAN_VESSEL_3], [I.KARAMBWAN_VESSEL_3], [I.RAW_KARAMBWANJI, 3]] });
+  await withRandom(0.99, async (setRandom) => {
+    start(p, spot(N.FISHING_SPOT_60, 71), "Fish");
+    ticks(4);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL_3), 2, "the used vessel refills on a miss");
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL), 0);
+    assert.equal(amount(p, I.RAW_KARAMBWANJI), 2);
+    setRandom(0);
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 1, "the session continues to a catch");
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL_3), 2, "the used vessel refills on a catch");
+    assert.equal(amount(p, I.RAW_KARAMBWANJI), 1);
+  });
+});
+
+test("karambwan vessels keep their slots as the last bait is used and fishing stops", async () => {
+  const { core, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N, Item } = core;
+  const p = fisher({ level: 70, items: [[I.RAW_KARAMBWANJI, 1], [I.LOGS], [I.KARAMBWAN_VESSEL_3], [I.KARAMBWAN_VESSEL_3]] });
+  const vessel = spot(N.FISHING_SPOT_60, 72);
+  await withRandom(0.99, async (setRandom) => {
+    start(p, vessel, "Fish");
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWANJI), 0);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL_3), 2, "the last loose bait refills the used vessel");
+    assert.equal(p.slots[1]?.getId(), I.LOGS, "deleting bait does not shift or replace another item");
+    setRandom(0);
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 1);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL_3), 1);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL), 1);
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 2);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL_3), 0);
+    assert.equal(amount(p, I.KARAMBWAN_VESSEL), 2);
+    ticks(8);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 2, "fishing stops once both vessels are empty");
+    p.getInventory().addItem(new Item(I.RAW_KARAMBWANJI, 2));
+    start(p, vessel, "Fish");
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 3, "fishing can restart with new bait");
+    assert.equal(p.slots[1]?.getId(), I.LOGS);
+  });
+});
+
 test("karambwan vessels fish every 4 ticks and every attempt uses the karambwanji", async () => {
   const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
   const { ItemIdentifiers: I, NpcIdentifiers: N } = core;
@@ -848,6 +907,93 @@ test("barehand shark plays the cache start, ready and shark-finish sequences", a
     assert.equal(amount(p, I.RAW_SHARK), 1);
     assert.deepEqual(p.animations, [6703, 6704, 6706], "the catch plays the ready loop then the finish");
   });
+});
+
+test("a big shark, swordfish or bass sometimes lands in place of the raw fish (Wiki: Big shark, Big swordfish, Big bass)", async () => {
+  const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = core;
+  const { FISH } = Fishing;
+  assert.equal(FISH.SHARK.big.chance, 5000);
+  assert.equal(FISH.SWORDFISH.big.chance, 2500);
+  assert.equal(FISH.BASS.big.chance, 1000);
+  assert.equal(FISH.SHARK_BAREHAND.big.id, I.BIG_SHARK, "barehanded sharks too");
+  await withRandom(0.0001, async () => {
+    const lucky = fisher({ items: [[I.HARPOON]] });
+    start(lucky, spot(N.FISHING_SPOT_20, 51), "Harpoon");
+    ticks(4);
+    assert.equal(amount(lucky, I.BIG_SHARK), 1);
+    assert.equal(amount(lucky, I.RAW_SHARK), 0, "in place of the raw shark");
+    assert.equal(lucky.messages.at(-1), "You catch an enormous shark!");
+    assert.equal(lucky.xp, 110, "the shark's own XP");
+  });
+  await withRandom(0.02, async () => {
+    const usual = fisher({ items: [[I.HARPOON]] });
+    start(usual, spot(N.FISHING_SPOT_20, 52), "Harpoon");
+    ticks(4);
+    assert.equal(amount(usual, I.RAW_SHARK), 1);
+    assert.equal(amount(usual, I.BIG_SHARK), 0);
+  });
+  // Wiki (Big swordfish): "(or 70 Fishing and 50 Strength for barehanded fishing)".
+  assert.equal(FISH.SWORDFISH_BAREHAND.big.id, I.BIG_SWORDFISH, "barehanded swordfish too");
+  assert.equal(FISH.SWORDFISH_BAREHAND.big.chance, 2500);
+  await withRandom(0.0001, async () => {
+    const bare = fisher();
+    bare.getSkillManager = () => ({
+      getCurrentLevel: (skill) => (skill === core.Skill.STRENGTH ? 50 : 70),
+      getMaxLevel: () => 99,
+      addExperiences: (skill, xp) => { if (skill === core.Skill.FISHING) bare.xp += xp; },
+    });
+    start(bare, spot(N.FISHING_SPOT_10, 53), "Harpoon");
+    ticks(4);
+    assert.equal(amount(bare, I.BIG_SWORDFISH), 1);
+    assert.equal(amount(bare, I.RAW_SWORDFISH), 0);
+    assert.equal(bare.messages.at(-1), "You catch an enormous swordfish!");
+    assert.equal(bare.xp, 100);
+  });
+});
+
+test("barehand tuna and swordfish: the Harpoon option without a harpoon (Wiki: Barbarian Training; rsprox 237/01149)", async () => {
+  const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N, Skill } = core;
+  const levelled = (fishing, strength) => {
+    const p = fisher();
+    p.strengthXp = 0;
+    p.getSkillManager = () => ({
+      getCurrentLevel: (skill) => (skill === Skill.STRENGTH ? strength : fishing),
+      getMaxLevel: () => 99,
+      addExperiences: (skill, xp) => { if (skill === Skill.FISHING) p.xp += xp; if (skill === Skill.STRENGTH) p.strengthXp += xp; },
+    });
+    return p;
+  };
+  await withRandom(0.02, async () => {
+    const tuna = levelled(60, 40);
+    start(tuna, spot(N.FISHING_SPOT_10, 41), "Harpoon");
+    assert.equal(tuna.messages[0], "You start to lure the fish.", "the captured barehand start line");
+    assert.deepEqual(tuna.animations, [6703]);
+    ticks(4);
+    assert.equal(amount(tuna, I.RAW_TUNA), 1, "below 70 Fishing only tuna");
+    assert.equal(tuna.xp, 80);
+    assert.equal(tuna.strengthXp, 8);
+    assert.equal(tuna.animations.at(-1), 6711, "the captured brut_player_hand_fishing_end_tuna_2");
+
+    const sword = levelled(70, 50);
+    start(sword, spot(N.FISHING_SPOT_10, 42), "Harpoon");
+    ticks(4);
+    assert.equal(amount(sword, I.RAW_SWORDFISH), 1, "swordfish first in the cascade");
+    assert.equal(sword.strengthXp, 10);
+    assert.equal(sword.animations.at(-1), 6707);
+
+    const weak = levelled(70, 49);
+    start(weak, spot(N.FISHING_SPOT_10, 43), "Harpoon");
+    ticks(4);
+    assert.equal(amount(weak, I.RAW_SWORDFISH), 0, "swordfish needs 50 Strength");
+    assert.equal(amount(weak, I.RAW_TUNA), 1);
+  });
+  const low = levelled(54, 99);
+  start(low, spot(N.FISHING_SPOT_10, 44), "Harpoon");
+  assert.equal(amount(low, I.RAW_TUNA), 0);
+  const cage = core.NpcDefinition.forId(N.FISHING_SPOT_10);
+  assert.equal(Fishing.getSpotTool(N.FISHING_SPOT_10, cage, cage.getActions().indexOf("Harpoon") + 1, low), Fishing.TOOLS.BAREHAND_HARPOON);
 });
 
 test("Holy Lake karambwanji: floor(level / 5) + 1 a catch, shrimps only with room", async () => {
@@ -1532,7 +1678,7 @@ test("native ordinary trout catch can award an eligible beginner clue bottle", a
   core.RegionManager.loadMapFiles(3228, 3236);
   player.setLocation(new Location(3228, 3236, 0));
   player.needsPlacement = false;
-  const arthur = NPC.create(N.ARTHUR_THE_CLUE_HUNTER, new Location(3229, 3236, 0));
+  const arthur = NPC.create(N.ARTHUR_2, new Location(3158, 3469, 0)); // Arthur, 8665 before rev 242
   arthur.setScriptedMovement(true);
   assert.equal(World.getNpcs().add(arthur), true);
   arthur.needsPlacement = false;

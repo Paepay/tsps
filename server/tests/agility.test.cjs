@@ -56,6 +56,7 @@ const agilityApi = {
   registerArea: (area) => hooks.areas.push(area),
   onPlayerLogout: (handler) => hooks.logout.push(handler),
   onPlayerLogin: (handler) => hooks.login.push(handler),
+  onPlayerProcess() {},
   onNpcInteraction: (name, actions) => { hooks.npcs[name] = actions; },
   onCustomEvent: (name, handler) => { hooks.listeners[name] = handler; },
   emitCustomEvent: (name, payload) => {
@@ -360,6 +361,17 @@ test("every shortcut plays out from either side without leaving the player locke
   } finally {
     Math.random = random;
   }
+});
+
+test("Karuulm Slayer Dungeon stepover rocks (34544) are shortcuts that cross two tiles in either direction", () => {
+  const rocks = SHORTCUTS.filter((shortcut) => shortcut.object === 34544);
+  assert.deepEqual(rocks.map((shortcut) => shortcut.at).sort(), [[1302, 10205, 0], [1311, 10215, 0], [1321, 10205, 0]]);
+  const east = rocks.find((shortcut) => shortcut.at[0] === 1321);
+  const context = (pos) => ({ obj: { id: 34544, x: 1321, y: 10205, z: 0 }, pos });
+  const west = east.steps(context({ x: 1320, y: 10205, z: 0 }));
+  const back = east.steps(context({ x: 1322, y: 10205, z: 0 }));
+  assert.deepEqual([west[0].move, back[0].move].map((m) => [m.x ?? m[0], m.y ?? m[1]]), [[1322, 10205], [1320, 10205]]);
+  assert.equal(east.end, "You climb over the rocks.");
 });
 
 test("shortcut audit: current directional Agility gates and captured no-sequence climbs", () => {
@@ -723,6 +735,7 @@ test("Yanille's south-wall grapple updates Ardougne medium progress after crossi
     core: PluginManager.getCoreApi(),
     persistAttribute() {},
     onPlayerLogin() {},
+    onPlayerProcess() {},
     getTaskManager: () => taskManager,
     emitCustomEvent() {},
   });
@@ -848,6 +861,22 @@ test("a quest gate refuses only when the quest plugin says it isn't done", () =>
   const unknown = createPlayer(3290, 3157, 0);
   operate(unknown, ObjectIds.BIG_WINDOW, window);
   assert.ok(!unknown.state.messages.some((message) => message.includes("Prince Ali")), "a quest no plugin knows is no bar");
+});
+
+// Wiki (Shortcuts): the Al Kharid big window and broken wall are one shortcut that "Requires completion of Prince Ali
+// Rescue"; the Stalker Den cave is "after Shadows of Custodia". The broken wall and the cave had no quest gate.
+test("the Al Kharid broken wall and the Stalker Den cave need their quests", () => {
+  try {
+    hooks.answers["quest:is-complete"] = (request) => { request.complete = false; };
+    const wall = createPlayer(3295, 3157, 0);
+    operate(wall, 33344, [3295, 3157, 0]);
+    assert.ok(wall.state.messages.includes("You need to complete Prince Ali Rescue to use this shortcut."), wall.state.messages.join(" | "));
+    const cave = createPlayer(1324, 3363, 0);
+    operate(cave, 57279, [1324, 3364, 0]);
+    assert.ok(cave.state.messages.includes("You need to complete Shadows of Custodia to use this shortcut."), cave.state.messages.join(" | "));
+  } finally {
+    delete hooks.answers["quest:is-complete"];
+  }
 });
 
 test("diary gates are recorded but not enforced until the diary's tasks can be done", () => {
@@ -1329,10 +1358,15 @@ test("a course mark picked up finishes a lap only when agility:mark-taken says s
   const inventory = player.getInventory();
   player.getInventory = () => ({ ...inventory, getAddableAmount: (item) => item.getAmount(), adds: (id, amount) => added.push([id, amount]) });
   player.setAttribute("agility.progress", { course: "draynor", index: 2 });
-  const mark = { getItem: () => ({ getId: () => MARK_OF_GRACE }), getgoesGlobal: () => false, getDespawnDelay: () => 1000 };
-  const pickUp = (groundItem = mark, location = { x: 3098, y: 3281, z: 3 }) => hooks.pickup({ player, groundItem, groundItemId: MARK_OF_GRACE, clickType: 1, location, handled: false });
+  const mark = {
+    getItem: () => ({ getId: () => MARK_OF_GRACE }), getgoesGlobal: () => false, getDespawnDelay: () => 1000,
+    getPosition: () => new Location(3098, 3281, 3),
+  };
+  // The mark credited to the inventory (ItemOnGroundManager's "ground-items:taken"); a click that took nothing sends none.
+  const taken = (groundItem = mark, source = "pickup") => hooks.listeners["ground-items:taken"]({ player, groundItem, source, itemId: MARK_OF_GRACE, amount: 1 });
+  assert.equal(hooks.pickup, undefined, "clicking a mark pays nothing before the pickup succeeds");
   hooks.events.length = 0;
-  pickUp();
+  taken();
   assert.deepEqual(hooks.events.find((event) => event.name === "agility:mark-taken")?.payload.course, "draynor");
   assert.deepEqual(player.getAttribute("agility.progress"), { course: "draynor", index: 2 }, "unanswered: nothing but the pick-up");
   assert.equal(player.getAttribute("agility.laps")?.draynor, undefined);
@@ -1342,9 +1376,11 @@ test("a course mark picked up finishes a lap only when agility:mark-taken says s
   };
   try {
     hooks.events.length = 0;
-    pickUp({ ...mark, getgoesGlobal: () => true });
+    taken({ ...mark, getgoesGlobal: () => true });
     assert.equal(hooks.events.length, 0, "a dropped mark is not a course's");
-    pickUp();
+    taken(mark, "telegrab");
+    assert.equal(player.getAttribute("agility.laps")?.draynor, undefined, "only a picked-up mark finishes a lap");
+    taken();
     assert.equal(player.getAttribute("agility.laps").draynor, 1);
     assert.equal(player.getAttribute("agility.progress"), null);
     assert.deepEqual(added, [[995, 10]]);
@@ -1644,6 +1680,15 @@ test("Varrock: the course helper is highlighted for the lap and told each obstac
   assert.deepEqual(player.state.varbitLog.filter(([id]) => id === HIGHLIGHT_VARBIT).map(([, value]) => value), [7, 0]);
   assert.equal(course("varrock").lapBonus, 0, "the Wiki's obstacle XP adds up to the lap");
   assert.equal(course("canifis").lapBonus, 0);
+});
+
+// Wiki (Obstacle pipe (Barbarian Outpost)): "Passing through the pipe awards the player 10 Agility experience."
+test("the Barbarian Outpost pipe gives 10 Agility XP, either way through", () => {
+  for (const from of [[2552, 3561, 0], [2552, 3558, 0]]) {
+    const player = createPlayer(...from);
+    const ticks = timeline(player, 20210, [2552, 3559, 0]);
+    assert.equal(ticks.reduce((sum, entry) => sum + entry.xp, 0), 10, `from ${from}`);
+  }
 });
 
 test("rooftop gaps: the jump two ticks after arriving, the landing (2588) a tick later, the XP the tick after (rsprox captures)", () => {

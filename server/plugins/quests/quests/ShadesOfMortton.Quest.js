@@ -113,6 +113,9 @@ module.exports = function registerShadesOfMorttonQuest(api) {
     ItemIdentifiers.ASYN_REMAINS,
     ItemIdentifiers.FIYR_REMAINS,
   ];
+  const SERUM_207_LEVEL = 15;
+  const SERUM_207_XP = 50;
+  const SERUM_207_SOUND = 2608;
   const SERUM_207_ITEM_IDS = [
     ItemIdentifiers.SERUM_207_4_,
     ItemIdentifiers.SERUM_207_3_,
@@ -210,14 +213,18 @@ module.exports = function registerShadesOfMorttonQuest(api) {
     [ItemIdentifiers.OLIVE_OIL_1_, ItemIdentifiers.SACRED_OIL_1_],
   ]);
 
-  /** Logs -> pyre logs and the sacred-oil doses OSRS charges (approximate). */
+  /**
+   * Logs -> pyre logs and the sacred-oil doses each takes. Wiki (Pyre logs): regular and oak 2, willow and maple 3, yew
+   * and magic 4; making them gives "a flat rate of 5 experience per dose of oil used" in Firemaking.
+   */
+  const PYRE_XP_PER_DOSE = 5;
   const PYRE_LOG_RECIPES = new Map([
     [ItemIdentifiers.LOGS, { product: ItemIdentifiers.PYRE_LOGS, doses: 2 }],
     [ItemIdentifiers.OAK_LOGS, { product: ItemIdentifiers.OAK_PYRE_LOGS, doses: 2 }],
     [ItemIdentifiers.WILLOW_LOGS, { product: ItemIdentifiers.WILLOW_PYRE_LOGS, doses: 3 }],
     [ItemIdentifiers.MAPLE_LOGS, { product: ItemIdentifiers.MAPLE_PYRE_LOGS, doses: 3 }],
     [ItemIdentifiers.YEW_LOGS, { product: ItemIdentifiers.YEW_PYRE_LOGS, doses: 4 }],
-    [ItemIdentifiers.MAGIC_LOGS, { product: ItemIdentifiers.MAGIC_PYRE_LOGS, doses: 5 }],
+    [ItemIdentifiers.MAGIC_LOGS, { product: ItemIdentifiers.MAGIC_PYRE_LOGS, doses: 4 }],
   ]);
 
   const KILLS_ATTRIBUTE = "quest.shades_of_mortton.shade_kills";
@@ -727,6 +734,21 @@ module.exports = function registerShadesOfMorttonQuest(api) {
     openBook(player, DIARY_TITLE, DIARY_PAGES);
   }
 
+  /** One Serum 207 (3): the ashes of `ashesSlot` into the tarromin vial of `vialSlot`, which becomes the serum. */
+  function makeSerum207(player, vialSlot, ashesSlot) {
+    const inventory = player.getInventory();
+    inventory.deleteAtSlot(ashesSlot, 1, false);
+    inventory.setItem(vialSlot, new api.core.Item(ItemIdentifiers.SERUM_207_3_, 1));
+    inventory.refreshItems();
+    player.getSkillManager().addExperiences(Skill.HERBLORE, SERUM_207_XP);
+    player.performAnimation(new api.core.Animation(api.core.CacheDefinitions.getSeqId("human_herbing_vial")));
+    player.getPacketSender().sendSound(SERUM_207_SOUND, 1, 0);
+    player.getPacketSender().sendTypedMessage(api.core.ChatType.SPAM, "You make serum 207.");
+    if (quest.getStage(player) === STAGE_READ_DIARY) {
+      quest.setStage(player, STAGE_MADE_SERUM);
+    }
+  }
+
   /** Ashes finish serum 207; sacred oil turns logs into pyre logs. */
   function handleItemOnItem(event) {
     const { player } = event;
@@ -740,13 +762,39 @@ module.exports = function registerShadesOfMorttonQuest(api) {
     ) {
       if (quest.getStage(player) < STAGE_READ_DIARY) return;
       event.handled = true;
-      player.getInventory().deleteNumber(ItemIdentifiers.ASHES, 1);
-      player.getInventory().deleteNumber(ItemIdentifiers.TARROMIN_POTION_UNF_, 1);
-      player.getInventory().adds(ItemIdentifiers.SERUM_207_4_, 1);
-      player.sendMessage("You make serum 207.");
-      if (quest.getStage(player) === STAGE_READ_DIARY) {
-        quest.setStage(player, STAGE_MADE_SERUM);
+      // Wiki (Serum 207): level 15 Herblore (boostable), 50 XP, a 3-dose serum. rsprox_transcripts/227/01846.txt:
+      // ashes on the tarromin vial in slot 9 -> "You make serum 207." (spam), mort_serum3 in slot 9, the ashes' slot
+      // emptied, human_herbing_vial, synth 2608 and a Herblore XP drop.
+      if (player.getSkillManager().getCurrentLevel(Skill.HERBLORE) < SERUM_207_LEVEL) {
+        player.sendMessage(`You need a Herblore level of ${SERUM_207_LEVEL} to combine those.`);
+        return;
       }
+      const inventory = player.getInventory();
+      const slotOf = (id, clicked) => (inventory.forSlot(clicked)?.getId?.() === id ? clicked : inventory.getSlotForItemId(id));
+      const vialSlot = slotOf(ItemIdentifiers.TARROMIN_POTION_UNF_, used === ItemIdentifiers.TARROMIN_POTION_UNF_ ? event.usedItemSlot : event.usedWithItemSlot);
+      const ashesSlot = slotOf(ItemIdentifiers.ASHES, used === ItemIdentifiers.ASHES ? event.usedItemSlot : event.usedWithItemSlot);
+      api.core.TaskManager.cancelTasks(player.getIndex());
+      makeSerum207(player, vialSlot, ashesSlot);
+      // Wiki (Serum 207): no Make-X, it carries on until the vials or ashes run out, 0 then 2 then every 3 ticks
+      // (rsprox 227/01846: the second "You make serum 207." two ticks on, into vial slot 10 with the ashes of slot 12).
+      // A player-keyed task, so a walk or another click stops it.
+      let tick = 0;
+      let next = 2;
+      api.core.TaskManager.submit(new (class extends api.core.Task {
+        constructor() { super(1, player.getIndex(), false); }
+        execute() {
+          if (!player.isRegistered() || player.getHitpoints() <= 0) { this.stop(); return; }
+          if (++tick < next) return;
+          next += 3;
+          const vial = inventory.getSlotForItemId(ItemIdentifiers.TARROMIN_POTION_UNF_);
+          const ashes = inventory.getSlotForItemId(ItemIdentifiers.ASHES);
+          if (vial < 0 || ashes < 0 || player.getSkillManager().getCurrentLevel(Skill.HERBLORE) < SERUM_207_LEVEL) {
+            this.stop();
+            return;
+          }
+          makeSerum207(player, vial, ashes);
+        }
+      })());
       return;
     }
 
@@ -766,6 +814,7 @@ module.exports = function registerShadesOfMorttonQuest(api) {
     drainDoses(player, SACRED_OIL_ITEM_IDS, recipe.doses);
     player.getInventory().deleteNumber(logId, 1);
     player.getInventory().adds(recipe.product, 1);
+    player.getSkillManager().addExperiences(Skill.FIREMAKING, recipe.doses * PYRE_XP_PER_DOSE);
     player.sendMessage("You use the sacred oil on the logs and get pyre logs.");
     if (quest.getStage(player) < STAGE_CREATED_PYRE_LOGS) {
       quest.setStage(player, STAGE_CREATED_PYRE_LOGS);

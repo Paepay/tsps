@@ -1,4 +1,6 @@
 "use strict";
+const { PlayerDeathTask } = require("../../src/main/typescript/elvarg/game/task/impl/PlayerDeath");
+const { EquipmentRequirements } = require("../../src/main/typescript/elvarg/game/model/equipment/EquipmentRequirements");
 
 /**
  * Dizana's quiver: its extra ammunition slot, charges and death rules.
@@ -377,8 +379,23 @@ function swap(player) {
     return;
   }
   if (restrictedAmmo(player, worn)) return;
+  if (ammo && !canWear(player, ammo)) return;
   setWornAmmo(player, ammo);
   store(player, worn ? { id: worn.getId(), amount: worn.getAmount() } : null);
+}
+
+/**
+ * The stored ammo goes into the ammo slot only as wearing it would: its Ranged level (base, as equip checks) and the
+ * can-equip rules (a duel's no-ammo rule). Written straight in, dragon arrows went on at any level, in any duel.
+ */
+function canWear(player, ammo) {
+  const item = new (core().Item)(ammo.id, ammo.amount);
+  const unmet = EquipmentRequirements.getUnmet(player, item.getDefinition());
+  if (unmet != null) {
+    player.sendMessage(EquipmentRequirements.message(unmet, `your ${name(ammo.id)}`));
+    return false;
+  }
+  return PluginManager.emitCanEquip(player, core().Equipment.AMMUNITION_SLOT, item) !== false;
 }
 
 function remove(player) {
@@ -510,8 +527,8 @@ function decrementAmmo(player, pos, amount, delayTicks = 0) {
     if (!ammo || ammo.id !== ammoId || player.getAttribute(ATTRIBUTE) !== stack) return;
     if (dropped > 0 && pos) ItemOnGroundManager.registerLocation(player, new Item(ammoId, dropped), pos);
     const left = ammo.amount - used - dropped;
+    // Emptied without a line, as worn ammo is (rsprox 227/00096:101682); the next attempt says so.
     store(player, { id: ammoId, amount: left }, true);
-    if (left <= 0) player.sendMessage("You have run out of ammunition!");
   };
   if (delayTicks > 0) {
     TaskManager.submit(new (class extends Task {
@@ -595,7 +612,7 @@ function shouldKeepQuiver({ player, item }) {
 function dropCoins(event, amount) {
   if (!event.location) return;
   const { Item, ItemOnGroundManager } = core();
-  ItemOnGroundManager.registerLocation(event.killer ?? event.player, new Item(COINS, amount), event.location);
+  ItemOnGroundManager.registerLocation(PlayerDeathTask.lootOwner(event.player, event.killer), new Item(COINS, amount), event.location);
 }
 
 function clearQuiverState(player, item) {
@@ -625,7 +642,7 @@ function deathItemDrop(event) {
   // Above 20 a locked quiver is kept, but its ammo is lost rather than dropped (Wiki).
   if (ammo && event.location && (level <= 20 || !locked)) {
     const { Item, ItemOnGroundManager } = core();
-    ItemOnGroundManager.registerLocation(event.killer ?? player, new Item(ammo.id, ammo.amount), event.location);
+    ItemOnGroundManager.registerLocation(PlayerDeathTask.lootOwner(player, event.killer), new Item(ammo.id, ammo.amount), event.location);
   }
   clearQuiverState(player, item);
 }
@@ -636,6 +653,7 @@ function login({ player }) {
 
 module.exports = {
   name: "DizanasQuiver",
+  description: "Dizana's quiver: an extra ammunition slot with Fill, charges, Open, Empty and Uncharge, plus its death rules and the Shrine of Ralos blessing.",
   members: true,
   register(api) {
     pluginApi = api;

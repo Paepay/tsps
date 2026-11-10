@@ -4,7 +4,7 @@ The achievement diaries' reward items (Ardougne cloak, Karamja gloves, Explorer'
 
 **What's not here yet:**
 - the Explorer's ring's free alchemy (the Alchemy option and using items on the ring);
-- the passive perks: shop discounts, Kandarin headgear's extra logs, Morytania legs as a ghostspeak amulet, desert heat protection, and the like.
+- the passive perks: shop discounts, Morytania legs as a ghostspeak amulet, desert heat protection, and the like.
 
 ## Zaff's battlestaves
 
@@ -41,7 +41,7 @@ Every option works whether the item is worn or carried. The inventory names and 
 
 - **Daily limits** reset at 00:00 UTC.
 - **Counting is per destination,** not per item. Upgrading keeps the day's uses: Ardougne cloak 2's 3 farm teleports used leaves cloak 3 with 2 of 5 (Wiki trivia).
-- **The Falador shield** spends nothing when Prayer is already full (Wiki changelog). The restore rounds down.
+- **The Falador shield** spends nothing when Prayer is already full (Wiki changelog). The restore rounds down. A recharge that spends a charge also clears the prayer drain counter ([prayer-drain.md](prayer-drain.md)).
 
 ## From the captures
 
@@ -128,3 +128,28 @@ Final verification: fresh build and32/32 focused diary/alchemy/gameframe checks.
 ## Rada's blessing and fishing
 
 Worn Rada's blessing 1 to 4 give a 2/4/6/8% chance, per landed fish, of the same catch again (a stackable catch doubles, so 14 karambwanji become 28), with no extra experience or bait (no extra crystal harpoon charge either, which is inferred, not Wiki), and the message "Rada's blessing enabled you to catch an extra fish." (Wiki; no capture confirms the wording or channel). On an infernal harpoon the extra fish has its own chance to be cooked, which gives Cooking XP and uses an infernal charge. Junk from a big net is left out, which the Wiki doesn't settle. Fishing Trawler, Tempoross and drift nets don't use it. Spirit flakes in ordinary fishing are not built. See `server/plugins/skills/fishing/RadasBlessing.Fishing.js`.
+
+## Kandarin headgear and normal trees
+
+Worn in the head slot, any of Kandarin headgear 1 to 4 doubles the regular logs a normal tree gives, with
+no additional experience ([Kandarin headgear 1](https://oldschool.runescape.wiki/w/Kandarin_headgear_1),
+[Kandarin Diary](https://oldschool.runescape.wiki/w/Kandarin_Diary)). No recording in the capture index mentions it, so the Wiki is the only source.
+
+- Only regular `Logs` double: oak and the other trees give one, and a headgear that is only carried does nothing.
+- Each chop still gives the tree's XP once. Both logs go through the same storage hand-off as a single log; a basket taking only part of the pair is not covered by a test. With one free slot, one log goes to the inventory and the other to the floor.
+- It is a members' benefit: on a free world a headgear saved as worn gives no extra log.
+- The unit is `server/plugins/skills/woodcutting/KandarinHeadgear.Woodcutting.js`; `Woodcutting.plugin.js` asks it for the logs per chop.
+- Not covered: whether the logs-chopped tracker counts the second log (it counts one per chop here); no capture says.
+- Tests: `server/tests/woodcutting-pet-priority.test.cjs` (worn tiers 1 to 4, carried, oak, free world).
+
+## Ardougne pickpocketing
+
+The Ardougne Diary improves pickpocketing, in `server/plugins/items/diaryrewards/Pickpocketing.DiaryRewards.js`, which answers the pickpocket's `thieving:pickpocket-target` request. Neither needs the Ardougne cloak worn or carried.
+
+| Tier completed | Coin pouches held | Success |
+| --- | --- | --- |
+| Medium | 56 | +10% on NPCs in Ardougne |
+| Hard | 84 | +10% on any NPC (not 20% in the city) |
+| Elite | 140 | as Hard |
+
+Sources, all fetched for this change: [Ardougne Diary](https://oldschool.runescape.wiki/w/Ardougne_Diary) (rewards list), [Pickpocketing](https://oldschool.runescape.wiki/w/Pickpocketing) ("a 10% increased success rate for pickpocketing NPCs in Ardougne", Hard "all NPCs around Gielinor", cloak not needed) and [Coin pouch](https://oldschool.runescape.wiki/w/Coin_pouch) (28 / 56 / 84 / 140 by completed tier). No capture shows these. Inferred and not on the Wiki: completing the tier is enough (the Wiki says "completing"), the bonus scales the success chart as the gloves of silence and the Thieving cape do, and "in Ardougne" is a rectangle over East and West Ardougne (x 2432-2690, y 3262-3336), judged by the NPC's tile and taken from where the city's guards, knights, paladins, heroes, men and women stand. The master farmer's patch north of the walls is outside it. The Easy tier's stall success bonus the Wiki mentions in its trivia is not built: it says stalls have no odds, only a chance of being seen.

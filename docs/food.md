@@ -17,6 +17,12 @@ The full-plugin decoded Eat tests for same-name cabbage variants, energy restora
   that counts every bite. The animation (`human_eat`) and sound (2393) match them.
 - **The cache:** which items can be eaten (an Eat option), their names, and their ids.
 
+- **Haddock and yellowfin:** [Haddock](https://oldschool.runescape.wiki/w/Haddock) heals 18 and may
+  lift Hitpoints above the base level by 20% of it or 10, whichever is lower, and not in combat in
+  a PvP area; [Yellowfin](https://oldschool.runescape.wiki/w/Yellowfin) heals 19 and restores 20%
+  run energy. rsprox recording 4103 shows the yellowfin's "You eat the yellowfin." line, animation,
+  sound and bite count; it records no run-energy change.
+
 ## How eating works
 
 - **Timers (Wiki: Food):** a bite adds 3 ticks to the attack timer and blocks the next bite for
@@ -87,6 +93,7 @@ replacement, death, overheal boundaries and existing immunity. Potion intake,
 quest unlocks, broader antidote/anti-venom tiers and orb remedy selection remain
 separate audits; this correction does not establish complete food/potion parity.
 | `outcomes` | A table of results by `weight`, each with its heal, boosts, drains, `drainRandom` (a random skill but Hitpoints) and messages (kebabs). |
+| `overheal` | `{ "percent", "max" }`: Hitpoints may rise above the base level by that share of it (rounded down), at most `max` (haddock: 20% or 10, whichever is lower; Wiki: Haddock). Like the anglerfish, not while in combat in a PvP area. |
 | `special` | `anglerfish`: its heal from the eater's Hitpoints level (the level levelled up to, not the health left) and its overheal (not in combat in a PvP area). |
 | `wildernessOnly` | Can only be eaten in the Wilderness (blighted food). |
 | `message`, `messages`, `healMessage`, `afterMessage` | The eat line (or one per bite), the heal line (`null` for none), and a line after it. |
@@ -106,6 +113,30 @@ separate audits; this correction does not establish complete food/potion parity.
   foods ("a bowl of ...") leave one the same way.
 - Mackerel's "You eat the cod." is live's own text (recorded).
 
+## Drinks eaten as food
+
+Some drinks use the food rules (`"option": "Drink"`): they heal, share the food timers and
+leave their vessel. Checked 7 November 2026 against the Wiki pages
+[Jug of wine](https://oldschool.runescape.wiki/w/Jug_of_wine),
+[Half full wine jug](https://oldschool.runescape.wiki/w/Half_full_wine_jug),
+[Cup of tea](https://oldschool.runescape.wiki/w/Cup_of_tea),
+[Fruit blast](https://oldschool.runescape.wiki/w/Fruit_blast) and
+[Pineapple punch](https://oldschool.runescape.wiki/w/Pineapple_punch):
+
+- A jug of wine heals 11 and lowers Attack by 2; a half full wine jug heals 7 and lowers Attack
+  by 2. Both leave a jug (the Wiki states the leftover only for the cocktails and the tea, so the
+  half full jug's follows the full one's). The Wiki gives no messages; "You drink the wine." is
+  ours.
+- A standard cup of tea (the two ids with only Drink and Drop; the ones with an Empty option are
+  other teas) heals 3, boosts Attack by 2 + 2% of the level and leaves an empty cup. The Wiki
+  quotes "Aaah, nothing like a nice cuppa tea!"; it is the only message.
+- Fruit blast and pineapple punch heal 9, leave a cocktail glass and print "You drink the
+  cocktail. It tastes great.".
+
+Not covered, because the Wiki gives only formulas for their stat changes or no figures: the dizzy cocktails (wizard blizzard, short green guy, drunk dragon,
+choc saturday, blurberry special), chocolatey milk, the other teas and the tea flask, and
+the other spirits and quest drinks, which still do nothing.
+
 ## Not food here
 
 Items with an Eat option that aren't in the data, each listed with its reason in the test:
@@ -113,6 +144,27 @@ handled by another plugin (Poisoned cheese, White pearl, ToA's Honey locust, Cas
 use Heal); quest, event and minigame items with their own effects (rock cakes, poison karambwan,
 nightshade, Servery food); event sweets and candy; food only eaten in one
 area (Vampyrium); unobtainable items; and the whole watermelon, which is sliced first.
+
+## Dwarven rock cake
+
+`plugins/items/RockCake.plugin.js` (members). The cake from Recipe for Disaster's Freeing the
+Mountain Dwarf heals nothing and is never used up; it takes no eat delay, so it can be clicked
+every tick (rsprox recording 3250, rev 233). Both versions (hot 7509, cooled 7510) hit through
+the eating animation (`human_eat`) on the click tick.
+
+- **Eat, cooled:** 1 Hitpoint, only above 2 Hitpoints (Wiki, Dwarven rock cake). Sound 1018 and
+  the messages "Ow! You nearly broke a tooth!" and "The rock cake resists all attempts to eat
+  it." Both are sent at 2 Hitpoints or less too, but then the recordings show no animation and
+  no hit.
+- **Guzzle, cooled:** 10% of the current Hitpoints rounded down, plus 1, never the last point
+  (a 0 hit at 1 Hitpoint). Sound 1018; "You bite hard into the rock cake to guzzle it down."
+  and "OW! A terrible shock jars through your skull." (recording 3250 shows hits falling from 10
+  to 1 as Hitpoints drop, then a 0 at 1; the formula is the Wiki's.)
+- **Eat, hot:** 1 Hitpoint under the same rule, with "Ow! Ow! That's hot!" and "You burn your
+  mouth on the hot rock cake." The recording shows no 1018 sound for it.
+- **Not done:** Guzzle on a hot cake (nothing recorded; the Wiki gives the same damage but no
+  messages) and the ogre Rock cake (2379), which has no recording and whose Wiki page does not
+  give a damage fraction for Eat.
 
 ## Guthix rest recipe permission
 

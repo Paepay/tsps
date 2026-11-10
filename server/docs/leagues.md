@@ -20,6 +20,8 @@ world runs a league when its plugin config says so:
 "pluginConfig": { "league:type": 6 }
 ```
 
+The league options are also on the [world config page](../../docs/world-configuration.md#world-config-page).
+
 (every league the cache names in enum 2670: 1 Twisted, 2 Trailblazer, 3 Shattered Relics, 4
 Trailblazer Reloaded, 5 Raging Echoes, 6 Demonic Pacts, the league this cache carries and the
 data's `default`, which a league character takes when the config names a type the data does not
@@ -204,7 +206,32 @@ relics are the first askers; nothing changes when nobody answers):
 | `construction:jewellery-box-destinations` | Construction's jewellery box | `{ player, list }` -> `{ label, location, wildernessLevel }` for the ornate box's destinations (its jewellery's Wilderness level: 30 for dragonstone pieces) |
 | `treasure-trails:stashes`, `treasure-trails:current-step` | Treasure Trails | `{ list }` -> `{ tier, location }` for every STASH unit; `{ player, location, target }`: where the clue read last leads, while that trail is carried; `requirement-waived` now carries `itemId` (Falo's item) |
 | `magic:spell-unlocked` | the Mage Arena's god spells | `{ player, spellId, unlocked }` asked before a locked spell is refused |
-| `slayer:bracelet`, `slayer:remote-task` | Slayer | `{ player, npc, bracelet, chance, consumeCharge }` for the bracelet of slaughter; `{ player, allowed }` after a gem, ring or helmet check: a new task from the last master or a cancel, from anywhere |
+| `slayer:bracelet`, `slayer:remote-task` | Slayer | `{ player, npc, bracelet, chance, consumeCharge }` for the bracelet of slaughter (`"slaughter"`) and the expeditious bracelet (`"expeditious"`); `{ player, allowed }` after a gem, ring or helmet check: a new task from the last master or a cancel, from anywhere |
+| `object:operated` | the object interaction pipeline (`ObjectActionPacketListener`), when a loc's menu option was answered by a plugin or the engine's own Bank | `{ player, object, objectId, option, location }`: `option` is the menu option lower-cased ("open", "bank", "fire", "fill"); a click no plugin took and no engine option covers is silent, so a mere attempt is no deed |
+| `item:operated` | `PluginManager.emitItemAction`, when an inventory item's own action was answered | `{ player, itemId, option, amount }`: `option` the menu option lower-cased ("open", "open-all"), `amount` the stack the action covered at once (before the handler took it) |
+| `stash:filled` | Treasure Trails' STASH units (`Stash.TreasureTrails`), as a unit is filled | `{ player, tier }`: `tier` the unit's tier name ("easy", "medium", "hard", "elite", "master") |
+| `water-source:filled` | `WaterSources.plugin.js`, as a container is filled from a water source | `{ player, objectId, name, itemId, filledId, location }`: `name` the source's display name ("water pump", "sink", "fountain") |
+| `construction:portal` | Construction's portal nexus (`Nexus.Construction`), as its own teleport is used | `{ player, destination }`: `destination` the teleport's spell name ("Weiss teleport") |
+| `collection-log:obtain` | the reward plugins that fill the Collection Log (Tempoross, the Colosseum's loot, ...), beside `collection-log:slot-filled` | `{ player, itemId, amount }`: an item a reward just handed over |
+| `npc-drops:roll` (extended) | NpcDrops, at each kill's table roll | `{ player, npc, npcId, drops, damagers }`: the drops the roll really granted (empty when nothing dropped), never a potential entry |
+| `coin-pouch:opened` | `CoinPouch.Thieving.js`, as a coin pouch is opened (a refused `open-all` emits nothing) | `{ player, coins, all, pouches }`: the coins a pouch (or an `open-all`) paid, whether it was the whole stack, and how many pouches it opened |
+| `chest:opened` | `WildernessChests.plugin.js` (muddy chest) and `Catacombs.ShadesOfMortton.js` (Bronze/Black/Gold chests), as a chest really gave its loot | `{ player, objectId }`: a locked chest, a wrong key or no room for the loot returns first and emits nothing |
+| `pottery:fired` | `Pottery.Crafting.js`, as an oven fires a piece | `{ player, objectId, itemId }`: the oven clicked (null if fired from elsewhere) and the fired piece; a cracked piece and a refused menu emit nothing |
+| `fishing:junk` | `Fishing.plugin.js`, on a junk catch | `{ player, itemId, amount }`: a casket or an old boot |
+| `mining:gem` | `Mining.plugin.js`, on a gem pre-roll | `{ player, itemId }`: the gem found (a gem rock's own find is a plain `mining:success`) |
+| `mining:geode` | `ClueGeodes.Mining.js`, as a clue geode is found | `{ player, itemId }`: the geode (after any clue-box rewrite) |
+| `motherlode:nuggets` | the Motherlode Mine's sack (`Machine.MotherlodeMine.js`) | `{ player, amount }`: the golden nuggets the sack handed over |
+| `archery-competition:score` | the Archery Competition (`Session.ArcheryCompetition.js`), as a round ends | `{ player, score, tickets }`: the round's score and the tickets it paid |
+| `miscellania:collected` | Managing Miscellania (`Ghrim.ManagingMiscellania.js`), as Advisor Ghrim collects | `{ player, approval }`: the collection and its approval percentage (0-100) |
+| `colosseum:glory` | Fortis Colosseum (`Rewards.Colosseum.js`), after each wave | `{ player, glory }`: the run's running Glory |
+| `brimhaven-agility-arena:streak` | the Brimhaven Agility Arena (`Shared.BrimhavenAgilityArena.js`), as a tag is made clean | `{ player, tickets }`: the run of tags with no missed pillar (a missed pillar resets it) |
+| `woodcutting:nest-search` | `Woodcutting.plugin.js`, as a bird's nest is searched | `{ player, itemId }`: the seed taken from the nest |
+| `rogues-chest:loot` | `WildernessChests.plugin.js`, as the Rogue's Castle chest is looted | `{ player, drops }`: the loot the chest handed over |
+| `phantom-muspah:frozen-cache` | `Loot.PhantomMuspah.js`, as an opened Frozen Cache gives another | `{ player, itemId }` |
+| `random-events:reward` | `Rewards.RandomEvents.js`, as a random event hands over its reward | `{ player, itemId, amount }` |
+| `tai-bwo-wannai-cleanup:gout-tuber` | `Events.TaiBwoWannaiCleanup.js`, as a gout tuber is dug from the minigame | `{ player }`: the dig succeeded ("Find a Gout Tuber") |
+| `bees:stung` | `MerlinsCrystal.Quest.js`, as an unprotected beehive stings the player | `{ player }`: the 2-damage sting ("Get Stung By Bees") |
+| `pennant:crystal-acorn` | `Pennant.plugin.js`, as Pennant trades a crystal seed for an acorn | `{ player, itemId }`: the acorn given ("Receive a Crystal Acorn from Pennant") |
 
 ## What the client is sent
 
@@ -580,7 +607,8 @@ rule from the Wiki's Shattered Relics pages. They draw only for league type 3 (v
   the token, so it keeps working when the set comes off. The crystal's Teleport-back returns to
   where the character's last teleport began, from the core's new `teleport:landed` (`from`,
   `fromInstance`), unless that was in an instance, Fossil Island's underwater area, Entrana, the
-  rune essence mine, Pyramid Plunder or the Agility Pyramid's upper floors (the Wiki's exclusions
+  rune essence mine, Pyramid Plunder, the Agility Pyramid's upper floors, Mogre Camp or Crash
+  Island's dungeon (the Wiki's exclusions
   this server has; boxes ours), up to Wilderness level 20 (ours); Check-memories says whether one
   is kept, and Save-memory that it keeps itself. Every teleport counts, the crystal's own too, so a
   second Teleport-back returns to where the first was used. Home teleports, fairy rings, spirit
@@ -745,7 +773,7 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 | 1 | Endless Harvest | done (Trailblazer Reloaded's unit; banking by toggle, resources never deplete) |
 | 1 | Barbarian Gathering | partial: second chance, Strength/Agility XP, bare hands that fish without bait (`fishing:tool`) and chop and mine as the crystal axe and pickaxe (`woodcutting:tool`, `mining:tool`); not the Knapsack's storage: its Fill, Check, Open/Close and Dispose (and the bank's Empty) have no recording and no line in the Wiki, and no Leagues VI recording carries the knapsack |
 | 1 | Abundance | done: the +10 is a visible, permanent boost of every non-combat skill's current level with the resting level raised to match, as the Defence pact's (233/246 Leagues VI recordings: base + 10, Slayer and Sailing too, combat skills unboosted, kept through level-ups) |
-| 2 | Hotfoot | partial: cooked fish, smelted ore, running XP in the boots (10 + floor(Agility x 2/3) every 10 ticks of 2-tile moves, Wiki: Searing boots), laps counted twice with +25% XP, no failures, a 33% mark chance on the nine rooftop courses (`agility:mark-chance`; the mark cooldown still runs), a picked-up course mark finishing the lap with 10,000 coins (`agility:mark-taken`), Prifddinas's portal shards tenfold (`agility:course-item`; the portal's own shard and line, 237/01149, are new to the course), the Brimhaven arena's tickets and vouchers twofold (`minigame:points`); not termites finishing a lap or doubled (the Colossal Wyrm courses give no termites: their spawn rate is unknown, Wiki) |
+| 2 | Hotfoot | partial: cooked fish, smelted ore, running XP in the boots (10 + floor(Agility x 2/3) every 10 ticks of 2-tile moves, Wiki: Searing boots), laps counted twice with +25% XP, no failures, a 33% mark chance on the nine rooftop courses (`agility:mark-chance`; the mark cooldown still runs), a picked-up course mark finishing the lap with 10,000 coins (`agility:mark-taken`), Prifddinas's portal shards tenfold (`agility:course-item`; the portal's own shard and line, 237/01149, are new to the course), the Brimhaven arena's tickets and vouchers twofold (`minigame:points`); not termites finishing a lap or doubled (the Colossal Wyrm courses' termites pass through `agility:course-item`, but the relic's termite rules aren't known) |
 | 2 | Friendly Forager | partial: Raging Echoes' unit, plus Herblore at once and 100 of each herb (Wiki, 15 April 2026); the recorded lines. Not the worn Withdraw-all and Withdraw-last (their behaviour is in no source), nor the herb sack's shared store (Wiki: it shares the silklined herb sack's) |
 | 2 | Woodsman | partial: Fletching batches, log burning, Hunter catches, impling loot doubled and noted (`hunter:impling-loot`), double rumour XP and sack loot rolls (`hunter:rumour-reward`, `hunter:sack-rolls`), whistles that keep their charges (`quetzals:whistle-charge`); not the trap's herb or tree seed: the Wiki says only "a random herb seed or tree seed", and no Leagues VI recording has a Woodsman holder (every trapper in them chose Friendly Forager) |
 | 3 | Bank Heist | done |
@@ -759,7 +787,7 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 | 5 | Soul Harvest | partial: shards from bones, ashes (our 0.8 x XP; the Wiki gives none), crops and health checks (`farming:check-health`), bound as pure essence (`runecrafting:essence`); not the libation bowl: the Teomat's bowl (Fill, Sacrifice, Check) is not on the server, and the soul-shard sacrifice's lines and pace are unrecorded (the bowl's 164 recorded uses, 237/01104 and 04054, are Larcenist players with blessed bone shards); nor the Ourania, combination or minigame altars |
 | 6 | Grimoire | done (every prayer as well) |
 | 6 | Eternal Sustenance | done |
-| 6 | Culling Spree | partial: free perks, elite clues per superior, a 50% second superior (`slayer:superior-again`), the Slayer helmet (i)'s boosts and protection unworn (`slayer:helmet`); not the three-task choice with a chosen count (5-200): no Leagues VI recording has a Culling Spree holder, and the cache's slayer_task_choice (236) shows a master's fixed ranges, not a chosen count, nor the helmet uses that read the worn item (Nex's gas, the equipment screen) |
+| 6 | Culling Spree | partial: the three-task choice, one a boss from the unlocked areas with Like a Boss, and a typed count of 5-200 (`slayer:task-offer`, a chatbox menu: no Leagues VI recording has a Culling Spree holder, and the cache's slayer_task_choice (236) is now Mortimer's, reading his rows), free perks, elite clues per superior, a 50% second superior (`slayer:superior-again`), the Slayer helmet (i)'s boosts and protection unworn (`slayer:helmet`); not the helmet uses that read the worn item (Nex's gas, the equipment screen) |
 | 7 | Flow State | done but for stealing valuables (not on the server) and diabolic worms (no Fishing spot uses them here): a 2-tick pace for Fishing, Mining, Woodcutting, Cooking, Firemaking (lighting, campfire tending), bone offering, Fletching, Smithing (furnace, anvil, cannonballs: the Wiki's current list), Crafting, Farming (raking, harvesting), alchemy, Superheat Item, enchanting and transmutation (`skills:action-interval`), Wintertodt's root chopping and fletching and brazier lighting, Tempoross's harpooning, with a fletching knife's tick off after it (1 tick) |
 | 7 | Reloaded | done (a pick from tiers 1 to 6) |
 | 8 | Executioner | done: the execute (never Yama or the Gemstone Crab) and the axe's 6 tiles of reach for its owner, 8 on Longrange (`onCombatAttackDistance` over the profile's 5, 7 on Longrange: its `longRangeFightType`; Trailblazer Reloaded's stays 5 and 7) |
@@ -1395,7 +1423,10 @@ and `league:pact-effect` { player, effect } (an effect varbit's gameval name -> 
   damage node's "+10% accuracy in all combat styles" is applied by its own style's unit (7 Magic,
   14 Melee, 15 Ranged); General has the +% accuracy pact. PvP (Wiki): stat boosts, attack speed
   and melee range apply against players; Thorns, Echoes, Blindbag, reflect and the hit-forcing
-  pacts do not.
+  pacts do not. Thorns pays combat XP for its damage like a melee hit, on the tick the NPC's hit
+  lands: the current melee style's skills and Hitpoints, or Attack with a weapon that is no melee
+  weapon or while autocasting, whatever style came before (rsprox captures, Leagues VI: 237/01104,
+  237/04057, 237/04099, 238/04142); its second hit pays too (ours, not captured).
 - **Readings of ours** (the units' heads list every one): off-hands are shield-slot items that are
   not shields, and shields go by name (the cache's category 18 agrees but for the crystal shield,
   and plugins cannot read it); min-hit pacts act only on hits past accuracy (a miss stays 0, as
@@ -1512,7 +1543,9 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
   names is open to everyone: instances, Death's Office, the POH, random events, the essence mine,
   Tutorial Island (the Wiki's accommodations). Known approximations of the grid: the four tiles
   between Lumbridge and the Al Kharid gate and Catherby's beach east of x 2816 fall with Al Kharid
-  / Asgarnia, the River Salve's east bank at Paterdomus with Misthalin, Tutorial Island's eastern
+  / Asgarnia, the River Salve's east bank at Paterdomus with Misthalin, the Citharede Abbey and the
+  Giants' Plateau east of Al Kharid (the map square holding the abbey's own cabbage field) with the
+  desert while the Abandoned Mine in the square below stays Morytania, Tutorial Island's eastern
   tip with the desert. `league:area-at { x, y }` answers for any tile.
 - **Enforcement** (a main character is never asked): a map-square change into a locked square
   (`onPlayerMapSquareChange`, once per square crossed, by a step or by a teleport, ladder, boat or
@@ -1654,14 +1687,14 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   accepts is a cache NPC of that exact name and the description adds no place or condition
   ("Defeat a Goblin", "Defeat Cerberus 50 times", "Kill 5 Sand Crabs"; the alternatives its
   description lists join it: "Defeat Callisto or Artio 50 times", "Defeat The Nightmare or
-  Phosani's Nightmare 50 times combined"; "in the Fremennik Province", "on Ungael", "without
-  leaving" or Raging Echoes' "must be of one difficulty" leave the task unmapped, the places
+  Phosani's Nightmare 50 times combined"; "in the Fremennik Province", "on Ungael" or Raging
+  Echoes' "must be of one difficulty" leave the task unmapped, the places
   until the area unlocks exist, even for a boss with one home ("Defeat any TzHaar in Mor Ul Rek"
   is the four attackable city castes, TzHaar-Ket, TzHaar-Xil, TzHaar-Mej and TzHaar-Hur; TzTok-Jad
   and TzHaar-Ket-Rak are other tasks; "Reach a combined kill count of 500 across all God Wars
   Dungeon bosses" is Kree'arra, General Graardor, Commander Zilyana, K'ril Tsutsaroth and Nex, one
-  total; "Defeat any one of the God Wars Dungeon bosses 100/250 times" stays unmapped, since that
-  is one boss that many times); a monster whose every location line
+  total; "Defeat any one of the God Wars Dungeon bosses 100/250 times" is `kill-any-one`, one of
+  the five reaching that count on its own, not their total); a monster whose every location line
   on its Wiki page is the task's place, and whose name the cache gives one attackable monster, is
   killed there whatever the task adds: "Defeat a Drake in the Karuulm Slayer Dungeon", the pages
   saved as `<dir>/npcs/<page>.wikitext`; a Combat Achievements monster no NPC is named after is the
@@ -1675,8 +1708,15 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   task in `league:task-progress` (task id -> count) until done (a trigger with an `area` counts
   only deeds done on its map there, where the player stands, `league:area-at`; a potion counts by
   its name without doses); `tests/league-task-deeds.test.cjs` drives each kind through the plugin
-  doing the deed: `equip { items }` (any one worn)
-  and `equip-all { items }` (all at once) on `equipment:changed` and at login; `produce { items,
+  doing the deed: `equip { items, count? }` (any one worn; a `count` the stack it must be worn with,
+  "a stack of at least 100 Black Chinchompas"), `equip-all { items }` (all at once) and
+  `equip-any-set { sets }` (every piece of one of the sets) on `equipment:changed` and at login, with
+  `equip-each { items, any? }` (every one worn at some point, `any` completing alone) and
+  `equip-count { items, count }` (that many different ones over time) for the items sharing a slot
+  that cannot be worn at once (five godswords, six god books, the four Zenyte pieces); the gathered
+  ones are kept in `league:task-worn` (task id -> the worn units seen), so the same item worn twice
+  is no new one and the progress survives a logout; a unit is an item's name, its cache id, or a list
+  of either ("any of"); `produce { items,
   count }` from `skills:produced` (cooking, crafting, fletching, herblore, smithing, with its
   `amount`), `fishing:success`, `woodcutting:success`, `mining:success` and
   `runecrafting:success` (rolls x runes per essence), whatever the skill; `hunt { npcs, count }`
@@ -1693,8 +1733,9 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   named by the CombatSpells / EffectSpells keys (teleports, Lunar and Arceuus spells are not mapped:
   the server names no cast of theirs), `steal { stalls, items?, count, area? }` from
   `thieving:success` (a stall: its loc name, the item if named; a place other than a league area,
-  or a stall no loc names, is left out), `pick { plants, count }` and `pick-each { plants: { plant:
-  count } }` from Pickable's `world:picked` (Wheat for its grain), `collection-log { category,
+  or a stall no loc names, is left out), `pick { plants, count, place? }` and `pick-each { plants: {
+  plant: count } }` from Pickable's `world:picked` (Wheat for its grain; a `place` counts only picks
+  inside its bounds, "Pick up a Cabbage in the Citharede Abbey"), `collection-log { category,
   count }` (no category: the whole log, "Obtain 15 unique Collection Log slots"; a clue tier's
   Treasure Trails slots: "Fill 15 slots in the Hard Clue section", "Gain 10
   unique items from Reward casket (easy)") asked of the log's `collection-log:slots` when
@@ -1753,6 +1794,21 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   Tirannwn", "Talk to the Mysterious Old Man in Falador", "Pet Renu"; every cache NPC of the name
   with that option is one of the linked NPC page's ids (`<dir>/npcs/<page>.wikitext`), so the name
   is that NPC,
+  `object-op { objects?, objectIds?, option?, event?, place?, area?, count }` from the object interaction
+  pipeline's `object:operated` (a loc's menu option something answered, not a click nothing did;
+  `objectIds` cache ids and/or `objects` the loc's names, the option lower-cased): "Fill a Crate
+  with Bananas" (the crate's `fill`, so a `Search` is none), "Use the Mine cart transportation
+  system" (the Lovakengj and Keldagrim mine carts), "Use the Abyss" (the twelve rifts' `Exit-through`).
+  An `event` names the content's own success event instead ("chest:opened", "pottery:fired"), so only
+  a real deed counts: "Open a Bronze / Black / Gold Chest" (the Shades of Mort'ton chests, by name and
+  `open`), "Open a Muddy Chest" (its cache id, "open", one per open; "Open 10 Muddy Chests" the same
+  trigger with a count) and "Use the Pottery Oven in Civitas illa Fortis" (the oven id and `fire`,
+  the cache's spellings of its name) credit nothing for a locked chest, a wrong key, an empty pack or
+  an empty oven. The option must be the one the task names, so a wrong option or another id is no deed,
+  `item-op { items?, itemIds?, option?, amount?, count }` from `PluginManager.emitItemAction`'s
+  `item:operated` (an inventory item's own action something answered, by cache id and/or name, the
+  option lower-cased): "Open the Mystery Box", "Open a Frozen Cache"; a single `open` of one pouch is
+  not the `open-all` of twenty-eight (that task is a `coin-pouch`, below),
   `shortcut { shortcuts, count }` from the Agility plugin's `agility:obstacle`, now with the
   shortcut's own name (`agility-shortcuts.json`'s; a course obstacle has none): "Use the Stepping stone
   (Shilo Village) in Shilo Village", "Cross a Pillar (Revenant Caves) in the Revenant Caves" (any of
@@ -1770,10 +1826,15 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   Soulflame Horn" (`CombatSpecial.drain`'s new `combat-special:performed`, its `itemId` the weapon
   wielded), "Set Up a Dwarf Cannon" (`dwarf-cannon:set-up`, the fourth part on), "Rake a Flower
   Patch" (Farming's `farming:raked` { patchType: "FLOWER" }), "Fill a Bucket With Supercompost"
-  (`farming:bin-taken`, a bucket filled at the bin),
+  (`farming:bin-taken`, a bucket filled at the bin), "Defeat the Penance Queen"
+  (`barbarian-assault:queen-kill`, Barbarian Assault's queen killed),
+  "Find a Gout Tuber" (the tai bwo wannai clean-up's `tai-bwo-wannai-cleanup:gout-tuber`),
+  "Get Stung By Bees" (Merlin's Crystal's hive's `bees:stung`), "Receive a Crystal Acorn from
+  Pennant" (Pennant's `pennant:crystal-acorn`, its `itemId` the acorn),
   `pet { skilling, count }` from Pets'
-  `pets:obtained` (a skilling pet has its skill; "any Boss Pet" is left out, a boss pet being
-  told apart from no other pet without a skill), and `eat-heal { heal }` from `food:eaten`'s `restores` (what
+  `pets:obtained` (a skilling pet has its skill, a boss pet none: "Obtain any Boss Pet", "any
+  Skilling Pet"), the items a source obtains (`obtain`, `obtain-all` and the per-source kinds,
+  below), and `eat-heal { heal }` from `food:eaten`'s `restores` (what
   the food restores, at full health too): "Eat / Drink a X" by the description's item or else the
   name's, a place ("in Auburn Valley", "from a bird bath") none. The generator derives them from the
   name and the Wiki's description, read with its links' targets (something worn in a league area,
@@ -1814,28 +1875,67 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   no raw fish is a creature hunted); "Pickpocket X [N times]" with the description's
   alternatives; "N <tier> Clue Scroll(s)". "Equip any Godsword" is every godsword its page's
   {{plinkt}} names, plus an ornament kit the cache has of one. "Equip any piece of Zenyte Jewelry"
-  is the four enchanted pieces and each one's cache forms. "Equip every piece of Zenyte Jewelry"
-  stays unmapped: the amulet and the necklace share the neck slot, so the four cannot be worn at
-  once. "Equip any piece of armour from the moons
+  is the four enchanted pieces and each one's cache forms; "Equip every piece" the same four
+  gathered over time (`equip-each`; the amulet and the necklace share the neck slot, so they cannot
+  be worn at once). "Equip any piece of armour from the moons
   of peril" is every piece of the Moon equipment page's three tables. "Equip any Mithril weapon" (and
   the adamant, rune and dragon ones) is that equipment page's Weapons tables. "Equip a basic elemental
   staff", an elemental or combination battlestaff or mystic staff, is the linked section's table (a
   plain battlestaff is not an elemental one). "Equip any piece of Crystal Armour" and the full set are
   the helm, body and legs, including a degraded piece. "Equip a piece of Beekeeper's Outfit" is the
   outfit page's pieces. "Equip a full set of tier 5 Shayzien armour", of Graceful and of the prospector
-  kit are those pages' pieces (a graceful recolour shares the cache's name, so it is the set; the
-  recoloured task stays unmapped). "Equip a completed God Book" is the six books; "Equip a Damaged God
+  kit are those pages' pieces (a graceful recolour shares the cache's name, so it is the same set).
+  "Equip a completed God Book" is the six books; "Equip a Damaged God
   book" is the cache's "Damaged book". "Equip any Team cape in the Wilderness" is the cache's team
-  capes, worn there. "Restore 75 or more Prayer Points at any altar" is `prayer-restore`. A description naming a group ("any kind of logs"), a
+  capes, worn there. "Equip any Godsword"/"any spear (kp)" and the recoloured Graceful, the guild
+  hunter, Smith's, Farmer's, Carpenter's, Raiment of the Eye, Tai Bwo Wannai Villager and Vyre Noble
+  outfits are those pages' pieces (the Farmer's jacket or shirt one slot); a full Tai Bwo Wannai
+  Villager set is its five. "Equip a Full God Dragonhide/Rune/Vestment Set" is one god's whole set
+  (each of the six gods' coif, body, chaps and bracers; full helm, platebody, legs or skirt and
+  kiteshield; or robe top, legs, mitre, cloak, stole and crozier). "Equip an Ornament Kit Item" is
+  the cache's 68 worn "(or)" items; "Equip an Eternal Slayer Ring" the "Slayer ring (eternal)".
+  "Equip a Chompy Bird Hat" by rank is the cache id whose examine names that rank (the one name
+  every rank shares needs id). "Equip a Monkey Backpack" is the cache's worn "Monkey"; "a full set
+  of Yakhide Armour" the two worn "Yak-hide armour" ids; "a Gilded or Trimmed Wizard Item" the gilded
+  armour page's Armour section or a (t)/(g) wizard piece. Tasks naming a count of distinct items
+  gathered over time are `equip-count` ("N unique Echo Items": the cache's "echo ..." items, one
+  item's charge states grouped, and Demonic Pacts' ten echo uniques) and `equip-each` (every godsword,
+  every completed god book, the three Cerberus boots - or Avernic treads (max) alone). "Restore 75 or more Prayer Points at any altar" is `prayer-restore`; its `place` (as `check-health`'s) counts only restorations the player stands inside ("Restore 90 Prayer in Prifddinas" at the city's own altar). A description naming a group ("any kind of logs"), a
   place or a condition leaves the task unmapped; so does a parenthesis remark, while one without a
   space is part of a name ("(c)", "(u)").
+- **Obtained items** (`obtain { items, source?, count }`, `obtain-all { items, count }`, and the
+  per-source kinds `coin-pouch`, `archery-target`, `miscellania`, `colosseum-glory`,
+  `motherlode-nuggets`, `nest-seed`, `haircut`, `agility-tickets`, `agility-ticket-streak`): an
+  item a source really hands over, told apart by source so a deed is credited only from the one it
+  names: `"fishing"` (`fishing:junk`: a Casket, an Old boot), `"mining"` (`mining:gem`, and a gem
+  rock's own `mining:success`), `"geode"` (`mining:geode`), `"random-event"` (`random-events:reward`),
+  `"impling"` / `"crystal-impling"` (`hunter:impling-loot`), `"nest"` (`woodcutting:nest-search`),
+  `"rogues-chest"` (`rogues-chest:loot`), `"cache-open"` (`phantom-muspah:frozen-cache`),
+  `"drop"` (`npc-drops:roll`: only the drops the roll really granted, never a potential entry) and
+  `"logged"` (`collection-log:obtain`, the reward plugins). A task naming no source takes any of
+  them, its item being unique to its source (e.g. the Big Harpoonfish). `obtain-all` gathers every
+  one of its items over time, kept in `league:task-obtained` (task id -> the units seen) so the same
+  item twice is no new one and the progress survives a logout ("Obtain every Revenant weapon"). A
+  single-source task reaching an amount is its own kind: `coin-pouch { coins?, pouches? }` a completed
+  open's coins or pouches ("Obtain 800 Coins From Coin Pouches At Once", "Open 28 Coin Pouches at
+  once"), `archery-target { points }`
+  a finished Target round's score, `miscellania { approval }` a collection made at least that
+  approval ("Collect Miscellania Resources at Full Approval"), `colosseum-glory { glory }` a run's
+  running Glory ("Obtain 40,000/58,000 Glory"), `motherlode-nuggets { count }` golden nuggets from
+  the Motherlode sack, `nest-seed { items }` one of the seeds a bird's nest hands over,
+  `haircut { count }` a makeover kept on the hair type, `agility-tickets { count }` the Brimhaven
+  Agility Arena's tickets ("Redeem 50 Wilderness Agility Tickets"), and
+  `agility-ticket-streak { tickets }` a run of clean tags with no missed pillar ("Receive 30 Agility
+  Arena Tickets without missing any pillars").
 - **Named places** (the catalog's `places`, by key: a guild, a dungeon, an island, each `{ name,
   page, source, rects }`, boxes of tiles on any plane): a task's place that is no league area
   ("Enter the Crafting Guild", "Defeat a runite golem inside the Wilderness Resource Area") is a
   `place` on its trigger when the generator's place table knows its bounds, each from one source
   checked against another: the Wiki page's own outline (`{{Map|mtype=polygon}}`, or its
-  `square` or `rectangle` as Module:Map draws them; the tiles whose centre it holds), the server's Slayer areas (`slayer-areas.json`, less any other area's box that
-  overlaps), or the tiles the cache's walls, fences and shores enclose around the page's map point
+  `square` or `rectangle` as Module:Map draws them; the tiles whose centre it holds; Marcellus's
+  patch its own `mtype=square|r=5`), the server's Slayer areas (`slayer-areas.json`, less any other area's box that
+  overlaps), an explicit rectangle the plugin names (Prifddinas, Catherby, the Mage Arena bank), or the
+  tiles the cache's walls, fences and shores enclose around the page's map point
   (with what they surround; an island in open sea its box); every place must hold one of its page's
   map points, or every spawn of the NPCs it lists. The pages are saved as
   `<dir>/places/<page>.wikitext`, and a place is at most 192 boxes. A trigger with a `place` counts
@@ -1845,7 +1945,13 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   "Thieve" is "Steal"). `enter { place }`: the player inside it, each of its
   boxes a zone (`onZoneEnter`, so a step, a teleport or a login there counts): "Enter the X" or
   "Visit X" whose description names the same place ("in the Kebos Lowlands", where it lies, says
-  nothing more). A place without such bounds stays unmapped.
+  nothing more). A place without such bounds stays unmapped. A Demonic Pacts place may come from the
+  server itself when the page's own outline is unusable: the Dagannoth Kings' lairs in the Waterbirth
+  Island Dungeon (the DagannothKings plugin's own boxes) and the Karuulm Slayer Dungeon
+  (`slayer-areas.json` with the regular Hydra's spawns, its page having no map point), or a box the
+  plugin names (Prifddinas's own walls with the crystal patch, the house portal and the altar inside;
+  Catherby's farming area; the Mage Arena bank cave's room, where Gundai the banker stands) and the
+  cache's walls around the page's pin for an open town (Lletya, with its fruit tree patch inside).
 - **One of each**: `kill-each { npcs: { name: count }, area? }`, that many deaths of each NPC,
   counted per NPC in `league:task-kills` ("Defeat a Moss giant, Fire giant & Hill Giant in Kourend",
   every one a cache NPC, the league area that follows).
@@ -1854,6 +1960,24 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   underground") gets `area`, the areas plugin's id (`league-areas.json`; the task list's own enum
   numbers Kourend 10, the map 20), and counts only kills whose tile `league:area-at` puts there
   (the death's tile, or the player's for a credited kill).
+- **Conditional kills** (`kill { ...condition }`, read off the killing blow): the runtime records
+  the last hit each player lands on an NPC (`onCombatHitResolved`) and reads it at the NPC's death,
+  so a task can require the final blow from a named weapon or weapon type (`weapons`, "with a
+  Mithril Spear"), a spell (`spells`, "with an earth spell"), a combat style (`style`, "with
+  melee"), equipment worn at the death (`worn`, "while dressed like it"), a single blow of at
+  least the target's hitpoints (`oneHit`, "in one hit"), a target that never hurt a player
+  (`noDamage`, "without taking any damage from it"), or no other player's damage (`solo`); a count
+  within a time window (`window { count, ticks }`, "3 chickens in 6 seconds", "8 penguins within 5
+  seconds") keeps the ticks of its kills for the session (not persisted). `kill-any-with { items,
+  count }` is any attackable NPC killed with one of the items as the final blow ("5 creatures with a
+  mace"); `kill-any-one { npcs, count }` is one of a group reaching the count on its own (the God
+  Wars generals). A `kill-each` may carry `noLeave`, keeping its one-sitting kills only while the
+  player stays inside its place ("the Dagannoth Kings without leaving"; reset when the player
+  leaves, read off a zone exit from the place, a crossed map square and login rather than a per-tick
+  hook). A task that is itself a Combat Achievement is `ca-complete { task }` off the
+  achievements plugin's `combat-achievements:completed`, backfilled at login from the plugin's
+  `combat-achievements:has-task` ("Defeat Awakened Vardorvis" is "Vardorvis Sleeper", "Defeat Vorkath
+  5 Times Without Special Damage" is "Dodging the Dragon").
 - **Experience** (`Triggers.LeagueTasks.js`): `experience { skills, amount, count }`, at least
   `amount` XP in `count` of the skills, on `onExperienceGained` and at login. "Obtain N Million
   <Skill> XP"; "... XP in a combat skill" takes the description's list (Prayer is in the 100
@@ -1872,13 +1996,30 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   `combat-achievements:summary` { player } -> completed, speed, monsters, checked on
   `combat-achievements:completed` and at login. "Within the areas you have unlocked" is not
   checked.
-- **Not mapped yet:** kills and deeds with a condition (a time, a streak, the weapon or spell used),
-  places with no sourced bounds (open towns, regions), open groups ("any Dragon weapon"), items
-  obtained (drops, rewards), transport without an arrival signal, the minigame steps and
-  interactions whose plugins emit no event (a dialogue's trade or service, a quest-only step, house
-  building), deeds whose content is not built here (most animals' Pet, the grubby, muddy and moon
-  chests, STASH units, sacred eel dissection), and names the cache gives several things (every Chompy
-  bird hat rank's); the Leagues tutorial's tasks are completed by the tutorial itself.
+- **Not mapped yet:** deeds with a condition (a streak), boss kills whose wording is about the
+  encounter rather than the fight ("Defeat Nex Solo" and "Defeat the Royal Titans solo" want a
+  private fight with no one else ever joining, not the `solo` fight condition; "Defeat Vorkath 15
+  Times Without Leaving" wants a 15th no-leave signal the encounter does not keep), the Echo bosses
+  and the awakened variants no plugin completes (no content), a kill that is really a Slayer task's
+  own condition, and kills whose NPC is never attackable (the Port Sarim prisoner); places with no
+  sourced bounds (open towns, regions), open groups ("any Dragon weapon"), transport without an
+  arrival signal, the minigame steps and interactions whose plugins emit no event (a dialogue's
+  trade or service, a quest-only step, house building), and names the cache gives several things
+  (every Chompy bird hat rank's); the Leagues tutorial's tasks are completed by the tutorial itself.
+  A chest with no handler stays unmapped: the Grubby Chests (a loc the cache gives no Open), the
+  Zombie Pirate Lockers (the plugin drops loot with no menu-option event), the Ornate Lockbox (a
+  "Take", no lockbox handler), the Varlamore Moon Chest and its "moon key" chest (no content); so do
+  a bucket of sand (no sandpit fill), a grape barrel for the Foreman (its loc has no actions), the
+  icy basalt's Weiss teleport, a herring on a Mighty tree, an Elven teleport crystal and a
+  teleport-anchoring scroll (no plugin answers their use), and a Sacred eel dissection (no dissection
+  interaction). Obtain tasks with no content behind them also stay unmapped: Arnold Lydspor's Swan
+  Song hands over only a small fishing net ("Receive a gift from Arnold"), a Gorak exists only in
+  its quest and has no drop table ("Get a Gem from a Gorak"), an Ecumenical Key is only a Nex shard
+  combine here, not the Wilderness God Wars drop the task names ("Obtain an Ecumenical Key"), the
+  Forthos Dungeon's Temple Key is not implemented ("Obtain the Temple Key"), the four Mysterious
+  Hallowed Goods are granted nowhere ("Obtain Every Hallowed Tool"), the Memoriam Device's crystals
+  are not on the server ("Find Every Memoriam Crystal"), and no Blast Mine plugin exists ("Obtain
+  Runite Ore at the Blast Mine").
 
 ## Developer commands
 

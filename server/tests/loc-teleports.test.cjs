@@ -31,6 +31,9 @@ const Thieving = require("../plugins/skills/Thieving.plugin");
 
 let core;
 const hooks = {};
+/** Quests the loc gates read as done (`quest:is-complete`). */
+const questsDone = new Set();
+PluginManager.createApi("LocQuestState").onCustomEvent("quest:is-complete", (query) => { if (questsDone.has(query.key)) query.complete = true; });
 const prompts = [];
 const emitted = [];
 
@@ -131,7 +134,10 @@ test("every entry is a placed loc with that option in the rev 241 cache, once pe
   assert.ok(!data.locs.some((entry) => /^(sailing_|spirittree|fossil_magic_mushtree)/.test(entry.name)));
 });
 
-test("every Prifddinas gate leaf can be clicked from its walkable side and crosses the city boundary", () => {
+test("every Prifddinas gate leaf can be clicked from its walkable side and crosses the city boundary", (t) => {
+  // Entering needs Song of the Elves (Wiki, Prifddinas).
+  questsDone.add("song_of_the_elves");
+  t.after(() => questsDone.delete("song_of_the_elves"));
   const gates = data.locs.filter((entry) => /^prif_wall_gate_(left|right)(_exit)?$/.test(entry.name));
   assert.equal(gates.length, 16, "both leaves, inside and outside, at all four gates");
   const emitRoute = PluginManager.emitObjectRoute;
@@ -1207,4 +1213,58 @@ test("hand-added gates are decisions, so a sync keeps them", () => {
     const gate = requirementFor(entry, decisions);
     assert.deepEqual(entry.requires, gate?.requires, `${entry.name} ${entry.x},${entry.y}`);
   }
+});
+
+// Wiki (Prifddinas): "All methods of entering the city require completion of Song of the Elves"; (Dorgesh-Kaan): "It
+// can only be accessed after completion of the Death to the Dorgeshuun quest". The gates moved anyone in.
+test("the Prifddinas gates and Dorgesh-Kaan's doors need their quests done", () => {
+  for (const [name, key, from] of [
+    ["prif_wall_gate_left", "song_of_the_elves", [2181, 3329, 0]],
+    ["dorgesh_city_entrance_left", "death_to_the_dorgeshuun", [3317, 9600, 0]],
+  ]) {
+    const entry = data.locs.find((loc) => loc.name === name);
+    assert.deepEqual(entry.requires?.map((r) => r.quest), [key], `${name} asks for ${key}`);
+    const object = locAt(entry.id, entry.x, entry.y, entry.z);
+    const visit = explorer(from);
+    const messages = [];
+    visit.player.sendMessage = (message) => messages.push(message);
+    const click = () => {
+      const event = { player: visit.player, object, objectId: object.getId(), clickType: entry.op, handled: false };
+      hooks.object(event);
+      assert.equal(event.handled, true);
+    };
+    click();
+    runTicks(visit, 4);
+    assert.deepEqual(messages, [entry.requires[0].refuse.message], `${name}: refused without ${key}`);
+    assert.deepEqual([visit.player.getLocation().getX(), visit.player.getLocation().getY()], from.slice(0, 2), `${name}: not moved`);
+    questsDone.add(key);
+    click();
+    runTicks(visit, 4);
+    const at = visit.player.getLocation();
+    assert.deepEqual([at.getX(), at.getY(), at.getZ()], entry.to, `${name}: in after ${key}`);
+    questsDone.delete(key);
+  }
+});
+
+test("the Trahaearn mine cave entrance in Prifddinas leads in and its steps lead back out (#3823)", () => {
+  const where = (visit) => { const at = visit.player.getLocation(); return [at.getX(), at.getY(), at.getZ()]; };
+  const enter = data.locs.find((loc) => loc.name === "prif_mine_entrance");
+  const exit = data.locs.find((loc) => loc.name === "prif_mine_exit");
+  const cave = locAt(36556, 3269, 6047, 0);
+  assert.equal(CacheDefinitions.getObject(36556).actions[0], "Enter");
+  const inside = explorer([3271, 6051, 0]);
+  const request = { player: inside.player, object: cave, objectId: 36556, clickType: 1, handled: false };
+  hooks.object(request);
+  assert.equal(request.handled, true, "the cave entrance takes the click");
+  runTicks(inside, enter.tick + 3);
+  assert.deepEqual(where(inside), enter.to);
+
+  const steps = locAt(36215, 3301, 12455, 0);
+  assert.equal(CacheDefinitions.getObject(36215).actions[0], "Exit");
+  const out = explorer([3302, 12454, 0]);
+  const leave = { player: out.player, object: steps, objectId: 36215, clickType: 1, handled: false };
+  hooks.object(leave);
+  assert.equal(leave.handled, true, "the steps take the click");
+  runTicks(out, exit.tick + 3);
+  assert.deepEqual(where(out), exit.to);
 });

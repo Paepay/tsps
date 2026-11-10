@@ -377,7 +377,10 @@ Ticks from the rift opening:
     sound 942 x2.
   - +2: "You carve out a place for the cell and carefully place it inside the guardian." (spam),
     `gotr_chisel_guardian`, sound 2586 x2.
-  - +4: the guardian rises (`rift_guardian_spawn`). The pile is removed for 6 ticks.
+  - +4: the guardian rises (`rift_guardian_spawn`). The pile is removed for 6 ticks. 4 ticks after
+    it rises, the guardian takes its first step, which carries sequence -1 (delay 95). That ends
+    the spawn sequence, which loops at forced priority 10: while it plays, the client holds the
+    guardian's steps and drops its attack and block sequences (issue 3837).
   - +5: the cell is used up, "The powers of the weak cell extend into the essence. A Guardian
     comes to life.", sound 956, 80 Crafting XP and the cell's Runecraft XP. The pile's energy is
     6/15/27/45 (Wiki: 2x+1 of the strengthening value), of the pile's kind only.
@@ -457,6 +460,17 @@ Ticks from the rift opening:
 - **Damage to these NPCs** lands directly, with their splat. Core NPCs heal 10% a tick when the
   combat system hasn't hit them for 20 seconds, so every GotR NPC is flagged `combat:no-regen`.
   Walkers and guardians are flagged to walk through other entities.
+
+### The Amulet of the Eye teleport
+
+Wiki ([Amulet of the Eye](https://oldschool.runescape.wiki/w/Amulet_of_the_Eye)): the amulet gives
+unlimited teleports to the Temple of the Eye, from the inventory or the worn tab, and its red,
+green and blue dyed forms are the same item. In the rev 241 cache the plain amulet has the inventory
+options Wear, Teleport and Destroy, and the plain and the three dyed amulets (26914, 26990, 26992,
+26994) carry a worn `Teleport` as cache param 451. `Amulet.GuardiansOfTheRift.js` teleports to the lobby tile with a normal teleport, so
+Tele Block and the level 20 Wilderness limit apply. No rsprox recording touches the amulet, so the
+landing tile (the lobby tile, as for the Minigame Teleport) and the teleport graphic of the dyed
+amulets are not confirmed by a capture.
 
 ### Rewards
 

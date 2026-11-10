@@ -41,6 +41,8 @@ const log = [];
 const submitted = [];
 /** Whether content asks for another pickpocket ("thieving:done", a league relic's repeat). */
 let repeatAgain = false;
+/** What content (the Ardougne Diary's rewards) answers "thieving:pickpocket-target" with. */
+let pickpocketTargetAnswer = null;
 const interactions = [];
 const combat = {
     inCombat: () => false,
@@ -59,6 +61,7 @@ Thieving.register({
     emitCustomEvent: (name, request) => {
         if (name === 'thieving:success') log.push(name);
         if (name === 'thieving:done' && repeatAgain) request.again = true;
+        if (name === 'thieving:pickpocket-target') pickpocketTargetAnswer?.(request);
         // The Skillcapes plugin answers this; a worn Thieving cape is all these tests need.
         if (name === 'skillcape:has-perk' && request.skill === 'THIEVING') {
             request.result = request.player.getEquipment().get(Equipment.CAPE_SLOT)?.getId() === I.THIEVING_CAPE;
@@ -179,6 +182,14 @@ function attempt(t, { name = 'Man', npcId = 0, random = 0, who = player({ level:
     }
     return { click, next: ticks[0], ticks, handled: event.handled, result };
 }
+
+// Wiki (Rocky): "1 in B - (Lvl * 25), where B is the base chance and Lvl is the player's Thieving level"; every common
+// target 257,211, Watchman 134,625, Paladin 127,056, Gnome 108,718, Hero/Elf/Vyre 99,175, TzHaar-Hur 176,743. The
+// base is the table's own: the player's level comes off once, in Pets.
+test("Rocky: each target's petBase is the Wiki's base, with no NPC level taken off it", () => {
+    const special = { watchman: 134625, paladin: 127056, gnome: 108718, hero: 99175, vyre: 99175, elf_lletya: 99175, elf_prifddinas: 99175, tzhaar_hur: 176743 };
+    for (const t of DATA.targets) assert.equal(t.petBase, special[t.key] ?? 257211, t.key);
+});
 
 test('the data file: every target is complete, its rates add up, and no NPC is claimed twice', () => {
     const { rateOf } = Pickpocket._test;
@@ -338,13 +349,60 @@ test('coin pouches: 28 of a kind block pickpocketing; a full inventory only allo
     assert.deepEqual(farmer.click, ['inventory full'], 'a farmer can also give seeds');
 });
 
+test("content's pouch limit lifts the 28-pouch block, and its chance bonus scales the chart like the gloves (Ardougne Diary)", (t) => {
+    pickpocketTargetAnswer = (request) => { request.pouchLimit = 56; request.chanceBonus = 10; };
+    t.after(() => { pickpocketTargetAnswer = null; });
+    const lifted = attempt(t, { who: player({ inventory: { [I.COIN_POUCH]: 28 } }) });
+    assert.deepEqual(lifted.click, ["spam: You attempt to pick the man's pocket."], '28 pouches no longer block at a limit of 56');
+    const full = attempt(t, { who: player({ inventory: { [I.COIN_POUCH]: 56 } }) });
+    assert.deepEqual(full.click, ['You need to empty your coin pouches before you can continue pickpocketing.']);
+    const man = DATA.targets.find((target) => target.key === 'man');
+    const { successChance } = Pickpocket._test;
+    assert.equal(successChance(player({ level: 1 }), { ...man, chanceBonus: 10 }), 199 / 256, 'Man at 1: 180 * 1.1 = 198, +1');
+});
+
 test('opening coin pouches pays their coins', () => {
     const who = player({ inventory: { [I.COIN_POUCH]: 3 } });
     log.length = 0;
-    CoinPouch._test.open(who, I.COIN_POUCH, 3, true);
+    const opened = CoinPouch._test.open(who, I.COIN_POUCH, 3, true);
+    assert.equal(opened, true, "a completed open says so");
     assert.equal(who.inv.getAmount(I.COIN_POUCH), 0);
     assert.equal(who.inv.getAmount(I.COINS), 9);
     assert.deepEqual(log.slice(-2), ['spam: You open all of the pouches and receive a total of 9 coins.', 'sound 2115']);
+});
+
+test('one pouch opened on its own says it opened, so the item action is handled', () => {
+    // The right-click Open answers the click only when the pouch really opened: a successful single
+    // open must say so, or the item action is left unhandled and the client plays nothing.
+    const who = player({ inventory: { [I.COIN_POUCH]: 3 } });
+    log.length = 0;
+    const opened = CoinPouch._test.open(who, I.COIN_POUCH, 1);
+    assert.equal(opened, true, "a completed single open says so");
+    assert.equal(who.inv.getAmount(I.COIN_POUCH), 2);
+    assert.equal(who.inv.getAmount(I.COINS), 3);
+    assert.deepEqual(log, ['add Coins x3', 'You open the pouch and find 3 coins.']);
+});
+
+test('a refused open (no room for the coins) opens nothing and says so', () => {
+    // A full pack, twenty-eight pouches still in the stack, and no coin stack: opening one cannot free
+    // the slot, so the coins would vanish and the open is refused (it emits nothing).
+    const who = player({ inventory: { [I.COIN_POUCH]: 28 }, full: true });
+    log.length = 0;
+    const opened = CoinPouch._test.open(who, I.COIN_POUCH, 1);
+    assert.equal(opened, false, "a refusal is no open");
+    assert.equal(who.inv.getAmount(I.COIN_POUCH), 28, "the stack stays");
+    assert.equal(who.inv.getAmount(I.COINS), 0);
+    assert.ok(log.includes("You don't have enough inventory space."), log.join(' | '));
+    assert.ok(!log.some((line) => line.startsWith('spam:')), "nothing is said to have opened");
+});
+
+test('an Open-all on a full pack opens (its own slot is the one the coins go in)', () => {
+    const who = player({ inventory: { [I.COIN_POUCH]: 28 }, full: true });
+    log.length = 0;
+    const opened = CoinPouch._test.open(who, I.COIN_POUCH, 28, true);
+    assert.equal(opened, true);
+    assert.equal(who.inv.getAmount(I.COIN_POUCH), 0);
+    assert.equal(who.inv.getAmount(I.COINS), 84);
 });
 
 test('the rogue outfit: the full set doubles loot; a doubled coin pouch adds its coins', () => {
@@ -357,7 +415,11 @@ test('the rogue outfit: the full set doubles loot; a doubled coin pouch adds its
     assert.equal(who.inv.getAmount(I.AIR_RUNE), 16);
     giveLoot(who, rogue, [{ id: I.COINS, amount: 30 }], () => 0.999);
     assert.equal(who.inv.getAmount(rogue.coinPouch.id), 1);
-    assert.equal(who.inv.getAmount(I.COINS), 25, "one pouch, plus the pouch's coins");
+    // Wiki (Coin pouch): the other half is the pouch's normal amount, rolled over its 25-40 range like an opened pouch.
+    assert.equal(who.inv.getAmount(I.COINS), 40, "one pouch, plus a pouch's coins (the top of the range at roll 0.999)");
+    const low = player({ worn: rogueSet });
+    giveLoot(low, rogue, [{ id: I.COINS, amount: 30 }], () => 0);
+    assert.equal(low.inv.getAmount(I.COINS), 25, "the bottom of the range at roll 0");
     const noSet = player();
     giveLoot(noSet, rogue, [{ id: I.AIR_RUNE, amount: 8 }], () => 0);
     assert.equal(noSet.inv.getAmount(I.AIR_RUNE), 8);

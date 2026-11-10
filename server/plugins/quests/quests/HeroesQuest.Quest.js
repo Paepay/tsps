@@ -106,6 +106,9 @@ module.exports = function registerHeroesQuest(api) {
   const SLIME_ACTION_ID = "PTUCAO";
 
   let quest;
+  /** The Heroes' Guild door's two leaves, on the guild's east wall (x 2902: Helemos is inside at 2894, Achietties outside at 2903). */
+  const GUILD_DOORS = new Set([2624, 2625]);
+  const GUILD_DOOR_X = 2902;
 
   const has = (player, itemId) => player.getInventory().getAmount(itemId) > 0;
   const give = (player, itemId, amount = 1) => player.getInventory().adds(itemId, amount);
@@ -318,8 +321,8 @@ module.exports = function registerHeroesQuest(api) {
   /** Gerrant is not indexed for this page; replay the lava-eel conversation. */
   function handleGerrant(event) {
     const { player, npcId } = event;
-    if (npcId !== GERRANT_NPC_ID) return;
-    if (quest.getStage(player) < STAGE_STARTED) return;
+    if (npcId !== GERRANT_NPC_ID) return false;
+    if (quest.getStage(player) < STAGE_STARTED) return false;
     event.handled = true;
     const variant =
       has(player, BLAMISH_SLIME) || has(player, BLAMISH_OIL) || has(player, OILY_ROD)
@@ -328,16 +331,26 @@ module.exports = function registerHeroesQuest(api) {
     startTranscript(api, player, npcId, PAGE, variant);
   }
 
+  const BLAMISH_OIL_LEVEL = 25;
+  const BLAMISH_OIL_XP = 80;
+
   /** Blamish slime + unfinished harralander potion -> blamish oil. */
   function handleSlimeOnPotion(event) {
     const ids = [event.usedItemId, event.usedWithItemId];
     if (!ids.includes(BLAMISH_SLIME) || !ids.includes(HARRALANDER_UNF)) return;
     const { player } = event;
+    event.handled = true;
+    // Wiki (Blamish oil): "requires level 25 Herblore to be made and gives 80 Herblore experience". The refusal is
+    // the Herblore plugin's own combine line (no recording shows it).
+    if (player.getSkillManager().getCurrentLevel(Skill.HERBLORE) < BLAMISH_OIL_LEVEL) {
+      player.sendMessage(`You need a Herblore level of ${BLAMISH_OIL_LEVEL} to combine those.`);
+      return;
+    }
     take(player, BLAMISH_SLIME);
     take(player, HARRALANDER_UNF);
     give(player, BLAMISH_OIL);
+    player.getSkillManager().addExperiences(Skill.HERBLORE, BLAMISH_OIL_XP);
     player.sendMessage("You mix the slime into your potion.");
-    event.handled = true;
   }
 
   /** Blamish oil + fishing rod -> oily fishing rod. */
@@ -450,11 +463,26 @@ module.exports = function registerHeroesQuest(api) {
   api.onNpcDialogueCondition(answerCondition);
   api.onCustomEvent("npc-dialogue:hook", handleStartHook);
   api.onCustomEvent("npc-dialogue:action", handleAction);
-  api.onNpcInteraction(handleGerrant);
+  api.onNpcInteraction("Gerrant", { "Talk-to": handleGerrant });
   api.onItemOnItem(handleSlimeOnPotion);
   api.onItemOnItem(handleOilOnRod);
   api.onNpcDeath(handleNpcDeath);
   api.onItemOnObject(handleChestItem, { noted: false });
   api.onItemAction(handleItemAction);
   api.onPlayerLogin(handleLogin);
+  // The generic Doors plugin asks door:toggle before opening any door, as the Champions' Guild's does.
+  api.onCustomEvent("door:toggle", guardGuildDoor);
+
+  /**
+   * Wiki (Heroes' Guild): "The guild is only accessible to members who have completed the Heroes' Quest." Its door
+   * (2624/2625 at 2902,3510-3511) opened for anyone. Refused going in; anyone inside may always leave. TSPS wording
+   * for the line, as the Legends' Guild door's.
+   */
+  function guardGuildDoor(event) {
+    if (!GUILD_DOORS.has(event.objectId) || event.handled) return;
+    const { player } = event;
+    if (quest.isComplete(player) || player.getLocation().getX() < GUILD_DOOR_X) return;
+    event.handled = true;
+    player.sendMessage("You need to complete the Heroes' Quest before you can enter the Heroes' Guild.");
+  }
 };

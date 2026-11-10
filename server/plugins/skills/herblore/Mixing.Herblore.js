@@ -41,7 +41,8 @@ function message(recipe) {
 function makeOne(player, recipe) {
   const inventory = player.getInventory();
   if (!hasIngredients(inventory, recipe)) return false;
-  // Content may keep an ingredient or change the product ("herblore:mix", a league relic's saved secondaries and 4-dose potions).
+  // Content may keep an ingredient or change the product ("herblore:mix", a league relic's saved secondaries and 4-dose
+  // potions, the amulet of chemistry's extra dose); `stop`, set by a "herblore:made" listener, ends the batch after this potion.
   const mix = {
     player, recipe, productId: recipe.productId,
     consume: recipe.ingredients.map((item) => ({ ...item })), returns: recipe.returns.map((item) => ({ ...item })),
@@ -62,19 +63,25 @@ function makeOne(player, recipe) {
   }
   Common.spam(player, message(recipe));
   Common.addXp(player, recipe.xp);
-  Common.api.emitCustomEvent("herblore:made", { player, itemId: mix.productId });
+  Common.api.emitCustomEvent("herblore:made", { player, itemId: mix.productId, mix });
   Common.api.emitCustomEvent("skills:produced", { player, skill: Common.core.Skill.HERBLORE, itemId: mix.productId, amount: 1, xp: recipe.xp, kind: "mix" });
-  return true;
+  // A "herblore:made" listener may end the batch after this potion (an amulet of chemistry that crumbled, set to stop).
+  return mix.stop !== true;
 }
 
+/** The vials an unfinished potion starts from (herblore.json): water, blood and coconut milk. */
+const UNFINISHED_VIALS = ["vial_water", "vial_blood", "vial_coconut_milk"];
+
 /**
- * Wiki (Herblore cape): wearing it, a grimy herb goes straight into the vial if the player could
- * clean it; these are the clean herb's recipes taking the grimy herb instead.
+ * Wiki (Herblore cape): "while the cape is equipped, grimy herbs can be used to create unfinished potions", if the
+ * player could clean them; these are the clean herb's unfinished-potion recipes taking the grimy herb instead. A grimy
+ * herb never finishes a potion (a grimy torstol on an anti-venom, or with the three super potions).
  */
 function capeRecipes(player, firstId, secondId) {
   for (const [grimyId, otherId] of [[firstId, secondId], [secondId, firstId]]) {
     const herb = Common.herbFor(grimyId);
     if (!herb || Common.level(player) < herb.level || !Common.wearsHerbloreCape(player)) continue;
+    if (!UNFINISHED_VIALS.some((name) => Common.gameval("obj", name) === otherId)) continue;
     return Common.recipesWith(herb.cleanId, otherId).map((recipe) => ({
       ...recipe,
       cleaned: herb,

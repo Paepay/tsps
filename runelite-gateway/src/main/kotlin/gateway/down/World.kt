@@ -13,6 +13,7 @@ import net.rsprot.protocol.game.outgoing.camera.CamReset
 import net.rsprot.protocol.game.outgoing.camera.CamRotateBy
 import net.rsprot.protocol.game.outgoing.camera.CamRotateToCoordinateV3
 import net.rsprot.protocol.game.outgoing.camera.CamShake
+import net.rsprot.protocol.game.outgoing.camera.CamSkybox
 import net.rsprot.protocol.game.outgoing.camera.CamTargetV4
 import net.rsprot.protocol.game.outgoing.camera.CamUnlock
 import net.rsprot.protocol.game.outgoing.misc.client.HideNpcOps
@@ -34,7 +35,6 @@ import net.rsprot.protocol.message.ZoneProt
 import net.rsprot.protocol.game.outgoing.zone.payload.LocAddChangeV2
 import net.rsprot.protocol.game.outgoing.zone.payload.LocAnim
 import net.rsprot.protocol.game.outgoing.zone.payload.LocDel
-import net.rsprot.protocol.game.outgoing.zone.payload.LocMerge
 import net.rsprot.protocol.game.outgoing.zone.payload.SoundArea
 import net.rsprot.protocol.message.OutgoingGameMessage
 import net.rsprot.protocol.internal.game.outgoing.info.CoordGrid
@@ -126,23 +126,9 @@ class World(
                     inScene(x, z) -> send(LocAnimSpecific(anim, x - sceneX, z - sceneZ, shapeRotation ushr 2, shapeRotation and 3))
                 }
             }
-            TspsServerPacket.LOC_MERGE -> {
-                val id = reader.u16()
-                val x = reader.u16()
-                val z = reader.u16()
-                val level = reader.u8()
-                val shapeRotation = reader.u8()
-                // Player-info preserves TSPS player indices, including the local player's.
-                val index = reader.u16()
-                val start = reader.u16()
-                val end = reader.u16()
-                val minX = reader.s8()
-                val minZ = reader.s8()
-                val maxX = reader.s8()
-                val maxZ = reader.s8()
-                // Both protocols use 20ms client cycles here. Reversed bounds are legal.
-                zone(x, z, level, LocMerge(index, id, x and 7, z and 7, shapeRotation ushr 2, shapeRotation and 3, start, end, minX, minZ, maxX, maxZ))
-            }
+            // Revision 242's client reads LOC_MERGE and discards its 14 bytes: merging a player into a loc
+            // no longer exists there (none in the live 242 captures), so the merge is counted and dropped.
+            TspsServerPacket.LOC_MERGE -> DropCounter.down(packet.opcode)
             TspsServerPacket.SPOT_ANIM -> {
                 val id = reader.u16()
                 if (reader.u8() != TILE_TARGET) {
@@ -254,6 +240,7 @@ class World(
             }
             CAM_SHAKE -> send(CamShake(reader.u8(), reader.u16().coerceAtMost(MAX_BYTE), reader.u16().coerceAtMost(MAX_BYTE), reader.u16().coerceAtMost(MAX_BYTE)))
             CAM_UNLOCK -> send(CamUnlock(reader.u8() != 0))
+            CAM_SKYBOX -> send(CamSkybox(reader.i32()))
             CAM_ROTATE_BY -> send(CamRotateBy(reader.s16(), reader.s16(), reader.u16(), EASINGS[reader.u8()]))
             CAM_ROTATE_COORDINATE -> {
                 val rotation = CamRotateToCoordinateV3(reader.u16(), reader.u16(), reader.s16(), reader.u16(), EASINGS[reader.u8()], false, false)
@@ -371,6 +358,7 @@ class World(
         const val CAM_ARC = 11
         const val CAM_TARGET = 12
         const val CAM_ROTATE_COORDINATE = 13
+        const val CAM_SKYBOX = 14
         const val TARGET_TILE = 0
         const val TARGET_PLAYER = 1
         const val TARGET_NPC = 2

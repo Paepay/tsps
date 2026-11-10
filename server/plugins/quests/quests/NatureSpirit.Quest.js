@@ -420,6 +420,14 @@ module.exports = function registerNatureSpiritQuest(api) {
     return (definition.inventoryActions ?? []).some((action) => String(action).toLowerCase() === "eat");
   }
 
+  function hasFood(player) {
+    return (player.getInventory().getItems?.() ?? []).some((item) => item && isFoodItem(item.getId()));
+  }
+
+  function wearsMorytaniaLegs4(player) {
+    return player.getEquipment?.()?.get?.(Equipment.LEG_SLOT)?.getId?.() === ItemIdentifiers.MORYTANIA_LEGS_4;
+  }
+
   /** The first edible item in the pack becomes rotten food; false with nothing to rot. */
   function rotFood(player) {
     const inventory = player.getInventory();
@@ -460,6 +468,8 @@ module.exports = function registerNatureSpiritQuest(api) {
       visibleGhastFor(player, ghast)?.performAnimation?.(new Animation(GHAST_ATTACK_ANIMATION));
       return;
     }
+    // Wiki (Morytania legs 4): worn, they completely block the attack that turns food rotten.
+    if (wearsMorytaniaLegs4(player) && hasFood(player)) return;
     if (!rotFood(player)) {
       player.getCombat().getHitQueue().addPendingDamage([
         new HitDamage(1 + Math.floor(Math.random() * 3), HitMask.RED),
@@ -870,14 +880,21 @@ module.exports = function registerNatureSpiritQuest(api) {
     event.handled = true;
   }
 
-  /** The blessed sickle's Bloom grows the swamp produce used to fill the pouch. */
+  /**
+   * Every sickle and flail whose cache menu carries Bloom: "Cast Bloom" on the blessed silver
+   * sickle and its gem and Blisterwood upgrades, "Bloom" on the Ivandis, Blisterwood and
+   * Hallowed flails (Wiki: Bloom).
+   */
+  function hasBloomOption(itemId) {
+    return (CacheDefinitions.getItem(itemId)?.inventoryActions ?? []).some(action => /bloom/i.test(action ?? ""));
+  }
+
+  /** A blessed sickle or flail's Bloom grows the swamp produce used to fill the pouch. */
   function handleSickleAction(event) {
-    if (event.itemId !== SILVER_SICKLE_BLESSED_ITEM_ID) return;
+    if (!hasBloomOption(event.itemId)) return;
     if (!String(event.option ?? "").toLowerCase().includes("bloom")) return;
     const { player } = event;
     if (quest.getStage(player) < STAGE_BLESSED_SICKLE) return;
-    if (!held(player, SILVER_SICKLE_BLESSED_ITEM_ID)
-      && player.getEquipment().get(Equipment.WEAPON_SLOT)?.getId?.() !== SILVER_SICKLE_BLESSED_ITEM_ID) return;
     event.handled = true;
     if (World.getProcessCycle() < (nextBloom.get(player) ?? 0)) return;
     const skills = player.getSkillManager();
@@ -900,6 +917,12 @@ module.exports = function registerNatureSpiritQuest(api) {
     event.handled = true;
   }
 
+  function morytaniaHardDone(player) {
+    const request = { player, diary: "morytania", tier: "hard", complete: false };
+    api.emitCustomEvent("diary:is-complete", request);
+    return request.complete === true;
+  }
+
   /** Picking the Bloom's produce; the first fungus picked completes the step. */
   function handleBloomPick(event) {
     const harvest = PLANT_HARVEST.get(event.objectId);
@@ -913,6 +936,10 @@ module.exports = function registerNatureSpiritQuest(api) {
       return;
     }
     player.getInventory().adds(harvest, 1);
+    // Morytania hard diary: Bloom yields double Mort myre fungi (Wiki: Morytania Diary).
+    if (event.objectId === FUNGI_ON_LOG_ID && player.getInventory().getFreeSlots() > 0 && morytaniaHardDone(player)) {
+      player.getInventory().adds(harvest, 1);
+    }
     const source = [...BLOOMED_PLANT.entries()].find(([, bloomed]) => bloomed === event.objectId)?.[0];
     if (source !== undefined) replaceObject(event.object, source);
     if (event.objectId === FUNGI_ON_LOG_ID) {
@@ -1180,6 +1207,7 @@ module.exports = function registerNatureSpiritQuest(api) {
     player.performAnimation(new Animation(645));
     skills.setCurrentLevels(Skill.PRAYER, maximum);
     skills.updateSkill(Skill.PRAYER);
+    player.setPrayerPointDrain(0);
     player.getPacketSender().sendSoundEffect(api.core.Sound.PRAYER_RECHARGE.getId(), 1, 0, 0);
     player.sendMessage("You recharge your Prayer points.");
     return true;

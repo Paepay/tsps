@@ -232,7 +232,7 @@ export class ShopManager {
 
     public static processPlayer(player: any): void {
         if (
-            player?.isPlayerBot?.() ||
+            (player?.isUnwatchedBot?.() ?? player?.isPlayerBot?.()) ||
             !this.activeShopByPlayer.has(player)
         ) {
             return;
@@ -598,9 +598,7 @@ export class ShopManager {
             return;
         }
         if (!fromShop && !this.buysItem(shop, itemId)) {
-            player.sendMessage(
-                "You cannot sell this item to this shop."
-            );
+            player.sendMessage(this.sellRefusal(shop));
             return;
         }
         const definition = ItemDefinition.forId(itemId);
@@ -618,9 +616,10 @@ export class ShopManager {
         }
         const unit = this.currencyUnit(shop.definition.getCurrency());
         if (unit) {
+            const named = unit === "coins" && price === 1 ? "coin" : unit;
             player.sendMessage(
                 `${definition.getName()}: ${fromShop ? "currently costs" : "shop will buy for"} ` +
-                `${Misc.insertCommasToNumber(String(price))} ${unit}.`
+                `${Misc.insertCommasToNumber(String(price))} ${named}.`
             );
             return;
         }
@@ -680,20 +679,22 @@ export class ShopManager {
             return;
         }
 
-        // Content may hand the purchase over as another item ("shop:delivery", a league relic's noted purchases).
-        const delivery = { player, shopId: shop.definition.getId(), currency: shop.definition.getCurrency(), itemId, deliverId: itemId };
+        // Content may hand the purchase over as another item ("shop:delivery", a league relic's noted purchases), or as
+        // a bundle of several per item bought (`amount`, the PvP Arena's Blighted surge sack (x50)).
+        const delivery = { player, shopId: shop.definition.getId(), currency: shop.definition.getCurrency(), itemId, deliverId: itemId, amount: 1 };
         PluginManager.emitCustomEvent("shop:delivery", delivery);
         const deliverId = Number.isInteger(delivery.deliverId) && delivery.deliverId > 0 ? delivery.deliverId : itemId;
+        const perPurchase = Number.isInteger(delivery.amount) && delivery.amount > 0 ? delivery.amount : 1;
         const delivered = ItemDefinition.forId(deliverId);
         const inventory = player.getInventory();
         if (delivered.isStackable?.()) {
-            quantity = Math.min(quantity, inventory.getAddableAmount(new Item(deliverId, quantity)));
+            quantity = Math.min(quantity, Math.floor(inventory.getAddableAmount(new Item(deliverId, quantity * perPurchase)) / perPurchase));
             if (quantity <= 0) {
                 inventory.full();
                 return;
             }
         } else {
-            quantity = Math.min(quantity, inventory.getFreeSlots());
+            quantity = Math.min(quantity, Math.floor(inventory.getFreeSlots() / perPurchase));
             if (quantity <= 0) {
                 inventory.full();
                 return;
@@ -709,7 +710,7 @@ export class ShopManager {
             shop.definition.getCurrency(),
             removed * price
         );
-        inventory.adds(deliverId, removed);
+        inventory.adds(deliverId, removed * perPurchase);
         PluginManager.emitCustomEvent("shop:purchase", {
             player, shopId: shop.definition.getId(), shopName: shop.definition.getName(),
             itemId, amount: removed, originalStock: (shop.originalAmounts.get(itemId) ?? 0) > 0,
@@ -737,9 +738,7 @@ export class ShopManager {
             return;
         }
         if (!this.buysItem(shop, stockId)) {
-            player.sendMessage(
-                "You cannot sell this item to this shop."
-            );
+            player.sendMessage(this.sellRefusal(shop));
             return;
         }
         const definition = ItemDefinition.forId(stockId);
@@ -932,9 +931,52 @@ export class ShopManager {
         return removed;
     }
 
-    /** A shop buys what it lists, including items it lists at 0 (Gerrant's raw fish). */
+    /**
+     * Shops that sell for a currency other than coins and still buy items for it: the TzHaar shops (tokkul) and
+     * Tai Bwo Wannai's cooperative (trading sticks). Other reward shops (minigame points, tickets) buy nothing back,
+     * unless the Wiki gives the shop a buy percentage (`specialistBuyback`) or their plugin says the shop does
+     * ("shop:buys-back" { shopId, shopName, currency, itemId, buys }).
+     */
+    private static readonly BUYBACK_CURRENCIES = new Set(["COINS", "TOKKUL", "TRADING STICKS", "BLOOD_MONEY"]);
+
+    /**
+     * A shop buys what it lists, including items it lists at 0 (Gerrant's raw fish). A reward shop doesn't: it paid
+     * 85% of an item's coin value in its own currency, so coal sold to Petrified Pete minted Volcanic Mine points,
+     * and arrows sold at the Ranging Guild turned coins into archery tickets.
+     */
     private static buysItem(shop: RuntimeShop, itemId: number): boolean {
+        if (!this.BUYBACK_CURRENCIES.has(String(shop.definition.getCurrency()).toUpperCase())) {
+            const request = {
+                shopId: shop.definition.getId(), shopName: shop.definition.getName(),
+                currency: shop.definition.getCurrency(), itemId, buys: this.specialistBuyback(shop) > 0,
+            };
+            PluginManager.emitCustomEvent("shop:buys-back", request);
+            if (request.buys !== true) return false;
+        }
         return this.isGeneralStore(shop) || shop.originalAmounts.has(itemId);
+    }
+
+    /**
+     * The Wiki's "Buys at" (per mille) for a shop paying in its own reward currency, 0 where it has none. Wiki
+     * StoreTableHead: Grace's Graceful Clothing, Prospector Percy's Nugget Shop, the Mining Guild Mineral Exchange
+     * and Dusuri's Star Shop buy their stock back at 80% (a graceful hood bought for 35 marks sells for 28); Petrified
+     * Pete's Ore Shop buys at 0%. The TzHaar and Tai Bwo Wannai shops keep the standard refund.
+     */
+    private static specialistBuyback(shop: RuntimeShop): number {
+        if (this.BUYBACK_CURRENCIES.has(String(shop.definition.getCurrency()).toUpperCase())) return 0;
+        const multiplier = shop.definition.getSalesPolicy().sellMultiplier;
+        return Number.isSafeInteger(multiplier) && Number(multiplier) > 0 ? Number(multiplier) : 0;
+    }
+
+    /**
+     * Why a sale is refused: a shop that buys nothing, "You cannot sell to this shop." (rsprox 227/01840 Temple
+     * Supplies, 234/03299 Mairin's Market, both on Value and Sell); one that buys only some items, "You can't sell this
+     * item to this shop." (cache script9714's wording; no recording).
+     */
+    private static sellRefusal(shop: RuntimeShop): string {
+        const buysAnything = this.BUYBACK_CURRENCIES.has(String(shop.definition.getCurrency()).toUpperCase())
+            || [...shop.originalAmounts.keys()].some((stocked) => this.buysItem(shop, stocked));
+        return buysAnything ? "You can't sell this item to this shop." : "You cannot sell to this shop.";
     }
 
     private static isBloodMoneyShopItem(itemId: number): boolean {
@@ -959,9 +1001,13 @@ export class ShopManager {
     /** `player` (when known) and `currency` let content refuse a sale for one player (a league relic's shops that buy nothing for gold). */
     private static canSell(shop: RuntimeShop, item: Item, player: any = null): boolean {
         if (!item || item.isUntradeable()) return false;
+        // Wiki (Amylase pack): untradeable stock "can only be sold back to Grace's Graceful Clothing". A shop that
+        // buys its stock back for its own currency takes the items it lists, though no other shop would.
+        const ownStock = this.specialistBuyback(shop) > 0
+            && shop.originalAmounts.has(ItemDefinition.forId(item.getId()).unNote());
         const request = {
             player, shopId: shop.definition.getId(), shopName: shop.definition.getName(), currency: shop.definition.getCurrency(),
-            itemId: item.getId(), sellable: item.isSellable(),
+            itemId: item.getId(), sellable: ownStock || item.isSellable(),
         };
         PluginManager.emitCustomEvent("shop:can-sell", request);
         return request.sellable === true;
@@ -997,7 +1043,10 @@ export class ShopManager {
 
     private static sellPrice(shop: RuntimeShop, definition: ItemDefinition, player: any = null, additionalStock = 0): number {
         const buyPrice = this.itemPrice(shop, definition);
-        let price = buyPrice > 1 ? Math.floor(buyPrice * this.SALES_TAX) : buyPrice;
+        const buyback = this.specialistBuyback(shop);
+        let price = buyback > 0
+            ? Math.floor(buyPrice * buyback / 1000)
+            : buyPrice > 1 ? Math.floor(buyPrice * this.SALES_TAX) : buyPrice;
         const policy = shop.definition.getSalesPolicy();
         if (this.stockPriced(shop)) {
             const overstock = Math.max(0, (shop.stock.get(definition.getId()) ?? 0)
@@ -1023,8 +1072,12 @@ export class ShopManager {
             : Number(definition.getValue?.() ?? 0);
     }
 
+    /**
+     * Coins have a unit too (rsprox: "Blood rune: currently costs 400 coins.", "Empty plant pot: currently costs 1
+     * coin.", "Raw chicken: shop will buy for 0 coins.", "You don't have enough coins.").
+     */
     private static currencyUnit(currency: ShopCurrency): string | null {
-        return this.currencyHandlers.get(currency)?.unit ?? null;
+        return this.currencyHandlers.get(currency)?.unit ?? (currency === "COINS" ? "coins" : null);
     }
 
     private static currencyAmount(player: any, currency: ShopCurrency): number {

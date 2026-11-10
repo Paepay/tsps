@@ -60,6 +60,14 @@ export class PlayerDeathTask extends Task {
         try {
             switch (this.ticks) {
                 case 0: {
+                    // Send death message with jingle 90 on the respawn tick, four ticks after animation 836
+                    // starts (rsprox 426, 431, 732, 1084, 1085, 4028, 4037, 4041, 4095: message, jingle and map
+                    // rebuild share one tick).
+                    if (this.announce) {
+                        this.player.sendMessage("Oh dear, you are dead!");
+                        this.player.getPacketSender().sendJingle(90);
+                    }
+
                     if (this.player.isPlayerBot && this.player.isPlayerBot()) {
                         (this.player as any).getCombatInteraction?.().handleDeath?.(this.killer);
                     }
@@ -139,25 +147,10 @@ export class PlayerDeathTask extends Task {
                     // Close all open interfaces..
                     this.player.getPacketSender().sendInterfaceRemoval();
 
-                    // Send death message..
-                    if (this.announce) {
-                        this.player.sendMessage("Oh dear, you are dead!");
-                        // RSProx 4028/4037: ordinary deaths play jingle 90 with the death message.
-                        this.player.getPacketSender().sendJingle(90);
-                    }
-
                     // Perform death animation..
                     this.player.performAnimation(new Animation(836));
                     PluginManager.emitCustomEvent("player:dying", { player: this.player, killer: this.killer ?? null });
 
-                    // Retribution hits our killer, unless the killing blow was rebounded
-                    // damage - recoil, vengeance or another Retribution (Wiki: Retribution).
-                    const killingBlow = this.player.getCombat().getHitQueue().getLastAppliedHit();
-                    if (PrayerHandler.isActivated(this.player, PrayerHandler.RETRIBUTION) && !killingBlow?.isReflected()) {
-                        if (typeof this.killer !== 'undefined' && this.killer !== null) {
-                            CombatFactory.handleRetribution(this.player, this.killer);
-                        }
-                    }
                     break;
                 }
             }
@@ -201,8 +194,15 @@ export class PlayerDeathTask extends Task {
                 dropEligible,
                 suppressDefaultDrop: false,
                 handled: false,
+                extraDrops: [] as Item[],
             };
             const handled = PluginManager.emitPlayerDeathItemDrop(deathDropEvent);
+            // Items a hook adds to the death (a ring's imbue paid out as coins) are lost with it: to the grave or the
+            // floor, as the rest are, or kept where the death keeps everything.
+            for (const extra of deathDropEvent.extraDrops) {
+                if (PlayerDeathTask.keepsEverything(player)) itemsToKeep.push(extra);
+                else droppedItems.push(extra);
+            }
             if (handled) {
                 pluginHandledDrop = true;
                 continue;
@@ -246,8 +246,11 @@ export class PlayerDeathTask extends Task {
                 pluginHandledDrop = true;
             }
         }
+        // Asked after the item hooks: one can make an item tradeable (an emptied Webweaver bow, an unimbued ring), so it
+        // reaches here past the hooks' own eligibility check.
+        const owner = PlayerDeathTask.lootOwner(player, killer);
         for (const item of droppedItems) {
-            ItemOnGroundManager.registerLocation(killer ? killer : player, item, position);
+            ItemOnGroundManager.registerLocation(owner, item, position);
             dropped = true;
         }
         itemsToKeep.push(...lostUntradeables);
@@ -261,6 +264,18 @@ export class PlayerDeathTask extends Task {
         player.getInventory().resetItems().refreshItems();
         player.getEquipment().resetItems().refreshItems();
         return itemsToKeep;
+    }
+
+    /**
+     * Who a PvP death's loot is dropped for: the killer, unless content says otherwise
+     * (`player-death:loot-owner` { player, killer, owner }; an Ironman killer takes no other player's loot). Plugins
+     * that drop death loot of their own (repair coins, ether, fees) ask here too, so there is one answer.
+     */
+    public static lootOwner(player: Player, killer: Player | null | undefined): Player {
+        if (!killer || killer === player) return player;
+        const query = { player, killer, owner: killer as Player };
+        PluginManager.emitCustomEvent("player-death:loot-owner", query);
+        return query.owner ?? player;
     }
 
     /** The items a death let the player keep, back in the inventory. */
@@ -326,11 +341,16 @@ export class PlayerDeathTask extends Task {
     /**
      * What an item is worth when a death picks the kept ones: its Grand Exchange guide price, or its
      * high alchemy value when it has none (Wiki: Items Kept on Death; rsprox recording 430). Never
-     * the store value: a 35m pair of ranger boots has a store value of 200.
+     * the store value as such: a 35m pair of ranger boots has a store value of 200. An item that
+     * cannot be alchemised (a fire cape, a dragon defender) still ranks by the alchemy value its
+     * store value gives (60%), as it did before item-alch.json cleared those: the Wiki names no
+     * other value for it.
      */
     public static keepValue(item: Item): number {
         const definition = item.getDefinition();
-        return definition.hasGrandExchangeValue() ? definition.getGrandExchangeValue() : definition.getHighAlchValue();
+        if (definition.hasGrandExchangeValue()) return definition.getGrandExchangeValue();
+        const alch = definition.getHighAlchValue();
+        return alch > 0 ? alch : Math.floor(Math.max(0, definition.getValue()) * 0.6);
     }
 
     /**

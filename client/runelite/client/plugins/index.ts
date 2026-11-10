@@ -24,6 +24,7 @@ import { TouchControlsPlugin } from "../../../game/plugins/touchcontrols/TouchCo
 import { GameFrame317Plugin } from "../../../game/plugins/gameframe317/GameFrame317Plugin";
 import { PortraitModePlugin } from "../../../game/plugins/portraitmode/PortraitModePlugin";
 import { GpuPlugin } from "../../../game/plugins/gpu/GpuPlugin";
+import { ShaderFxPlugin } from "../../../game/plugins/shaderfx/ShaderFxPlugin";
 import { GroundItemsConfig } from "../../../game/plugins/grounditems/GroundItemsConfig";
 import { GroundItemsPlugin } from "../../../game/plugins/grounditems/GroundItemsPlugin";
 import { GroundMarkerPlugin } from "../../../game/plugins/groundmarkers/GroundMarkerPlugin";
@@ -45,7 +46,6 @@ import { NotesConfig } from "../../../game/plugins/notes/NotesPlugin";
 import { ObjectIndicatorsPlugin } from "../../../game/plugins/objectindicators/ObjectIndicatorsPlugin";
 import { NpcIndicatorsPlugin } from "../../../game/plugins/npcindicators/NpcIndicatorsPlugin";
 import { NotesPlugin } from "../../../game/plugins/notes/NotesPlugin";
-import { SplitPrivateChatPlugin } from "../../../game/plugins/splitprivatechat/SplitPrivateChatPlugin";
 import { StatusBarsPlugin } from "../../../game/plugins/statusbars/StatusBarsPlugin";
 import { StretchedModePlugin } from "../../../game/plugins/stretchedmode/StretchedModePlugin";
 import { OpponentInfoPlugin } from "../../../game/plugins/opponentinfo/OpponentInfoPlugin";
@@ -107,7 +107,6 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     NpcIndicatorsPlugin,
     ImplingsPlugin,
     ObjectIndicatorsPlugin,
-    SplitPrivateChatPlugin,
     ChatNotificationsPlugin,
     ChatPastePlugin,
     TimestampPlugin,
@@ -131,6 +130,7 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     PuzzleSolverPlugin,
     StretchedModePlugin,
     GpuPlugin,
+    ShaderFxPlugin,
     LowEndDevicePlugin,
     CameraPlugin,
     QuestHelperPlugin,

@@ -22,7 +22,8 @@ class SkillEntered implements EnteredAmountAction {
 }
 export class SkillManager {
     public static readonly AMOUNT_OF_SKILLS: number = Skill.values().length;
-    public static readonly MAX_EXPERIENCE: number = 1000000000;
+    // Wiki (Experience): a skill's experience is capped at 200,000,000.
+    public static readonly MAX_EXPERIENCE: number = 200000000;
     public static readonly XP_LOCKED_ATTRIBUTE = "skills:xp-locked";
     public static readonly EXPERIENCE_FOR_99: number = 13034431;
     public static readonly EXP_ARRAY: number[] = [0, 83, 174, 276, 388, 512, 650, 801, 969, 1154, 1358, 1584, 1833, 2107,
@@ -121,7 +122,12 @@ export class SkillManager {
         return this.addExperience(skill, experience, true);
     }
 
-    addExperience(skill: Skill, experience: number, multipliers: boolean): SkillManager {
+    /**
+     * `multipliers` applies the world's rate and the player's own (a league character's): every
+     * gain takes them, reward XP included (lamps, tomes, quest rewards; #3672). Only content whose
+     * amount must not be multiplied (a league relic's bonus) passes false.
+     */
+    addExperience(skill: Skill, experience: number, multipliers: boolean = true): SkillManager {
         if (!skill || typeof skill.getIndex !== "function") {
             return this;
         }

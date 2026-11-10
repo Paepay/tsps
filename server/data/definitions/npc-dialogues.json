@@ -145367,7 +145367,7 @@
                           "player": "Ok, I'll see what I can do."
                         },
                         {
-                          "npc": "Thanks mister!"
+                          "npc": "Thanks, mister!"
                         }
                       ],
                       "hook": "quest:witch-s-house:start",
@@ -206364,6 +206364,11 @@
         {
           "type": "line",
           "speaker": "Crab",
+          "text": "We can make a great tune with this!"
+        },
+        {
+          "type": "line",
+          "speaker": "Crab",
           "text": "Oh no... I can't easily play 13 different shells on my own, but if I only play one... I won't stand out enough for her to see me!"
         },
         {
@@ -208485,7 +208490,7 @@
       ],
       "crab-hunting-after-finding-all-six-leaders-to-join-practise": [
         {
-          "player": "Unless I really like talking to crabs, I've probably found enough leaders. I could go back to see how the practise is going."
+          "player": "Unless I really like talking to crabs, I've probably found enough leaders. I could go back to see how the practice is going."
         }
       ],
       "crab-hunting-after-finding-all-six-leaders-to-join-practise-talking-to-the-main-crab": [
@@ -208851,7 +208856,7 @@
         {
           "type": "line",
           "speaker": "Crab",
-          "text": "Somehow, yes. But anyways, we are done here. Thank you for coming to my demonstration."
+          "text": "Somehow, yes. But anyway, we are done here. Thank you for coming to my demonstration."
         },
         {
           "type": "line",
@@ -1268087,7 +1268092,7 @@
                         {
                           "type": "line",
                           "speaker": "Boy",
-                          "text": "Thanks mister!"
+                          "text": "Thanks, mister!"
                         }
                       ],
                       "hook": "quest:witch-s-house:start",
@@ -1268176,18 +1268181,13 @@
       ],
       "the-witch-s-house-attempting-to-open-the-garden-door-without-unlocking-it": [
         {
-          "type": "message",
-          "text": "This door is locked.",
-          "id": "EWTf9d"
-        },
-        {
-          "player": "Strange... I can't see any kind of lock or handle to open this door..."
+          "player": "It's locked. That's strange - I can't see any kind of lock or handle to open it..."
         }
       ],
       "the-witch-s-house-attempting-to-open-the-gate-without-correct-gloves": [
         {
           "type": "message",
-          "text": "As your bare hands touch the gate you feel a shock.",
+          "text": "As your hands touch the gate you feel a shock.",
           "id": "kGCF5e"
         }
       ],
@@ -1268297,7 +1268297,7 @@
       "the-ball-killing-the-first-form": [
         {
           "type": "message",
-          "text": "the shapeshifters' body begins to deform!",
+          "text": "The shapeshifters' body begins to deform!",
           "id": "EAUyRf"
         },
         {

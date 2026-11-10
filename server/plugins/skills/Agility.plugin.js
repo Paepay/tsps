@@ -1,5 +1,6 @@
 const ObstacleRunner = require("./agility/ObstacleRunner.Agility");
 const { COURSES } = require("./agility/courses/Courses.Agility");
+const Pyramid = require("./agility/courses/AgilityPyramid.Agility");
 const { SHORTCUTS } = require("./agility/shortcuts/Shortcuts.Agility");
 
 /** Attribute holding { course, index } for the lap in progress. */
@@ -429,35 +430,32 @@ function courseOfMark({ x, y, z }) {
 }
 
 /**
- * A course mark picked up (one the inventory has room for). Content may make it finish a lap of
- * its course ("agility:mark-taken", a league relic): the lap is recorded and paid as the last
- * obstacle would, and `items` go to the inventory (the floor when it has no room).
+ * A course mark picked up and credited to the inventory. Content may make it finish a lap of its course
+ * ("agility:mark-taken", a league relic): the lap is recorded and paid as the last obstacle would, and `items` go
+ * to the inventory (the floor when it has no room). It is paid only once the mark is in the inventory: paid on the
+ * click, a pickup that then failed (the lap's coins taking the last slot) left the mark down to be clicked again.
  */
-function takeMark(event) {
-  const { player, groundItem } = event;
-  if (!isCourseMark(groundItem) || ItemOnGroundManager.inventoryCapacity(player, groundItem.getItem()) <= 0) return;
-  const course = courseOfMark(event.location);
+function creditMarkTaken({ player, groundItem, source, itemId, amount }) {
+  if (!player || !groundItem || itemId !== core.ItemIds.MARK_OF_GRACE || !(amount > 0)) return;
+  if (!isCourseMark(groundItem)) return;
+  const position = groundItem.getPosition();
+  const course = position ? courseOfMark({ x: position.getX(), y: position.getY(), z: position.getZ() }) : null;
   if (!course) return;
+  pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId, amount });
+  if (source !== "pickup") return;
   const request = { player, course: course.key, completesLap: false, items: [] };
   pluginApi.emitCustomEvent("agility:mark-taken", request);
   if (!request.completesLap) return;
   player.setAttribute(PROGRESS_ATTRIBUTE, null);
   completeLap(player, course);
-  for (const [itemId, amount] of request.items) {
-    const item = new core.Item(itemId, amount);
-    const added = Math.min(amount, player.getInventory().getAddableAmount(item));
-    if (added > 0) player.getInventory().adds(itemId, added);
-    if (amount > added) ItemOnGroundManager.registerLocation(player, new core.Item(itemId, amount - added), player.getLocation().clone());
+  for (const [rewardId, rewardAmount] of request.items) {
+    const item = new core.Item(rewardId, rewardAmount);
+    const added = Math.min(rewardAmount, player.getInventory().getAddableAmount(item));
+    if (added > 0) player.getInventory().adds(rewardId, added);
+    if (rewardAmount > added) {
+      ItemOnGroundManager.registerLocation(player, new core.Item(rewardId, rewardAmount - added), player.getLocation().clone());
+    }
   }
-}
-
-/** A ground mark actually credited to the inventory (after ground-item policies and stack limits). */
-function creditMarkTaken({ player, groundItem, itemId, amount }) {
-  if (!player || !groundItem || itemId !== core.ItemIds.MARK_OF_GRACE || !(amount > 0)) return;
-  if (!isCourseMark(groundItem)) return;
-  const position = groundItem.getPosition();
-  if (!position || !courseOfMark({ x: position.getX(), y: position.getY(), z: position.getZ() })) return;
-  pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId, amount });
 }
 
 /**
@@ -773,6 +771,7 @@ buildIndex();
 
 module.exports = {
   name: "Agility",
+  description: "The Agility skill: rooftop and other obstacle courses, lap counting, marks of grace and Grace's lap-counter toggle.",
   members: true,
   register(api) {
     pluginApi = api;
@@ -784,6 +783,7 @@ module.exports = {
     api.persistAttribute(LAPS_ATTRIBUTE);
     api.persistAttribute(LAP_COUNTER_OFF_ATTRIBUTE);
     api.persistAttribute(MARK_COOLDOWN_ATTRIBUTE, 0);
+    api.persistAttribute(Pyramid.PYRAMID_TOP_ATTRIBUTE, false);
     api.onNpcInteraction("Grace", { "Toggle Counter": toggleLapCounter });
     api.onObjectRoute(routeToObstacle);
     api.onObjectFirstClick([...OBSTACLES_BY_OBJECT.keys()], operateObstacle);
@@ -795,7 +795,9 @@ module.exports = {
     api.onPlayerLogout(finishObstacleOnLogout);
     api.onPlayerLogout(pauseMarksOnLogout);
     api.onPlayerLogin(resumeMarksOnLogin);
-    api.onGroundItemPickup(takeMark);
+    api.onPlayerLogin(Pyramid.syncPyramidTop);
+    // A taken top clears once its player is off the pyramid by any way but the doorway (a teleport, a death).
+    api.onPlayerProcess(({ player }) => Pyramid.clearPyramidTop(player));
     api.onCustomEvent("ground-items:taken", creditMarkTaken);
 
     api.log("registered", {

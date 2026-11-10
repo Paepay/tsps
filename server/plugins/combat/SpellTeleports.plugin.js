@@ -13,6 +13,8 @@ const ALTERNATES_ATTRIBUTE = "spell-teleports:alternates";
 // The spell's own options (client script 2615 names op1/op3 "Cast").
 const SPELL_ALTERNATE_OP = 2;
 const SPELL_CONFIGURE_OP = 10;
+// Teleport to House's op2 (interface magic_spellbook:teleport_to_your_house): "Outside", whatever the house's setting.
+const HOUSE_OUTSIDE_OP = 2;
 const ALTERNATES = new Map(Object.entries(TABLETS.alternates).map(([name, data], index) => [name, { ...data, name, bit: 1 << index }]));
 // The Wilderness teleports' op10 (client script magic_spellbook_modifyops): "Disable warning" while
 // the spell's varbit is 1, "Enable warning" while it is 0. It toggles the varbit and never casts.
@@ -65,6 +67,9 @@ const tile = (coordinates) => coordinates && new core.Location(...coordinates);
  */
 function landing(centre) {
   if (!centre) return centre;
+  // The Watchtower's tower top and Ape Atoll's landing keep their one tile (docs/teleport-tablets.md): around them the
+  // square holds tiles the player can't walk out of (outside the tower's walls; a sealed pocket on Ape Atoll).
+  if (FIXED_LANDINGS.some((name) => standardCentre(name)?.equals(centre))) return centre;
   const tiles = [];
   for (let dx = -LANDING_RADIUS; dx <= LANDING_RADIUS; dx++) {
     for (let dy = -LANDING_RADIUS; dy <= LANDING_RADIUS; dy++) {
@@ -74,6 +79,9 @@ function landing(centre) {
   }
   return tiles.length ? tiles[Math.floor(Math.random() * tiles.length)] : centre;
 }
+
+/** Standard teleports that land on their own tile, not the 5x5 square (and their tablets, Break included). */
+const FIXED_LANDINGS = ["watchtower teleport", "ape atoll teleport"];
 
 /** Where a standard spellbook teleport lands around, by spell name (not the house). */
 function standardCentre(name) {
@@ -144,9 +152,16 @@ function toggleDestination(event, alternate) {
 function revertTablet(event) {
   const { player } = event;
   event.handled = true;
-  if (!player.getInventory().contains(event.itemId)) return;
-  player.getInventory().deleteNumber(event.itemId, 1);
-  player.getInventory().adds(core.ItemIdentifiers.TELEPORT_TO_HOUSE, 1);
+  const inventory = player.getInventory();
+  if (!inventory.contains(event.itemId)) return;
+  // Tablets stack, so reverting one of several frees no slot: the house tablet needs room, or it was lost.
+  const last = inventory.getAmount(event.itemId) === 1;
+  if (!last && inventory.getAddableAmount(new core.Item(core.ItemIdentifiers.TELEPORT_TO_HOUSE, 1)) < 1) {
+    player.sendMessage("You don't have enough inventory space.");
+    return;
+  }
+  inventory.deleteNumber(event.itemId, 1);
+  inventory.adds(core.ItemIdentifiers.TELEPORT_TO_HOUSE, 1);
 }
 
 function houseDestination(event, option) {
@@ -356,9 +371,25 @@ function mayCastApeAtoll(player, name) {
   return false;
 }
 
+/**
+ * Teleport to House's "Outside" lands at the house portal in the house's town (Construction says where), and tells
+ * Construction on arrival not to take the player in. Cast is left to the usual cast: it follows the house's setting.
+ */
+function castHouseOutside(event, name) {
+  const request = { player: event.player, option: "outside", destination: null, onArrival: null };
+  pluginApi.emitCustomEvent("construction:house-tablet", request);
+  if (!request.destination || core.SpellTeleports.handleSelf(event.player, name, request.destination, "outside")) {
+    event.handled = true;
+  }
+}
+
 /** A standard spellbook teleport, on a tile of its landing square; anything else is left to the usual cast. */
 function castStandard(event, name) {
   if (!mayCastApeAtoll(event.player, name)) { event.handled = true; return; }
+  if (name === HOUSE_TABLET && event.opId === HOUSE_OUTSIDE_OP && event.player.getSpellbook() === core.MagicSpellbook.NORMAL) {
+    castHouseOutside(event, name);
+    return;
+  }
   const centre = standardCentre(name);
   if (centre && core.SpellTeleports.handleSelf(event.player, name, landing(centre))) event.handled = true;
 }
@@ -374,6 +405,7 @@ function castSpell(event) {
 
 module.exports = {
   name: "SpellTeleports",
+  description: "Teleport tablets and spell teleports, including house tablets and redirected scrolls, from the teleport-tablets data file.",
   register(api) {
     core = api.core;
     pluginApi = api;

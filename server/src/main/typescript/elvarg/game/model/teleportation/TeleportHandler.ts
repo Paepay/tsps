@@ -1,3 +1,4 @@
+import { TeleBlock } from "../../content/combat/magic/TeleBlock";
 import { Player } from "../../entity/impl/player/Player";
 import { TeleportType } from "./TeleportType";
 import { Task } from "../../task/Task";
@@ -129,9 +130,9 @@ export class TeleportHandler {
         player.setTeleporting(true);
         const options = teleportType.getOptions();
         const sound = options.sound ?? Sound.TELEPORT;
-        const at = options.areaSoundRange ? player.getLocation?.() : null;
-        if (at) {
-            Sounds.playAreaSound({ soundId: sound.getId(), x: at.getX(), y: at.getY(), level: at.getZ(), loops: sound.getLoopType(), delay: sound.getDelay(), radius: options.areaSoundRange! });
+        if (options.areaSoundRange) {
+            // From the player, so only those who can see them (their private area too) hear it.
+            Sounds.playAreaSoundAt(player, sound, options.areaSoundRange);
         } else {
             Sounds.sendSound(player, sound);
         }
@@ -160,7 +161,7 @@ export class TeleportHandler {
 
         if (!player.getCombat().getTeleblockTimer().finished()) {
             if (Wilderness.isIn(player)) {
-                player.sendMessage("A magical spell is blocking you from teleporting.");
+                player.sendMessage(TeleBlock.attemptMessage(player));
                 return false;
             } else {
                 player.getCombat().getTeleblockTimer().stop();
@@ -172,6 +173,16 @@ export class TeleportHandler {
             return false;
         }
 
+        return TeleportHandler.destinationAllowed(player, targetLocation, wildernessLevelLimit, spellName);
+    }
+
+    /**
+     * Whether content lets the player go to `targetLocation` ("teleport:can-start", the area's canTeleport, the plugins'
+     * onCanTeleport: a league area still locked, a minigame's own rules), with no side effects and none of checkReqs'
+     * own checks (busy, Wilderness level, teleblock, blocked movement). For travel that isn't a teleport, such as a
+     * charter ship or a ferry, which must not end a teleblock.
+     */
+    public static destinationAllowed(player: Player, targetLocation: Location, wildernessLevelLimit: number = 20, spellName?: string): boolean {
         // Content can refuse a teleport without changing the area's existing override policy.
         const restriction = { player, destination: targetLocation, wildernessLevelLimit, spellName, allow: null as boolean | null };
         PluginManager.emitCustomEvent("teleport:can-start", restriction);

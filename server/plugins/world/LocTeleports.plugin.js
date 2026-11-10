@@ -11,8 +11,8 @@
  *   answers before Ladders guesses from the map.
  *
  * Gates (an entry's `requires`, decided in plugins/world/data/loc-teleport-sync.json) are checked in
- * order first: a total level, worn items (any one set), or an item used on the loc once before (a
- * rope tied to the Elid crevice). The first one the player lacks plays its captured refusal: a
+ * order first: a total level, worn items (any one set), an item used on the loc once before (a
+ * rope tied to the Elid crevice), or a completed quest (`quest`: the Prifddinas gates, Dorgesh-Kaan's doors). The first one the player lacks plays its captured refusal: a
  * game message, a message box, or an NPC's line.
  *
  * A loc whose option asks first (`ask`: "Climb out of the window?") shows the game's question and
@@ -213,7 +213,15 @@ function meets(player, entry, requirement) {
   if (requirement.item !== undefined) return player.getInventory().contains(requirement.item);
   if (requirement.tied !== undefined) return tied(player).includes(entry.name);
   if (requirement.varbit !== undefined) return player.getPacketSender().getVarbit(requirement.varbit) >= (requirement.atLeast ?? 1);
+  if (requirement.quest !== undefined) return questComplete(player, requirement.quest);
   return true;
+}
+
+/** A quest the loc needs done (`{ quest: key }`), answered by the quest system. */
+function questComplete(player, key) {
+  const query = { player, key, complete: false };
+  pluginApi.emitCustomEvent("quest:is-complete", query);
+  return query.complete === true;
 }
 
 /** The captured refusal: a game message, a message box, or an NPC's line. */
@@ -299,6 +307,11 @@ function claimLadder(request) {
   if (play(request.player, request.object, request.clickType)) request.handled = true;
 }
 
+/** "loc-teleports:captured" { object, clickType, captured }: whether a captured entry covers this placement. */
+function answerCaptured(request) {
+  if (request.object) request.captured = entryFor(request.object, request.clickType) != null;
+}
+
 /** Route to an explicit threshold when surrounding walls block ordinary loc reach. */
 function routeToLoc(event) {
   const approach = entryFor(event.object, event.clickType)?.approach;
@@ -313,6 +326,7 @@ function claimDoorToggle(request) {
 
 module.exports = {
   name: "LocTeleports",
+  description: "Handles ladders, stairs, caves and holes with no other handler from captured data, plus opening and closing trapdoors, with level, item and quest gates.",
   _test: { entryFor, destinationFor, play, useItemOnLoc, claimDoorToggle, get entries() { return entries; }, get swaps() { return swaps; } },
   register(api) {
     core = api.core;
@@ -324,6 +338,7 @@ module.exports = {
     api.onObjectRoute(routeToLoc);
     api.onItemOnObject(useItemOnLoc);
     api.onCustomEvent("ladders:climb", claimLadder);
+    api.onCustomEvent("loc-teleports:captured", answerCaptured);
     api.onCustomEvent("door:toggle", claimDoorToggle);
   },
 };

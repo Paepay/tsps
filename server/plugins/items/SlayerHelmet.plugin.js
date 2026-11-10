@@ -72,11 +72,18 @@ function salveApplies(player, style) {
   return query.applies === true;
 }
 
+/** "slayer-helmet:superseded" { player, style, superseded }: a worn item whose bonus replaces the helmet's (avarice). */
+function superseded(player, style) {
+  const query = { player, style, superseded: false };
+  pluginApi.emitCustomEvent("slayer-helmet:superseded", query);
+  return query.superseded === true;
+}
+
 /** Whether the headwear boosts `style` against the player's current target. */
 function boostActive(player, style) {
   const headwear = slayerHeadwear(player);
   if (!headwear || (style !== "melee" && headwear !== "all")) return false;
-  return onTask(player) && !salveApplies(player, style);
+  return onTask(player) && !salveApplies(player, style) && !superseded(player, style);
 }
 
 function boost(style) {
@@ -228,6 +235,7 @@ function disassemble(event) {
 
 module.exports = {
   name: "SlayerHelmet",
+  description: "Adds the black mask and Slayer helmet: Slayer-task accuracy and damage boosts, assembling and disassembling, and imbuing with a scroll.",
   members: true,
   register(api) {
     pluginApi = api;

@@ -1297,16 +1297,24 @@ module.exports = function registerKingsRansomQuest(api) {
   // ==========================================================================
 
   function handleItemAction(event) {
-    const { player, itemId, option } = event;
+    const { player, itemId, option, slot, item } = event;
     if (itemId === ANTIQUE_LAMP_ITEM && option === "Rub") {
       event.handled = true;
+      const inventory = player.getInventory();
+      // The lamp rubbed, still in its slot at Confirm (moving or dropping it cancels).
+      const rubbed = item ?? inventory.get(slot);
       api.emitCustomEvent("xpreward:open", {
         player,
         minLevel: LAMP_MIN_LEVEL,
         title: "Choose the stat you wish to be advanced!",
         onConfirm: (skill, name) => {
-          player.getSkillManager().addExperience(skill, LAMP_XP, false);
-          player.getInventory().deleteNumber(ANTIQUE_LAMP_ITEM, 1);
+          if (!rubbed || inventory.get(slot) !== rubbed || rubbed.getId() !== ANTIQUE_LAMP_ITEM) return null;
+          // Spent only when the XP lands: an XP lock or an area's gate keeps the lamp.
+          const skills = player.getSkillManager();
+          const before = skills.getExperience(skill);
+          skills.addExperience(skill, LAMP_XP, true);
+          if (skills.getExperience(skill) === before) return null;
+          inventory.deleteAtSlot(slot, 1);
           return `You rub the lamp and feel your ${name} skill advance.`;
         },
       });

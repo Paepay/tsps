@@ -59,6 +59,8 @@ const REPLACED_BY_PLUGIN = {
   // The Friendly Forester's shop is the Forestry plugin's Omnishop, not a shops.json row.
   "Forestry Shop": "the Friendly Forester's Omnishop (Forestry)",
   "Useful Supplies": "The Blood Moon Rises Castle Drakan chest (omnishop row 16873)",
+  // Priced in termites by the cache's omnishop rows; the graceful kit also takes a graceful set.
+  "Worm Tongue's Wares": "Worm Tongue's Omnishop (omnishop row wyrm_agility_rewards_shop, ColossalWyrmAgility)",
 };
 
 // Karamja gloves variants share their default store's NPC and option; bound
@@ -125,6 +127,12 @@ const SHOP_PRICES = {
   ],
   // Ornate maul handle, 15 points.
   "Justine's stuff for the Last Shopper Standing": [[24229, 15]],
+  // Wiki (PvP Arena Rewards): a Blighted surge sack (x50) for 10 points, a Scroll of Imbuing for 200. The sack's
+  // 10 points buy 50 of them (Rank.DuelArena.js delivers the 50).
+  "PvP Arena Rewards": [
+    [26705, 10], // Blighted surge sack (x50)
+    [26706, 200], // Scroll of Imbuing
+  ],
   // Perdu's fees (Wiki: Lost Property shop). Most of the stock is worth little or nothing,
   // and the diary rows are display items worth 0, so the multipliers can't price them.
   "Lost Property shop": [
@@ -192,6 +200,23 @@ function currencyFor(name, info) {
   if (CURRENCY_OVERRIDES[name]) return CURRENCY_OVERRIDES[name];
   const raw = String(info?.currency ?? "coins").trim();
   return raw.toUpperCase();
+}
+
+/**
+ * The Wiki's "Buys at" (StoreTableHead buymultiplier, per mille) and change per item. A coin general store's
+ * price follows its stock; a shop with its own currency keeps the figure so the server knows which ones buy
+ * their stock back and for how much (Grace's Graceful Clothing buys at 80%, Petrified Pete's Ore Shop at 0%).
+ * Coin specialist shops keep the server's standard refund, so the figure is left out for them.
+ */
+function sellPolicy(currency, info) {
+  const buysAt = info?.buys_at;
+  const changePer = info?.change_per;
+  if (!Number.isSafeInteger(buysAt)) return {};
+  if (info?.general_store === true) {
+    return Number.isSafeInteger(changePer) ? { sellMultiplier: buysAt, priceChangePer: changePer } : {};
+  }
+  if (currency === "COINS") return {};
+  return { sellMultiplier: buysAt, ...(Number.isSafeInteger(changePer) ? { priceChangePer: changePer } : {}) };
 }
 
 function originalStock(name, items) {
@@ -299,8 +324,7 @@ function main() {
       name,
       currency,
       ...(typeof record.shop_info?.general_store === "boolean" ? { generalStore: record.shop_info.general_store } : {}),
-      ...(record.shop_info?.general_store === true && Number.isSafeInteger(record.shop_info.buys_at) && Number.isSafeInteger(record.shop_info.change_per)
-        ? { sellMultiplier: record.shop_info.buys_at, priceChangePer: record.shop_info.change_per } : {}),
+      ...sellPolicy(currency, record.shop_info),
       originalStock: originalStock(name, record.items),
       ...(SHOP_PRICES[name] ? { prices: new Map(SHOP_PRICES[name]) } : {}),
       npcInteractions: npcInteractions(name, record.owners, shopsByNpc),

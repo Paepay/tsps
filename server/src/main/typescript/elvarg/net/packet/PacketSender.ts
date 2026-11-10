@@ -54,6 +54,7 @@ import {
   encodeCameraMoveArc,
   encodeCameraRotateToCoordinate,
   encodeCameraTranslate,
+  encodeCameraSkybox,
   CameraMovementOptions,
   CameraEasing,
   encodeWidgetSetColour, encodeAttackTimer,
@@ -313,6 +314,10 @@ export class PacketSender {
     return this;
   }
 
+  public replayVarps(): void {
+    for (const [id, value] of this.varps) this.player.getSession().sendClientPacket(encodeVarp(id, value));
+  }
+
   getVarp(id: number): number {
     return this.varps.get(id) ?? 0;
   }
@@ -383,7 +388,7 @@ export class PacketSender {
 
   sendInterface(id: number): this {
     this.player.setInterfaceId(id);
-    if (this.player.isPlayerBot()) {
+    if ((this.player.isUnwatchedBot?.() ?? this.player.isPlayerBot?.())) {
       return this;
     }
 
@@ -1117,6 +1122,12 @@ export class PacketSender {
 
   sendCameraUnlock(unlock: boolean): this {
     this.player.getSession().sendClientPacket(encodeCameraUnlock(unlock));
+    return this;
+  }
+
+  /** Shows a cache model as the sky (cam_skybox); -1 clears it. cam_reset leaves it in place. */
+  sendCameraSkybox(model: number): this {
+    this.player.getSession().sendClientPacket(encodeCameraSkybox(model));
     return this;
   }
 

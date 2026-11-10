@@ -154,6 +154,7 @@ function harness({ nativeActors = false, player = makePlayer() } = {}) {
   const deregistered = [];
   const worldObjects = [];
   const clock = { tick: 0 };
+  const diaries = new Set();
   let area = null;
 
   class FakeGameObject {
@@ -218,6 +219,7 @@ function harness({ nativeActors = false, player = makePlayer() } = {}) {
         const prerequisite = runtime.getRegisteredQuests().findLast(entry => entry.key === event.key);
         if (prerequisite) event.complete = prerequisite.isComplete(event.player);
       }
+      if (key === 'diary:is-complete') event.complete = diaries.has(`${event.diary}:${event.tier}`);
       for (const handler of custom.get(key) ?? []) handler(event);
     },
     registerArea(next) { area = next; },
@@ -258,7 +260,7 @@ function harness({ nativeActors = false, player = makePlayer() } = {}) {
   const quest = runtime.getRegisteredQuests().findLast((entry) => entry.key === 'nature_spirit');
   const h = {
     player, custom, variants, conditions, objectHooks, itemOnNpc, itemOnObject,
-    itemActions, itemOnItem, groundPickups, logins, logouts, deaths, spawned, removed, registered,
+    diaries, itemActions, itemOnItem, groundPickups, logins, logouts, deaths, spawned, removed, registered,
     deregistered, worldObjects, quest, clock, get area() { return area; },
   };
   if (!firstHarness) firstHarness = h;
@@ -543,6 +545,34 @@ test('uncharged ghast attacks rot food or damage without making the ghast attack
   }
 });
 
+test('worn Morytania legs 4 block the food-rotting attack (Wiki)', () => {
+  const player = makePlayer();
+  const h = harness({ player });
+  player.setLocation(new core.Location(3440, 3345, 0));
+  player.localNpcs = [{ getId: () => N.GHAST, getLocation: () => new core.Location(3441, 3345, 0) }];
+  let legs = I.MORYTANIA_LEGS_4;
+  player.getEquipment = () => ({ get: (slot) => (slot === core.Equipment.LEG_SLOT ? { getId: () => legs } : null) });
+  const random = Math.random;
+  try {
+    h.clock.tick = 0;
+    h.area.process(player);
+    player.inventory.adds(I.SHRIMPS, 1);
+    h.clock.tick = 20;
+    Math.random = () => 0.9; // not ignored, not a miss
+    h.area.process(player);
+    assert.equal(player.inventory.getAmount(I.SHRIMPS), 1, 'the food stays fresh');
+    assert.equal(player.inventory.getAmount(I.ROTTEN_FOOD), 0);
+    assert.equal(player.damage.length, 0, 'and the blocked attack does not hit instead');
+
+    legs = I.MORYTANIA_LEGS_3;
+    h.clock.tick = 200;
+    h.area.process(player);
+    assert.equal(player.inventory.getAmount(I.ROTTEN_FOOD), 1, 'lower tiers do not block it');
+  } finally {
+    Math.random = random;
+  }
+});
+
 test('one invisible ghast keeps one visible copy through repeat attacks, death and logout', () => {
   const player = makePlayer();
   const h = harness({ player });
@@ -785,6 +815,56 @@ test('Bloom grows every adjacent plant once, charges Prayer once and observes th
     assert.equal(h.registered.length, before, 'each eligible plant can fail its growth roll');
     assert.equal(skills.getCurrentLevel(core.Skill.PRAYER), 44, 'an unsuccessful cast still spends Prayer');
   } finally { Math.random = random; }
+});
+
+test('every sickle and flail with Bloom in its menu grows plants; the unblessed sickle cannot', () => {
+  const cases = [
+    [I.SILVER_SICKLE_B_, 'Cast Bloom'], [I.EMERALD_SICKLE_B_, 'Cast Bloom'], [I.ENCHANTED_EMERALD_SICKLE_B_, 'Cast Bloom'],
+    [I.RUBY_SICKLE_B_, 'Cast Bloom'], [I.ENCHANTED_RUBY_SICKLE_B_, 'Cast Bloom'],
+    [I.DIAMOND_SICKLE_B_, 'Cast Bloom'], [I.ENCHANTED_DIAMOND_SICKLE_B_, 'Cast Bloom'],
+    [I.BLISTERWOOD_SICKLE, 'Cast Bloom'], [I.BLISTERWOOD_SICKLE_E_, 'Cast Bloom'],
+    [I.IVANDIS_FLAIL, 'Bloom'], [I.BLISTERWOOD_FLAIL, 'Bloom'], [I.HALLOWED_FLAIL, 'Bloom'],
+  ];
+  for (const [itemId, option] of cases) {
+    assert.ok(itemId > 0, `${option} item id missing from the cache identifiers`);
+    const h = harness(), p = h.player;
+    h.quest.setStage(p, 90);
+    p.setLocation(new core.Location(3440, 3345, 0));
+    p.inventory.adds(itemId, 1);
+    plant(h, O.ROTTING_LOG, 3439, 3345);
+    const random = Math.random;
+    try {
+      Math.random = () => 0.1;
+      const request = itemAction(h, { itemId, option });
+      assert.equal(request.handled, true, `${option} on item ${itemId} is handled`);
+      assert.deepEqual(h.registered.map(o => o.getId()), [O.FUNGI_ON_LOG], `item ${itemId} grows the log`);
+      assert.ok(p.getSkillManager().getCurrentLevel(core.Skill.PRAYER) < 50, `item ${itemId} spends Prayer`);
+    } finally { Math.random = random; }
+  }
+  const h = harness(), p = h.player;
+  h.quest.setStage(p, 90);
+  p.setLocation(new core.Location(3440, 3345, 0));
+  p.inventory.adds(I.SILVER_SICKLE, 1);
+  plant(h, O.ROTTING_LOG, 3439, 3345);
+  assert.equal(itemAction(h, { itemId: I.SILVER_SICKLE, option: 'Cast Bloom' }).handled, false);
+  assert.equal(h.registered.length, 0);
+});
+
+test('the hard Morytania diary doubles the Mort myre fungi a Bloom log gives', () => {
+  for (const [hard, expected] of [[false, 1], [true, 2]]) {
+    const h = harness(), p = h.player;
+    h.quest.setStage(p, 90);
+    if (hard) h.diaries.add('morytania:hard');
+    const fungi = plant(h, O.FUNGI_ON_LOG, 3439, 3345);
+    objectAction(h, { objectId: O.FUNGI_ON_LOG, object: fungi, ...interaction([null, 'Pick'], 2) });
+    assert.equal(p.inventory.getAmount(FUNGUS), expected);
+  }
+  const h = harness(), p = h.player;
+  h.quest.setStage(p, 90);
+  h.diaries.add('morytania:hard');
+  const branch = plant(h, O.BUDDING_BRANCH, 3440, 3345);
+  objectAction(h, { objectId: O.BUDDING_BRANCH, object: branch, ...interaction([null, 'Pick'], 2) });
+  assert.equal(p.inventory.getAmount(I.MORT_MYRE_STEM), 1, 'only the fungi are doubled');
 });
 
 test('transformation waits for its line, uses the green chathead and completion opens the finished grotto', () => {

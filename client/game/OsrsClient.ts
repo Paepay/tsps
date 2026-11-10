@@ -192,6 +192,7 @@ import { SeqTypeLoader } from "../rs/config/seqtype/SeqTypeLoader";
 import { SpotAnimTypeLoader } from "../rs/config/spotanimtype/SpotAnimTypeLoader";
 import { VarManager } from "../rs/config/vartype/VarManager";
 import { chatHistory } from "../rs/cs2/ChatHistory";
+import { FriendLoginUpdates } from "./chat/FriendLoginUpdates";
 import { Cs2Vm, ScriptArgMagic, type ScriptEvent, createScriptEvent } from "../rs/cs2/Cs2Vm";
 import { setSpawnSearch } from "../rs/cs2/spawnSearch";
 import { Opcodes as Cs2Opcodes } from "../rs/cs2/Opcodes";
@@ -283,6 +284,7 @@ import { isInTouchScrollLayer } from "./widgets/input/widgetTouchScrollInput";
 import { MobileChatKeyboard } from "./chat/MobileChatKeyboard";
 import { KeyboardButtonProbe } from "./chat/keyboardButtonProbe";
 import { collectInputWidgetsAtPoint } from "./widgets/interaction/widgetClickProbe";
+import { isChatboxClickThroughActive } from "./widgets/interaction/chatboxClickThrough";
 import { CombatOptionsController } from "./combat/CombatOptionsController";
 import { HitsplatFlushController } from "./combat/HitsplatFlushController";
 import { ClientScriptLoader } from "./cs2/ClientScriptLoader";
@@ -723,6 +725,8 @@ export class OsrsClient {
     menuFrozenSimpleEntries?: SimpleMenuEntry[];
     menuFrozenSimpleEntriesVersion: number = 0;
     menuActiveSimpleEntries: SimpleMenuEntry[] = [];
+    /** A click-through chat line's options, shown above the world menu opened on `frame`. */
+    menuChatLineEntries: { frame: number; entries: SimpleMenuEntry[] } | undefined;
     menuState: MenuState = new MenuState();
 
     debugText?: string;
@@ -1085,6 +1089,7 @@ export class OsrsClient {
     private groundItemMeshesPending = false;
     private unsubscribeChatMessages?: () => void;
     private unsubscribeFriendsChat?: () => void;
+    private readonly friendLoginUpdates = new FriendLoginUpdates();
     private unsubscribeClans?: () => void;
     private unsubscribeSkills?: () => void;
     private unsubscribeRunEnergy?: () => void;
@@ -1577,7 +1582,19 @@ export class OsrsClient {
             getInputManager: () => this.inputManager,
             getRendererCanvas: () => this.renderer?.canvas,
             getChatRequestsByName: () => this.chatRequestsByName,
+            isChatboxClickThrough: () => this.isChatboxClickThrough(),
         });
+    }
+
+    /** Whether the transparent chatbox's message area lets clicks through to the world. */
+    isChatboxClickThrough(): boolean {
+        const varManager = this.varManager;
+        const widgetManager = this.widgetManager;
+        if (!varManager || !widgetManager) return false;
+        return isChatboxClickThroughActive(
+            (id) => varManager.getVarbit(id),
+            (uid) => widgetManager.getWidgetByUid(uid),
+        );
     }
 
     private initSpellSelectionController(): void {
@@ -3423,6 +3440,7 @@ export class OsrsClient {
         } catch {}
         try {
             this.unsubscribeFriendsChat = subscribeFriendsChat((snapshot) => {
+                this.friendLoginUpdates.update(snapshot.friends);
                 const channel = snapshot.channel;
                 this.cs2Vm.context.friendList = snapshot.friends.map((friend) => ({ ...friend }));
                 this.cs2Vm.context.ignoreList = snapshot.ignores.map((ignored) => ({ ...ignored }));
@@ -3443,6 +3461,8 @@ export class OsrsClient {
                 context.clanChannel = clans.channels.get(OWN_CLAN_TYPE) ?? null;
                 context.listenedClanSettings = clans.settings.get(LISTENED_CLAN_TYPE) ?? null;
                 context.listenedClanChannel = clans.channels.get(LISTENED_CLAN_TYPE) ?? null;
+                context.affinedClanSettings = new Map([...clans.settings].filter(([type]) => type !== LISTENED_CLAN_TYPE));
+                context.affinedClanChannels = new Map([...clans.channels].filter(([type]) => type !== LISTENED_CLAN_TYPE));
                 context.clanVars = clans.vars;
                 markClanSettingsTransmit();
                 markClanChannelTransmit();
@@ -3719,6 +3739,9 @@ export class OsrsClient {
             this.trackServerSubscription(
                 subscribeHandshake(({ id, name, appearance, chatIcons, chatPrefix, isAdmin, membersWorld }) => {
                     try {
+                        if (this.controlledPlayerServerId !== -1 && this.controlledPlayerServerId !== (id | 0)) {
+                            this.resetWorld(true);
+                        }
                         const isMembersWorld = membersWorld !== false;
                         if (isMembersWorld !== this.isMembersWorld) {
                             this.isMembersWorld = isMembersWorld;
@@ -4442,6 +4465,15 @@ export class OsrsClient {
         this.deviceOptions.set(DEVICE_OPTION_SCREEN_BRIGHTNESS, brightness);
         saveScreenBrightness(brightness);
         if (this.renderer) this.renderer.brightness = gammaFromScreenBrightness(brightness);
+        this.screenBrightnessListener?.(brightness);
+    }
+
+    /** Receives every brightness the client applies; the GPU plugin mirrors it into its own option. */
+    screenBrightnessListener?: (value: number) => void;
+
+    /** The current Settings "Screen brightness" (0..100). */
+    getScreenBrightness(): number {
+        return this.deviceOptions.get(DEVICE_OPTION_SCREEN_BRIGHTNESS) ?? loadScreenBrightness();
     }
 
     private applyInterfaceScalingPercentDeviceOption(value: number): void {
@@ -5486,6 +5518,7 @@ export class OsrsClient {
     // URL/search params are not supported
 
     init(): void {
+        void this.loginState.refreshServerName();
         // Initialize default controlled player if not set by server
         if (this.controlledPlayerServerId === -1) {
             this.controlledPlayerServerId = 0; // Default server ID
@@ -6137,6 +6170,7 @@ export class OsrsClient {
                               }
                             : null,
                     );
+                    void this.loginState.refreshServerName();
                     this.loginState.saveLastServer();
                     this.loginState.showRememberedLogin();
                 }
@@ -6436,6 +6470,12 @@ export class OsrsClient {
                     this.widgetManager?.invalidateAll?.();
                 }
             } catch {}
+
+            if (this.isLoggedIn()) {
+                for (const message of this.friendLoginUpdates.drain()) {
+                    chatHistory.addMessage(5, message, "", "");
+                }
+            }
 
             // Widget transmit handlers and timers are processed on the client tick,
             // not on the render frame. These queue CS2 events which are then processed below.
@@ -7207,6 +7247,11 @@ export class OsrsClient {
         try {
             console.log("[shop] server update", state.stock?.length ?? 0, "items");
         } catch {}
+
+        // The legacy shop wire uses 516, also the native looting-bag inventory.
+        // A bag snapshot replaces this registry entry with its 28-slot container.
+        // Rebind the shop's retained container before publishing stock/transmits.
+        this.cs2Vm?.context?.inventories?.set(516, this.shopInventory);
 
         // Clear existing items and populate with shop stock
         this.shopInventory.clear();
@@ -8697,6 +8742,7 @@ export class OsrsClient {
 
         // Full reset only - clear persistent session state when going back to login screen
         if (fullReset) {
+            this.friendLoginUpdates.clear();
             // Clear chat history to prevent memory leak across sessions
             try {
                 chatHistory.clear();

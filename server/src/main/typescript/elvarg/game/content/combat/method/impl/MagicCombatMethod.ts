@@ -10,6 +10,7 @@ import { CombatFactory } from "../../CombatFactory";
 import { CombatType } from "../../CombatType";
 import { PendingHit } from "../../hit/PendingHit";
 import { Mobile } from "../../../../entity/impl/Mobile";
+import { AreaManager } from "../../../../model/areas/AreaManager";
 import { Player } from "../../../../entity/impl/player/Player";
 import { GraphicHeight } from "../../../../model/GraphicHeight";
 import { MagicSpellbook } from "../../../../model/MagicSpellbook";
@@ -43,6 +44,8 @@ export class MagicCombatMethod extends CombatMethod {
         13011: 6589, 13023: 6589,
         // Capture: Undead Grasp.
         21832: 5030,
+        // OSRS Wiki List of sound IDs, Surge casts.
+        21876: 4028, 21877: 4030, 21878: 4025, 21879: 4032,
     };
     /** Live plays a spell's impact and its splash as an area sound this far round the target's tile. */
     public static readonly IMPACT_SOUND_RADIUS = 10;
@@ -59,6 +62,8 @@ export class MagicCombatMethod extends CombatMethod {
         13011: 177, 13023: 175,
         // Capture: Undead Grasp (an area sound at the target).
         21832: 5055,
+        // OSRS Wiki List of sound IDs, Surge impacts.
+        21876: 4027, 21877: 4029, 21878: 4026, 21879: 4031,
     };
 
     public type(): CombatType {
@@ -118,6 +123,7 @@ export class MagicCombatMethod extends CombatMethod {
 
         for (let hit of hits) {
             spell.onHitCalc(hit);
+            MagicCombatMethod.queueProjectileGraphic(hit);
 
             const spellRadius =
                 spell.getSpellbook() === MagicSpellbook.ANCIENT && typeof (spell as any).spellRadius === "function"
@@ -125,6 +131,14 @@ export class MagicCombatMethod extends CombatMethod {
                     : 0;
             const isAncientSpell = spell.getSpellbook() === MagicSpellbook.ANCIENT;
             if (!hit.isAccurate() || !isAncientSpell || spellRadius <= 0) {
+                continue;
+            }
+            // Wiki (Ancient Magicks; Multicombat area): the area spells hit more than one target only in multicombat, and
+            // the target's zone decides: a caster on a single-way tile still splashes opponents standing in multi. A
+            // target in single-way splashes no one (an always-multi NPC on either side counts as multi). Each other
+            // victim must be in multi too (canAttackSecondaryTarget).
+            const alwaysMulti = (mobile: Mobile) => mobile.isNpc() && mobile.getAsNpc().isMultiCombat();
+            if (!alwaysMulti(character) && !alwaysMulti(target) && !AreaManager.inMulti(target)) {
                 continue;
             }
 
@@ -154,6 +168,32 @@ export class MagicCombatMethod extends CombatMethod {
             return hits.concat(multiCombatHits);
         }
         return hits;
+    }
+
+    private static queueProjectileGraphic(hit: PendingHit): void {
+        const spell = hit.getSpell();
+        const target = hit.getTarget();
+        const visual = spell?.getProjectileVisual?.(hit.getSpellContext(), target);
+        if (!visual || visual.queued) return;
+        // Live sends the impact (or splash) area sound at the cast, delayed to the projectile's end cycle
+        // (RSProx 227/00102 tick 232: sound_area 161 delay=106 for a projectile ending at 106), beside the graphic.
+        if (!visual.soundQueued) {
+            const sound = hit.isAccurate() ? MagicCombatMethod.impactSoundFor(spell) : Sound.SPELL_FAIL_SPLASH;
+            const at = target.getLocation?.();
+            if (sound && at) {
+                Sounds.playAreaSound({
+                    soundId: sound.getId(), source: target, x: at.getX(), y: at.getY(), level: at.getZ(),
+                    loops: sound.getLoopType(), delay: visual.endCycleOffset + sound.getDelay(),
+                    radius: MagicCombatMethod.IMPACT_SOUND_RADIUS,
+                });
+                visual.soundQueued = true;
+            }
+        }
+        const graphic = hit.isAccurate() ? spell.endGraphic() : MagicCombatMethod.SPLASH_GRAPHIC;
+        if (!graphic || typeof graphic.withDelay !== "function") return;
+        const delayed = graphic.withDelay(visual.endCycleOffset + graphic.getDelay());
+        target.performGraphic(delayed);
+        visual.queued = target.getGraphic() === delayed;
     }
 
     /**
@@ -213,7 +253,7 @@ export class MagicCombatMethod extends CombatMethod {
         }
 
         if (spell != null) {
-            const castSound = spell.castSound?.() ?? MagicCombatMethod.resolveCastSound(spell.spellId());
+            const castSound = MagicCombatMethod.castSoundFor(spell);
             if (castSound != null) {
                 Sounds.sendSound(character, castSound);
             }
@@ -290,26 +330,34 @@ export class MagicCombatMethod extends CombatMethod {
         const previousSpell = hit.getSpell();
 
         if (previousSpell) {
+            const visual = previousSpell.getProjectileVisual?.(hit.getSpellContext(), target);
+            const queuedGraphic = visual?.queued === true;
+            const queuedSound = visual?.soundQueued === true;
             if (accurate) {
                 const endGraphic = previousSpell.endGraphic();
                 // A spell with no impact graphic (a grasp shows its own at the cast) sends none.
-                if (endGraphic) target.performGraphic(endGraphic);
+                if (endGraphic && !queuedGraphic) target.performGraphic(endGraphic);
                 // Live (RSProx 102 tick 232, 3275): an area sound at the target's tile with range 10,
                 // for an NPC or a player. A private synth never reached the caster, and an area sound
                 // of range 0 (what Sounds.sendSound gives an NPC) is dropped by the client.
                 const impactSound = MagicCombatMethod.impactSoundFor(previousSpell);
-                if (impactSound) Sounds.playAreaSoundAt(target, impactSound, MagicCombatMethod.IMPACT_SOUND_RADIUS);
+                if (impactSound && !queuedSound) Sounds.playAreaSoundAt(target, impactSound, MagicCombatMethod.IMPACT_SOUND_RADIUS);
               } else {
                 // Send splash graphics for the spell because it wasn't accurate
-                target.performGraphic(MagicCombatMethod.SPLASH_GRAPHIC);
+                if (!queuedGraphic) target.performGraphic(MagicCombatMethod.SPLASH_GRAPHIC);
                 // Also an area sound at the target (3275: 492 `sound_area id=227 range=10`).
-                Sounds.playAreaSoundAt(target, Sound.SPELL_FAIL_SPLASH, MagicCombatMethod.IMPACT_SOUND_RADIUS);
+                if (!queuedSound) Sounds.playAreaSoundAt(target, Sound.SPELL_FAIL_SPLASH, MagicCombatMethod.IMPACT_SOUND_RADIUS);
             }
             previousSpell.finishCast(attacker, target, accurate, damage, hit.getSpellContext());
         }
     }
 
     /** A spell's own impact sound, else the table by its spell id (null: none captured). */
+    /** The caster's private sound as `spell` is cast (its own, else the spell id's). */
+    public static castSoundFor(spell: { castSound?(): Sound | null; spellId(): number }): Sound | null {
+        return spell.castSound?.() ?? MagicCombatMethod.resolveCastSound(spell.spellId());
+    }
+
     public static impactSoundFor(spell: { impactSound(): Sound | null; spellId(): number }): Sound | null {
         return spell.impactSound() ?? MagicCombatMethod.resolveImpactSound(spell.spellId());
     }

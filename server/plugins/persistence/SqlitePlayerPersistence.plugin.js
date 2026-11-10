@@ -750,6 +750,7 @@ let SkillManager;
 
 module.exports = {
   name: "SqlitePlayerPersistence",
+  description: "Saves players to a SQLite database (data/saves/players.sqlite) and can import older JSON character saves.",
   register(api) {
     SkillManager = api.getSkillManager();
     // In PaeScape hosted mode the platform owns authoritative character state, so
