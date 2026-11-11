@@ -111,6 +111,9 @@ function installationPath() {
 // Shared, unit-tested startup logging: a timestamped and redacted timeline, and
 // the numbered startup stages (see StartupLog.js for the scheme).
 const { redact, timestamp: stamp, line: startupLine, stageLine, boundedFetch } = require("./StartupLog.js");
+// Lease-renewal cadence: a renewal is the platform's liveness signal, so the
+// cadence lives beside the platform contract and is unit-tested on its own.
+const { leaseRenewalDelayMs } = require("./LeaseLiveness.js");
 
 function log(message) {
   console.log(startupLine("log", message));
@@ -1136,6 +1139,9 @@ async function renewLease() {
     }
     if (!result.ok) {
       warn(`lease renewal refused: ${result.json?.error ?? result.status}`);
+      // Keep trying: a transient platform error must not leave the world
+      // without a heartbeat until the lease expires.
+      scheduleLeaseRenewal();
       return;
     }
     lease.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 600_000;
@@ -1146,13 +1152,14 @@ async function renewLease() {
     scheduleLeaseRenewal();
   } catch (error) {
     warn(`lease renewal failed: ${error.message}`);
+    // Never stop the renewal loop on a transport error.
+    scheduleLeaseRenewal();
   }
 }
 
 function scheduleLeaseRenewal() {
   if (leaseTimer) clearTimeout(leaseTimer);
-  const delay = Math.max(15_000, (lease?.expiresAt ?? Date.now()) - Date.now() - 60_000);
-  leaseTimer = setTimeout(() => void renewLease(), delay);
+  leaseTimer = setTimeout(() => void renewLease(), leaseRenewalDelayMs(lease?.expiresAt));
   leaseTimer.unref?.();
 }
 
