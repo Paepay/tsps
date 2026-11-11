@@ -355,7 +355,7 @@ async function heartbeat() {
         buildVersion: BUILD.version,
         configRevision: worldConfigRevision || Number(process.env.PAESCAPE_CONFIG_REVISION ?? 1),
         playerCount: api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0,
-        maxPlayers: api.core.World.getPlayers?.().capacity?.() ?? 0,
+        maxPlayers: maxPlayers(),
         endpointUrl: platform.endpoint || undefined,
       },
     });
@@ -1119,7 +1119,7 @@ async function renewLease() {
         configRevision: lease.configRevision,
         contentRevision: lease.contentRevision,
         playerCount: playerCount(),
-        maxPlayers: api.core.World.getPlayers?.().capacity?.() ?? 0,
+        maxPlayers: maxPlayers(),
         buildVersion: BUILD.version,
         endpointUrl: platform.endpoint || undefined,
       },
@@ -1188,6 +1188,18 @@ async function fetchContentManifest() {
 
 function playerCount() {
   return api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0;
+}
+
+/**
+ * The world's player capacity, as the engine's slot list reports it. The list
+ * exposes it as capacityReturn() (the usable limit is one less; the same
+ * accessor AdminCommands.plugin.js uses), never as a capacity() method.
+ * Reading it wrongly throws, and a throw in renewal would silently stop the
+ * lease from ever renewing, so this never throws and never returns non-finite.
+ */
+function maxPlayers() {
+  const capacity = api.core.World.getPlayers?.()?.capacityReturn?.();
+  return Number.isFinite(capacity) ? Math.max(0, capacity - 1) : 0;
 }
 
 /**
