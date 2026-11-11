@@ -35,6 +35,22 @@ Via `world.json` `pluginConfig` (preferred) or environment variables:
 The credential is shown once in the website's world page and stored hashed on
 the platform. It is scoped to this world only and can be revoked.
 
+### Public endpoint registration (Task 30)
+
+When `PAESCAPE_PUBLIC_ENDPOINT` is set to an `https://` origin and this server
+holds a lease, it reports that address to the platform (`POST /api/server/endpoint`)
+once per launch. The platform binds it to the world the lease authorises, verifies
+it (it must be reachable and, when it answers, must advertise this world), and only
+then will it send players here. Reporting is best-effort and never fatal: an owner
+can also register and verify the address on the world page, and a server-reported
+address never overwrites an owner-set one.
+
+The endpoint must expose `GET /api/platform/health`, which answers with this
+world's identity (`{ ok, service, worldId, generation, version, leased }`) and no
+secret, so the platform can prove a registered address is this world. Core routes
+`/api/platform/*` to `PluginManager.handlePlatformControl`, so this route is owned
+by the plugin and needs no extra framework wiring.
+
 ### Platform base URL
 
 The website serves the platform behind a public path prefix (`/platform`); the

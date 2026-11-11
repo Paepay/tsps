@@ -355,7 +355,7 @@ async function heartbeat() {
         buildVersion: BUILD.version,
         configRevision: worldConfigRevision || Number(process.env.PAESCAPE_CONFIG_REVISION ?? 1),
         playerCount: api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0,
-        maxPlayers: api.core.World.getPlayers?.().capacity?.() ?? 0,
+        maxPlayers: maxPlayers(),
         endpointUrl: platform.endpoint || undefined,
       },
     });
@@ -492,6 +492,25 @@ function createCharacterForUser(userId, name) {
 async function handleControl(request) {
   const pathname = request.path.split("?")[0];
   if (!pathname.startsWith(CONTROL_PREFIX)) return null;
+  // Public, unauthenticated identity/health probe. The platform fetches this to
+  // prove a registered endpoint is this world and is reachable before it sends
+  // any player here, so it must answer without a control token - but it exposes
+  // only the world id, the release generation and whether a lease is live, never
+  // a secret, credential, token, player or private address.
+  if (request.method === "GET" && pathname === `${CONTROL_PREFIX}health`) {
+    const worldId = String(platform.worldId ?? installation.worldId ?? "");
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        service: "paescape-world",
+        worldId: worldId || null,
+        generation: Number(BUILD.generation ?? 0),
+        version: BUILD.version,
+        leased: Boolean(lease),
+      },
+    };
+  }
   const action = verifyAction(pathname, request.method);
   const claims = verifyControlToken(request.headers.authorization, action);
   if (!claims) {
@@ -1100,7 +1119,7 @@ async function renewLease() {
         configRevision: lease.configRevision,
         contentRevision: lease.contentRevision,
         playerCount: playerCount(),
-        maxPlayers: api.core.World.getPlayers?.().capacity?.() ?? 0,
+        maxPlayers: maxPlayers(),
         buildVersion: BUILD.version,
         endpointUrl: platform.endpoint || undefined,
       },
@@ -1172,6 +1191,18 @@ function playerCount() {
 }
 
 /**
+ * The world's player capacity, as the engine's slot list reports it. The list
+ * exposes it as capacityReturn() (the usable limit is one less; the same
+ * accessor AdminCommands.plugin.js uses), never as a capacity() method.
+ * Reading it wrongly throws, and a throw in renewal would silently stop the
+ * lease from ever renewing, so this never throws and never returns non-finite.
+ */
+function maxPlayers() {
+  const capacity = api.core.World.getPlayers?.()?.capacityReturn?.();
+  return Number.isFinite(capacity) ? Math.max(0, capacity - 1) : 0;
+}
+
+/**
  * Report whether a public endpoint is configured. The platform hands players a
  * login ticket and sends their client to this world's endpoint, so without one
  * (or with a non-HTTPS one) players cannot join even though the world has a valid
@@ -1188,6 +1219,32 @@ function reportPublicEndpoint() {
     return;
   }
   log(`public endpoint: ${endpoint} (players join this world through it)`);
+  void registerPublicEndpoint(endpoint);
+}
+
+/**
+ * Bind this endpoint to the world this server is authorised for. The platform
+ * derives the world from the lease, verifies the endpoint serves that world and
+ * only then will it issue player tickets for it, so a server can never register
+ * an endpoint against a world it is not leased to. Failures are reported, never
+ * fatal: a world can still be reached through an owner-registered endpoint.
+ */
+async function registerPublicEndpoint(endpoint) {
+  try {
+    const result = await platformFetch("/api/server/endpoint", {
+      method: "POST",
+      token: lease ? lease.token : undefined,
+      body: { endpointUrl: endpoint },
+    });
+    if (!result.ok) {
+      warn(`the platform refused the public endpoint (${result.status}): ${result.json && result.json.error ? result.json.error : "no reason given"}`);
+      return;
+    }
+    if (result.json && result.json.verified) log(`public endpoint registered and verified for this world`);
+    else warn(`public endpoint registered but not verified: ${result.json && result.json.error ? result.json.error : "the platform could not reach it"}`);
+  } catch (error) {
+    warn(`could not register the public endpoint with the platform: ${error && error.message ? error.message : error}`);
+  }
 }
 
 /**
