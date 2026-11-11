@@ -1,3 +1,4 @@
+import { pluginConfigKey, type ScopedPluginSettings } from "../game/definition/WorldPluginConfig";
 import { CacheDefinitions } from "../game/cache/CacheDefinitions";
 import { ItemDefinition } from "../game/definition/ItemDefinition";
 import { ObjectDefinition } from "../game/definition/ObjectDefinition";
@@ -722,7 +723,8 @@ export class PluginManager {
     });
 
     // The exported name is only known after evaluation; filter by filename first.
-    const { switches, defaultEnabled } = PluginManager.loadPluginSwitches();
+    const scopedSettings: ScopedPluginSettings = new Map();
+    const { switches, defaultEnabled } = PluginManager.loadPluginSwitches(scopedSettings);
     const switchFor = (name: string) => switches.get(normalizePluginName(name));
     const enabledPluginFiles = filteredPluginFiles.filter((pluginPath) => {
       if (switchFor(pluginNameFromFile(pluginPath)) !== false) {
@@ -771,7 +773,7 @@ export class PluginManager {
     PluginManager.loadPluginCandidatesWithDependencies(toLoad);
 
     PluginManager.recordLoadedConfigDeclarations(acceptedDeclarations);
-    PluginManager.warnAboutInvalidConfigValues();
+    PluginManager.warnAboutInvalidConfigValues(scopedSettings);
 
     if (PluginManager.lastPersistenceOverride) {
       console.info(PluginManager.lastPersistenceOverride);
@@ -2213,8 +2215,8 @@ export class PluginManager {
    * it leaves out keeps its own `enabled` default. The older `disabledPlugins` list is read
    * as it always was: what it names is off and everything else on, defaults included.
    */
-  private static loadPluginSwitches(): { switches: Map<string, boolean>; defaultEnabled?: boolean } {
-    return PluginManager.parsePluginSwitches(readWorldConfig());
+  private static loadPluginSwitches(scopedSettings?: ScopedPluginSettings): { switches: Map<string, boolean>; defaultEnabled?: boolean } {
+    return PluginManager.parsePluginSwitches(readWorldConfig(scopedSettings));
   }
 
   /** Reads the plugin switches out of an already merged world config. Throws when they are malformed. */
@@ -2378,10 +2380,17 @@ export class PluginManager {
     }
   }
 
-  /** Warns (never replaces) about configured values that do not fit their declaration. */
-  private static warnAboutInvalidConfigValues(): void {
+  /** Warns about undeclared scoped settings and values that do not fit their declaration. */
+  private static warnAboutInvalidConfigValues(scopedSettings: ScopedPluginSettings): void {
     const config = PluginManager.loadPluginConfig();
     const declarations = PluginManager.getConfigDeclarations();
+    const loadedNames = new Set(PluginManager.loadedPlugins.map(normalizePluginName));
+    for (const [key, { plugin, setting }] of scopedSettings) {
+      if (declarations.has(key) || !loadedNames.has(normalizePluginName(plugin))) continue;
+      const exactKey = [...declarations.keys()].find((name) => name.toLowerCase() === key.toLowerCase());
+      const hint = exactKey ? `; use the spelling in "${exactKey}"` : "";
+      console.warn(`[plugins] world.json scoped setting plugins.${plugin}.${setting} has no declared key "${key}"${hint}`);
+    }
     for (const [key, value] of Object.entries(config)) {
       const entry = declarations.get(key);
       if (!entry) {
@@ -2578,6 +2587,7 @@ export class PluginManager {
       CombatSpecial: require(`${combat}/CombatSpecial`).CombatSpecial,
       CombatFactory: require(`${combat}/CombatFactory`).CombatFactory,
       BonusManager: require(`${model}/equipment/BonusManager`).BonusManager,
+      EquipmentRequirements: require(`${model}/equipment/EquipmentRequirements`).EquipmentRequirements,
       WeaponInterfaces: require(`${combat}/WeaponInterfaces`).WeaponInterfaces,
       Barrows: require(`${combat}/Barrows`).Barrows,
       applyPrayerDrainModifiers: require(`${combat}/EquipmentEffects`).applyPrayerDrainModifiers,
@@ -2609,6 +2619,7 @@ export class PluginManager {
         return listener.castOnItem(player, typeof spellId === "string" ? listener.resolveSpellId(spellId) : spellId, itemId, slot, source);
       },
       ChatType: require("../net/protocol/ClientProtocol").ChatType,
+      resolveChatHighlights: require("../net/protocol/ClientProtocol").resolveChatHighlights,
       DuelRule: require("../game/content/Duelling").DuelRule,
       RegionManager: require("../game/collision/RegionManager").RegionManager,
       Animation: require(`${model}/Animation`).Animation,
@@ -2639,6 +2650,7 @@ export class PluginManager {
       ObjectIdentifiers: require("../util/ObjectIdentifiers").ObjectIdentifiers,
       ShopIdentifiers: require("../util/ShopIdentifiers").ShopIdentifiers,
       Misc: require("../util/Misc").Misc,
+      ChatTextLayout: require("../game/model/dialogues/ChatTextLayout").ChatTextLayout,
       TimerKey: require("../util/timers/TimerKey").TimerKey,
       Sound: require("../game/Sound").Sound,
       Sounds: require("../game/Sounds").Sounds,
@@ -2674,6 +2686,8 @@ export class PluginManager {
       LOGIN_FLAG_CHARACTER_SELECT: require("../net/login/LoginTokens").LOGIN_FLAG_CHARACTER_SELECT,
       MAIN_PROFILE: require("../game/entity/impl/player/persistence/PlayerProfile").MAIN_PROFILE,
       LEAGUE_PROFILE: require("../game/entity/impl/player/persistence/PlayerProfile").LEAGUE_PROFILE,
+      HARDCORE_PROFILE: require("../game/entity/impl/player/persistence/PlayerProfile").HARDCORE_PROFILE,
+      PLAYER_PROFILES: require("../game/entity/impl/player/persistence/PlayerProfile").PLAYER_PROFILES,
       Skills: require("../game/content/skill/SkillManager").Skills,
       Accounts: require("../game/entity/impl/player/Accounts").Accounts,
       BoatManager: require("../game/content/sailing/BoatManager").BoatManager,
@@ -4316,7 +4330,7 @@ export class PluginManager {
         );
       },
       getPluginConfig: <T>(key: string, defaultValue?: T) =>
-        PluginManager.getPluginConfig<T>(key, defaultValue),
+        PluginManager.getPluginConfig<T>(typeof key === "string" && key.length > 0 && !key.includes(":") ? pluginConfigKey(pluginName, key) : key, defaultValue),
       onButton: (buttonIds, handler) => {
         registerButtonHook(buttonIds, handler, "button");
       },
@@ -4580,6 +4594,7 @@ export class PluginManager {
       },
       setExperienceRate: (rate) => GameConstants.setExperienceRate(rate),
       setWorldProfile: (profile) => GameConstants.setWorldProfile(profile),
+      setWorldType: (type) => GameConstants.setWorldType(type),
       getActiveRegionSnapshot: () => {
         try {
           const worldModule = require("../game/World");

@@ -38,6 +38,7 @@ function createBotRegistry(options) {
     wildernessActiveRegionBotsPerRegion = 0,
     wildernessActiveRegionBotsByRegion,
     wildernessActiveRegionInset = 0,
+    pvpAllowed = () => true,
     botBaseCooldownMs,
     spawn,
     spawnOffsets,
@@ -369,6 +370,7 @@ function createBotRegistry(options) {
   function buildRegionalWildernessPlans(snapshot, hotspotCountsByRegion = null) {
     if (
       wildernessRoamerBotCount <= 0 ||
+      !pvpAllowed() ||
       !Array.isArray(snapshot?.regions) ||
       snapshot.regions.length === 0
     ) {
@@ -426,7 +428,7 @@ function createBotRegistry(options) {
   }
 
   function buildPersistentHotspotPlans() {
-    if (wildernessRoamerBotCount <= 0) {
+    if (wildernessRoamerBotCount <= 0 || !pvpAllowed()) {
       return [];
     }
     const plans = [];
@@ -682,7 +684,7 @@ function createBotRegistry(options) {
   }
 
   function reconcilePersistentHotspotBots() {
-    if (wildernessRoamerBotCount <= 0) {
+    if (wildernessRoamerBotCount <= 0 || !pvpAllowed()) {
       return;
     }
     const plans = buildPersistentHotspotPlans();
@@ -755,7 +757,7 @@ function createBotRegistry(options) {
   }
 
   function reconcileRegionalWildernessBots(snapshot = null) {
-    if (wildernessRoamerBotCount <= 0) {
+    if (wildernessRoamerBotCount <= 0 || !pvpAllowed()) {
       return;
     }
     const nextSnapshot =

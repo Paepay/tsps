@@ -257,6 +257,7 @@ export class CombatFactory {
         // We've got our damage. We can now create a HitDamage
         // instance.
         let hitDamage = new HitDamage(damage, damage == 0 ? HitMask.BLUE : HitMask.RED);
+        if (rolls && entity.isPlayer()) hitDamage.setRolledMaximum(range.maximum);
 
         /**
          * Prayers decreasing damage.
@@ -1074,10 +1075,9 @@ export class CombatFactory {
                     playerAttacker.getWeapon() == WeaponInterfaces.JAVELIN;
 
                 if (combatType == CombatType.MELEE) {
-                    applyPoison = Misc.getRandom(3) === 0;
-                    poisonType = CombatPoisonData.getPoisonType(
-                        playerAttacker.getEquipment().get(Equipment.WEAPON_SLOT)
-                    );
+                    const meleeWeapon = playerAttacker.getEquipment().get(Equipment.WEAPON_SLOT);
+                    applyPoison = Misc.getRandom(CombatPoisonData.getMeleeRollRange(meleeWeapon)) === 0;
+                    poisonType = CombatPoisonData.getPoisonType(meleeWeapon);
                 } else if (combatType == CombatType.RANGED) {
                     applyPoison = Misc.getRandom(7) === 0;
                     rangedPoison = true;
