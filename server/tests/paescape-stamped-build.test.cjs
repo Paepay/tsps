@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { test, before, after } = require("node:test");
+const http = require("node:http");
 
 const SERVER_DIR = path.resolve(__dirname, "..");
 function resolvePlatformDir() {
