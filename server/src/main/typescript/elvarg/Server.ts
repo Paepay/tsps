@@ -326,6 +326,12 @@ export class Server {
       console.info(`[cache] active ${cache.name} (revision ${cache.revision})`);
       Server.ok(3, `cache revision ${cache.revision} ready (${cache.name})`);
 
+      // Hundreds of gameplay modules are evaluated synchronously here. On a
+      // Windows release binary (especially under Defender or redirected I/O)
+      // this can take noticeably longer than the cache check. Name the phase so
+      // a quiet plugin load is never misdiagnosed as a stage-3 cache stall;
+      // PluginManager reports bounded batch progress below.
+      console.info("[server] loading gameplay plugins after startup stage 3/7");
       PluginManager.loadFromDirectory(path.join(process.cwd(), "plugins"));
 
       console.debug(

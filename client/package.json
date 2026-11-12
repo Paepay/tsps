@@ -2,7 +2,7 @@
   "name": "@xrsps/client",
   "version": "0.1.0",
   "private": true,
-  "homepage": "/play",
+  "homepage": "/client",
   "engines": {
     "node": ">=22.5.0"
   },
@@ -41,6 +41,7 @@
     "start": "tsx ../server/scripts/ensure-cache.ts && node ../scripts/run-with-env.mjs development ./node_modules/@craco/craco/dist/bin/craco.js start",
     "dev": "yarn start",
     "build": "node ../scripts/run-with-env.mjs production ./node_modules/@craco/craco/dist/bin/craco.js build",
+    "build:paescape": "node scripts/build-paescape.mjs",
     "test": "node scripts/run-tests.mjs",
     "test:vengeance-timer": "tsx tests/vengeance-timer-plugin.test.ts",
     "test:status-timer": "tsx tests/status-timer-plugin.test.ts",
@@ -57,6 +58,7 @@
     "test:hd": "tsx tests/hd-plugin.test.ts",
     "test:scene-viewport": "node tests/scene-viewport-clipping.browser.cjs",
     "test:cache-memory": "node tests/cache-worker-memory.browser.cjs",
+    "test:paescape-build": "node scripts/paescape-build.test.mjs",
     "test:editor-objects": "tsx tests/edit-mode-object-spawns.test.ts && tsx tests/edit-mode-settings.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "export-textures": "tsx scripts/cache/export-textures.ts",

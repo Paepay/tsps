@@ -60,8 +60,15 @@ fs.writeFileSync(
 let stub = null;
 let stubUrl = "";
 const renewals = []; // epoch ms of every accepted renewal (a heartbeat)
+const startupRoutes = [];
+const startupEvents = [];
 let failuresToInject = 0; // when > 0, the next renew is refused with 503
 let leaseToken = "lease_continuity_0";
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  startupEvents.push(String(args[0] ?? ""));
+  originalConsoleLog(...args);
+};
 
 function renewBody(req) {
   return new Promise((resolve) => {
@@ -74,6 +81,8 @@ function renewBody(req) {
 function startStub() {
   stub = http.createServer(async (req, res) => {
     const route = `${req.method} ${(req.url || "").split("?")[0]}`;
+    startupRoutes.push(route);
+    startupEvents.push(route);
     res.setHeader("content-type", "application/json");
     if (route === "GET /api/platform/public-key") {
       res.end(JSON.stringify({ publicKey: PUBLIC_KEY_B64 }));
@@ -158,9 +167,17 @@ before(async () => {
   PluginManager.emitServerStartup({ timestamp: Date.now() });
   // Wait for the first renewal, which proves the handshake and lease succeeded.
   assert.ok(await waitFor(() => renewals.length >= 1), `the hosted world obtained a lease and renewed it (renewals=${renewals.length})`);
+  // Startup then warms the hosted world-state mirror before its stage-7 line.
+  // Wait for that full readiness boundary so tests do not race the synchronous
+  // production mirror loader used by this in-process stub.
+  assert.ok(
+    await waitFor(() => startupEvents.some((event) => event.includes("stage 7/7"))),
+    "the hosted world completed startup and announced stage 7 readiness",
+  );
 });
 
 after(async () => {
+  console.log = originalConsoleLog;
   if (stub) await new Promise((resolve) => stub.close(resolve));
   fs.rmSync(WORK_DIR, { recursive: true, force: true });
 });
@@ -170,6 +187,14 @@ test("the renewal cadence stays strictly inside the platform's offline window", 
     DEFAULT_LEASE_RENEW_INTERVAL_MS > 0 && DEFAULT_LEASE_RENEW_INTERVAL_MS < PLATFORM_STALE_MS,
     `the default renewal interval (${DEFAULT_LEASE_RENEW_INTERVAL_MS}ms) must be inside the platform's ${PLATFORM_STALE_MS}ms staleness window`,
   );
+});
+
+test("hosted startup refreshes liveness before announcing stage 7 readiness", () => {
+  const renewal = startupEvents.indexOf("POST /api/server/lease/renew");
+  const ready = startupEvents.findIndex((event) => event.includes("stage 7/7"));
+  assert.ok(renewal >= 0, "startup sent an immediate lease renewal heartbeat");
+  assert.ok(ready >= 0, "startup announced stage 7 readiness");
+  assert.ok(renewal < ready, `renewal (${renewal}) happened before stage 7 readiness (${ready})`);
 });
 
 test("a healthy world renews continuously instead of only before the lease expires", async () => {

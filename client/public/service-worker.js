@@ -1,14 +1,16 @@
 // Shell service worker. Must NOT mediate workers/scripts under COEP:
 // Safari blocks Worker() loads when a SW calls respondWith() for them,
 // even when Cross-Origin-Resource-Policy is present on the network response.
-const CACHE_NAME = "osrs-typescript-shell-v3";
+const CACHE_NAME = "osrs-typescript-shell-v4";
+const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/?$/, "/");
+const SHELL_URL = `${SCOPE_PATH}index.html`;
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
     event.waitUntil(
         caches
             .open(CACHE_NAME)
-            .then((cache) => cache.addAll(["/index.html"]))
+            .then((cache) => cache.addAll([SHELL_URL]))
             .catch(() => {}),
     );
 });
@@ -62,7 +64,7 @@ self.addEventListener("fetch", (event) => {
         return;
     }
 
-    if (url.origin === self.location.origin && url.pathname.startsWith("/static/")) {
+    if (url.origin === self.location.origin && url.pathname.startsWith(`${SCOPE_PATH}static/`)) {
         return;
     }
 
@@ -72,10 +74,10 @@ self.addEventListener("fetch", (event) => {
             fetch(event.request)
                 .then((response) => {
                     const copy = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy)).catch(() => {});
+                    caches.open(CACHE_NAME).then((cache) => cache.put(SHELL_URL, copy)).catch(() => {});
                     return response;
                 })
-                .catch(() => caches.match("/index.html")),
+                .catch(() => caches.match(SHELL_URL)),
         );
     }
 });

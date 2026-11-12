@@ -16,19 +16,35 @@ import { rebuildGroundItemsForMap } from "../render/render/draw3";
 async function shellActivationPreservesGameAssets(): Promise<void> {
     const handlers = new Map<string, (event: any) => void>();
     const deleted: string[] = [];
+    const shellEntries: string[][] = [];
     runInNewContext(readFileSync(new URL("../public/service-worker.js", import.meta.url), "utf8"), {
-        self: { addEventListener: (name: string, handler: (event: any) => void) => handlers.set(name, handler),
-            clients: { claim: async () => {} } },
+        URL,
+        self: {
+            registration: { scope: "https://paescape.example/client/" },
+            location: { origin: "https://paescape.example" },
+            skipWaiting: () => {},
+            addEventListener: (name: string, handler: (event: any) => void) => handlers.set(name, handler),
+            clients: { claim: async () => {} },
+        },
         caches: {
             keys: async () => ["osrs-typescript-shell-v2", "osrs-typescript-shell-v3",
                 "osrs-typescript::cache::osrs-237", "another-app-cache"],
             delete: async (key: string) => { deleted.push(key); return true; },
+            open: async () => ({ addAll: async (entries: string[]) => { shellEntries.push(entries); } }),
         },
     });
+    let installCompletion: Promise<void> | undefined;
+    handlers.get("install")!({ waitUntil: (promise: Promise<void>) => { installCompletion = promise; } });
+    await installCompletion;
+    assert.equal(
+        JSON.stringify(shellEntries),
+        JSON.stringify([["/client/index.html"]]),
+        "the shell cache stays inside the deployed client scope",
+    );
     let completion: Promise<void> | undefined;
     handlers.get("activate")!({ waitUntil: (promise: Promise<void>) => { completion = promise; } });
     await completion;
-    assert.deepEqual(deleted, ["osrs-typescript-shell-v2"]);
+    assert.deepEqual(deleted, ["osrs-typescript-shell-v2", "osrs-typescript-shell-v3"]);
 }
 
 function contentRangeParsing(): void {

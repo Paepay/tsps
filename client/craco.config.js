@@ -1,6 +1,6 @@
-// `homepage: "/play"` in package.json is where the LIVE site is mounted, and
+// `homepage: "/client"` in package.json is where the PaeScape client is mounted, and
 // CRA applies it in development too — which redirects localhost:3000 to
-// /play/ and moves the cache to /play/caches/, while the dev server only
+// /client/ and moves the cache to /client/caches/, while the dev server only
 // serves it at /caches/ (see devServer.setupMiddlewares below). Serve dev from
 // the root instead. PUBLIC_URL wins over homepage in CRA's
 // getPublicUrlOrPath, and this must run before react-scripts/config/paths is

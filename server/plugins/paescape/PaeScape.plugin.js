@@ -96,6 +96,7 @@ let installation = null; // { key, credential }
 let lease = null; // { token, expiresAt, generation, configRevision, contentRevision }
 let leaseTimer = null;
 let enrollmentTimer = null;
+let hostedReady = false;
 let worldConfig = null; // the authoritative config the platform returned
 let worldConfigRevision = 0;
 let outdated = false;
@@ -1112,7 +1113,7 @@ async function handshake() {
 
 /** Renew the short-lived lease; refused the moment the platform has a newer release. */
 async function renewLease() {
-  if (!lease) return;
+  if (!lease) return false;
   try {
     const result = await platformFetch("/api/server/lease/renew", {
       method: "POST",
@@ -1129,31 +1130,34 @@ async function renewLease() {
     });
     if (result.status === 409) {
       markOutdated(result.json?.error ?? "This server is outdated.");
-      return;
+      return false;
     }
     if (result.status === 401) {
       bridge.setAuthorized(false);
       lease = null;
       await handshake();
-      return;
+      return false;
     }
     if (!result.ok) {
       warn(`lease renewal refused: ${result.json?.error ?? result.status}`);
       // Keep trying: a transient platform error must not leave the world
       // without a heartbeat until the lease expires.
       scheduleLeaseRenewal();
-      return;
+      return false;
     }
     lease.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 600_000;
     lease.generation = Number(result.json.generation ?? lease.generation);
     if (Number(result.json.configRevision ?? 0) !== lease.configRevision) {
       applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0));
     }
+    markHostedReady();
     scheduleLeaseRenewal();
+    return true;
   } catch (error) {
     warn(`lease renewal failed: ${error.message}`);
     // Never stop the renewal loop on a transport error.
     scheduleLeaseRenewal();
+    return false;
   }
 }
 
@@ -1227,6 +1231,21 @@ function reportPublicEndpoint() {
   }
   log(`public endpoint: ${endpoint} (players join this world through it)`);
   void registerPublicEndpoint(endpoint);
+}
+
+/**
+ * Announce hosted readiness only after the platform has accepted a renewal.
+ * Handshake creates a lease, but renewal is the authoritative liveness signal
+ * used by login-ticket issuance. Keeping this idempotent also lets a transient
+ * startup failure recover on the normal renewal loop without another restart.
+ */
+function markHostedReady() {
+  if (hostedReady || !lease) return;
+  hostedReady = true;
+  prefetchWorldData();
+  reportPublicEndpoint();
+  stage(7, "world is ready; bots start once the platform lease is active");
+  log("stage 7/7: world is ready; hosted bots will initialise now and online players will be saved to the platform");
 }
 
 /**
@@ -1430,13 +1449,12 @@ async function startHosted() {
         }
       }
       const result = await handshake();
-      if (result) await fetchContentManifest();
-    }
-    if (lease) {
-      prefetchWorldData();
-      reportPublicEndpoint();
-      stage(7, "world is ready; bots start once the platform lease is active");
-      log("stage 7/7: world is ready; hosted bots will initialise now and online players will be saved to the platform");
+      if (result) {
+        await fetchContentManifest();
+        // A handshake creates the lease, while renewal is the heartbeat that
+        // makes the world joinable. Do not claim readiness in between them.
+        await renewLease();
+      }
     }
     if (!installation.credential || !lease) {
       // Retry until the host claims the code (or the world is outdated).
@@ -1445,11 +1463,9 @@ async function startHosted() {
         if (lease || outdated) return;
         void beginEnrollment().then((enrolled) => {
           if (enrolled?.credential) {
-            return handshake().then(() => fetchContentManifest()).then(() => {
-              prefetchWorldData();
-              reportPublicEndpoint();
-              if (lease) log("stage 7/7: world is ready; online players will be saved to the platform");
-            });
+            return handshake()
+              .then((result) => result ? fetchContentManifest() : null)
+              .then(() => lease ? renewLease() : false);
           }
           return undefined;
         });

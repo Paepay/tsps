@@ -202,9 +202,9 @@ export async function resolveIceServers(signalUrl: string, fallback: RTCIceServe
     return fallback;
 }
 
-// The live client is mounted at /play (package.json homepage). The dev server is
-// served from the root (PUBLIC_URL "/"), but host links still carry the /play mount.
-const WORLD_PATH_MOUNT = "/play";
+// The PaeScape client is mounted at /client (package.json homepage). The dev server is
+// served from the root (PUBLIC_URL "/"), but hosted-client links still carry that mount.
+const WORLD_PATH_MOUNT = "/client";
 
 /** Strip the app mount from a pathname, then take the next segment as the world id. */
 export function parseWorldIdFromPath(pathname: string, publicUrl: string): string | undefined {
@@ -217,7 +217,7 @@ export function parseWorldIdFromPath(pathname: string, publicUrl: string): strin
     return segment && /^[A-Za-z0-9._-]{1,64}$/.test(segment) ? segment : undefined;
 }
 
-/** World id from the URL path, e.g. /play/world-1 -> "world-1". */
+/** World id from the URL path, e.g. /client/world-1 -> "world-1". */
 function worldIdFromPath(): string | undefined {
     if (typeof window === "undefined") return undefined;
     return parseWorldIdFromPath(window.location.pathname ?? "", process.env.PUBLIC_URL ?? "");
