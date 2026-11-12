@@ -153,7 +153,12 @@ copyTree(
   (src) => path.basename(src) !== "world.local.json",
 );
 copyTree(path.join(serverDir, "data", "models"), path.join(stagingDir, "data", "models"));
-copyTree(path.join(serverDir, "caches"), path.join(stagingDir, "caches"));
+const { stageReleaseCache } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "stage-cache.mjs")).href);
+const cacheCheck = stageReleaseCache({
+  serverDir,
+  stagingDir,
+  expectedRevision: args.cacheRevision ?? process.env.PAESCAPE_EXPECTED_CACHE_REVISION,
+});
 // The cache pipeline reads target.txt from the working directory to decide which cache
 // revision to load before it touches anything else. Without it the packaged server exits
 // on startup before the game loop begins.
@@ -162,17 +167,7 @@ if (fs.existsSync(path.join(serverDir, "target.txt"))) {
 } else {
   throw new Error("target.txt is missing from the server directory; the packaged server cannot select a cache without it.");
 }
-// Fail the build when the packaged cache and target.txt disagree on the revision, or
-// the packaged caches/ does not actually contain the revision target.txt names. Shipping
-// a relabelled-but-241 cache is exactly the bug this guards against.
-{
-  const { verifyCacheConsistency } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "verify-cache.mjs")).href);
-  const check = verifyCacheConsistency({ serverDir, expectedRevision: args.cacheRevision ?? process.env.PAESCAPE_EXPECTED_CACHE_REVISION });
-  if (!check.ok) {
-    throw new Error("cache revision consistency check failed:\n  - " + check.problems.join("\n  - "));
-  }
-  console.log(`[bundle] cache revision ${check.revision} (${check.name}) verified against target.txt and caches/`);
-}
+console.log(`[bundle] cache revision ${cacheCheck.revision} (${cacheCheck.name}) verified and staged exclusively`);
 // Production dependencies only, minus dev tooling, source maps, and type declaration
 // packages. @types packages are compile-time only and, worse, the Node SEA type
 // definitions embed the very sentinel postject searches for, which would make the
