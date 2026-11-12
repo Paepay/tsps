@@ -445,7 +445,12 @@ function isRealItem(item) {
 /** The authoritative summary the website shows, read from a character's save. */
 function buildSummary(name) {
   const save = GameConstants.PLAYER_PERSISTENCE.load(name, MAIN_PROFILE);
-  const empty = () => ({ name, combatLevel: 3, totalLevel: 0, skills: { level: [], base: [], experience: [] }, equipment: [], inventory: [], fetchedAt: new Date().toISOString() });
+  // The account's first character (its login name) is the primary; its save holds the account
+  // credential, so the runtime refuses to delete it (see the delete route below). Report that
+  // authoritative fact here so the platform and website never offer a delete the world refuses.
+  const account = Accounts.accountOf(name);
+  const primary = account ? Accounts.isPrimary(account, name) : false;
+  const empty = () => ({ name, combatLevel: 3, totalLevel: 0, skills: { level: [], base: [], experience: [] }, equipment: [], inventory: [], fetchedAt: new Date().toISOString(), primary });
   if (!save) return empty();
   const skills = save.getSkills?.();
   const levels = (skills?.level ?? []).map((value) => Number(value) || 0);
@@ -456,6 +461,7 @@ function buildSummary(name) {
   const toSlot = (item, slot) => (isRealItem(item) ? { slot, itemId: item.getId(), amount: Number(item.getAmount()) || 1 } : null);
   return {
     name: String(save.getDisplayName?.() ?? name),
+    primary,
     combatLevel: SkillManager.calculateCombatLevel(base),
     totalLevel,
     skills: { level: levels, base, experience },
