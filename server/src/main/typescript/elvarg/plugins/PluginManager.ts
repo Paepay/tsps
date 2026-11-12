@@ -2447,8 +2447,17 @@ export class PluginManager {
     pluginPaths: string[]
   ): PluginLoadCandidate[] {
     const candidates: PluginLoadCandidate[] = [];
+    const startedAt = Date.now();
+    const progressBatch = 25;
+    console.info(`[plugins] evaluating ${pluginPaths.length} gameplay module files`);
 
-    for (const pluginPath of pluginPaths) {
+    for (let index = 0; index < pluginPaths.length; index++) {
+      const pluginPath = pluginPaths[index];
+      if (index % progressBatch === 0) {
+        console.info(
+          `[plugins] evaluating modules ${index + 1}-${Math.min(index + progressBatch, pluginPaths.length)} of ${pluginPaths.length}`
+        );
+      }
       try {
         const imported = require(pluginPath);
         const plugin = (imported?.default ?? imported) as PluginModule;
@@ -2486,6 +2495,11 @@ export class PluginManager {
         );
       }
     }
+
+    console.info(
+      `[plugins] evaluated ${pluginPaths.length} module files in ${((Date.now() - startedAt) / 1000).toFixed(1)} s; ` +
+        `registering ${candidates.length} candidates`
+    );
 
     return candidates;
   }
@@ -2539,6 +2553,9 @@ export class PluginManager {
   ): void {
     const pending = [...candidates];
     const loadedByName = new Set<string>();
+    const startedAt = Date.now();
+    let lastReported = 0;
+    console.info(`[plugins] registering ${candidates.length} gameplay plugins`);
 
     while (pending.length > 0) {
       let progress = false;
@@ -2562,6 +2579,10 @@ export class PluginManager {
         pending.splice(i, 1);
         i--;
         progress = true;
+        if (loadedByName.size - lastReported >= 25) {
+          lastReported = loadedByName.size;
+          console.info(`[plugins] registered ${loadedByName.size}/${candidates.length} gameplay plugins`);
+        }
       }
 
       if (deferred.length > 0) {
@@ -2574,6 +2595,10 @@ export class PluginManager {
     }
 
     if (pending.length === 0) {
+      console.info(
+        `[plugins] registered ${loadedByName.size}/${candidates.length} gameplay plugins in ` +
+          `${((Date.now() - startedAt) / 1000).toFixed(1)} s`
+      );
       return;
     }
 

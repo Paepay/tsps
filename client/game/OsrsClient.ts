@@ -80,6 +80,7 @@ import {
     isDebugIdEnabled,
     isMapEditorUrl,
 } from "../config/clientEnv";
+import { parsePaeScapeLaunch, requestPaeScapeLogin } from "../config/paescapeLaunch";
 import {
     type BankServerUpdate,
     getClientCycle,
@@ -6410,12 +6411,38 @@ export class OsrsClient {
     }
 
     /**
-     * Attempt auto-login if credentials were provided via URL params (?username=X&password=Y).
-     * Called after loading completes.
+     * Attempt a website-issued PaeScape login, or the legacy username/password
+     * URL login. Called only after the client/cache has finished loading so a
+     * newly minted 45-second ticket is not consumed by application startup.
      */
-    private tryAutoLogin(): void {
+    private async tryAutoLogin(): Promise<void> {
         try {
             const params = new URLSearchParams(window.location.search);
+            const paescape = parsePaeScapeLaunch(window.location.search);
+            if (paescape) {
+                this.loginState.loginIndex = LoginIndex.LOGIN_FORM;
+                this.loginState.setResponse("", "Requesting a secure PaeScape login ticket...", "", "");
+                const login = await requestPaeScapeLogin(paescape);
+                setServerUrl(login.websocketUrl);
+                this.loginState.serverAddress = login.serverAddress;
+                this.loginState.serverName = login.world.name;
+                this.loginState.serverSecure = login.websocketUrl.startsWith("wss:");
+                this.loginState.serverTransport = "websocket";
+                this.loginState.serverSignalUrl = undefined;
+                this.loginState.serverWorldId = undefined;
+                this.loginState.serverIceServers = [];
+                this.loginState.username = login.character.name;
+                this.loginState.password = login.ticket;
+                this.loginState.rememberUsername = false;
+                this.loginState.loginWithToken = false;
+                this.updateGameState(GameState.CONNECTING);
+                // PaeScape tickets are intentionally longer than typed account
+                // passwords. They were validated structurally above and are
+                // redeemed by the hosted-world login extension, so do not run
+                // the ordinary 20-character password form validation here.
+                this.sendLoginRequest();
+                return;
+            }
             const username = params.get("username");
             const password = params.get("password");
             if (!username || !password) return;
@@ -6448,7 +6475,10 @@ export class OsrsClient {
             this.loginState.loginWithToken = false;
             this.updateGameState(GameState.CONNECTING);
             this.sendLoginRequest();
-        } catch {}
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "PaeScape could not start this login.";
+            this.onLoginFailed(message);
+        }
     }
 
     /**
@@ -7171,7 +7201,7 @@ export class OsrsClient {
             this.updateGameState(GameState.LOGIN_SCREEN);
 
             // Auto-login if credentials provided via URL params
-            this.tryAutoLogin();
+            void this.tryAutoLogin();
         } catch (err) {
             console.error("[OsrsClient] Phased loading failed:", err);
             this.loginState.loadingPercent = 100;
