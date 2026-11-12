@@ -91,6 +91,7 @@ Server.installProductionPathResolver();
 const { GameConstants } = require("../dist/game/GameConstants");
 const WorldDefinition = require("../dist/game/definition/WorldDefinition");
 const { PluginManager } = require("../dist/plugins/PluginManager");
+const { Player } = require("../dist/game/entity/impl/player/Player");
 const PaeScape = require("../plugins/paescape/PaeScape.plugin");
 
 before(async () => {
@@ -128,4 +129,13 @@ test("a login clones the configured spawn", () => {
   // GameConstants.DEFAULT_LOCATION is the mutable WORLD_SPAWN the login path clones.
   const cloned = GameConstants.DEFAULT_LOCATION.clone();
   assert.deepEqual({ x: cloned.getX(), y: cloned.getY(), z: cloned.getZ() }, { x: 3222, y: 3219, z: 0 });
+});
+
+test("a player entering on the login path spawns at the configured coordinates", () => {
+  // NetworkBuilder.login builds a Player with GameConstants.DEFAULT_LOCATION.clone();
+  // constructing one the same way shows the configured spawn reaches the world, not
+  // just the constant.
+  const player = new Player(null, GameConstants.DEFAULT_LOCATION.clone());
+  const location = player.getLocation();
+  assert.deepEqual({ x: location.getX(), y: location.getY(), z: location.getZ() }, { x: 3222, y: 3219, z: 0 });
 });
