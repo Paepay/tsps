@@ -74,7 +74,7 @@
     "compare:cache": "tsx scripts/compare-cache.ts",
     "release:bundle": "node scripts/release/bundle.mjs",
     "release:publish": "node scripts/release/publish.mjs",
-    "release:test": "node --test scripts/release/release.test.mjs scripts/release/platform-url.test.mjs scripts/release/verify-cache.test.mjs scripts/release/startup-log.test.mjs",
+    "release:test": "node --test scripts/release/release.test.mjs scripts/release/platform-url.test.mjs scripts/release/verify-cache.test.mjs scripts/release/stage-cache.test.mjs scripts/release/startup-log.test.mjs",
     "release:check-cache": "node scripts/release/verify-cache.mjs",
     "release:e2e": "node scripts/release/launcher-e2e.mjs"
   },
