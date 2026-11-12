@@ -77,4 +77,24 @@ function isOpenAt(type, player, location) {
   return isOpen(type, player, location.getX(), location.getY());
 }
 
-module.exports = { areaAt, isOpen, isOpenAt, squareId, squareOf, indexFor };
+/** Level-Up uses the same region map without impersonating a seasonal league. */
+function levelUpAreas(player) {
+  const query = { player, active: false, unlocked: [] };
+  Common.api.emitCustomEvent("level-up:area-profile", query);
+  return query.active === true ? query.unlocked.map(Number) : null;
+}
+
+function isOpenForPlayer(type, player, x, y) {
+  const unlocked = levelUpAreas(player);
+  if (unlocked) {
+    const owner = areaAt(null, x, y);
+    return owner === null || unlocked.includes(owner);
+  }
+  return type !== null && isOpen(type, player, x, y);
+}
+
+function isOpenAtForPlayer(type, player, location) {
+  return isOpenForPlayer(type, player, location.getX(), location.getY());
+}
+
+module.exports = { areaAt, isOpen, isOpenAt, levelUpAreas, isOpenForPlayer, isOpenAtForPlayer, squareId, squareOf, indexFor };

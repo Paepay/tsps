@@ -26,6 +26,9 @@ function init(pluginApi) {
 function leagueOf(player) {
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
+  // Level-Up worlds reuse relic effects and catalogs without becoming a full
+  // seasonal league profile (tasks, league saves and passives stay disabled).
+  if (query.league === null) api.emitCustomEvent("level-up:relic-profile", query);
   const type = query.league;
   return type !== null && data.leagues[type] && leagues[type] ? Number(type) : null;
 }

@@ -1207,6 +1207,10 @@ function applyWorldConfig(config, revision) {
     } catch { /* the heartbeat still reports the revision if the engine refuses it */ }
   }
   if (!overlay) {
+    // Template plugins are loaded before the asynchronous hosted handshake. This
+    // authenticated event activates the platform-selected runtime ruleset even
+    // when the config has no ordinary world-definition fields to overlay.
+    api.emitCustomEvent("paescape:world-config", config);
     log(`loaded platform world configuration revision ${worldConfigRevision} (nothing to apply)`);
     return;
   }
@@ -1225,6 +1229,7 @@ function applyWorldConfig(config, revision) {
     return;
   }
   const applied = Object.keys(overlay).join(", ");
+  api.emitCustomEvent("paescape:world-config", config);
   log(`applied platform world configuration revision ${worldConfigRevision} (${applied})`);
 }
 

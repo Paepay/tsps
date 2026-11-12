@@ -25,8 +25,9 @@ const correcting = new WeakSet();
 function home(type, player) {
   const { WorldDefinition, Location } = Common.core;
   const spawn = WorldDefinition.WORLD_SPAWN;
-  if (Regions.isOpen(type, player, spawn.getX(), spawn.getY())) return new Location(spawn.getX(), spawn.getY(), spawn.getZ());
-  const hub = Common.area(Common.league(type).defaults[0]).teleport;
+  if (Regions.isOpenForPlayer(type, player, spawn.getX(), spawn.getY())) return new Location(spawn.getX(), spawn.getY(), spawn.getZ());
+  const levelUp = Regions.levelUpAreas(player);
+  const hub = Common.area(levelUp ? 1 : Common.league(type).defaults[0]).teleport;
   return new Location(hub.x, hub.y, hub.z);
 }
 
@@ -44,8 +45,8 @@ function sendBack(player, destination) {
 function mapSquareChanged({ player, previous, location }) {
   if (correcting.has(player)) return;
   const type = Common.leagueOf(player);
-  if (type === null) return;
-  if (Regions.isOpenAt(type, player, location)) {
+  if (type === null && !Regions.levelUpAreas(player)) return;
+  if (Regions.isOpenAtForPlayer(type, player, location)) {
     respawning.delete(player);
     return;
   }
@@ -54,7 +55,7 @@ function mapSquareChanged({ player, previous, location }) {
     sendBack(player, home(type, player));
     return;
   }
-  if (previous && Regions.isOpenAt(type, player, previous)) {
+  if (previous && Regions.isOpenAtForPlayer(type, player, previous)) {
     sendBack(player, previous.clone());
     return;
   }
@@ -65,7 +66,7 @@ function canTeleport(event) {
   const { player, destination } = event;
   if (!destination) return;
   const type = Common.leagueOf(player);
-  if (type === null || Regions.isOpenAt(type, player, destination)) return;
+  if ((type === null && !Regions.levelUpAreas(player)) || Regions.isOpenAtForPlayer(type, player, destination)) return;
   player.sendMessage(Common.message("locked"));
   event.allow = false;
 }
@@ -75,7 +76,7 @@ function canTeleport(event) {
  * them (the death's own handlers and `player:respawn` run this tick; the flag is gone by the next).
  */
 function died({ player }) {
-  if (Common.leagueOf(player) === null) return;
+  if (Common.leagueOf(player) === null && !Regions.levelUpAreas(player)) return;
   respawning.add(player);
   const { Task, TaskManager } = Common.core;
   TaskManager.submit(new (class extends Task {
@@ -94,10 +95,10 @@ function died({ player }) {
 function respawn(event) {
   const { player } = event;
   const type = Common.leagueOf(player);
-  if (type === null) return;
+  if (type === null && !Regions.levelUpAreas(player)) return;
   if (event.handled) {
-    if (!Regions.isOpenAt(type, player, player.getLocation())) player.moveTo(home(type, player));
-  } else if (!Regions.isOpenAt(type, player, Common.core.GameConstants.DEFAULT_LOCATION)) {
+    if (!Regions.isOpenAtForPlayer(type, player, player.getLocation())) player.moveTo(home(type, player));
+  } else if (!Regions.isOpenAtForPlayer(type, player, Common.core.GameConstants.DEFAULT_LOCATION)) {
     player.moveTo(home(type, player));
     event.handled = true;
   }
@@ -107,7 +108,7 @@ function respawn(event) {
 function officeExit(query) {
   const { player, destination } = query;
   const type = Common.leagueOf(player);
-  if (type === null || Regions.isOpenAt(type, player, destination)) return;
+  if ((type === null && !Regions.levelUpAreas(player)) || Regions.isOpenAtForPlayer(type, player, destination)) return;
   query.destination = home(type, player);
 }
 
