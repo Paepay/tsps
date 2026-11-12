@@ -115,6 +115,9 @@ const { redact, timestamp: stamp, line: startupLine, stageLine, boundedFetch } =
 // Lease-renewal cadence: a renewal is the platform's liveness signal, so the
 // cadence lives beside the platform contract and is unit-tested on its own.
 const { leaseRenewalDelayMs } = require("./LeaseLiveness.js");
+// The platform stores a world config in the website's shape; translate it to the
+// runtime's world.json shape before applying it (see PlatformWorldConfig.js).
+const { toWorldOverlay } = require("./PlatformWorldConfig.js");
 
 function log(message) {
   console.log(startupLine("log", message));
@@ -330,6 +333,10 @@ async function authenticate() {
     token: result.json.token,
     expiresAt: Date.parse(result.json.expiresAt) || Date.now() + 900_000,
   };
+  // The world session response carries the authoritative world configuration
+  // (platform/src/routes/worldApi.ts); apply it exactly as the hosted handshake
+  // and lease renewal do, so a configured-mode world is configured too.
+  applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
   log(`authenticated with the platform as world ${result.json.world?.id ?? platform.worldId}`);
   scheduleSessionRefresh();
 }
@@ -364,6 +371,12 @@ async function heartbeat() {
       },
     });
     if (result.status === 401) session = null; // refresh on the next beat
+    // A heartbeat doubles as the configuration-change signal in configured mode
+    // (the hosted path uses the lease renewal for this): apply the authoritative
+    // config whenever the platform's revision moves past the one we loaded.
+    if (result.ok && result.json && Number(result.json.configRevision ?? 0) !== worldConfigRevision) {
+      applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0));
+    }
   } catch (error) {
     warn(`heartbeat failed: ${error.message}`);
   }
@@ -1177,14 +1190,36 @@ function applyWorldConfig(config, revision) {
   if (!config || typeof config !== "object") return;
   worldConfig = config;
   worldConfigRevision = Number(revision) || 0;
-  const settings = (config.settings && typeof config.settings === "object" ? config.settings : {}) || {};
-  if (typeof settings.experienceMultiplier === "number") {
+  const { overlay, notes, experienceRate } = toWorldOverlay(config);
+  for (const note of notes) warn(note);
+  // An XP rate is the only setting the engine keeps in a static, so it is set
+  // directly rather than through the world definition the overlay replaces.
+  if (experienceRate !== undefined) {
     try {
-      api.core.GameConstants.EXPERIENCE_MULTIPLIER = settings.experienceMultiplier;
-      log(`applying platform XP multiplier ${settings.experienceMultiplier}`);
-    } catch { /* GameConstants is frozen on some builds; the heartbeat still reports the revision */ }
+      api.setExperienceRate(experienceRate);
+      log(`applying platform XP rate ${experienceRate}`);
+    } catch { /* the heartbeat still reports the revision if the engine refuses it */ }
   }
-  log(`loaded platform world configuration revision ${worldConfigRevision}`);
+  if (!overlay) {
+    log(`loaded platform world configuration revision ${worldConfigRevision} (nothing to apply)`);
+    return;
+  }
+  // Layer the platform config over the world's own files without touching them.
+  // Fail-closed: if the runtime rejects the overlay, the running world is left
+  // exactly as it was and the owner is told why. A server built before this entry
+  // point existed simply keeps its packaged configuration, as it does today.
+  let result = null;
+  try {
+    result = api.core.WorldDefinition.applyWorldConfigOverlay(overlay);
+  } catch (error) {
+    result = { applied: false, error: error && error.message ? error.message : String(error) };
+  }
+  if (!result || result.applied !== true) {
+    warn(`platform world configuration revision ${worldConfigRevision} was refused by the server: ${result && result.error ? result.error : "unknown error"}; keeping the packaged configuration`);
+    return;
+  }
+  const applied = Object.keys(overlay).join(", ");
+  log(`applied platform world configuration revision ${worldConfigRevision} (${applied})`);
 }
 
 /** Fetch the custom-content manifest the platform authorises for this world. */

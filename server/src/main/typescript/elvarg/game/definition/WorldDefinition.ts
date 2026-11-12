@@ -218,7 +218,13 @@ export function parseWorldDefinition(value: unknown): WorldDefinitionData {
     };
 }
 
-const definition = parseWorldDefinition(readWorldConfig());
+/**
+ * The world's own configuration (world.json with world.local.json layered over it), read once
+ * at startup. Runtime overlays layer over this, never over a previous overlay, so applying a
+ * configuration is idempotent and dropping a key restores the file's value.
+ */
+const fileWorldConfig: JsonObject = readWorldConfig();
+let definition = parseWorldDefinition(fileWorldConfig);
 
 export const WORLD_SPAWN = new Location(
     definition.spawn.x,
@@ -320,6 +326,34 @@ export function isMembersArea(x: number, y: number): boolean {
 
 export function hasGlobalWorldTag(tag: WorldZoneTag): boolean {
     return definition.zones.some((zone) => zone.minX === undefined && zone.tags.includes(tag));
+}
+
+/**
+ * Layer a runtime configuration over the world's own file configuration and re-sync the
+ * runtime, without touching the disk. A hosted world uses this to apply the authoritative
+ * configuration the platform returns (spawn, XP rate, zones, members/F2P, gameframe) to a
+ * server that has already started and read its files.
+ *
+ * `overlay` carries the same keys world.local.json would; the layering rule is
+ * mergeWorldConfig's, so only the keys it names replace the file's, and pluginConfig/plugins
+ * merge key by key. That makes re-applying the same overlay a no-op and applying a later
+ * overlay without a key restore the file's value.
+ *
+ * Fail-closed: an overlay that does not parse, or that fails world validation (a bad spawn,
+ * a free-to-play spawn outside every f2p zone, reversed zone bounds), is rejected and the
+ * running definition is left exactly as it was. Returns whether the overlay was applied.
+ */
+export function applyWorldConfigOverlay(overlay: unknown): { applied: boolean; error?: string } {
+    if (!isPlainObject(overlay)) return { applied: false, error: "overlay must be an object" };
+    let next: WorldDefinitionData;
+    try {
+        next = parseWorldDefinition(mergeWorldConfig(fileWorldConfig, overlay));
+    } catch (err) {
+        return { applied: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    definition = next;
+    syncRuntime();
+    return { applied: true };
 }
 
 syncRuntime();
