@@ -179,7 +179,10 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     // A save written by this session is not a load: keep `loaded` false so the
     // next load fetches the authoritative document instead of trusting a null
     // placeholder created when a character had no prior state.
-    if (cached && cached.loaded && !cached.stale) return cached.save;
+    // A null character id is only a snapshot of registration at the time of the
+    // lookup. Character creation may commit on the platform immediately after
+    // that lookup, so it must not turn into a session-long negative cache.
+    if (cached && cached.loaded && !cached.stale && cached.characterId !== null) return cached.save;
 
     const characterId = this.resolveCharacterId(username);
     if (!characterId) {
@@ -301,7 +304,10 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     }
     const cachedIdentity = this.characterIds.get(storageKey);
     let characterId = entry ? entry.characterId : cachedIdentity ? cachedIdentity.id : undefined;
-    if (characterId === undefined) characterId = this.resolveCharacterId(username);
+    // A save can be queued immediately after central character registration,
+    // before another load has refreshed an earlier negative lookup. Always ask
+    // the platform again instead of trusting that stale null identity.
+    if (!characterId) characterId = this.resolveCharacterId(username, { force: true });
     if (!characterId) {
       throw new PersistenceFailure("Refusing to save " + username + ": the character is not registered on this world.");
     }
