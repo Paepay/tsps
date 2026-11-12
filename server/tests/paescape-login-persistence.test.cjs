@@ -13,6 +13,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { test, before, after } = require("node:test");
+const http = require("node:http");
 
 const SERVER_DIR = path.resolve(__dirname, "..");
 function resolvePlatformDir() {
@@ -45,6 +46,26 @@ process.env.PAESCAPE_PUBLIC_ENDPOINT = "https://localhost.invalid:43594";
 process.env.PAESCAPE_INSTALLATION_FILE = path.join(WORK_DIR, "paescape-installation.json");
 // The release generation the plugin reports must match the published release.
 process.env.PAESCAPE_RELEASE_GENERATION = "1";
+
+// Task 30: a login ticket is refused until the world endpoint is verified. Start
+// a loopback health responder and register it as the endpoint below.
+let endpointServer = null;
+let endpointUrl = "";
+async function startEndpointServer() {
+  endpointServer = http.createServer((req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    const path = req.url || "";
+    if (path.startsWith("/api/platform/health") || path.startsWith("/api/health")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, service: "paescape-world" }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: false }));
+  });
+  await new Promise((resolve) => endpointServer.listen(0, "127.0.0.1", resolve));
+  endpointUrl = `http://127.0.0.1:${endpointServer.address().port}`;
+}
 
 const { Server } = require("../dist/Server");
 Server.installProductionPathResolver();
@@ -147,8 +168,10 @@ before(async () => {
   worldId = created.json.world.id;
   await platformFetch(`/api/worlds/${worldId}/go-live`, { method: "POST", body: {} });
   // The login-ticket route requires a registered connection endpoint.
-  const endpoint = await platformFetch(`/api/worlds/${worldId}/endpoint`, { method: "POST", body: { endpointUrl: "https://localhost.invalid:43594" } });
+  await startEndpointServer();
+  const endpoint = await platformFetch(`/api/worlds/${worldId}/endpoint`, { method: "POST", body: { endpointUrl } });
   assert.equal(endpoint.status, 200, JSON.stringify(endpoint.json));
+  assert.equal(endpoint.json.verified, true, "the loopback health endpoint verifies in development");
 
   const release = await platformFetch("/api/releases", { method: "POST", body: { version: "1.0.0", channel: "stable" } });
   assert.equal(release.status, 201, JSON.stringify(release.json));
@@ -195,6 +218,7 @@ before(async () => {
 
 after(async () => {
   if (platform) { platform.kill(); await new Promise((r) => setTimeout(r, 300)); }
+  if (endpointServer) await new Promise((resolve) => endpointServer.close(() => resolve()));
 });
 
 /** The plugin's ticket login requires a 40-64 char alphanumeric token in `password`. */
