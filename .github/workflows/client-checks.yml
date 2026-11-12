@@ -9,10 +9,13 @@ permissions:
 
 jobs:
     check:
-        if: github.repository == 'RSPSApp/tsps'
+        if: github.repository == 'RSPSApp/tsps' || github.repository == 'Paepay/tsps'
         runs-on: ubuntu-latest
+        timeout-minutes: 30
         steps:
             - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
             - uses: actions/setup-node@v4
               with:
                   node-version: 24
@@ -20,6 +23,10 @@ jobs:
             - run: yarn install --immutable
               working-directory: client
             - run: yarn typecheck
+              working-directory: client
+            - run: yarn test:paescape-build
+              working-directory: client
+            - run: yarn build:paescape
               working-directory: client
             - run: yarn test edit-mode-custom-content engine-event-hooks widget-action-dispatch widget-primary-op widget-script-inventory widget-menu-use menu-click menu-swapper widget-drag map-square-cache runelite item-stats-plugin item-prices-plugin first-person-reticle-input combat-level game-container-sidebar-lifecycle bank-value firemaking-mesh-handoff
               working-directory: client
