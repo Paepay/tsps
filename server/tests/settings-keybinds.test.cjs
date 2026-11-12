@@ -54,7 +54,7 @@ function registered({persistAttribute = () => {}} = {}) {
     onInterfaceActionButton: (id, handler) => ids(id).forEach((one) => buttons.set(one, handler)),
     onCustomEvent: (name, handler) => events.set(name, handler),
     onPlayerLogin: (handler) => logins.push(handler),
-    core: { CacheDefinitions, orbsGroupFor: require('../dist/net/protocol/ClientProtocol').orbsGroupFor },
+    core: { CacheDefinitions, orbsGroupFor: require('../dist/net/protocol/ClientProtocol').orbsGroupFor, dataOrbsHidden: require('../dist/net/protocol/ClientProtocol').dataOrbsHidden },
   };
   Settings.register(new Proxy(api, { get: (target, prop) => (prop in target ? target[prop] : () => {}) }));
   return { buttons, events, logins };
@@ -70,6 +70,7 @@ function recordingPlayer() {
     getVarbit: (id) => vars.get(`varbit ${id}`) ?? 0,
     getVarp: (id) => vars.get(`varp ${id}`) ?? 0,
     sendClientScript: (id) => { sent.push(`script ${id}`); return sender; },
+    sendInterfaceFlagsRange: () => sender,
   };
   return { sent, getPacketSender: () => sender, setAttribute: (k, v) => attributes.set(k, v), getAttribute: (k) => attributes.get(k) };
 }

@@ -14,12 +14,13 @@ const { Skill } = require("../../src/main/typescript/elvarg/game/model/Skill");
 const { Equipment } = require("../../src/main/typescript/elvarg/game/model/container/impl/Equipment");
 const { HitDamage } = require("../../src/main/typescript/elvarg/game/content/combat/hit/HitDamage");
 const { HitMask } = require("../../src/main/typescript/elvarg/game/content/combat/hit/HitMask");
-const { ForceMovement } = require("../../src/main/typescript/elvarg/game/model/ForceMovement");
-const { ForceMovementTask } = require("../../src/main/typescript/elvarg/game/task/impl/ForceMovementTask");
+/** A door's crossing is a walk through its doorway (236/03929): clipping is ignored for that step. */
+const IGNORE_CLIPPING_FLAG = "movement:ignore-clipping";
 const { MagicCombatMethod } = require("../../src/main/typescript/elvarg/game/content/combat/method/impl/MagicCombatMethod");
 const { CombatSpells } = require("../../src/main/typescript/elvarg/game/content/combat/magic/CombatSpells");
 const { MOBILE_CLIENT_ATTRIBUTE } = require("../../src/main/typescript/elvarg/net/protocol/ClientProtocol");
 const { decodeRegionObjects, initRegionBuildingAnalysisCoreAccess } = require("../world/procedural/RegionBuildingAnalysisUtil.ProceduralRegionStream");
+const CameraShake = require("../interface/CameraShake.plugin");
 
 const REGION_ID = 14231;
 const ATTRIBUTE = "barrows";
@@ -38,6 +39,8 @@ const CLOSE_INTERFACE_ATTRIBUTE = "interface:close-on-interface-close";
 const POTENTIAL_VARBIT = 463;
 const KILL_COUNT_VARBIT = 464;
 const CHEST_OPEN_VARBIT = 1394;
+/** The tunnels shake (slot, random amplitude) from the looting until the player leaves them. */
+const LOOTED_SHAKE = [0, 5, 0, 0];
 const LADDER_VISIBLE_VARBIT = 4743;
 const PRAYER_DRAIN_TICKS = 30;
 const MINIMAP_STATE_VARBIT = 6719;
@@ -439,11 +442,12 @@ function crossDoor(player, door) {
     Math.abs(entry.x - door.x) + Math.abs(entry.y - door.y) <= 1);
   for (const leaf of leaves) player.getPacketSender().sendObjectRemoval(asObject(leaf));
   state.crossing = { leaves, to, ticks: 3 };
-  const dx = to.getX() - from.getX();
-  const dy = to.getY() - from.getY();
-  const direction = dy > 0 ? 0 : dx > 0 ? 1 : dy < 0 ? 2 : 3;
-  TaskManager.submit(new ForceMovementTask(player, 2,
-    new ForceMovement(from.clone(), new Location(dx, dy), 0, 30, direction, -1)));
+  // Live walks through the doorway as the door opens (rsprox_transcripts/236/03929.txt: a
+  // walk/run step across barrows_door_o_l at 3562,9678, no exact move), not a slide.
+  player.setFlag(IGNORE_CLIPPING_FLAG, true);
+  const movement = player.getMovementQueue();
+  movement.reset();
+  movement.addSteps(to.clone());
 }
 
 function useDoor(player, door) {
@@ -621,10 +625,18 @@ function searchChest(player, clickType) {
   syncTunnels(player, run);
   pluginApi.emitCustomEvent("barrows:chest-looted", { player });
   showRewards(player, rewards);
+  CameraShake.send(sender, "barrows", ...LOOTED_SHAKE);
   // rsprox_transcripts/226/01694.txt:170767-170768: the diary's rune line (spam), then the count.
   if (diary.complete === true) spam(player, "You receive more runes for completing the hard tier of the Morytania achievement diary.");
   sender.sendMessage(`Your Barrows chest count is: <col=ff0000>${run.chests}</col>.`);
   combatAchievementsAtChest(player, run);
+}
+
+/** A looted run's tunnels shake again on each arrival in them; leaving them stills the camera. */
+function syncLootedShake(player, from, to) {
+  const sender = player.getPacketSender();
+  if (to === "tunnels") CameraShake.send(sender, "barrows", ...LOOTED_SHAKE);
+  else if (from === "tunnels") sender.sendCameraReset?.();
 }
 
 // ------------------------------------------------------------------ Combat Achievements
@@ -768,6 +780,7 @@ function processPlayer({ player }) {
     // 8916, 8966 and 9046, drained at 8831, 8898, 8946, 8996 and 9076).
     // One more than the interval: this same tick's drainPrayer call below counts the first one down.
     if (phase === "crypt" && run) run.prayerTicks = PRAYER_DRAIN_TICKS + 1;
+    if (run?.looted) syncLootedShake(player, state.phase, phase);
     state.phase = phase;
     syncMinimap(player, phase);
     if (phase === "outside") player.getPacketSender().closeInterface(OVERLAY_ID);
@@ -780,6 +793,7 @@ function processPlayer({ player }) {
   if (state.crossing && --state.crossing.ticks <= 0) {
     const crossing = state.crossing;
     state.crossing = null;
+    player.removeFlag(IGNORE_CLIPPING_FLAG);
     if (phase === "tunnels") {
       for (const leaf of crossing.leaves) player.getPacketSender().sendObject(asObject(leaf));
       if (player.getLocation().equals(crossing.to)) spawnEncounter(player, roomAt(crossing.to));
@@ -800,6 +814,7 @@ function processPlayer({ player }) {
 }
 
 function cleanupPlayer({ player }) {
+  if (sessions.get(player)?.crossing) player.removeFlag?.(IGNORE_CLIPPING_FLAG);
   if (sessions.has(player)) {
     cleanupNpcs(player);
     sessions.delete(player);
@@ -857,5 +872,5 @@ module.exports = {
     api.onPlayerLogout(cleanupPlayer);
     api.registerNpcCombatMethodProvider(Npcs.AHRIM_THE_BLIGHTED, AhrimCombat);
   },
-  _test: { searchChest, searchCrypt, chestCount, phaseOf, syncMinimap, processPlayer, dig },
+  _test: { searchChest, searchCrypt, chestCount, phaseOf, syncMinimap, processPlayer, dig, useDoor, doorSides, getTunnelMap, getRun, IGNORE_CLIPPING_FLAG },
 };

@@ -8,6 +8,7 @@
  * Bank-side loadouts and potion storage are separate content.
  */
 const Potions = require("./Potions.plugin");
+const { examineItem } = require("../../src/main/typescript/elvarg/game/content/ExaminePrice");
 
 const CONTENTS_ATTRIBUTE = "chugging-barrel:potions";
 /** Wiki: a maximum of 100 doses per potion, and up to five different potions. */
@@ -56,6 +57,7 @@ const MESSAGE = {
   DISMANTLE_WARNING: "Are you sure you want to disassemble the barrel?<br>The potions stored will be lost.",
 };
 
+const AUTO_SMASH_VIALS_VARBIT = 5668; // auto_smash_vials
 let api = null;
 let core = null;
 
@@ -193,7 +195,8 @@ function drink({ player }) {
       startDrinking(player);
     }
     dose.potion.effect(player);
-    player.sendMessage(MESSAGE.DRINK(store.name));
+    // A spam (filterable) line, as live sends it (rsprox 238/04242.txt:61023, :61026, :61030).
+    player.getPacketSender().sendTypedMessage(api.core.ChatType.SPAM, MESSAGE.DRINK(store.name));
     api.emitCustomEvent("potions:drunk", {
       player,
       itemId: store.itemId,
@@ -230,8 +233,10 @@ function fill(player, item, slot) {
     return;
   }
   const current = stored[key]?.doses ?? 0;
+  // A sixth kind: the full line with the potion's own name, as captured (238/04236.txt:44376-44391,
+  // "Your chugging barrel doesn't have space to store any more Extreme energy potion(4).").
   if (!stored[key] && Object.keys(stored).length >= POTION_TYPES) {
-    player.sendMessage(MESSAGE.CANNOT_STORE);
+    player.sendMessage(MESSAGE.FULL(core.CacheDefinitions.getItem(item.getId()).name));
     return;
   }
   if (current + dose.doses > DOSES_PER_POTION) {
@@ -246,9 +251,20 @@ function fill(player, item, slot) {
     slot: stored[key]?.slot ?? freeSlot(stored),
   };
   save(player, stored);
-  const replacement = dose.emptyItemId;
+  const replacement = leftVessel(player, dose.emptyItemId);
   inventory.setItem(slot, new core.Item(replacement, replacement === -1 ? 0 : 1, item.getMeta?.())).refreshItems();
   player.sendMessage(MESSAGE.FILLED(dose.doses, oneDoseName(item)));
+}
+
+/**
+ * The vessel a stored potion's last dose leaves: none for a vial while the barbarian vial smashing
+ * setting is on (auto_smash_vials, varbit 5668), as drinking does. rsprox 238/04236.txt
+ * (37476-37477, 44334, 54579) and 238/04239.txt:5326: with it on, each store empties the slot.
+ */
+function leftVessel(player, emptyItemId) {
+  const smash = emptyItemId === core.ItemIdentifiers.VIAL
+    && player.getPacketSender().getVarbit?.(AUTO_SMASH_VIALS_VARBIT) === 1;
+  return smash ? -1 : emptyItemId;
 }
 
 function useOnBarrel(event) {
@@ -400,8 +416,9 @@ function transfer(player, selected, quantity, mode) {
       const count = mode === "store" ? source.doses : Math.min(source.doses, left, room - moved);
       if (count > room - moved) continue;
       const remainder = source.doses - count;
-      items[slot] = new core.Item(remainder ? source.entry.chain[source.entry.chain.length - remainder] : source.emptyItemId,
-        remainder || source.emptyItemId > 0 ? 1 : 0, item.getMeta());
+      const vessel = leftVessel(player, source.emptyItemId);
+      items[slot] = new core.Item(remainder ? source.entry.chain[source.entry.chain.length - remainder] : vessel,
+        remainder || vessel > 0 ? 1 : 0, item.getMeta());
       store ??= { itemId: item.getId(), name: dose.potion.name.toLowerCase(), doses: 0, meta: item.getMeta(), slot: freeSlot(stored) };
       stored[key] = store;
       store.doses += count;
@@ -431,7 +448,9 @@ function click(event) {
   const selected = select(player, buttonId, slot, itemId);
   if (!selected) return;
   if (action === 10) {
-    player.sendMessage(core.ItemDefinition.forId(itemId).getExamine());
+    // A contents row shows its potion as the 1-dose form, stacked by the doses stored.
+    if (selected.store) examineItem(player, Number(selected.key), selected.store.doses);
+    else examineItem(player, itemId, 1);
     return;
   }
   if (action < 1 || action > 8) return;

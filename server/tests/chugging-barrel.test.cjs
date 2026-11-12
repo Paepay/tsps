@@ -12,6 +12,8 @@ const ATTRIBUTE = "chugging-barrel:potions";
 const BARREL_NAME = "Chugging barrel";
 const DISASSEMBLED_NAME = "Chugging barrel (disassembled)";
 let core;
+const AUTO_SMASH_VIALS = 5668;
+let smashVials = 0;
 let actions;
 let onItemOnItem;
 let rules;
@@ -80,6 +82,10 @@ function actor(t) {
     sendInterfaceFlagsRange(...args) { packets.push(["flags", ...args]); return sender; },
     sendInterfaceScript(...args) { packets.push(["script", ...args]); return sender; },
     sendEnterAmountPrompt(...args) { packets.push(["prompt", ...args]); return sender; },
+    // Examine price info: both settings on; barbarian vial smashing (5668) as the test sets it.
+    getVarbit: (id) => (id === AUTO_SMASH_VIALS ? smashVials : 1),
+    // Spam lines land in `messages` marked, so a test sees the type live sends.
+    sendTypedMessage(type, message) { messages.push(type === core.ChatType.SPAM ? `spam: ${message}` : message); return sender; },
   };
   t.mock.method(player, "sendMessage", (message) => messages.push(message));
   t.mock.method(player, "performAnimation", () => {});
@@ -125,6 +131,24 @@ function itemAction(f, itemName, option, slot) {
 function seed(player, entries) {
   player.setAttribute(ATTRIBUTE, entries);
 }
+
+test("with vial smashing on, storing a potion's last dose leaves no vial (rsprox 238/04236)", (t) => {
+  smashVials = 1;
+  t.after(() => { smashVials = 0; });
+  const f = actor(t);
+  const I = core.ItemIdentifiers;
+  put(f, I.PRAYER_POTION_3_, 0);
+  put(f, I.CHUGGING_BARREL, 1);
+  assert.equal(fill(f, 0, 1).handled, true);
+  assert.equal(f.inventory.getItems()[0]?.getId?.() ?? -1, -1, "the vial is smashed");
+  assert.equal(balance(f, "Prayer potion").doses, 3);
+  // The open barrel's store (op 1 on an inventory potion, as captured: prepot_device:inventory_contents).
+  openBarrel(f);
+  put(f, I.PRAYER_POTION_2_, 4);
+  ui(f, INVENTORY_WIDGET, 4, I.PRAYER_POTION_2_, 1);
+  assert.equal(f.inventory.getItems()[4]?.getId?.() ?? -1, -1, "stored from the barrel's screen, the vial is smashed too");
+  assert.equal(balance(f, "Prayer potion").doses, 5);
+});
 
 test("filling sums doses, persists contents and returns a marked empty vessel", (t) => {
   const f = actor(t);
@@ -226,7 +250,8 @@ test("fill enforces the 100-dose cap and five potion types", (t) => {
   fill(full, 0, 1);
   assert.equal(full.inventory.getItems()[0].getId(), I.MAGIC_POTION_4_);
   assert.equal(Object.keys(full.player.getAttribute(ATTRIBUTE)).length, 5);
-  assert.ok(full.messages.includes("You can't store that in the chugging barrel."));
+  // A sixth kind gets the full line with the potion's own name (rsprox 238/04236.txt:44376-44391).
+  assert.ok(full.messages.includes("Your chugging barrel doesn't have space to store any more Magic potion(4)."), full.messages.join(" | "));
 });
 
 test("Drink applies one dose per stored type, emits potion events and starts shared timers", (t) => {
@@ -282,10 +307,11 @@ test("Drink skips only the refused potion and plays the barrel sound once (rspro
 
   itemAction(f, BARREL_NAME, "Drink", 0);
   assert.deepEqual(effects, ["Prayer potion", "Energy potion"], "the refused divine potion is skipped, the rest drink");
+  // rsprox 238/04242.txt:61023-61030: the drink lines are spam, the divine refusal a game message.
   assert.deepEqual(f.messages, [
-    "You drink some of your prayer potion.",
+    "spam: You drink some of your prayer potion.",
     "You need more than 10 hitpoints to survive the power of a divine potion.",
-    "You drink some of your energy potion.",
+    "spam: You drink some of your energy potion.",
   ]);
   assert.equal(balance(f, "Prayer potion").doses, 2);
   assert.equal(balance(f, divine.potion.name).doses, 2, "a refused potion keeps its dose");
@@ -465,6 +491,25 @@ test("Open sends native 886/7338/911 and preserves old excess balances", (t) => 
   put(f, I.PRAYER_POTION_4_, 5);
   ui(f, INVENTORY_WIDGET, 5, I.PRAYER_POTION_4_, 5);
   assert.equal(storedDoses(f), 129, "legacy excess is withdrawable, never truncated or increased");
+});
+
+test("Examine (op 10): a contents row is priced as the stored doses of its 1-dose form; an inventory potion as one", (t) => {
+  const f = actor(t), I = core.ItemIdentifiers;
+  const examine = (id) => core.ItemDefinition.forId(id).getExamine();
+  seed(f.player, { "Prayer potion": { itemId: I.PRAYER_POTION_4_, name: "prayer potion", doses: 130 } });
+  openBarrel(f);
+  f.messages.length = 0;
+  ui(f, CONTENTS_WIDGET, 0, I.PRAYER_POTION_4_, 10);
+  assert.equal(f.messages.length, 2, f.messages.join(" | "));
+  assert.equal(f.messages[0], examine(I.PRAYER_POTION_1_));
+  assert.match(f.messages[1], /^Price of 130 x Prayer potion\(1\): /);
+  assert.equal(storedDoses(f), 130, "examining withdraws nothing");
+  f.messages.length = 0;
+  put(f, I.PRAYER_POTION_4_, 5);
+  ui(f, INVENTORY_WIDGET, 5, I.PRAYER_POTION_4_, 10);
+  assert.equal(f.messages.length, 2, f.messages.join(" | "));
+  assert.equal(f.messages[0], examine(I.PRAYER_POTION_4_));
+  assert.match(f.messages[1], /^Price of Prayer potion\(4\): /);
 });
 
 test("Store counts vials; Fill counts doses and keeps a partial marked vial", (t) => {

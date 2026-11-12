@@ -75,13 +75,16 @@ function player() {
   subjects.add(subject);
   subject.setUsername("barrows-run");
   subject.setRegistered(true);
-  const sent = { messages: [], spam: [], varbits: new Map(), rewards: null };
+  const sent = { messages: [], spam: [], varbits: new Map(), rewards: null, camera: [] };
   subject.collected = [];
   const sender = new Proxy({}, {
     get: (target, key) => (key === "sendVarbit" ? (id, value) => (sent.varbits.set(id, value), sender)
       : key === "sendMessage" ? (text) => (sent.messages.push(text), sender)
       : key === "sendTypedMessage" ? (type, text) => (sent.spam.push(text), sender)
       : key === "sendInterfaceScript" ? (_id, _args, _a, _b, inventories) => (sent.rewards = inventories, sender)
+      : key === "sendCameraShake" ? (...shake) => (sent.camera.push(shake), sender)
+      : key === "sendCameraReset" ? () => (sent.camera.push("reset"), sender)
+      : key === "getVarbit" ? (id) => sent.varbits.get(id) ?? 0
       : () => sender),
   });
   subject.getPacketSender = () => sender;
@@ -115,6 +118,33 @@ test("Barrows: a looted run stays looted through a teleport out and back to the 
   assert.equal(subject.sent.varbits.get(1394), 0, "the chest shut");
 });
 
+
+// rsprox_transcripts/237/04055.txt: the looting tick sends cam_shake slot 0, random 5 with the reward
+// interface; the teleport out resets the camera. 227/01885.txt tick 10592: a looted run's chest room,
+// teleported back into, shakes again on arrival.
+test("Barrows: the looted tunnels shake until left, again on each return, and not with the row off", () => {
+  const subject = player();
+  arrive(subject, CHEST_ROOM);
+  Object.assign(subject.getAttribute("barrows"), { killed: [0, 1, 2, 3, 4, 5], kills: 6, points: 600, chestOpen: true });
+  Barrows._test.searchChest(subject, 1);
+  assert.deepEqual(subject.sent.camera, [[0, 5, 0, 0]]);
+  arrive(subject, SURFACE);
+  assert.deepEqual(subject.sent.camera, [[0, 5, 0, 0], "reset"]);
+  arrive(subject, CHEST_ROOM);
+  assert.deepEqual(subject.sent.camera, [[0, 5, 0, 0], "reset", [0, 5, 0, 0]]);
+
+  const unlooted = player();
+  arrive(unlooted, CHEST_ROOM);
+  arrive(unlooted, SURFACE);
+  assert.deepEqual(unlooted.sent.camera, [], "an unlooted run never shakes");
+
+  const off = player();
+  off.sent.varbits.set(14198, 1); // option_camera_effect_barrows_disabled
+  arrive(off, CHEST_ROOM);
+  Object.assign(off.getAttribute("barrows"), { killed: [0, 1, 2, 3, 4, 5], kills: 6, points: 600, chestOpen: true });
+  Barrows._test.searchChest(off, 1);
+  assert.deepEqual(off.sent.camera, []);
+});
 
 // rsprox_transcripts/226/01694.txt (a normal world): "You've broken into a crypt!" (spam, :165471); a brother-raising
 // search "You don't find anything." (spam, :165522); at the chest the diary's rune line (spam) and then
@@ -325,4 +355,25 @@ test("Barrows: equipment, clue, coins, keys and racks keep their amounts in mixe
   for (const [id, amount] of expected) assert.equal(subject.getInventory().getAmount(id), amount);
   assert.deepEqual(Object.values(subject.sent.rewards)[0].slots,
     expected.map(([itemId, quantity], slot) => ({ slot, itemId, quantity })));
+});
+
+// Issue #4343: a tunnel door is crossed by walking through the doorway, as live (236/03929.txt
+// ~11290-11420: walk/run steps across barrows_door_o_l at 3562,9678, no exact move), not a slide.
+test("Barrows: an open tunnel door is walked through, not slid across", () => {
+  const subject = player();
+  const { useDoor, doorSides, getTunnelMap, getRun, processPlayer, IGNORE_CLIPPING_FLAG } = Barrows._test;
+  arrive(subject, CHEST_ROOM);
+  const run = getRun(subject);
+  const door = getTunnelMap().doors.find((entry) => run.openDoors.includes(entry.varbit) && entry.varbit !== run.puzzleDoor);
+  assert.ok(door, "an open door this run");
+  const [from, to] = doorSides(door);
+  subject.setLocation(from.clone());
+  processPlayer({ player: subject });
+  useDoor(subject, door);
+  assert.ok(!subject.getForceMovement(), "no exact move");
+  assert.equal(subject.hasFlag(IGNORE_CLIPPING_FLAG), true, "the doorway's clipping is ignored for the step");
+  subject.getMovementQueue().process();
+  assert.ok(subject.getLocation().equals(to), `walked to the far side (${subject.getLocation()})`);
+  for (let i = 0; i < 3; i++) processPlayer({ player: subject });
+  assert.equal(subject.hasFlag(IGNORE_CLIPPING_FLAG), false, "clipping back once across");
 });

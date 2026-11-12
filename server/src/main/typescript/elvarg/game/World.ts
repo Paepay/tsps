@@ -309,6 +309,7 @@ export class World {
         nextLocation: Location | null | undefined
     ): void {
         if (!player || !previousLocation || !nextLocation || previousLocation.equals(nextLocation)) return;
+        player.claimTileOccupancy?.();
         World.removePlayerFromTileOccupants(player, previousLocation);
         World.addPlayerToTileOccupants(player, nextLocation);
         if ((previousLocation.getX() >> 6) !== (nextLocation.getX() >> 6)
@@ -328,14 +329,19 @@ export class World {
         location: Location | null | undefined,
         ignoredPlayer: Player | null = null,
         size = 1,
-        privateArea?: any
+        privateArea?: any,
+        // NPC movement only: a player who has not moved since logging in does not block NPCs yet
+        // (live; LostCity PLAYER_OCC). Other callers (a rolling block, arena placement) still
+        // see every player standing there.
+        blockingNpcsOnly = false
     ): boolean {
         if (!location) return false;
         for (let x = 0; x < Math.max(1, size); x++) {
             for (let y = 0; y < Math.max(1, size); y++) {
                 const key = World.getNpcTileKey(location.getX() + x, location.getY() + y, location.getZ());
                 if (World.playerTileOccupants.get(key)?.some((player) => player && player !== ignoredPlayer &&
-                    (privateArea === undefined || player.getPrivateArea() === privateArea))) {
+                    (privateArea === undefined || player.getPrivateArea() === privateArea) &&
+                    (!blockingNpcsOnly || player.isOccupyingTile?.() !== false))) {
                     return true;
                 }
             }
@@ -685,7 +691,7 @@ export class World {
         const radius = Math.max(0, Math.ceil(viewDistance / 8));
         const budget = World.MAX_LOCAL_PLAYERS + World.MAX_NEW_LOCAL_PLAYERS_PER_CYCLE;
         const found: Player[] = [];
-        const planes = CrossFloor.enabled() && origin.getZ() >= 0 && origin.getZ() < 4 ? [origin.getZ(), ...[0, 1, 2, 3].filter(z => z !== origin.getZ())] : [origin.getZ()];
+        const planes = CrossFloor.includesOtherPlanes(origin.getZ()) ? [origin.getZ(), ...[0, 1, 2, 3].filter(z => z !== origin.getZ())] : [origin.getZ()];
         for (const z of planes) {
             found.push(...World.collectFromBuckets(World.playerUpdateBuckets,
                 new Location(origin.getX(), origin.getY(), z), radius, budget - found.length,
@@ -723,7 +729,7 @@ export class World {
     public static getNearbyNpcsForUpdate(player: Player): NPC[] {
         const radius = Math.max(World.UPDATE_BUCKET_RADIUS, Math.ceil(World.npcViewDistance(player) / 8));
         const origin = BoatManager.rootLocation(player);
-        const planes = CrossFloor.enabled() && origin.getZ() >= 0 && origin.getZ() < 4 ? [origin.getZ(), ...[0, 1, 2, 3].filter(z => z !== origin.getZ())] : [origin.getZ()];
+        const planes = CrossFloor.includesOtherPlanes(origin.getZ()) ? [origin.getZ(), ...[0, 1, 2, 3].filter(z => z !== origin.getZ())] : [origin.getZ()];
         const nearby = planes.flatMap(z => World.collectFromBuckets(World.npcUpdateBuckets, new Location(origin.getX(), origin.getY(), z), radius));
         nearby.sort((a, b) =>
             Number(BoatManager.rootLocation(a).getZ() !== origin.getZ()) - Number(BoatManager.rootLocation(b).getZ() !== origin.getZ()) ||
@@ -1209,6 +1215,8 @@ export class World {
                 // Bots must not be dropped by a host-imposed human player cap: they
                 // share the list but never take a human slot.
                 NpcSpawnDefinitionLoader.activateNear(player.getLocation(), player.getNpcViewDistance());
+                // NPCs walk through a player who has not moved since logging in.
+                player.deferTileOccupancy?.();
                 World.players.add(player, player.isPlayerBot?.() === true);
                 if (
                     (player.isUnwatchedBot?.() ?? player.isPlayerBot?.()) !== true &&

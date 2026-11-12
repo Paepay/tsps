@@ -730,6 +730,14 @@ export interface PluginItemUseFilter {
   fallback?: boolean;
 }
 
+export interface PluginItemActionOptions {
+  /**
+   * Run after every other item-action handler, and only when none took the click: an item's own
+   * answer when no content claimed it (a spade dug where nothing is buried).
+   */
+  fallback?: boolean;
+}
+
 export interface PluginItemOnObjectEvent {
   player: any;
   object: any;
@@ -859,7 +867,10 @@ export interface PluginItemActionEvent {
   slot: number;
   clickType: number;
   option?: string;
+  /** The submenu entry's index, 1-based (the wire index plus one). */
   subOpId?: number;
+  /** The submenu entry's cache label ("Xeric's Glade" under Rub), set by emitItemAction. */
+  subOption?: string;
   handled: boolean;
 }
 
@@ -1230,7 +1241,11 @@ export interface PluginApi {
   onSpellCast(handler: (event: PluginSpellCastEvent) => void): void;
   onItemAction(handler: (event: PluginItemActionEvent) => void): void;
   /** Exact item name and inventory option matching. Return false to fall through. */
-  onItemAction(itemName: string, actions: Record<string, (event: PluginItemActionEvent) => void | boolean>): void;
+  onItemAction(
+    itemName: string,
+    actions: Record<string, (event: PluginItemActionEvent) => void | boolean>,
+    options?: PluginItemActionOptions
+  ): void;
   onItemDropPolicy(handler: (event: PluginItemDropEvent) => void): void;
   onItemFirstAction(
     handler: (event: PluginItemActionEvent) => void | boolean
@@ -1574,6 +1589,7 @@ export interface PluginApi {
  * Typed as `any` on purpose: this is a deliberately thin, evolving surface.
  */
 export interface PluginCoreApi {
+  CrossFloor: typeof import("../game/CrossFloor").CrossFloor;
   WorldConfigCatalog: typeof import("./WorldConfigCatalog").WorldConfigCatalog;
   WorldConfigStore: typeof import("../game/definition/WorldConfigStore").WorldConfigStore;
   MeleeCombatMethod: any;
@@ -1670,6 +1686,7 @@ export interface PluginCoreApi {
   encodeGameframeBootstrap: typeof import("../net/protocol/ClientProtocol").encodeGameframeBootstrap;
   resolveGameframeRoot: typeof import("../net/protocol/ClientProtocol").resolveGameframeRoot;
   orbsGroupFor: typeof import("../net/protocol/ClientProtocol").orbsGroupFor;
+  dataOrbsHidden: typeof import("../net/protocol/ClientProtocol").dataOrbsHidden;
   encodeFinePosition: typeof import("../net/protocol/ClientProtocol").encodeFinePosition;
   Boundary: any;
   PolygonalBoundary: any;
@@ -1784,9 +1801,11 @@ export interface PluginModule {
   /** pluginConfig options this plugin reads, keyed "<namespace>:<key>". */
   config?: Record<string, import("../game/definition/WorldSettingDeclarations").ConfigOptionDeclaration>;
   dependsOn?: string[];
-  /** Members content: not loaded when world.json sets membersWorld false. */
+  /** Members content: skipped when the FreeToPlay plugin is enabled. */
   members?: boolean;
   /** False keeps the plugin off unless world.json `plugins` turns it on. */
   enabled?: boolean;
   register(api: PluginApi): void;
+  /** Additional hooks registered at this plugin's path position in the next dependency pass. */
+  registerDeferred?(api: PluginApi): void;
 }

@@ -118,21 +118,76 @@ and the Wiki ([Implings](https://oldschool.runescape.wiki/w/Implings),
   ticks for the others (Wiki). Puro-Puro needs a jar for every catch; outside it a barehanded
   catch without a jar is looted at once.
 
+Impling jar supplies: [Anchovy oil, revision 15186565](https://oldschool.runescape.wiki/w/Anchovy_oil?oldid=15186565) describes eight anchovy paste used on an empty vial with a sieve; [Imp repellent, revision 15185078](https://oldschool.runescape.wiki/w/Imp_repellent?oldid=15185078) gives the flowers, unboostable Herblore 3 and 5 XP. [Impling jar, revision 15183926](https://oldschool.runescape.wiki/w/Impling_jar?oldid=15183926) describes one repellent followed by one butterfly jar at the Rimmington still. The existing Herblore plugin applies its Druidic Ritual gate to the flower mix; its applicability to this recipe is not established here. As a conservative server policy, either still refuses swamp tar while Rimmington holds repellent, and Rimmington refuses repellent while the player has stored lamp oil; retail collision behavior has not been captured.
+
 Not reproduced: the two main-game barehanded loot catches gave 14 (earth, 1510) and 16 (essence,
 2520) Hunter XP, against the Wiki's overworld 27 and 29; no source explains it, so the
 Wiki value stays. 
 Roaming spawns ([Implings](https://oldschool.runescape.wiki/w/Implings)):
 
 - Puro-Puro (`minigames/impetuousimpulses/Roaming.ImpetuousImpulses.js`): each point holds an
-  invisible impling that roams two minutes before it shows and is replaced as soon as it is
-  caught, rolling its tier's Wiki table. Points come from the cache's map data (10 low, 12 mid,
-  4 high); the Wiki counts 35 (21/12/2) without coordinates, so the low tier is short.
+  invisible impling that manifests after the existing 200 ticks and is replaced two ticks after
+  capture, rolling its tier's Wiki table. The embedded Puro-Puro map in
+  [Implings revision 15360701](https://oldschool.runescape.wiki/w/Implings?oldid=15360701)
+  supplies 10 low, 12 mid and two high precursor points. The high points are (2576, 4336) and
+  (2610, 4301); the previous extra points (2570, 4298) and (2610, 4338) are uncorroborated.
+  That revision's prose instead says 21 low/12 mid/two high, contradicting its map; eleven
+  additional low points are not invented. The map's integer X/Y descriptions match its marker
+  centers offset by half a tile. This is plugin-owned spawn configuration, not a generated
+  NPC-definition export.
+- The same Wiki revision explicitly says implings cross obstacles including water and magical
+  wheat. Roaming Puro-Puro implings use the existing movement clipping opt-out. The estimated
+  wander radius remains eight, capped by each point's distance to the cache-backed interior
+  rectangle (2562..2621, 4290..4349) to contain ordinary spawn-centered wandering. This cap is a
+  server containment choice, not evidence for retail radius or a forced-displacement boundary.
+  Overworld movement remains outside this change. The Wiki's two-minute
+  invisibility claim carries a confirmation-needed qualification; this change preserves the
+  server's timers rather than establishing retail timing.
 - Overworld (`Overworld.Hunter.js`, driven by the shared tick): every 30 minutes the previous
   implings are removed and 4 high, N (5-10) mid and 2N low implings appear at random points from
   the cache's map data, invisible for two minutes, plus a crystal impling in Prifddinas. A caught
   one is gone until the next cycle. Not in: the Wiki's fixed low-tier points (ten, and Zanaris
   marketplace) have no coordinates here, and the wander radius (8) is an estimate. The imp
   defenders (npc 5738) freeing jarred implings are not in.
+
+The same flight rule also applies to the 51 fixed Puro-Puro implings loaded by the world spawn
+definitions. The existing `npc:added` event applies it after the loader has set each NPC's
+position and radius, covering deferred activation on ordinary entry. Radius never grows:
+the fixed default of five is capped by the same interior rectangle (edge points at 2563 or 2620
+can otherwise target across the enclosing walls). The broader Hunter realm rectangle remains
+2560..2623, 4288..4351. This is the same server containment inference as for roaming.
+The Hunter-owned fixed return path is preserved: two ticks of the caught animation, then seven
+hidden ticks for baby/young/gourmet/eclectic or 50 for earth/essence before returning visibly
+to the original spawn. The existing native suite now also loads the actual world definitions,
+activates the fixed population, checks real wheat collision and NPC/realm controls, dispatches
+Catch, and completes both seven- and 50-tick return paths through another ordinary Catch.
+Actor placement/equipment/levels/approach and successful RNG are supplied. Natural random
+wandering, client rendering and generic impling teleport/expiry timing remain unverified.
+The Wiki also distinguishes obstacles drawn as minimap lines. Cache242 supplies 244 unique
+wall-type placements, all on the enclosing edges x2561/2622 or y4289/4350 (raw records can
+repeat when preceding cases load the same map). The native fixture checks actual
+wall orientations and player collision on all four edges, every fixed/roaming destination
+square's interior containment, and the real coordinator/queue with supplied extreme rolls.
+The interior cap prevents ordinary spawn-centered wandering across those walls; it does not
+provide generic wall collision after forced displacement or establish overworld wall parity.
+
+The existing `impetuous-impulses.test.cjs` suite includes a native roaming route: real plugin
+startup, cache-backed Puro-Puro magical wheat, movement queues with player/ordinary-NPC collision
+controls, packet-listener Catch dispatch, jar conversion, and real task-owned removal,
+replacement and manifestation. It supplies actor location/levels/equipment, approach and
+successful catch RNG. It does not prove natural random wandering, client rendering, travel,
+retail timing or imp-defender behavior. Run from `server/` after building:
+`node --test tests/impetuous-impulses.test.cjs`.
+
+On cache revision 242, immutable source `9ae5d54ff3a1312f3326bbd97977d20862c9b6dc` passed all
+22 suite tests plus three `movement-stopping.test.cjs` controls in HF. The identical roaming
+fixture on baseline `718926828fcb000dcd314641844f2f70ba7d6ac1` exposed 26 instead of 24 points,
+clipped flight and the missing replacement flag (four leaf failures plus a parent summary).
+At cached wheat 25026, (2579,4331) to (2580,4331), the player and ordinary NPC stayed blocked;
+the roaming impling was blocked before and crossed after. The fixed run also passed jar
+conservation on a repeated Catch and an invisible replacement, plus removal and manifestation
+completion. Source, compiled output and all 28 cache-file checks were unchanged. These results
+qualify that revision; later source integrations need their own relevant validation.
 
 ## Sources
 
@@ -170,3 +225,39 @@ Ceto charged 200 numulite, setting a net consumed one net, one passive catch at 
 77 Fishing XP and no Hunter XP, and taking the harvest delivered one oyster and cleared the
 net. This checks the normal collection path; the rare clue outcomes were verified by the
 regressions, not by that live catch.
+
+## Jar generator and Elnock equipment payment
+
+[Jar generator, revision 15367163](https://oldschool.runescape.wiki/w/Jar_generator?oldid=15367163)
+specifies 100% charge, 3% per impling jar and 1% per butterfly jar, with the generator disappearing
+when exhausted. Charges are stored on the item and survive bank cloning. The final output replaces
+the exhausted item, so it can fit in that slot in a full bag. Earlier uses require an empty slot;
+refused uses preserve charge. Its `Impling-jar`, `Butterfly-jar`, `Check` and `Destroy` options are
+confirmed by revision 242's `ii_jar_generator` item (11258); Destroy uses the existing shared item
+handler. Exact Check, insufficient-charge, full-bag and recharge dialogue wording is not recorded;
+the plugin supplies functional messages. The charge arithmetic comes from the Wiki, without a
+captured generation event. The initial RSProx item-11258 query found no matches; this is not proof
+that no relevant recording exists.
+
+The Wiki specifies one owned generator and a choice to recharge the existing one for the same
+payment when requesting another. Elnock detects it in carried equipment/inventory or non-search
+bank tabs, asks for confirmation, and checks the current item and full payment again. Charge
+updates affect that instance rather than creating another. A generator lost on an unsafe death
+is not kept or dropped. Safe deaths preserve it.
+
+The equipment payment recipes require all three listed stacks. The imported Elnock transcript
+explicitly uses **and**: three baby/two young/one gourmet for repellent; three gourmet/two earth/one
+essence for the net; three essence/two eclectic/one nature for the generator. Cache structs
+1240–1242 bind those item/count pairs; the earlier plugin incorrectly treated them as alternatives.
+The separate offer exchanging one filled jar of any type for three empty jars remains a choice
+of a single jar. Generated dialogue data is unchanged.
+
+Validation extends `impetuous-impulses.test.cjs` for cumulative payment and refusal
+conservation, and `small-conversions-preset-copies.test.cjs` for registered Trade/Confirm and jar
+actions with real Player/Inventory, seeded bank/skills and a registered Hunter catch. The recharge
+choice uses the real dialogue handler. Seeded actors, positions and deterministic catch RNG are
+supplied setup; these checks do not establish natural travel, packet/client rendering, precise
+retail wording or a complete death sequence. From `server/`, after building and obtaining the
+matching cache, run `node --test tests/impetuous-impulses.test.cjs` and
+`node --test tests/small-conversions-preset-copies.test.cjs`. The PR retains the observed execution
+results and their validated revisions.

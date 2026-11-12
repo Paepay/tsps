@@ -23,46 +23,85 @@ const TOGGLES = {
   3: 4181,
   4: 5711,
   6: 5712,
+  8: 4084,
   9: 10113,
   36: 4089,
+  49: 4134,
+  50: 5599,
+  54: 4611,
   83: 11890,
+  111: 12390,
   114: 12344,
+  115: 12345,
   123: 12352,
   127: 12383,
   147: 10035,
+  148: 12373,
+  149: 12374,
+  151: 12376,
   163: 12379,
   164: 12380,
   166: 12983,
   181: 13037,
   195: 13120,
   209: 13133,
+  234: 13826,
+  235: 13827,
   257: 5368,
   265: 14179,
+  306: 5698,
   311: 14806,
+  312: 6580,
   313: 8059,
   314: 8060,
+  347: 4100,
+  360: 15321,
   362: 15323,
   365: 9597,
+  372: 1334,
+  386: 10987,
+  391: 11520,
+  398: 11526,
+  402: 11530,
+  405: 11533,
   418: 11562,
+  419: 71,
   430: 16116,
+  441: 16621,
   442: 17772,
   460: 18132,
+  461: 18135,
+  463: 18137,
   464: 18138,
+  465: 18143,
   466: 18140,
+  467: 18144,
   472: 19615,
   473: 19646,
   474: 19647,
   476: 19681,
+  493: 20158,
+  500: 20362,
+  501: 11624,
   505: 16774,
 };
 const DROPDOWNS = {
   1: 6374,
   86: 12135,
+  150: 12375,
+  207: 13132,
+  392: 11522,
+  462: 18136,
 };
 // Live defaults that are not zero: the default-state logins in the rsprox captures.
 const LIVE_DEFAULTS = {
   2: 1,
+  150: 5,
+  207: 3,
+  234: 1,
+  235: 1,
   257: 1,
+  360: 1,
   466: 1,
 };
 
@@ -156,6 +195,8 @@ function player(attributes = new Map()) {
       return sender;
     },
     sendClientScript() { return sender; },
+    sendSubInterface() { return sender; },
+    closeSubInterface() { return sender; },
   };
   return { varps, attributes, getAttribute: (k) => attributes.get(k), setAttribute: (k, v) => attributes.set(k, v), getPacketSender: () => sender };
 }
@@ -211,6 +252,21 @@ test('a fresh account starts with the side panel setting live sends', () => {
   const p = player();
   handlers.restoreSettings({ player: p });
   assert.equal(p.getPacketSender().getVarbit(4609), 1);
+});
+
+test('Single mouse button mode flips varp 170, the var the cache reads it from, and keeps it at the next login', () => {
+  const VARP_MOUSE_BUTTONS = 170;
+  assert.equal(catalog.get(48), TOGGLE);
+  assert.equal(settingsJson[48]?.varp, VARP_MOUSE_BUTTONS);
+  assert.deepEqual(readerCase(TOGGLE_READER, 48)[0], [PUSH_VARP, VARP_MOUSE_BUTTONS]);
+  const p = player();
+  handlers.restoreSettings({ player: p });
+  assert.equal(p.getPacketSender().getVarp(VARP_MOUSE_BUTTONS), 0);
+  assert.equal(click(p, 48), true);
+  assert.equal(p.getPacketSender().getVarp(VARP_MOUSE_BUTTONS), 1);
+  const next = player(p.attributes);
+  handlers.restoreSettings({ player: next });
+  assert.equal(next.getPacketSender().getVarp(VARP_MOUSE_BUTTONS), 1);
 });
 
 const LOGINLOGOUT_PERMANENT = 1627;

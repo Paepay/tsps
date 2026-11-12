@@ -125,6 +125,23 @@ test("the data: every id as the cache names it", () => {
   assert.deepEqual(DATA.shrine.evilChicken.pieces.map(item).sort(), ["Evil chicken feet", "Evil chicken head", "Evil chicken legs", "Evil chicken wings"]);
 });
 
+test("both carved redwoods link the two scaffolding levels at their cache placements", () => {
+  core.RegionManager.init();
+  const x = 1570;
+  for (const y of [3484, 3490]) {
+    core.RegionManager.loadMapFiles(x, y);
+    const player = createPlayer(x - 1, y);
+    player.setLocation(new Location(x - 1, y, 1));
+    const enter = (objectId, z) => Guild.enterRedwood({ player, objectId, location: { x, y, z } });
+    assert.equal(enter(core.ObjectIdentifiers.CARVED_REDWOOD_2, 1), true);
+    assert.equal(player.getLocation().getZ(), 2);
+    assert.equal(core.RegionManager.blocked(player.getLocation(), null), false);
+    assert.equal(enter(core.ObjectIdentifiers.CARVED_REDWOOD_3, 2), true);
+    assert.equal(player.getLocation().getZ(), 1);
+    assert.equal(core.RegionManager.blocked(player.getLocation(), null), false);
+  }
+});
+
 test("as captured: Ents attack (12506), block (12504) and die (12508) with their own animations", () => {
   const { NpcDefinitionLoader } = require("../dist/game/definition/loader/impl/NpcDefinitionLoader");
   new NpcDefinitionLoader().load();
@@ -195,7 +212,9 @@ test("as captured: the cave, the vine and the roots", () => {
 
 function deadEnt(id, killer) {
   let transform = -1;
-  const npc = { getId: () => (transform >= 0 ? transform : id), setNpcTransformationId: (value) => { transform = value; }, isRegistered: () => true, transform: () => transform };
+  const npc = { getId: () => (transform >= 0 ? transform : id), setNpcTransformationId: (value) => { transform = value; }, isRegistered: () => true, transform: () => transform,
+    // The trunk is remains: a locked 1 HP, so it can be walked to and chopped (issue #4357).
+    hp: 0, locked: false, setHitpoints(value) { this.hp = value; }, setHitpointsLocked(value) { this.locked = value; }, setPoisonDamage() {} };
   const event = { killer, npc, npcId: id, remains: null };
   EntTrunk.entDied(event);
   return { npc, event };
@@ -207,6 +226,7 @@ test("as captured: a dead Ent stays, becomes its trunk, and only its killer chop
   assert.deepEqual(event.remains, { ticks: 103, respawnTicks: 50 }, "trunk 4 ticks after the fall, for 101 ticks, then 50 to respawn");
   runTicks(2);
   assert.equal(npc.getId(), 9474);
+  assert.deepEqual([npc.hp, npc.locked], [1, true], "a locked 1 HP, so it can be walked to");
 
   const other = createPlayer(1590, 9890);
   EntTrunk.chopTrunk({ player: other, npc });
