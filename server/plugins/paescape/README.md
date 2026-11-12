@@ -21,6 +21,27 @@ only meaningful for online worlds; a standalone/offline world runs without it.
   control token naming this world and one action; the plugin verifies it with the
   platform public key and refuses anything else.
 
+## Applying the world's configuration
+
+The website is authoritative for a hosted world's settings, and the platform
+returns them from every configuration-bearing call - the world session
+(`POST /api/world/auth`), the hosted handshake, and lease renewal/heartbeat. The
+blob is in the website's shape (`{ settings: { spawn, xpRate, zones, ... } }`),
+which differs from the flat `world.json` the runtime reads.
+
+`plugins/paescape/PlatformWorldConfig.js` translates that blob into the runtime's
+world.json shape and the plugin layers it over the running world through
+`WorldDefinition.applyWorldConfigOverlay` (a core entry point; it never writes to
+disk). This makes an owner's configured spawn/respawn, XP rate, description,
+gameframe, zone tags and members/F2P flag take effect on the host. The overlay is
+re-applied whenever the platform's `configRevision` changes.
+
+Fail-closed: an overlay that fails world validation (a bad spawn, a free-to-play
+spawn outside every f2p zone, reversed zone bounds) is refused with a warning, and
+the running world keeps its packaged configuration. Plugin *enablement* and
+per-plugin `pluginConfig` are resolved once at startup, so they remain a
+restart-to-apply change, exactly as editing `world.json` is.
+
 ## Configuration
 
 Via `world.json` `pluginConfig` (preferred) or environment variables:
@@ -77,6 +98,10 @@ platform's own `PLATFORM_PUBLIC_PATH`) overrides the default `/platform`.
 - `plugins/PluginTypes.ts` - `PluginLoginVouch`, `preAuthenticate`, and
   `registerPlatformControlHandler`.
 - `plugins/PluginManager.ts` - `handlePlatformControl` dispatch.
+- `game/definition/WorldDefinition.ts` - `applyWorldConfigOverlay`, a generic
+  runtime overlay of a world configuration over the file's, exposed to plugins as
+  `core.WorldDefinition`. It re-syncs the spawn, zones, members and gameframe
+  accessors and is fail-closed: an overlay that fails validation is refused.
 
 These are additive: with no PaeScape plugin enabled, `preAuthenticate` is absent
 and no control handler is registered, so the login path and HTTP server behave
