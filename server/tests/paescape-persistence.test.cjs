@@ -332,6 +332,37 @@ test("cross-world isolation: a name from another world is never visible", async 
   assert.equal(active.load("Other World Hero"), null);
 });
 
+test("registration after an initial miss is visible to the same adapter", async () => {
+  installAdapter();
+  assert.equal(active.load("Late Registered"), null, "the character is initially absent");
+  await registerCharacter("Late Registered", { discordId: "discord-late-registered" });
+  assert.equal(active.load("Late Registered"), null, "the adapter re-resolves registration and finds the empty state");
+
+  const player = makePlayer("Late Registered");
+  player.getInventory().setItem(0, new Item(995, 31));
+  active.save(player, "logout");
+  await active.flush();
+
+  const reloaded = installAdapter();
+  const save = reloaded.load("Late Registered");
+  assert.equal(save.getInventory()[0].getAmount(), 31, "the newly registered character saves and reloads");
+});
+
+test("a save refreshes an identity that was registered after the initial load", async () => {
+  installAdapter();
+  assert.equal(active.load("Save After Registration"), null, "the pre-registration lookup misses");
+  await registerCharacter("Save After Registration", { discordId: "discord-save-after-registration" });
+
+  const player = makePlayer("Save After Registration");
+  player.getInventory().setItem(0, new Item(995, 47));
+  active.save(player, "logout");
+  await active.flush();
+
+  const reloaded = installAdapter();
+  const save = reloaded.load("Save After Registration");
+  assert.equal(save.getInventory()[0].getAmount(), 47, "write re-resolves the identity without another load");
+});
+
 test("an outdated lease is refused by the platform", async () => {
   // Publish generation 2: the world-one lease now belongs to a previous release.
   cookie = users.owner.cookie;
