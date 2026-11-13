@@ -49,6 +49,7 @@ function open({ player }) {
   sender.sendInterfaceScript(Common.data.interface.scripts.taskWipe, []);
   viewing.add(player);
   searching.delete(player);
+  Common.api.emitCustomEvent("league:tasks-opened", { player });
   return true;
 }
 

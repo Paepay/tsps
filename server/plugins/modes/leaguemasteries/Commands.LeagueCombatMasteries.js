@@ -10,7 +10,7 @@ const Unlock = require("./Unlock.LeagueCombatMasteries");
 
 function status(player) {
   const tiers = Common.masteries(player);
-  const done = Object.keys(Common.pointsEarned(player));
+  const done = Common.completedChallengeKeys(player);
   player.sendMessage(Common.message("masteryStatus", {
     melee: tiers.melee, ranged: tiers.ranged, magic: tiers.magic, passive: Common.passiveTier(player),
     available: Common.available(player), earned: Common.earned(player),
@@ -29,7 +29,7 @@ function masteryCommand({ player, parts }) {
     return true;
   }
   if (what === "point") {
-    const entry = Points.challenges()[Number(parts[2]) - 1];
+    const entry = Points.challenges(player)[Number(parts[2]) - 1];
     if (!entry || !Number.isInteger(Number(parts[2]))) {
       player.sendMessage(Common.message("masteryUsage"));
       return true;

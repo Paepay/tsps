@@ -917,6 +917,10 @@ export class OsrsClient {
      * server's Hitpoints XP Rate plugin. A Hitpoints gain divided by it is the OSRS-rate gain.
      */
     hitpointsXpRate = 1;
+    /** Skills tab (320) components the Level-Up server says are still locked. */
+    levelUpLockedSkills: number[] = [];
+    /** Whether the current world runs Level-Up; other worlds leave its screens alone. */
+    levelUpWorldActive = false;
     playerEcs: PlayerEcs = new PlayerEcs();
     private continuousMovement?: ContinuousMovement;
     playerAnimController!: PlayerAnimController;

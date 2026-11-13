@@ -301,6 +301,18 @@ export function handleInboundUi(msg: any): boolean {
             if (g.__osrsClient && Number.isFinite(rate) && rate > 0) g.__osrsClient.hitpointsXpRate = rate;
             return true;
         }
+        if (datasets?.length === 1 && datasets[0].key === "levelUpLockedSkills") {
+            // Level-Up world: the Skills tab components that get the grey locked overlay.
+            const active = datasets[0].active === true;
+            const rows = Array.isArray(datasets[0].rows) ? datasets[0].rows : [];
+            const locked = rows.map(Number).filter((child: number) => Number.isInteger(child) && child > 0);
+            const g: any = (typeof window !== "undefined" ? window : globalThis) as any;
+            if (g.__osrsClient) {
+                g.__osrsClient.levelUpWorldActive = active;
+                g.__osrsClient.levelUpLockedSkills = active ? locked : [];
+            }
+            return true;
+        }
         try {
             const itemRevision = CustomItemRegistry.revision;
             const archiveKey = getDefinitionArchiveKey();

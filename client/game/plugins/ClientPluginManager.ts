@@ -78,6 +78,8 @@ export interface GameFrameProvider {
 /** Draw context for a `WidgetOverlay`; coordinates are device pixels on the UI canvas. */
 export type WidgetOverlayDrawContext = {
     renderer: GLRenderer;
+    /** Set when this draw was triggered by `drawAfterWidget`. */
+    triggerWidgetUid?: number;
     fontLoader: FontLoader;
     /** A cache sprite as a texture. */
     sprite(id: number): { tex: WebGLTexture; w: number; h: number } | undefined;
@@ -179,6 +181,11 @@ export interface WidgetOverlay {
      * Used by overlays that sit over the side panel (status bars) so tooltips still win.
      */
     drawAtAnchor?: boolean;
+    /**
+     * Draw immediately after one of these widgets (packed group << 16 | child) draws its
+     * content, so later widgets - including tooltips - stay above the overlay.
+     */
+    drawAfterWidget?: readonly number[];
     /**
      * Draw over the scene but under every widget (RuneLite's ABOVE_SCENE), e.g. NPC highlights
      * that interfaces should cover.

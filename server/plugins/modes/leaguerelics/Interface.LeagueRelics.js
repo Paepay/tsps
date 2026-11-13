@@ -37,6 +37,7 @@ function slotToRelic(catalog, sub) {
 }
 
 function open({ player }) {
+  if (Common.levelUpOwns(player)) return false;
   const type = Common.leagueOf(player);
   if (type === null) return false;
   const { group, clickzones, clickzoneSlots, menuFrame, menuFrameSlots } = ui();
@@ -74,6 +75,7 @@ function viewState(player, type, tier, relicSlot) {
 }
 
 function view({ player, slot }) {
+  if (Common.levelUpOwns(player)) return false;
   const type = Common.leagueOf(player);
   const index = Number(slot);
   const state = viewing.get(player);
@@ -102,6 +104,7 @@ function view({ player, slot }) {
 }
 
 function confirm({ player }) {
+  if (Common.levelUpOwns(player)) return false;
   const state = viewing.get(player);
   if (!state) return false;
   if (player.getInterfaceId() !== ui().group) {

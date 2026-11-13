@@ -9,12 +9,13 @@
  */
 const Common = require("./Common.LeagueCombatMasteries");
 
-function challenges() {
-  return Common.data.challenges.list;
+/** The challenges this character can complete: Level-Up omits entries the cache cannot support. */
+function challenges(player) {
+  return player && Common.isLevelUp(player) ? Common.levelUpChallenges() : Common.data.challenges.list;
 }
 
-function challenge(key) {
-  return challenges().find((entry) => entry.key === key) ?? null;
+function challenge(key, player) {
+  return challenges(player).find((entry) => entry.key === key) ?? null;
 }
 
 /** The names a kill rule matches: its own list, or a named list of the data (giants, echo bosses). */
@@ -26,14 +27,21 @@ function sendPoints(player) {
   const { varbits } = Common.data;
   const sender = player.getPacketSender();
   const done = Common.pointsEarned(player);
-  challenges().forEach((entry, index) => sender.sendVarbit(varbits.pointUnlocks[index], done[entry.key] ? 1 : 0));
+  // The interface draws one row per challenge actually listed, so an unlock
+  // varbit belongs to that row's position. Level-Up drops the unsupported Echo
+  // challenges, which moves TzKal-Zuk's highlight up with it.
+  const visible = challenges(player);
+  visible.forEach((entry, index) => sender.sendVarbit(varbits.pointUnlocks[index], done[entry.key] ? 1 : 0));
+  for (let index = visible.length; index < varbits.pointUnlocks.length; index++) {
+    sender.sendVarbit(varbits.pointUnlocks[index], 0);
+  }
   sender.sendVarbit(varbits.pointsEarned, Common.earned(player));
   sender.sendVarbit(varbits.pointsToSpend, Common.available(player));
 }
 
 /** Awards the challenge's point once. Returns true when it was new. */
 function award(player, key) {
-  if (!Common.isEchoes(player) || !challenge(key)) return false;
+  if (!Common.isEchoes(player) || !challenge(key, player)) return false;
   const done = Common.pointsEarned(player);
   if (done[key]) return false;
   player.setAttribute(Common.POINTS_ATTRIBUTE, { ...done, [key]: 1 });
@@ -61,7 +69,7 @@ function npcDeath({ killer, damagers, npc }) {
   const done = Common.pointsEarned(killer);
   let progress = null;
   const earnedNow = [];
-  for (const entry of challenges()) {
+  for (const entry of challenges(killer)) {
     const { rule } = entry;
     if (!rule.kill || done[entry.key] || !killMatches(rule.kill, name, definition)) continue;
     if (rule.kill.solo && (damagers ?? [killer]).some((damager) => damager !== killer)) continue;
@@ -85,7 +93,7 @@ function npcDeath({ killer, damagers, npc }) {
 function checkCombatLevel(player) {
   if (!Common.isEchoes(player)) return;
   const level = player.getSkillManager().getCombatLevel();
-  for (const entry of challenges()) {
+  for (const entry of challenges(player)) {
     if (entry.rule.combatLevel && level >= entry.rule.combatLevel) award(player, entry.key);
   }
 }
@@ -112,3 +120,4 @@ module.exports.award = award;
 module.exports.challenge = challenge;
 module.exports.challenges = challenges;
 module.exports.sendPoints = sendPoints;
+module.exports.checkCombatLevel = checkCombatLevel;

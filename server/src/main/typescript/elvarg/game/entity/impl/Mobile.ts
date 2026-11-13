@@ -738,10 +738,16 @@ export abstract class Mobile extends Entity {
         getPluginManager().emitCustomEvent("combat:damage-apply", { target: this, hit });
         const PlayerRights = getPlayerRights();
         // Developers take no damage unless they turned it on (::mortal, for this session).
-        const protectedDeveloper =
+        // A ruleset where death is part of play (Level-Up) opts out through the hook below.
+        let protectedDeveloper =
           this.isPlayer() &&
           this.getAsPlayer()?.getRights?.() === PlayerRights.DEVELOPER &&
           this.getAttribute?.(MORTAL_DEVELOPER_ATTRIBUTE) !== true;
+        if (protectedDeveloper) {
+            const protection = { player: this.getAsPlayer(), protected: true };
+            getPluginManager().emitCustomEvent("combat:developer-protection", protection);
+            protectedDeveloper = protection.protected !== false;
+        }
         if (hit.getDamage() > this.getHitpoints())
             // Clamp overkill to an integer: HitDamage floors its damage, so passing a legacy
             // fractional HP (0.5) here turned the killing hit into 0 and left the target alive.

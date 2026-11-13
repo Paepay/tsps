@@ -150,10 +150,11 @@ export class WidgetsOverlay implements Overlay {
     private overlayScaleX: number = 1;
     private overlayScaleY: number = 1;
     private widgetEntries: WidgetRenderEntry[] = [];
-    /** Overlays for the current pass, drawn from inside the tree at an anchor widget. */
+    /** Overlays for the current pass, drawn from inside the tree at their selected hook. */
     private currentWidgetOverlays: WidgetOverlay[] | null = null;
     private currentBeforeMenuOverlays: WidgetOverlay[] = [];
-    private overlayDrawnThisPass = false;
+    private drawnOverlaysThisPass = new WeakSet<WidgetOverlay>();
+    private overlayRectsStartedThisPass = false;
     private menuOverlayDrawnThisPass = false;
     private beforeMenuOverlayRects: DirtyRect[] = [];
     private visible: Map<number, boolean> = new Map();
@@ -427,6 +428,7 @@ export class WidgetsOverlay implements Overlay {
             keepChromeUids: gameFrame?.keepChrome?.(),
             widgetOverlayAnchors: WIDGET_OVERLAY_ANCHORS,
             widgetOverlayAnchorDrawn: () => this.drawWidgetOverlaysAtAnchor(),
+            afterWidgetDrawn: (uid) => this.drawWidgetOverlaysAfterWidget(uid),
             rootOffsetX:
                 typeof (root as any).__widgetRenderOffsetX === "number"
                     ? Math.round(Number((root as any).__widgetRenderOffsetX) * this.overlayScaleX)
@@ -1043,7 +1045,9 @@ export class WidgetsOverlay implements Overlay {
                     } catch {}
 
                     this.currentWidgetOverlays = widgetOverlays;
-                    this.overlayDrawnThisPass = false;
+                    this.drawnOverlaysThisPass = new WeakSet<WidgetOverlay>();
+                    this.widgetOverlayRects = [];
+                    this.overlayRectsStartedThisPass = true;
                     this.menuOverlayDrawnThisPass = false;
                     this.beforeMenuOverlayRects = [];
                     for (const entry of this.widgetEntries) {
@@ -1060,14 +1064,9 @@ export class WidgetsOverlay implements Overlay {
                             },
                         );
                     }
-                    // Anchor overlays (status bars) draw inside the tree so tooltips win;
+                    // Anchored and after-interface overlays draw inside the tree so tooltips win;
                     // the rest (opponent info, ...) draw above the tree as before.
-                    const aboveOverlays = widgetOverlays.filter((overlay) => overlay.drawAtAnchor !== true);
-                    if (this.overlayDrawnThisPass) {
-                        if (aboveOverlays.length > 0) this.drawWidgetOverlays(aboveOverlays, false);
-                    } else {
-                        this.drawWidgetOverlays(widgetOverlays, true);
-                    }
+                    this.drawWidgetOverlaysForPass(this.undrawnWidgetOverlays(widgetOverlays));
                     this.commitBeforeMenuOverlayRects();
                     this.drawTradeAmountOverlay(widgetManager);
                     this.drawMouseOverText(mouseOverTextState);
@@ -1093,7 +1092,8 @@ export class WidgetsOverlay implements Overlay {
                         gl.scissor(0, 0, canvasW, canvasH);
                     }
                     this.currentWidgetOverlays = widgetOverlays;
-                    this.overlayDrawnThisPass = false;
+                    this.drawnOverlaysThisPass = new WeakSet<WidgetOverlay>();
+                    this.overlayRectsStartedThisPass = false;
                     this.menuOverlayDrawnThisPass = false;
                     this.beforeMenuOverlayRects = [];
                     for (const dirtyRect of dirtyRects) {
@@ -1126,14 +1126,7 @@ export class WidgetsOverlay implements Overlay {
                     // Bar values changed: repaint them even if the panel was not the dirty
                     // region (the anchor callback did not fire for that case).
                     if (redrawWidgetOverlays) {
-                        const aboveOverlays = widgetOverlays.filter(
-                            (overlay) => overlay.drawAtAnchor !== true,
-                        );
-                        if (this.overlayDrawnThisPass) {
-                            if (aboveOverlays.length > 0) this.drawWidgetOverlays(aboveOverlays, false);
-                        } else {
-                            this.drawWidgetOverlays(widgetOverlays, true);
-                        }
+                        this.drawWidgetOverlaysForPass(this.undrawnWidgetOverlays(widgetOverlays));
                     }
                     this.commitBeforeMenuOverlayRects();
                     this.drawTradeAmountOverlay(widgetManager);
@@ -1175,13 +1168,19 @@ export class WidgetsOverlay implements Overlay {
      * own rects for its next partial redraw. Without `into`, the rects are the above-widget
      * overlay rects (`widgetOverlayRects`), replaced or appended to.
      */
-    private drawWidgetOverlays(overlays: WidgetOverlay[], resetRects = true, into?: DirtyRect[]): DirtyRect[] {
+    private drawWidgetOverlays(
+        overlays: WidgetOverlay[],
+        resetRects = true,
+        into?: DirtyRect[],
+        triggerWidgetUid?: number,
+    ): DirtyRect[] {
         const glr = this.glRenderer;
         if (!glr) return into ?? this.widgetOverlayRects;
         const cssWidth = getCanvasCssSize(this.app.gl.canvas as HTMLCanvasElement).width;
         const manager = this.ctx.getWidgetManager?.();
         const context = {
             renderer: glr,
+            ...(triggerWidgetUid !== undefined ? { triggerWidgetUid } : {}),
             canvasCssWidth: cssWidth,
             hudScale: mobileHudScale(manager?.rootInterface, cssWidth, manager?.canvasWidth),
             fontLoader: this.ctx.getFontLoader?.() || (() => undefined),
@@ -1229,13 +1228,34 @@ export class WidgetsOverlay implements Overlay {
      * menus - stays on top of the bars.
      */
     private drawWidgetOverlaysAtAnchor(): void {
-        if (this.overlayDrawnThisPass) return;
-        const overlays = (this.currentWidgetOverlays ?? []).filter(
+        const overlays = this.undrawnWidgetOverlays(this.currentWidgetOverlays ?? []).filter(
             (overlay) => overlay.drawAtAnchor === true,
         );
+        this.drawWidgetOverlaysForPass(overlays);
+    }
+
+    /** Draws a widget's own overlay after that widget's content, leaving later tooltips above it. */
+    private drawWidgetOverlaysAfterWidget(uid: number): void {
+        const overlays = (this.currentWidgetOverlays ?? []).filter(
+            (overlay) => overlay.drawAfterWidget?.includes(uid) === true,
+        );
         if (overlays.length === 0) return;
-        this.overlayDrawnThisPass = true;
-        this.drawWidgetOverlays(overlays, true);
+        for (const overlay of overlays) this.drawnOverlaysThisPass.add(overlay);
+        this.drawWidgetOverlaysForPass(overlays, uid);
+    }
+
+    private undrawnWidgetOverlays(overlays: readonly WidgetOverlay[]): WidgetOverlay[] {
+        return overlays.filter((overlay) => !this.drawnOverlaysThisPass.has(overlay));
+    }
+
+    private drawWidgetOverlaysForPass(overlays: WidgetOverlay[], triggerWidgetUid?: number): void {
+        if (overlays.length === 0) return;
+        if (!this.overlayRectsStartedThisPass) {
+            this.widgetOverlayRects = [];
+            this.overlayRectsStartedThisPass = true;
+        }
+        for (const overlay of overlays) this.drawnOverlaysThisPass.add(overlay);
+        this.drawWidgetOverlays(overlays, false, undefined, triggerWidgetUid);
     }
 
     /** The render tree calls this after widget content and tooltip widgets, just before its menu. */

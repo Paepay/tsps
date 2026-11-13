@@ -49,8 +49,35 @@ function init(pluginApi) {
 function leagueOf(player) {
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
+  // Level-Up reuses the task screen for the ten combat mastery challenges without
+  // becoming a seasonal league profile.
+  if (query.league === null) api.emitCustomEvent("level-up:task-profile", query);
   const type = Number(query.league);
   return query.league !== null && catalogs.has(type) && leagues[type] ? type : null;
+}
+
+/** Adds a runtime-only catalog, so a template can reuse the task screen without a league season. */
+function registerCatalog(type, info, tasks) {
+  const numeric = Number(type);
+  if (!Number.isInteger(numeric) || !Array.isArray(tasks)) return;
+  const normalized = tasks.map((task, index) => ({
+    ...task,
+    index: Number.isInteger(task.index) ? task.index : index,
+    trigger: task.trigger ?? null,
+  }));
+  const slots = normalized.reduce((most, task) => Math.max(most, task.index + 1), 0);
+  catalogs.set(numeric, {
+    key: info?.key ?? `template-${numeric}`,
+    fromCache: false,
+    tasks: normalized,
+    slots,
+    byId: new Map(normalized.map((task) => [String(task.id), task])),
+  });
+  leagues[numeric] = {
+    key: info?.key ?? `template-${numeric}`,
+    name: info?.name ?? "Level-Up",
+    colour: info?.colour ?? 0xffffff,
+  };
 }
 
 /** Every league type with a catalog. */
@@ -74,6 +101,11 @@ function league(type) {
 function completedIds(player) {
   const query = { player, ids: [] };
   api.emitCustomEvent("league:completed-tasks", query);
+  if (!Array.isArray(query.ids) || query.ids.length === 0) {
+    const levelUp = { player, ids: [] };
+    api.emitCustomEvent("level-up:completed-tasks", levelUp);
+    if (Array.isArray(levelUp.ids)) query.ids = levelUp.ids;
+  }
   return Array.isArray(query.ids) ? query.ids : [];
 }
 
@@ -101,7 +133,7 @@ function message(key, values = {}) {
 }
 
 module.exports = {
-  init, leagueOf, types, catalog, task, league, completedIds, rowId, tierName, colourOf, message, inPlace,
+  init, leagueOf, registerCatalog, types, catalog, task, league, completedIds, rowId, tierName, colourOf, message, inPlace,
   FILTERS_ATTRIBUTE, KILLS_ATTRIBUTE,
   get data() { return data; },
   get api() { return api; },

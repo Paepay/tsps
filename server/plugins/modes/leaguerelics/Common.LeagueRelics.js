@@ -26,8 +26,22 @@ function init(pluginApi) {
 function leagueOf(player) {
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
+  // Level-Up worlds reuse relic effects and catalogs without becoming a full
+  // seasonal league profile (tasks, league saves and passives stay disabled).
+  if (query.league === null) api.emitCustomEvent("level-up:relic-profile", query);
   const type = query.league;
   return type !== null && data.leagues[type] && leagues[type] ? Number(type) : null;
+}
+
+/**
+ * Level-Up owns its relic choices through skill milestones. Its interface reuses this
+ * catalog and the same 655 widgets, so the seasonal interface must not also act on them.
+ */
+function levelUpOwns(player) {
+  if (!player) return false;
+  const query = { player, active: false };
+  api.emitCustomEvent("level-up:relic-profile", query);
+  return query.active === true;
 }
 
 /** Catalogs built from the cache (data `fromCache`), by league type. */
@@ -279,7 +293,7 @@ function message(key, values = {}, type = null) {
 }
 
 module.exports = {
-  init, leagueOf, catalog, league, relic, chosen, points, highestTier, hasRelic, effectActive, reloadedPick,
+  init, leagueOf, levelUpOwns, catalog, league, relic, chosen, points, highestTier, hasRelic, effectActive, reloadedPick,
   RELOADED_ATTRIBUTE, reloadedTiers, cacheLeague, slug, ids, message, maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
   multipliedLoot, isPotion, hasStackableSecondary, batchActions, derivedHit, isBuildingDerivedHit,
   RELICS_ATTRIBUTE, structIds,
