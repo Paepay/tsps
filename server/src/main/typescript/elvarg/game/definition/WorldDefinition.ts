@@ -60,9 +60,30 @@ export function readWorldConfig(scopedSettings?: ScopedPluginSettings): JsonObje
     // Optional per-deployment overrides (gitignored), so a live world can differ from the
     // shipped world.json (e.g. its XP rate or tutorial) and still update from main by fast-forward.
     const localFile = path.resolve("data/definitions/world.local.json");
-    if (!fs.existsSync(localFile)) return preserveLegacyCrossFloorDefault(normalizeWorldPluginConfig(shipped, scopedSettings));
-    const local = object(JSON.parse(fs.readFileSync(localFile, "utf8")), "world.local.json");
-    return mergeWorldConfig(shipped, local, scopedSettings);
+    const base = fs.existsSync(localFile)
+        ? mergeWorldConfig(shipped, object(JSON.parse(fs.readFileSync(localFile, "utf8")), "world.local.json"), scopedSettings)
+        : preserveLegacyCrossFloorDefault(normalizeWorldPluginConfig(shipped, scopedSettings));
+    // The last authoritative configuration the platform delivered. Plugin switches and
+    // pluginConfig are resolved while plugins load, before the asynchronous platform
+    // handshake can answer, so the platform snapshot has to be a file layer read here.
+    // PaeScape writes it on every accepted revision (PaeScape.plugin.js); a malformed or
+    // missing snapshot falls back to the packaged/local configuration.
+    const platform = readPlatformWorldConfig();
+    return platform ? mergeWorldConfig(base, platform, scopedSettings) : base;
+}
+
+/** The platform persisted configuration layer, or null when absent/unreadable. */
+function readPlatformWorldConfig(): JsonObject | null {
+    const file = process.env.PAESCAPE_WORLD_PLATFORM_CONFIG
+        ? path.resolve(process.env.PAESCAPE_WORLD_PLATFORM_CONFIG)
+        : path.resolve("data/definitions/world.platform.json");
+    if (!fs.existsSync(file)) return null;
+    try {
+        return object(JSON.parse(fs.readFileSync(file, "utf8")), "world.platform.json");
+    } catch (error) {
+        console.warn(`[world] ignoring an unreadable platform configuration snapshot (${error instanceof Error ? error.message : String(error)})`);
+        return null;
+    }
 }
 
 /** The layering rule of readWorldConfig, for callers that already hold both layers. */

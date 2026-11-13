@@ -73,11 +73,18 @@ function configurePackaged(template, rules) {
 
 /** Hosted activation is fail-closed: both authenticated fields must be present. */
 function configureHosted(config) {
-  if (!config || typeof config !== "object" || typeof config.canonicalTemplate !== "string") {
-    deactivate("refusing a Level-Up configuration without an authenticated canonicalTemplate");
+  if (!config || typeof config !== "object") {
+    deactivate("refusing a template configuration that is not an object");
     return false;
   }
-  return applyConfiguration(config.canonicalTemplate, config.templateContract);
+  // The authenticated platform may send the template as canonicalTemplate (handshake/lease)
+  // or template (world API); either is authenticated. The contract is still validated below.
+  const id = typeof config.canonicalTemplate === "string" ? config.canonicalTemplate : config.template;
+  if (typeof id !== "string") {
+    deactivate("refusing a template configuration without an authenticated template id");
+    return false;
+  }
+  return applyConfiguration(id, config.templateContract);
 }
 
 function active() {
