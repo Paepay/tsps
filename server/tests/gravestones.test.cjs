@@ -88,7 +88,7 @@ const graveOf = (player) => player.getAttribute("gravestones:grave");
 test("a charged Webweaver lost in PvM keeps its ether metadata through the normal grave and Office", (t) => {
   const Bow = require("../plugins/items/WebweaverBow.plugin");
   Bow.register({
-    core, emitCustomEvent() {}, onItemOnItem() {}, onItemAction() {},
+    core, emitCustomEvent() {}, onCustomEvent() {}, onItemOnItem() {}, onItemAction() {},
     registerRangedAmmoHandler() {}, registerRangedCombatModifier() {}, onPlayerDeathItemDrop() {},
   });
   const { PlayerDeathTask } = require("../dist/game/task/impl/PlayerDeath");

@@ -1,4 +1,4 @@
-﻿// Run from server/ after `yarn build`: node --test tests/paescape-world-config-apply.test.cjs
+// Run from server/ after `yarn build`: node --test tests/paescape-world-config-apply.test.cjs
 //
 // The companion to paescape-world-config-overlay.test.cjs: that one pins the pure
 // translation and the core overlay in isolation; this one drives the *real*
@@ -20,6 +20,7 @@ const { test, before, after } = require("node:test");
 const WORK_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "paescape-config-apply-"));
 process.env.TSPS_ACCOUNTS_FILE = path.join(WORK_DIR, "accounts.json");
 process.env.TSPS_DISPLAY_NAMES_FILE = path.join(WORK_DIR, "display-names.json");
+process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = path.join(WORK_DIR, "world.platform.json");
 process.env.PAESCAPE_WORLD_SECRET = "test-world-secret";
 process.env.PAESCAPE_WORLD_ID = "wld_config_apply";
 delete process.env.PAESCAPE_INSTALLATION_FILE;

@@ -37,6 +37,7 @@ const LOCAL_SAVE_DIR = path.join(WORK_DIR, "characters");
 
 process.env.TSPS_ACCOUNTS_FILE = path.join(WORK_DIR, "accounts.json");
 process.env.TSPS_DISPLAY_NAMES_FILE = path.join(WORK_DIR, "display-names.json");
+process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = path.join(WORK_DIR, "world.platform.json");
 process.env.PAESCAPE_PLATFORM_URL = PLATFORM_URL;
 // The test platform below mounts at the origin root (PLATFORM_PUBLIC_PATH ''), so
 // tell the world plugin the public path is empty: no /platform prefix.
@@ -75,6 +76,7 @@ Server.installProductionPathResolver();
 
 const { GameConstants } = require("../dist/game/GameConstants");
 const { CachePipeline } = require("../dist/game/cache/CachePipeline");
+const WorldDefinition = require("../dist/game/definition/WorldDefinition");
 const { World } = require("../dist/game/World");
 const { Sailing } = require("../dist/game/content/sailing/Sailing");
 const { PluginManager } = require("../dist/plugins/PluginManager");
@@ -174,9 +176,51 @@ before(async () => {
   cookie = (login.headers.get("set-cookie") || "").split(";")[0];
   csrf = (await platformFetch("/api/auth/session")).json.csrfToken;
 
-  const created = await platformFetch("/api/worlds", { method: "POST", body: { name: "Lifecycle World", config: { settings: { experienceMultiplier: 1 } } } });
+  // Issue #45: this is the real platform contract, not a test-only shortcut. The
+  // deliberately non-default values are asserted on the live engine below.
+  const created = await platformFetch("/api/worlds", {
+    method: "POST",
+    body: {
+      name: "Lifecycle World",
+      config: {
+        version: 2,
+        mode: "online",
+        template: "osrs",
+        templateContract: {
+          schemaVersion: 1,
+          ruleset: "osrs",
+          enforcedBy: "game-server",
+          leagueRelics: false,
+          leagueSeason: null,
+          hardcore: false,
+          pvp: null,
+          levelUp: null,
+        },
+        firstPartyContent: null,
+        settings: {
+          description: "Lifecycle configuration",
+          tutorialIsland: false, tutorialSkippable: true, f2pWorld: false,
+          gameframe: "317-fixed", voiceChat: true, xpRate: 7,
+          presets: false, setSkillLevel: false, ironmanAccounts: false,
+          levelUpInterruptions: true, quests: false, equipmentRequirements: true,
+          achievementDiaries: false, combatAchievements: false, collectionLog: false,
+          pets: false, globalPvp: false, allBuildingsSafe: false, gravestones: true,
+          duelStaking: false, bossDropRate: 1, grandExchange: false, customShops: false,
+          osrsNpcs: true, playerBots: false, randomEvents: false, shootingStars: false,
+          customAccountTab: false, commandPermissions: { teleport: "MODERATOR" },
+          crossFloorVisibility: true, crossFloorCombat: false,
+          autoUpdate: true, autoRestartOnUpdate: true, memoryLimitMb: 2048,
+          spawn: { x: 3222, y: 3219, z: 0 }, maxPlayers: 12, visibility: "public",
+          zones: [{ minX: 2900, maxX: 3400, minY: 3000, maxY: 3600, z: 0, tags: ["f2p"] }],
+        },
+        shops: [],
+        mapOverrides: [],
+      },
+    },
+  });
   assert.equal(created.status, 201, JSON.stringify(created.json));
   worldId = created.json.world.id;
+  assert.equal(created.json.world.maxPlayers, 12, "the owner cap is stored on the world row");
   await platformFetch(`/api/worlds/${worldId}/go-live`, { method: "POST", body: {} });
   await startEndpointServer();
   const endpoint = await platformFetch(`/api/worlds/${worldId}/endpoint`, { method: "POST", body: { endpointUrl } });
@@ -306,6 +350,45 @@ test("the full lifecycle: authenticate, play, save, restart, reload", async (t) 
   assert.equal(save.getInventory()[1].getId(), 4151, "acquired item persisted");
   assert.equal(save.getEquipment()[Equipment.WEAPON_SLOT].getId(), 4151, "equipped item persisted");
   assert.equal((save.getBanks().get(0) || []).find((item) => item.getId() === 11832).getAmount(), 7, "the banked item persisted");
+});
+
+test("the platform configuration reaches the live engine unchanged", () => {
+  const definition = WorldDefinition.getWorldDefinition();
+  assert.equal(definition.name, "Lifecycle World");
+  assert.equal(definition.description, "Lifecycle configuration");
+  assert.equal(definition.experienceMultiplier, 7);
+  assert.equal(GameConstants.EXPERIENCE_MULTIPLIER, 7);
+  assert.deepEqual(definition.spawn, { x: 3222, y: 3219, z: 0 });
+  assert.equal(definition.gameframe, "317-fixed");
+  assert.equal(definition.membersWorld, true, "f2pWorld=false is a members world");
+  assert.equal(definition.zones.length, 1);
+  assert.deepEqual(definition.zones[0], { minX: 2900, maxX: 3400, minY: 3000, maxY: 3600, z: 0, tags: ["f2p"] });
+
+  // Plugin switches and values are the compiled form the runtime reads, not UI state.
+  assert.equal(definition.plugins.VoiceChat, true);
+  assert.equal(definition.plugins.Pets, false);
+  assert.equal(definition.plugins.Gravestones, true);
+  assert.equal(definition.plugins.TutorialIsland, false);
+  assert.equal(definition.plugins.CrossFloor, true, "either cross-floor option enables the plugin");
+  assert.equal(definition.pluginConfig["CrossFloor:combat"], false);
+  assert.deepEqual(definition.pluginConfig["commands:permissions"], { teleport: "MODERATOR" });
+
+  const PaeScape = require("../plugins/paescape/PaeScape.plugin");
+  assert.equal(PaeScape._test.maxPlayers(), 12, "the owner cap, not the engine slot count");
+});
+
+test("a new character enters at the configured spawn and gains the configured XP rate", async (t) => {
+  const name = "Config Hero";
+  const account = await registerCharacter(name, "discord-config");
+  const { player } = await loginAndEnter(t, name, await issueTicket(account.id, account), 2);
+  const location = player.getLocation();
+  assert.deepEqual({ x: location.getX(), y: location.getY(), z: location.getZ() }, { x: 3222, y: 3219, z: 0 });
+
+  const attack = Skill.ATTACK.getIndex();
+  const before = player.getSkillManager().getSkills().experience[attack];
+  player.getSkillManager().addExperience(Skill.ATTACK, 100, true);
+  const gained = player.getSkillManager().getSkills().experience[attack] - before;
+  assert.equal(gained, 700, "100 base XP at the configured 7x rate");
 });
 
 test("a duplicate active session for the same character is refused", async (t) => {
