@@ -73,6 +73,7 @@ import type { LegacyConfigMigration } from "../../impl/LegacyConfigMigration";
 import { migrateGroundItemsConfig } from "../../../game/plugins/grounditems/migrateGroundItems";
 import { TooltipPlugin } from "../ui/overlay/tooltip/TooltipOverlay";
 import { OsrsTranslatePlugin } from "../../../game/plugins/osrstranslate/OsrsTranslatePlugin";
+import { LevelUpLocksPlugin } from "../../../game/plugins/levelup/LevelUpLocksPlugin";
 import { ConfigPlugin } from "./config/ConfigPlugin";
 import type { PluginClass } from "./Plugin";
 
@@ -116,6 +117,7 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     ChatFilterPlugin,
     // Rewrites drawn text only; after the chat plugins, whose chatbox callbacks it shares.
     OsrsTranslatePlugin,
+    LevelUpLocksPlugin,
     AnimationSmoothingPlugin,
     TimersPlugin,
     StatusBarsPlugin,

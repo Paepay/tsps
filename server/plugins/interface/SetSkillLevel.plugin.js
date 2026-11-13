@@ -3,6 +3,7 @@ const { CombatFactory } = require("../../src/main/typescript/elvarg/game/content
 const { Wilderness } = require("../../src/main/typescript/elvarg/game/content/wilderness/Wilderness");
 const { PlayerRights } = require("../../src/main/typescript/elvarg/game/model/rights/PlayerRights");
 const Presets = require("../modes/pvp/Presets.PvpMode");
+const TemplateWorlds = require("../modes/TemplateWorlds.plugin.js");
 
 // Skills keyed by their component in the Skills tab (interface 320).
 const SKILLS = new Map([
@@ -51,6 +52,8 @@ function blockReason(player, skill) {
 }
 
 function promptForLevel(player, skill) {
+  // Level-Up owns every Skills-tab stat click, including locked-skill unlocks.
+  if (TemplateWorlds.isActive()) return;
   const minimum = skill === Skill.HITPOINTS ? 10 : 1;
   player.getPacketSender().sendInterfaceRemoval();
   player.setEnteredAmountAction({
@@ -77,7 +80,7 @@ function promptForLevel(player, skill) {
  */
 function claimStatClick(offer) {
   const { player, childId } = offer;
-  if (offer.handled || !Presets.isEnabled()) return;
+  if (offer.handled || !Presets.isEnabled() || TemplateWorlds.isActive()) return;
   const skill = SKILLS.get(Number(childId));
   if (!skill || (!skill.canSetLevel() && !isDeveloper(player))) return;
   offer.handled = true;

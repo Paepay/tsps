@@ -25,12 +25,28 @@ function init(pluginApi) {
   data = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "league-combat-masteries.json"), "utf8"));
 }
 
-/** Whether the player is a character of the league these masteries belong to (Raging Echoes). */
+/** Whether the player is on the Level-Up world. */
+function isLevelUp(player) {
+  if (player?.isPlayer?.() !== true) return false;
+  const levelUp = { player, active: false };
+  api.emitCustomEvent("level-up:mastery-profile", levelUp);
+  return levelUp.active === true;
+}
+
+/** Whether the player is a character of the league these masteries belong to (Raging Echoes or Level-Up). */
 function isEchoes(player) {
   if (player?.isPlayer?.() !== true) return false;
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
-  return Number(query.league) === data.league;
+  if (Number(query.league) === data.league) return true;
+  // Level-Up enables the same mastery challenge and unlock systems without a
+  // Raging Echoes league save or seasonal tasks.
+  return isLevelUp(player);
+}
+
+/** Level-Up's challenge list without entries this cache cannot support. */
+function levelUpChallenges() {
+  return data.challenges.list.filter((challenge) => !challenge._missing);
 }
 
 function emptyMasteries() {
@@ -106,7 +122,22 @@ function pointsEarned(player) {
 }
 
 function earned(player) {
-  return Object.keys(pointsEarned(player)).length;
+  const done = pointsEarned(player);
+  if (!isLevelUp(player)) return Object.keys(done).length;
+  const hidden = new Set(data.challenges.list.filter((challenge) => challenge._missing).map((challenge) => challenge.key));
+  return Object.keys(done).filter((key) => !hidden.has(key)).length;
+}
+
+/** The challenge ids actually completed, separately from an uncapped mastery point balance. */
+function completedChallengeKeys(player) {
+  const done = pointsEarned(player);
+  const challenges = isLevelUp(player) ? levelUpChallenges() : data.challenges.list;
+  return challenges.filter((challenge) => done[challenge.key]).map((challenge) => challenge.key);
+}
+
+/** Challenges actually completed. */
+function completedChallenges(player) {
+  return completedChallengeKeys(player).length;
 }
 
 function spent(player) {
@@ -144,8 +175,8 @@ function message(key, values = {}) {
 }
 
 module.exports = {
-  init, isEchoes, emptyMasteries, masteries, style, styleOfCombatType, mastery, required, tier, has, effect,
-  passiveTier, passive, passiveEffect, pointsEarned, earned, spent, available, progress, maxHit, uid, message,
+  init, isLevelUp, isEchoes, levelUpChallenges, emptyMasteries, masteries, style, styleOfCombatType, mastery, required, tier, has, effect,
+  passiveTier, passive, passiveEffect, pointsEarned, earned, completedChallengeKeys, completedChallenges, spent, available, progress, maxHit, uid, message,
   MASTERIES_ATTRIBUTE, POINTS_ATTRIBUTE, PROGRESS_ATTRIBUTE, STYLE_KEYS,
   get data() { return data; },
   get api() { return api; },

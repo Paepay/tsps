@@ -35,6 +35,7 @@ const { JsonPlayerPersistence } = jsonPersistence;
 const { requestSync, requestAsync } = require("./PaeScapePersistenceTransport");
 const { getPlatformAccess } = require("../paescape/PaeScapeBridge");
 const { isHostedPersistence } = require("./PaeScapePersistenceMode");
+const TemplateWorlds = require("../modes/TemplateWorlds.plugin.js");
 
 /** Per-request timeout to the platform. */
 const REQUEST_TIMEOUT_MS = Number(process.env.PAESCAPE_PERSISTENCE_TIMEOUT_MS) > 0
@@ -48,6 +49,26 @@ const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 15000;
 /** How long a "not registered on this world" answer is trusted before asking again. */
 const NOT_REGISTERED_CACHE_MS = 30_000;
+
+/**
+ * The versioned save envelope, plus the Level-Up document the platform validates.
+ * `prepareLevelUpWrite` inspects the state document itself, so the progress must sit
+ * beside the save rather than only inside it. Other templates never add the field.
+ */
+function buildStateDocument(save, serialized) {
+  const state = {
+    __paescapeSchema: SAVE_SCHEMA_VERSION,
+    save: JSON.parse(serialized),
+  };
+  let levelUpProgress;
+  try {
+    levelUpProgress = TemplateWorlds.summaryFromSave(save);
+  } catch {
+    levelUpProgress = undefined;
+  }
+  if (levelUpProgress) state.levelUpProgress = levelUpProgress;
+  return state;
+}
 
 /**
  * Schema version of the document this adapter writes. The document is the normal
@@ -270,10 +291,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     this.serializer.validateSerializedSave(serialized, username);
     // Store a versioned envelope around the unchanged PlayerSave document so a
     // future schema change can migrate a stored save instead of guessing at it.
-    const envelope = JSON.stringify({
-      __paescapeSchema: SAVE_SCHEMA_VERSION,
-      save: JSON.parse(serialized),
-    });
+    const envelope = JSON.stringify(buildStateDocument(save, serialized));
     this.enqueue(storageKey, username, profile, serialized, envelope, reason);
   }
 
@@ -410,7 +428,8 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     }
     const entry = this.cache.get(storageKey);
     const revision = entry && entry.characterId === characterId ? entry.revision : this.fetchRevision(characterId, profile);
-    const serialized = JSON.stringify(PlayerSave.fromPlayer(player), this.serializer.replacer.bind(this.serializer));
+    const save = PlayerSave.fromPlayer(player);
+    const serialized = JSON.stringify(save, this.serializer.replacer.bind(this.serializer));
     this.serializer.validateSerializedSave(serialized, username);
     return {
       username,
@@ -418,7 +437,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
       characterId,
       revision,
       serialized,
-      state: { __paescapeSchema: SAVE_SCHEMA_VERSION, save: JSON.parse(serialized) },
+      state: buildStateDocument(save, serialized),
     };
   }
 
@@ -624,4 +643,5 @@ module.exports = {
     });
   },
   PaeScapePlayerPersistence,
+  buildStateDocument,
 };

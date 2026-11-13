@@ -33,6 +33,9 @@ function nodeOf(slot) {
 
 function open({ player }) {
   if (!Common.isEchoes(player)) return false;
+  // The screen challenge enum is server-provided content: refresh it right
+  // before mounting so a reloaded client always has the filtered list.
+  Common.api.emitCustomEvent("league:send-content", { player });
   const { group, clickzones, clickzoneSlots, menuFrame, menuFrameSlots, tabs, tabSlots, highlight, highlightScript } = ui();
   const sender = player.getPacketSender();
   sender.sendInterface(group);

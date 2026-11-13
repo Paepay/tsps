@@ -131,6 +131,9 @@ export class SkillManager {
         if (!skill || typeof skill.getIndex !== "function") {
             return this;
         }
+        if (this.lockedSkills.has(skill.getIndex())) {
+            return this;
+        }
         if (!Number.isFinite(experience) || experience <= 0) {
             return this;
         }
@@ -474,6 +477,8 @@ export class SkillManager {
 
     /** Temporary, unsaved caps on base levels, by skill index (a minigame's handicap, say). */
     private readonly levelCaps = new Map<number, number>();
+    /** Skills a ruleset suppresses experience for; the lock is session state, rebuilt on login. */
+    private readonly lockedSkills = new Set<number>();
 
     /**
      * Caps a skill's base level until cleared with `null`. Nothing is saved: the cap is gone
@@ -486,6 +491,17 @@ export class SkillManager {
             this.setCurrentLevel(skill, this.getMaxLevel(skill), false);
         }
         this.updateSkill(skill);
+        return this;
+    }
+
+    /**
+     * Suppresses a skill's experience until unlocked. The skill keeps its real level, so level-1
+     * activities still work; only XP is refused, through every caller including reward XP.
+     */
+    public setSkillLocked(skill: Skill, locked: boolean): SkillManager {
+        const index = skill.getIndex();
+        if (locked) this.lockedSkills.add(index);
+        else this.lockedSkills.delete(index);
         return this;
     }
 

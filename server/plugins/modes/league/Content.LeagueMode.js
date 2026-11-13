@@ -48,7 +48,12 @@ function login({ player, league }) {
 }
 
 function refresh(request) {
-  const type = request?.player ? Common.leagueOf(request.player) : null;
+  let type = request?.player ? Common.leagueOf(request.player) : null;
+  if (type === null && request?.player) {
+    const query = { player: request.player, league: null };
+    Common.api.emitCustomEvent("level-up:content-profile", query);
+    type = query.league;
+  }
   if (type !== null) send(request.player, type);
 }
 

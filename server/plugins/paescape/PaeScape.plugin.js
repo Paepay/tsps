@@ -53,6 +53,7 @@ const { SkillManager } = require("../../src/main/typescript/elvarg/game/content/
 const bridge = require("./PaeScapeBridge.js");
 const PlatformUrl = require("./PlatformUrl.js");
 const worldData = require("../persistence/WorldData");
+const TemplateWorlds = require("../modes/TemplateWorlds.plugin.js");
 
 /** The control-token path prefix the core routes to this plugin. */
 const CONTROL_PREFIX = "/api/platform/";
@@ -459,6 +460,7 @@ function buildSummary(name) {
   let totalLevel = 0;
   for (let i = 0; i < SkillManager.AMOUNT_OF_SKILLS; i++) totalLevel += base[i] || 0;
   const toSlot = (item, slot) => (isRealItem(item) ? { slot, itemId: item.getId(), amount: Number(item.getAmount()) || 1 } : null);
+  const levelUpProgress = TemplateWorlds.summaryFromSave(save);
   return {
     name: String(save.getDisplayName?.() ?? name),
     primary,
@@ -468,6 +470,7 @@ function buildSummary(name) {
     equipment: (save.getEquipment?.() ?? []).map(toSlot).filter(Boolean),
     inventory: (save.getInventory?.() ?? []).map(toSlot).filter(Boolean),
     appearance: save.getAppearance?.() ?? undefined,
+    ...(levelUpProgress ? { levelUpProgress } : {}),
     lastPlayedAt: null,
     fetchedAt: new Date().toISOString(),
   };

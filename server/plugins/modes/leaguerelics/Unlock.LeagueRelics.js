@@ -214,6 +214,7 @@ function reloadedRefusal(player, type, tier, slot, bankOpen) {
 }
 
 function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player) } = {}) {
+  if (Common.levelUpOwns(player)) return false;
   const type = Common.leagueOf(player);
   const reloaded = reloadedRefusal(player, type, tier, slot, bankOpen);
   if (reloaded !== null) {
@@ -249,6 +250,9 @@ function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player)
 
 /** Points crossing a tier's cost show the popup once, for each tier still open (capture 227/00070). */
 function pointsChanged({ player, points, previous }) {
+  // Level-Up earns relic choices from skill milestones, not seasonal points. Its login
+  // announces `league:points-changed` without point totals, so this tier popup must not run.
+  if (!player || Common.levelUpOwns(player)) return;
   const type = Common.leagueOf(player);
   if (type === null) return;
   const picks = Common.chosen(player);
@@ -319,3 +323,4 @@ module.exports.refusal = refusal;
 module.exports.reloadedRefusal = reloadedRefusal;
 module.exports.uid = uid;
 module.exports.grantedItems = grantedItems;
+module.exports.grant = grant;
