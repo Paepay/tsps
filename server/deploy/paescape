@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Friendly operator entry point installed at /usr/local/bin/paescape.
+# `paescape official <start|stop|restart|status|logs|health|backup|update>`
+set -euo pipefail
+
+if [[ "${1:-}" == "official" ]]; then
+  shift
+  exec /usr/local/bin/paescape-official "$@"
+fi
+
+cat >&2 <<'USAGE'
+usage: paescape official <command> [options]
+
+commands:
+  start              start the official world service
+  stop               stop it (no automatic restart)
+  restart            five-minute counted, saved restart through the platform
+  restart --immediate  emergency systemctl restart with no countdown
+  status             service state and current health
+  logs [N] [--follow]  recent journal lines (optionally follow)
+  health             fetch the world health endpoint
+  backup             consistent SQLite backup plus account/identity data
+  update [--ref REF] [--skip-graceful]  warn, save, back up, deploy, verify
+USAGE
+exit 2

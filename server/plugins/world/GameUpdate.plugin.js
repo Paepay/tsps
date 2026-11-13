@@ -18,6 +18,11 @@ let pendingAfterPersist = null;
 let pendingOnCancelled = null;
 let pendingExitCode;
 let pendingId;
+// A platform-requested restart must not be cancelled by an in-game owner command.
+let pendingCancellable = true;
+// Announce each milestone once, so the chat log carries the required 10/5/1
+// minute warnings while the client also renders the continuous timer.
+let warnedMilestones = new Set();
 // Assigned in register(): Task only exists on api.core by then, and a module-scope
 // `class ... extends Task` would throw at require() time.
 let GameUpdateCountdownTask = null;
@@ -69,6 +74,19 @@ function remainingSeconds() {
     return Math.ceil(remainingCentis() / 100);
 }
 
+function announceMilestones() {
+    const remaining = remainingSeconds();
+    for (const milestone of [600, 300, 60]) {
+        if (remaining > 0 && remaining <= milestone && !warnedMilestones.has(milestone)) {
+            warnedMilestones.add(milestone);
+            const message = `The server will restart in ${milestone / 60} minute${milestone === 60 ? "" : "s"}. Please finish what you are doing; progress will be saved.`;
+            for (const player of World.getPlayers()) {
+                if (player) player.sendMessage(message);
+            }
+        }
+    }
+}
+
 function pushCountdown(remainingCentis) {
     for (const player of World.getPlayers()) {
         if (player) {
@@ -83,6 +101,8 @@ function clearPendingShutdownOptions() {
     pendingOnCancelled = null;
     pendingExitCode = undefined;
     pendingId = undefined;
+    pendingCancellable = true;
+    warnedMilestones = new Set();
 }
 
 function startGameUpdate(seconds, options = {}) {
@@ -91,6 +111,10 @@ function startGameUpdate(seconds, options = {}) {
     pendingOnCancelled = typeof options.onCancelled === "function" ? options.onCancelled : null;
     pendingExitCode = options.exitCode;
     pendingId = options.id;
+    pendingCancellable = options.cancellable !== false;
+    // A five-minute countdown starts below the ten-minute milestone: do not
+    // announce "10 minutes" just because the threshold is numerically larger.
+    warnedMilestones = new Set([600, 300, 60].filter((milestone) => milestone > seconds));
     scheduledUntilMs = Date.now() + seconds * 1000;
     countdownTask = new GameUpdateCountdownTask();
     TaskManager.submit(countdownTask);
@@ -100,11 +124,13 @@ function startGameUpdate(seconds, options = {}) {
         player.sendMessage(notice);
         player.getPacketSender().sendSystemUpdate(seconds * 100);
     }
+    announceMilestones();
     Server.getLogger().info(`[GameUpdate] server shutdown scheduled in ${formatDurationHuman(seconds)}`);
 }
 
 function cancelGameUpdate() {
     if (scheduledUntilMs <= 0) return false;
+    if (!pendingCancellable) return false;
     scheduledUntilMs = 0;
     clearPendingShutdownOptions();
     if (countdownTask) {
@@ -173,11 +199,17 @@ function onStartEvent(payload) {
         onCancelled: payload.onCancelled,
         exitCode: payload.exitCode,
         id: payload.id,
+        cancellable: payload.cancellable,
     });
     payload.accepted = true;
 }
 
 function onCancelEvent(payload) {
+    if (scheduledUntilMs > 0 && !pendingCancellable) {
+        payload.error = "This restart was requested by the platform and cannot be cancelled in game.";
+        payload.cancelled = false;
+        return;
+    }
     payload.cancelled = cancelGameUpdate();
 }
 
@@ -233,6 +265,7 @@ module.exports = {
                 }
                 const remaining = remainingCentis();
                 pushCountdown(remaining);
+                announceMilestones();
                 if (remaining <= 0) {
                     this.stop();
                     scheduledUntilMs = 0;

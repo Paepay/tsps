@@ -1,0 +1,47 @@
+[Unit]
+Description=PaeScape Official world server
+Documentation=file:///home/user/apps/tsps/server/deploy/README-official.md
+After=network-online.target
+Wants=network-online.target
+# A crash loop must stop and stay visible instead of burning the host. A
+# deliberate `systemctl stop` is not a crash and is never restarted.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Least-privilege service account created during provisioning. Never run the
+# public game service as root or as the deployment account.
+User=paescape
+Group=paescape
+WorkingDirectory=/home/user/apps/tsps/server
+EnvironmentFile=/etc/paescape/official.env
+# The five-minute restart and a normal `systemctl stop` both exit cleanly, so
+# `always` (not `on-failure`) is required for the replacement process to start.
+# `systemctl stop` still suppresses the restart, which is what maintenance and
+# update commands use.
+ExecStart=/usr/bin/node ../scripts/run-with-env.mjs - --max-old-space-size=8192 ./dist/Server.js
+Restart=always
+RestartSec=10
+SuccessExitStatus=0
+# Give Server.shutdown time to log out players and flush persistence.
+TimeoutStopSec=90
+KillSignal=SIGTERM
+LimitNOFILE=65535
+Nice=-5
+
+# Logs are centralized in journald; the service also writes its own data logs.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=paescape-official
+
+# Hardening. The checkout is read-only to the service; only its isolated data
+# directory and the server's own log directory are writable.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/user/apps/paescape-official/data /home/user/apps/tsps/server/logs
+
+[Install]
+WantedBy=multi-user.target

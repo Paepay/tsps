@@ -75,6 +75,14 @@ const TICKET_PATTERN = /^[A-Za-z0-9_-]{40,64}$/;
 let api;
 let platform = { url: "", worldId: "", worldSecret: "", endpoint: "" };
 let publicKey = null;
+/** Immutable process boot time, echoed to the platform to prove a replacement. */
+const BOOT_AT = new Date().toISOString();
+/**
+ * A dashboard restart is a protected maintenance state. It is entered before
+ * the countdown starts, refuses new logins, and survives into this module's
+ * shutdown callbacks so a cancelled restart cannot leave the world locked.
+ */
+let restartState = { active: false, state: "starting", requestId: null, outcome: null };
 let session = null; // { token, expiresAt }
 let heartbeatTimer = null;
 let sessionTimer = null;
@@ -359,6 +367,34 @@ async function ensureSession() {
   return session.token;
 }
 
+/**
+ * Adopt the platform's current restart request on a replacement process. The
+ * first heartbeat from a new process has no local request id; the response
+ * supplies it, and an immediate follow-up heartbeat reports ready with that id.
+ * Only the platform can clear maintenance, and only after this echo.
+ */
+function applyRestartDirective(result) {
+  if (!result.ok || !result.json || !result.json.restart) return;
+  const directive = result.json.restart;
+  if (directive.active && directive.requestId) {
+    const learned = !restartState.requestId;
+    if (!restartState.active) {
+      restartState.requestId = String(directive.requestId);
+      restartState.state = "ready";
+    }
+    if (learned) {
+      const timer = setTimeout(() => void heartbeat(), 750);
+      timer.unref?.();
+    }
+    return;
+  }
+  if (!directive.active && !restartState.active) {
+    // The platform has acknowledged this process. Drop the completed request
+    // id/outcome so later heartbeats cannot report stale restart evidence.
+    restartState = { active: false, state: "ready", requestId: null, outcome: null };
+  }
+}
+
 /** Report build, config revision and player count; refresh the session if it expired. */
 async function heartbeat() {
   try {
@@ -372,9 +408,14 @@ async function heartbeat() {
         playerCount: api.core.World.getNetworkPlayerCount ? api.core.World.getNetworkPlayerCount() : 0,
         maxPlayers: maxPlayers(),
         endpointUrl: platform.endpoint || undefined,
+        bootAt: BOOT_AT,
+        restartState: restartState.active ? "maintenance" : "ready",
+        restartRequestId: restartState.requestId || undefined,
+        restartOutcome: restartState.outcome || undefined,
       },
     });
     if (result.status === 401) session = null; // refresh on the next beat
+    applyRestartDirective(result);
     // A heartbeat doubles as the configuration-change signal in configured mode
     // (the hosted path uses the lease renewal for this): apply the authoritative
     // config whenever the platform's revision moves past the one we loaded.
@@ -518,6 +559,75 @@ function createCharacterForUser(userId, name) {
 
 /* ------------------------------------------------------- control handler --- */
 
+function resetRestartState(outcome = null) {
+  // A cancelled countdown still needs its request id on the next heartbeat so
+  // the platform can match the cancellation to the request it is holding open.
+  restartState = {
+    active: false,
+    state: "ready",
+    requestId: outcome === "cancelled" ? restartState.requestId : null,
+    outcome,
+  };
+}
+
+/**
+ * Start a protected, five-minute restart through the shared GameUpdate timer.
+ * The timer owns the live packets; this plugin owns the login gate, logout and
+ * save preparation, and the evidence the platform needs before reopening.
+ */
+function beginWorldRestart(body) {
+  if (restartState.active) {
+    return { status: 409, body: { ok: false, error: "A restart is already in progress for this world." } };
+  }
+  if (Number(body.seconds) !== 300) {
+    return { status: 400, body: { ok: false, error: "A dashboard restart must run for exactly 300 seconds." } };
+  }
+  const requestId = String(body.requestId ?? "").trim();
+  if (!/^rst_[A-Za-z0-9_-]{8,80}$/.test(requestId)) {
+    return { status: 400, body: { ok: false, error: "The restart request id is invalid." } };
+  }
+  restartState = { active: true, state: "maintenance", requestId, outcome: null };
+  const event = {
+    seconds: 300,
+    id: requestId,
+    exitCode: 0,
+    // This countdown is an operator action, not a normal owner ::gameUpdate.
+    cancellable: false,
+    beforeShutdown: () => {
+      // Queue every account for removal and close its gameplay session first.
+      // Server.shutdown then persists the players and waits for the persistence
+      // flush before the process exits, so no online account is left unsaved.
+      for (const player of api.core.World.getPlayers()) {
+        if (!player) continue;
+        try {
+          player.sendMessage("The server is restarting. Your progress is being saved and you are being logged out now.");
+          player.requestLogout?.();
+        } catch (error) {
+          warn(`could not log out ${player.getUsername?.() ?? "a player"} during restart: ${error.message}`);
+        }
+      }
+    },
+    onCancelled: (reason) => {
+      log(`restart ${requestId} was cancelled (${reason}); reopening logins`);
+      resetRestartState("cancelled");
+      void heartbeat();
+    },
+  };
+  try {
+    api.emitCustomEvent("GameUpdate:start", event);
+  } catch (error) {
+    resetRestartState("failed");
+    return { status: 500, body: { ok: false, error: `The countdown could not be started: ${error.message}` } };
+  }
+  if (event.accepted !== true) {
+    resetRestartState("failed");
+    return { status: 409, body: { ok: false, error: event.error ?? "The countdown could not be started." } };
+  }
+  void heartbeat();
+  log(`accepted five-minute restart ${requestId}; new logins are paused`);
+  return { status: 202, body: { ok: true, accepted: true, seconds: 300, requestId } };
+}
+
 async function handleControl(request) {
   const pathname = request.path.split("?")[0];
   if (!pathname.startsWith(CONTROL_PREFIX)) return null;
@@ -537,6 +647,10 @@ async function handleControl(request) {
         generation: Number(BUILD.generation ?? 0),
         version: BUILD.version,
         leased: Boolean(lease),
+        bootAt: BOOT_AT,
+        maintenance: restartState.active,
+        restartState: restartState.state,
+        restartRequestId: restartState.requestId,
       },
     };
   }
@@ -553,6 +667,11 @@ async function handleControl(request) {
     } catch {
       return { status: 400, body: { ok: false, error: "Malformed request body." } };
     }
+  }
+
+  // POST /api/platform/restart -> protected five-minute graceful restart
+  if (request.method === "POST" && segments.length === 1 && segments[0] === "restart") {
+    return beginWorldRestart(body);
   }
 
   // POST /api/platform/characters  -> create
@@ -601,6 +720,7 @@ async function handleControl(request) {
 
 /** Map a control path to the action name the platform signs the token with. */
 function verifyAction(pathname, method) {
+  if (pathname === `${CONTROL_PREFIX}restart` && method === "POST") return "world:restart";
   if (pathname === `${CONTROL_PREFIX}characters` && method === "POST") return "character:create";
   if (pathname.endsWith("/summary")) return "character:summary";
   if (method === "POST" && pathname.startsWith(`${CONTROL_PREFIX}characters/`)) return "character:delete";
@@ -618,6 +738,10 @@ function verifyAction(pathname, method) {
  * world keeps the old behaviour: try a ticket, otherwise fall back to the password.
  */
 async function preAuthenticate({ typedName, password }, connection) {
+  if (restartState.active) {
+    if (connection) connection.reject(4, "This world is restarting. New logins are paused until it is back online.");
+    return undefined;
+  }
   // The website also refuses a full world before issuing a ticket; enforce it here too so
   // a held ticket or a direct connection cannot exceed the owner's player cap.
   if (worldIsFull()) {
@@ -849,6 +973,11 @@ function mapAbuseCategory(ruleId) {
  * should report. Never throws, so the caller decides how to fail.
  */
 async function redeemLoginTicket(password, hosted, refused) {
+  if (restartState.active) {
+    refused.code = 4;
+    refused.reason = "This world is restarting. New logins are paused until it is back online.";
+    return { ok: false };
+  }
   if (!TICKET_PATTERN.test(password)) {
     refused.code = 3;
     refused.reason = "Please sign in through the PaeScape website to play this world.";
@@ -1157,6 +1286,10 @@ async function renewLease() {
         maxPlayers: maxPlayers(),
         buildVersion: BUILD.version,
         endpointUrl: platform.endpoint || undefined,
+        bootAt: BOOT_AT,
+        restartState: restartState.active ? "maintenance" : "ready",
+        restartRequestId: restartState.requestId || undefined,
+        restartOutcome: restartState.outcome || undefined,
       },
     });
     if (result.status === 409) {
@@ -1178,6 +1311,7 @@ async function renewLease() {
     }
     lease.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 600_000;
     lease.generation = Number(result.json.generation ?? lease.generation);
+    applyRestartDirective(result);
     if (Number(result.json.configRevision ?? 0) !== lease.configRevision) {
       applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0), result.json.maxPlayers);
     }
@@ -1333,6 +1467,7 @@ function reportPublicEndpoint() {
 function markHostedReady() {
   if (hostedReady || !lease) return;
   hostedReady = true;
+  if (!restartState.active) restartState.state = "ready";
   prefetchWorldData();
   reportPublicEndpoint();
   stage(7, "world is ready; bots start once the platform lease is active");
@@ -1598,8 +1733,21 @@ module.exports = {
   },
   _test: {
     applyWorldConfig,
+    applyRestartDirective,
+    beginWorldRestart,
+    handleControl,
+    preAuthenticate,
+    redeemLoginTicket,
+    bootAt: () => BOOT_AT,
+    restartState: () => ({ ...restartState }),
     maxPlayers,
     worldIsFull,
+    configureControlForTests: (input) => {
+      if (input.publicKey !== undefined) publicKey = input.publicKey;
+      if (input.worldId !== undefined) platform = { ...platform, worldId: input.worldId };
+      if (input.api !== undefined) api = input.api;
+      if (input.restartState !== undefined) restartState = { ...input.restartState };
+    },
     setConfiguredMaxPlayers: (value) => { configuredMaxPlayers = Number.isInteger(value) && value > 0 ? value : null; },
     state: () => ({ worldConfig, worldConfigRevision, configuredMaxPlayers }),
     reset: () => { worldConfig = null; worldConfigRevision = 0; configuredMaxPlayers = null; appliedPluginSignature = null; },
