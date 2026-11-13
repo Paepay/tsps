@@ -1,4 +1,4 @@
-﻿// Run from server/ after `yarn build`: node --test tests/paescape-world-config-overlay.test.cjs
+// Run from server/ after `yarn build`: node --test tests/paescape-world-config-overlay.test.cjs
 //
 // A hosted world is configured on the website, which stores and returns a config blob
 // in its own shape (`{ settings: { spawn, xpRate, zones, ... } }`). The runtime reads a
@@ -53,8 +53,8 @@ test("an out-of-range spawn is dropped with a note, without failing the rest", (
 
 test("an empty or absent zone list leaves the world's own zones alone", () => {
   // Empty means "not authored on the website", not "this world has no zones".
-  assert.equal(toWorldOverlay(platformBlob({ zones: [] })).overlay, null);
-  assert.equal(toWorldOverlay(platformBlob({})).overlay, null);
+  assert.equal(toWorldOverlay(platformBlob({ zones: [] })).overlay.zones, undefined);
+  assert.equal(toWorldOverlay(platformBlob({})).overlay.zones, undefined);
 });
 
 test("a global-PvP world becomes one whole-map pvp zone, buildings-safe when asked", () => {
@@ -71,7 +71,7 @@ test("F2P is carried as the FreeToPlay plugin switch the runtime derives members
 
 test("a non-positive XP rate is rejected with a note", () => {
   const zero = toWorldOverlay(platformBlob({ xpRate: 0 }));
-  assert.equal(zero.overlay, null);
+  assert.equal(zero.overlay.experienceMultiplier, undefined);
   assert.ok(zero.notes.some((n) => /xp rate/i.test(n)));
 });
 

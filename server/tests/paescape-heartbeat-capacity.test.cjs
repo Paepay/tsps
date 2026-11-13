@@ -20,6 +20,9 @@ const http = require("node:http");
 const WORK_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "paescape-capacity-"));
 process.env.TSPS_ACCOUNTS_FILE = path.join(WORK_DIR, "accounts.json");
 process.env.TSPS_DISPLAY_NAMES_FILE = path.join(WORK_DIR, "display-names.json");
+// Never read a real server's persisted platform snapshot: this test pins the
+// fallback to the engine slot count when the platform supplies no owner cap.
+process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = path.join(WORK_DIR, "world.platform.json");
 // A world secret means "configured" mode, so startup exchanges the credential
 // for a session and beats, without any enrollment work.
 process.env.PAESCAPE_WORLD_SECRET = "test-world-secret";

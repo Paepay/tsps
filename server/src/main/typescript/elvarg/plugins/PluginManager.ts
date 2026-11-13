@@ -9,7 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { GameConstants } from "../game/GameConstants";
 import { PluginContext } from "./PluginContext";
-import { isMembersWorld, readWorldConfig } from "../game/definition/WorldDefinition";
+import { getWorldDefinition, isMembersWorld, readWorldConfig } from "../game/definition/WorldDefinition";
 import {
   CORE_CONFIG_DECLARATIONS,
   ConfigOptionDeclaration,
@@ -2299,14 +2299,18 @@ export class PluginManager {
     };
   }
 
-  /** Reads the world.json `pluginConfig` map once (empty when unset or malformed). */
+  /**
+   * The effective world.json `pluginConfig` map, read once and invalidated whenever a
+   * platform revision replaces the runtime definition (PaeScape.applyWorldConfig). Reading
+   * the runtime definition, not the file, keeps a config change observable after startup.
+   */
   private static loadPluginConfig(): Record<string, unknown> {
     if (PluginManager.pluginConfigCache) {
       return PluginManager.pluginConfigCache;
     }
     let parsed: unknown;
     try {
-      parsed = (readWorldConfig() as { pluginConfig?: unknown }).pluginConfig;
+      parsed = getWorldDefinition().pluginConfig;
     } catch {
       parsed = undefined;
     }
@@ -2316,6 +2320,12 @@ export class PluginManager {
         : {};
     return PluginManager.pluginConfigCache;
   }
+
+  /** Drop the cached map so the next read sees a newly applied platform revision. */
+  public static refreshPluginConfig(): void {
+    PluginManager.pluginConfigCache = null;
+  }
+
 
   /** Value of world.json `pluginConfig[key]`, or `defaultValue` when the key is unset. */
   public static getPluginConfig<T = unknown>(key: string, defaultValue?: T): T {

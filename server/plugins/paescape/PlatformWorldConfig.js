@@ -105,20 +105,121 @@ function normalizeZones(value, globalPvp, allBuildingsSafe) {
 }
 
 /**
+ * Website setting -> the plugin switch the runtime loads (PaeScape_Realms world-options.ts).
+ * Plugin switches are resolved while plugins load, before the platform handshake answers,
+ * so PaeScape persists the compiled form as data/definitions/world.platform.json. Keeping
+ * this table here means a hosted restart applies every switch the owner chose.
+ */
+const PLUGIN_SWITCHES = Object.freeze({
+  tutorialIsland: "TutorialIsland",
+  voiceChat: "VoiceChat",
+  presets: "PvpMode",
+  setSkillLevel: "SetSkillLevel",
+  ironmanAccounts: "Ironman",
+  quests: "Quests",
+  achievementDiaries: "AchievementDiaries",
+  combatAchievements: "CombatAchievements",
+  collectionLog: "CollectionLog",
+  pets: "Pets",
+  gravestones: "Gravestones",
+  duelStaking: "DuelStaking",
+  grandExchange: "GrandExchange",
+  customShops: "CustomShops",
+  osrsNpcs: "NpcSpawns",
+  playerBots: "PlayerBots",
+  randomEvents: "RandomEvents",
+  shootingStars: "ShootingStars",
+  customAccountTab: "CustomCharacterSummary",
+});
+
+/** Website setting -> flat pluginConfig key (PaeScape_Realms world-options.ts). */
+const PLUGIN_CONFIG = Object.freeze({
+  tutorialSkippable: "TutorialIsland:allowSkip",
+  levelUpInterruptions: "SkillLevelUp:interruptActions",
+  equipmentRequirements: "quests:equipment-requirements",
+  bossDropRate: "NpcDrops:bossRareMultiplier",
+  crossFloorVisibility: "CrossFloor:visibility",
+  crossFloorCombat: "CrossFloor:combat",
+});
+
+/** The largest player cap the website can submit (world-options.ts maxPlayers.max). */
+const MAX_PLAYERS_LIMIT = 1000;
+
+function playerCap(value) {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_PLAYERS_LIMIT ? value : undefined;
+}
+
+/** The plugin switches the platform settings select, including FreeToPlay and CrossFloor. */
+function pluginSwitches(settings, notes) {
+  const plugins = {};
+  for (const [setting, plugin] of Object.entries(PLUGIN_SWITCHES)) {
+    const value = settings[setting];
+    if (typeof value === "boolean") plugins[plugin] = value;
+    else if (value !== undefined) notes.push(`${setting} is not true or false; keeping the packaged plugin default`);
+  }
+  // The runtime derives members/F2P from the FreeToPlay plugin switch, not a membersWorld flag.
+  if (typeof settings.f2pWorld === "boolean") plugins.FreeToPlay = settings.f2pWorld;
+  // CrossFloor is opt-in and loads only when its switch is on. Combat without visibility is
+  // not a meaningful runtime state, so either website option enables the plugin;
+  // CrossFloor:combat still decides whether attacks cross planes.
+  if (typeof settings.crossFloorVisibility === "boolean" || typeof settings.crossFloorCombat === "boolean") {
+    plugins.CrossFloor = settings.crossFloorVisibility === true || settings.crossFloorCombat === true;
+  }
+  return plugins;
+}
+
+/** The flat pluginConfig values the platform settings select. */
+function pluginConfigFromSettings(settings, config, notes) {
+  const pluginConfig = isObject(config.pluginConfig) ? { ...config.pluginConfig } : {};
+  for (const [setting, key] of Object.entries(PLUGIN_CONFIG)) {
+    // Tutorial Island skip only exists while Tutorial Island itself is on.
+    if (setting === "tutorialSkippable" && settings.tutorialIsland === false) continue;
+    const value = settings[setting];
+    if (typeof value === "boolean" || typeof value === "number") pluginConfig[key] = value;
+    else if (value !== undefined) notes.push(`${setting} has an unsupported value; ignoring ${key}`);
+  }
+  if (isObject(settings.commandPermissions) && Object.keys(settings.commandPermissions).length) {
+    pluginConfig["commands:permissions"] = settings.commandPermissions;
+  }
+  return pluginConfig;
+}
+
+/** The template contract the platform authenticates, carried into the runtime config. */
+function templateConfig(config, pluginConfig) {
+  const template = typeof config.template === "string" ? config.template : config.canonicalTemplate;
+  if (typeof template === "string" && template) pluginConfig["template:id"] = template;
+  if (isObject(config.templateContract)) pluginConfig["template:contract"] = config.templateContract;
+  if (config.firstPartyContent !== undefined) pluginConfig["template:firstPartyContent"] = config.firstPartyContent;
+  const levelUp = isObject(config.templateContract) && isObject(config.templateContract.levelUp)
+    ? config.templateContract.levelUp
+    : null;
+  if (levelUp && Array.isArray(levelUp.xpTiers) && Number.isFinite(levelUp.xpTiers[0]?.multiplier)) {
+    pluginConfig["template:initialXpMultiplier"] = levelUp.xpTiers[0].multiplier;
+  }
+  const pvp = isObject(config.templateContract) ? config.templateContract.pvp : null;
+  if (isObject(pvp)) pluginConfig["template:pvp"] = pvp;
+  // Rules with a real runtime consumer are compiled to it rather than left as metadata.
+  const rules = isObject(config.templateContract) ? config.templateContract : {};
+  if (rules.hardcore === true) pluginConfig["HardcoreWorld:enabled"] = true;
+  if (Number.isInteger(rules.leagueSeason) && rules.leagueSeason > 0) pluginConfig["league:type"] = rules.leagueSeason;
+}
+
+/**
  * The runtime world.json overlay for a platform world config blob.
  *
  * `config` may be the platform blob (`{ settings: {...} }`) or, defensively, an
- * already-flat world.json-shaped object; the platform's `settings` wins when both
- * are present. Returns `{ overlay, notes, experienceRate }`:
+ * already-flat world.json-shaped object; the platform settings win when both are
+ * present. Returns `{ overlay, notes, experienceRate, maxPlayers }`:
  *
  *   overlay         the world.json keys to layer over the running world, or null
  *                   when the blob carries nothing the runtime can apply;
  *   notes           human-readable lines for the log, one per dropped/invalid field;
- *   experienceRate  the XP multiplier to set on the live engine, or undefined.
+ *   experienceRate  the XP multiplier to set on the live engine, or undefined;
+ *   maxPlayers      the owner player cap from the config, or undefined when unset.
  */
 function toWorldOverlay(config) {
   const notes = [];
-  if (!isObject(config)) return { overlay: null, notes: ["world configuration is not an object"], experienceRate: undefined };
+  if (!isObject(config)) return { overlay: null, notes: ["world configuration is not an object"], experienceRate: undefined, maxPlayers: undefined };
   const settings = isObject(config.settings) ? config.settings : config;
 
   const overlay = {};
@@ -138,6 +239,9 @@ function toWorldOverlay(config) {
     overlay.description = settings.description.slice(0, DESCRIPTION_MAX);
   }
 
+  // The platform world name is authoritative and is what the welcome screen shows.
+  if (typeof config.name === "string" && config.name.trim()) overlay.name = config.name.trim().slice(0, 64);
+
   if (GAMEFRAMES.has(settings.gameframe)) {
     overlay.gameframe = settings.gameframe;
   } else if (settings.gameframe !== undefined) {
@@ -147,14 +251,16 @@ function toWorldOverlay(config) {
   const zones = normalizeZones(settings.zones, settings.globalPvp, settings.allBuildingsSafe);
   if (zones) overlay.zones = zones;
 
-  // The runtime derives members/F2P from the FreeToPlay plugin switch, not from a
-  // `membersWorld` flag, so the owner's choice is carried as that switch.
-  if (typeof settings.f2pWorld === "boolean") {
-    overlay.plugins = { FreeToPlay: settings.f2pWorld };
+  overlay.plugins = pluginSwitches(settings, notes);
+  overlay.pluginConfig = pluginConfigFromSettings(settings, config, notes);
+  templateConfig(config, overlay.pluginConfig);
+
+  const maxPlayers = playerCap(settings.maxPlayers) ?? playerCap(config.maxPlayers);
+  if (settings.maxPlayers !== undefined && maxPlayers === undefined) {
+    notes.push(`ignoring a max player count of ${JSON.stringify(settings.maxPlayers)}; expected 1-${MAX_PLAYERS_LIMIT}`);
   }
 
-  const keys = Object.keys(overlay);
-  return { overlay: keys.length ? overlay : null, notes, experienceRate: overlay.experienceMultiplier };
+  return { overlay, notes, experienceRate: overlay.experienceMultiplier, maxPlayers };
 }
 
 module.exports = { toWorldOverlay, normalizeZones, normalizeSpawn, GAMEFRAMES, DESCRIPTION_MAX };

@@ -1,4 +1,4 @@
-﻿﻿"use strict";
+"use strict";
 
 /**
  * PaeScape Realms world-server integration.
@@ -100,6 +100,9 @@ let enrollmentTimer = null;
 let hostedReady = false;
 let worldConfig = null; // the authoritative config the platform returned
 let worldConfigRevision = 0;
+let configuredMaxPlayers = null; // the platform world row's owner cap, never the engine slot count
+let appliedPluginSignature = null; // compiled plugin switches/config last accepted
+const WORLD_PLATFORM_CONFIG_FILE = process.env.PAESCAPE_WORLD_PLATFORM_CONFIG || path.join("data", "definitions", "world.platform.json");
 let outdated = false;
 /** Path of the installation identity (hosted mode only). */
 const INSTALLATION_FILE = "paescape-installation.json";
@@ -337,7 +340,7 @@ async function authenticate() {
   // The world session response carries the authoritative world configuration
   // (platform/src/routes/worldApi.ts); apply it exactly as the hosted handshake
   // and lease renewal do, so a configured-mode world is configured too.
-  applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
+  applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0), result.json.world?.maxPlayers);
   log(`authenticated with the platform as world ${result.json.world?.id ?? platform.worldId}`);
   scheduleSessionRefresh();
 }
@@ -376,7 +379,7 @@ async function heartbeat() {
     // (the hosted path uses the lease renewal for this): apply the authoritative
     // config whenever the platform's revision moves past the one we loaded.
     if (result.ok && result.json && Number(result.json.configRevision ?? 0) !== worldConfigRevision) {
-      applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0));
+      applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0), result.json.maxPlayers);
     }
   } catch (error) {
     warn(`heartbeat failed: ${error.message}`);
@@ -615,6 +618,12 @@ function verifyAction(pathname, method) {
  * world keeps the old behaviour: try a ticket, otherwise fall back to the password.
  */
 async function preAuthenticate({ typedName, password }, connection) {
+  // The website also refuses a full world before issuing a ticket; enforce it here too so
+  // a held ticket or a direct connection cannot exceed the owner's player cap.
+  if (worldIsFull()) {
+    if (connection) connection.reject(6, "This world is full. Please try again later.");
+    return undefined;
+  }
   const hosted = Boolean(platform.url) && !platform.worldSecret;
   const refused = { reason: null };
   const attempt = await redeemLoginTicket(password, hosted, refused);
@@ -1119,7 +1128,7 @@ async function handshake() {
   if (result.json.world?.id) {
     adoptBinding({ world: result.json.world, label: installation.worldLabel });
   }
-  applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0));
+  applyWorldConfig(result.json.world?.config, Number(result.json.world?.configRevision ?? 0), result.json.world?.maxPlayers);
   log(`stage 6/7: authorised for release generation ${lease.generation} (config revision ${lease.configRevision})`);
   // Distinguish "authorised but not live yet" from a transport failure: a draft
   // world authenticates fine but the website will not offer it to players until
@@ -1170,7 +1179,7 @@ async function renewLease() {
     lease.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 600_000;
     lease.generation = Number(result.json.generation ?? lease.generation);
     if (Number(result.json.configRevision ?? 0) !== lease.configRevision) {
-      applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0));
+      applyWorldConfig(result.json.config, Number(result.json.configRevision ?? 0), result.json.maxPlayers);
     }
     markHostedReady();
     scheduleLeaseRenewal();
@@ -1195,45 +1204,70 @@ function scheduleLeaseRenewal() {
  * the values here come from the platform and replace what the world would
  * otherwise read from its own definition.
  */
-function applyWorldConfig(config, revision) {
+function applyWorldConfig(config, revision, platformMaxPlayers) {
   if (!config || typeof config !== "object") return;
-  worldConfig = config;
-  worldConfigRevision = Number(revision) || 0;
-  const { overlay, notes, experienceRate } = toWorldOverlay(config);
+  // Translate and validate before committing anything. An overlay the runtime refuses
+  // must leave XP, the world definition and the reported revision exactly as they were;
+  // otherwise a bad spawn/zone could still have changed the XP rate.
+  const { overlay, notes, experienceRate, maxPlayers } = toWorldOverlay(config);
   for (const note of notes) warn(note);
-  // An XP rate is the only setting the engine keeps in a static, so it is set
-  // directly rather than through the world definition the overlay replaces.
+  if (overlay) {
+    let result = null;
+    try {
+      result = api.core.WorldDefinition.applyWorldConfigOverlay(overlay);
+    } catch (error) {
+      result = { applied: false, error: error && error.message ? error.message : String(error) };
+    }
+    if (!result || result.applied !== true) {
+      warn(`platform world configuration revision ${Number(revision) || 0} was refused by the server: ${result && result.error ? result.error : "unknown error"}; keeping the packaged configuration`);
+      return;
+    }
+  }
+  // Commit only after the overlay is accepted. The XP rate is a static the engine reads
+  // separately, so setting it is part of the same accepted transaction.
   if (experienceRate !== undefined) {
     try {
       api.setExperienceRate(experienceRate);
       log(`applying platform XP rate ${experienceRate}`);
     } catch { /* the heartbeat still reports the revision if the engine refuses it */ }
   }
-  if (!overlay) {
-    // Template plugins are loaded before the asynchronous hosted handshake. This
-    // authenticated event activates the platform-selected runtime ruleset even
-    // when the config has no ordinary world-definition fields to overlay.
-    api.emitCustomEvent("paescape:world-config", config);
-    log(`loaded platform world configuration revision ${worldConfigRevision} (nothing to apply)`);
-    return;
-  }
-  // Layer the platform config over the world's own files without touching them.
-  // Fail-closed: if the runtime rejects the overlay, the running world is left
-  // exactly as it was and the owner is told why. A server built before this entry
-  // point existed simply keeps its packaged configuration, as it does today.
-  let result = null;
-  try {
-    result = api.core.WorldDefinition.applyWorldConfigOverlay(overlay);
-  } catch (error) {
-    result = { applied: false, error: error && error.message ? error.message : String(error) };
-  }
-  if (!result || result.applied !== true) {
-    warn(`platform world configuration revision ${worldConfigRevision} was refused by the server: ${result && result.error ? result.error : "unknown error"}; keeping the packaged configuration`);
-    return;
-  }
-  const applied = Object.keys(overlay).join(", ");
+  const previous = worldConfig;
+  worldConfig = config;
+  worldConfigRevision = Number(revision) || 0;
+  configuredMaxPlayers = Number.isInteger(platformMaxPlayers) && platformMaxPlayers > 0
+    ? platformMaxPlayers
+    : (maxPlayers ?? configuredMaxPlayers);
+  // PluginManager caches the map; drop it so a setting read after this event sees the
+  // new revision. Switches loaded at startup still need the persisted snapshot + restart.
+  try { api.core.PluginManager?.refreshPluginConfig?.(); } catch { /* core did not expose it */ }
+  persistWorldConfigSnapshot(overlay);
   api.emitCustomEvent("paescape:world-config", config);
+  const applied = overlay ? Object.keys(overlay).join(", ") : "nothing to apply";
   log(`applied platform world configuration revision ${worldConfigRevision} (${applied})`);
+  const nextSignature = JSON.stringify({ plugins: overlay?.plugins ?? {}, pluginConfig: overlay?.pluginConfig ?? {} });
+  if (previous && appliedPluginSignature !== null && appliedPluginSignature !== nextSignature) {
+    warn("plugin switches or startup configuration changed; restart this world to load or unload plugins and apply startup-only values");
+  }
+  appliedPluginSignature = nextSignature;
+}
+
+/**
+ * Persist the accepted runtime overlay for the next startup. Plugin switches and
+ * pluginConfig are read while plugins load, before the platform handshake answers, so
+ * writing this file is what makes edit -> restart apply the owner's toggles. It holds
+ * only world configuration (no credential, ticket or player data).
+ */
+function persistWorldConfigSnapshot(overlay) {
+  if (!overlay) return;
+  const file = path.resolve(WORLD_PLATFORM_CONFIG_FILE);
+  const temporary = `${file}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(temporary, JSON.stringify(overlay, null, 2));
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    warn(`could not persist the platform configuration snapshot: ${error.message}`);
+  }
 }
 
 /** Fetch the custom-content manifest the platform authorises for this world. */
@@ -1258,8 +1292,16 @@ function playerCount() {
  * lease from ever renewing, so this never throws and never returns non-finite.
  */
 function maxPlayers() {
+  // The owner's platform setting is the world's capacity. The engine slot list is only
+  // the fallback for a world whose platform row has not supplied one.
+  if (Number.isInteger(configuredMaxPlayers) && configuredMaxPlayers > 0) return configuredMaxPlayers;
   const capacity = api.core.World.getPlayers?.()?.capacityReturn?.();
   return Number.isFinite(capacity) ? Math.max(0, capacity - 1) : 0;
+}
+
+/** True when the owner's cap is reached; no configured cap means the engine limit only. */
+function worldIsFull() {
+  return Number.isInteger(configuredMaxPlayers) && configuredMaxPlayers > 0 && playerCount() >= configuredMaxPlayers;
 }
 
 /**
@@ -1553,5 +1595,13 @@ module.exports = {
         if (issued.timer) clearInterval(issued.timer);
       }
     });
+  },
+  _test: {
+    applyWorldConfig,
+    maxPlayers,
+    worldIsFull,
+    setConfiguredMaxPlayers: (value) => { configuredMaxPlayers = Number.isInteger(value) && value > 0 ? value : null; },
+    state: () => ({ worldConfig, worldConfigRevision, configuredMaxPlayers }),
+    reset: () => { worldConfig = null; worldConfigRevision = 0; configuredMaxPlayers = null; appliedPluginSignature = null; },
   },
 };
