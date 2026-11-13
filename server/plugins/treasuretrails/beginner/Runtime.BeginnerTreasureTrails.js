@@ -2,6 +2,7 @@
 
 const { randomUUID } = require("node:crypto");
 const Data = require("./Data.BeginnerTreasureTrails");
+const { playDig } = require("../trails/Dig.TreasureTrails");
 const { TIERS, completedAttribute, sharedCompletedCount } = require("../trails/Tiers.TreasureTrails");
 const TRAIL_META = "treasure-trails:beginner";
 const COMPLETED_ATTRIBUTE = completedAttribute({ name: "beginner" });
@@ -83,7 +84,8 @@ function read(event) {
 function checkSteps(event) {
   const item = clicked(event, data().scroll);
   if (!item) return false;
-  event.player.sendMessage(`You have completed ${stateOf(item, event.player).completed} steps on this beginner Treasure Trail.`);
+  // rsprox: "You have completed N steps on this beginner clue scroll."
+  event.player.sendMessage(`You have completed ${stateOf(item, event.player).completed} steps on this beginner clue scroll.`);
   return true;
 }
 
@@ -91,6 +93,11 @@ function dismissUri(player) {
   const active = uris.get(player);
   if (active) api.removeNpc(active.npc);
   uris.delete(player);
+}
+
+function itemBox(player, itemId, text) {
+  player.getDialogueManager().startDialogues(new core.DialogueChainBuilder()
+    .add(new core.ItemStatementDialogue(0, itemId, text)).add(new core.EndDialogue(1)));
 }
 
 function advance(player, snapshot) {
@@ -102,11 +109,12 @@ function advance(player, snapshot) {
     // Exact-slot deletion matters when several generic scrolls are carried.
     player.getInventory().deleteAtSlot(trail.slot, 1);
     player.getInventory().adds(data().casket, 1);
-    player.sendMessage("You've found a reward casket!");
+    // rsprox (e.g. 227/00091.txt:346163, 346841): in a message box with the item, not chat.
+    itemBox(player, data().casket, "You've obtained a casket!");
   } else {
     trail.item.setMetaValue(TRAIL_META, newStep({ ...trail.state, completed }));
     player.getInventory().refreshItems();
-    player.sendMessage("You've found another clue!");
+    itemBox(player, trail.item.getId(), "You've found a new clue!");
   }
   return true;
 }
@@ -189,7 +197,7 @@ function dig(event) {
   });
   if (!trail) return;
   event.allow = false;
-  player.performAnimation(new core.Animation(core.CacheDefinitions.getSeqId("human_dig" ) ?? 830));
+  playDig(core, player);
   advance(player, trail);
 }
 
@@ -235,13 +243,33 @@ function reading(current, previous) {
   return `The device is ${now}${change}.`;
 }
 
+// Each Feel also plays the band's history_key synth, on both devices (rsprox 235/01034, 235/01043,
+// 236/03929): burning when shaking or incredibly hot, hot for hot and very hot, warm, cold, and
+// freezing for very cold and ice cold.
+const HISTORY_KEY_BURNING = 1197;
+const HISTORY_KEY_COLD = 1198;
+const HISTORY_KEY_FREEZING = 1199;
+const HISTORY_KEY_HOT = 1200;
+const HISTORY_KEY_WARM = 1202;
+const FEEL_SOUNDS = new Map([
+  ["visibly shaking", HISTORY_KEY_BURNING], ["incredibly hot", HISTORY_KEY_BURNING], ["very hot", HISTORY_KEY_HOT],
+  ["hot", HISTORY_KEY_HOT], ["warm", HISTORY_KEY_WARM], ["cold", HISTORY_KEY_COLD], ["very cold", HISTORY_KEY_FREEZING],
+  ["ice cold", HISTORY_KEY_FREEZING],
+]);
+function feelSound(current) { return FEEL_SOUNDS.get(temperature(current)); }
+function playFeelSound(core, player, current) {
+  core.Sounds.sendSound(player, new core.Sound(feelSound(current), 1, 0, 0));
+}
+
 function feel(event) {
   if (event.itemId !== data().device || !clicked(event, data().device)) return false;
   const trail = trails(event.player, true).find(trail => trail.step.kind === "hotcold");
-  if (!trail) { event.player.sendMessage("The strange device is inactive."); return true; }
+  // Live shows it as an item box with the device (rsprox 235/01043, 236/03931).
+  if (!trail) { itemBox(event.player, data().device, "The strange device is inactive."); return true; }
   const target = data().hotcold.find(target => target.row === trail.state.hotcold);
   const current = distance(location(event.player), target.location);
   event.player.sendMessage(reading(current, trail.state.previous));
+  playFeelSound(core, event.player, current);
   trail.item.setMetaValue(TRAIL_META, { ...trail.state, previous: current });
   return true;
 }
@@ -293,4 +321,4 @@ module.exports = function attachBeginnerTreasureTrails(pluginApi) {
   api.onInterfaceActionButton((203 << 16) | 1, close);
 };
 
-Object.assign(module.exports, { TRAIL_META, COMPLETED_ATTRIBUTE, data, trailLength: length, stateOf, trails, read, checkSteps, advance, talk, dig, emote, feel, temperature, reading, emoteReady, restore, categoryCount, canEmote });
+Object.assign(module.exports, { TRAIL_META, COMPLETED_ATTRIBUTE, data, trailLength: length, stateOf, trails, read, checkSteps, advance, talk, dig, emote, feel, temperature, reading, feelSound, playFeelSound, emoteReady, restore, categoryCount, canEmote });

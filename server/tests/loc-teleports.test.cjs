@@ -684,7 +684,8 @@ test("a failed native H.A.M. attempt retries; an optional lockpick improves the 
   nativeTicks(player, 1);
   assert.equal(thievingXp(player), 0.5);
   assert.equal(player.getPacketSender().getVarbit(235), 0);
-  assert.equal(player.getSkillManager().getCurrentLevel(core.Skill.THIEVING), 1, "no invented numb-finger roll");
+  // #4523: each failure numbs the fingers (Wiki), but not below 1, so the attempt retries.
+  assert.equal(player.getSkillManager().getCurrentLevel(core.Skill.THIEVING), 1, "a level-one picker stays at 1");
   assert.deepEqual(sounds, [sound(2402), sound(2402), sound(2581)], "failure does not duplicate the next retry sound");
   player.getInventory().add(new core.Item(core.ItemIdentifiers.LOCKPICK, 1), false);
   nativeTicks(player, 1);
@@ -743,7 +744,9 @@ test("H.A.M. diary credit requires the exact entrance and landing, and a complet
     runTicks(visit, 3);
     assert.equal(done(visit), 0, "blocked, logged-out or interrupted travel gives no diary credit");
   }
-  const other = explorer([3077, 3492, 0]);
+  // Evil Dave's trapdoor, already open (varbit 1888), so option 1 is its Go-down.
+  const other = varbitExplorer([3077, 3492, 0]);
+  other.player.getPacketSender().sendVarbit(1888, 1);
   hooks.object({ player: other.player, object: locAt(12266, 3077, 3493, 0), clickType: 1, handled: false });
   runTicks(other, 6);
   assert.equal(other.player.getLocation().getY(), 9893, "another real trapdoor route still works");
@@ -796,6 +799,86 @@ test("the Tlati dragon nest cave plays as captured: crawl, sound and fade, then 
     [],
     ["close overlay"],
   ]);
+});
+
+test("Araxxor's lair web tunnel out crawls, fades and teleports out of the instance, then fades back in", () => {
+  // Captured: crawl (844), sound 2454 and the fade out a tick after arriving, the minimap off a tick
+  // later, the teleport to (3658, 9815) on tick 3, the fade back in a tick after it.
+  const object = locAt(54274, 3648, 9814, 0);
+  const visit = explorer([3649, 9815, 0]);
+  // The lair is the player's own instance, which the move takes them out of.
+  let area = {};
+  visit.player.getPrivateArea = () => area;
+  const moveTo = visit.player.moveTo;
+  visit.player.moveTo = (location) => { area = null; return moveTo(location); };
+  const event = { player: visit.player, object, objectId: object.getId(), clickType: 1, handled: false };
+  hooks.object(event);
+  assert.equal(event.handled, true);
+  runTicks(visit, 6);
+  assert.deepEqual(visit.ticks, [
+    ["anim 844", "sound 2454", "open 174"],
+    ["varbit 6719=2"],
+    ["move 3658,9815,0"],
+    ["varbit 6719=0", "open 174"],
+    [],
+    ["close overlay"],
+    [],
+  ]);
+  assert.equal(visit.player.getMovementQueue().isMovementBlocked(), false);
+});
+
+test("Araxxor's lair web tunnel in needs 92 Slayer, Priest in Peril and a spider task, then crawls in with its box", (t) => {
+  const object = locAt(54161, 3655, 9814, 0);
+  const entry = data.locs.find((loc) => loc.id === 54161);
+  const visit = explorer([3658, 9814, 0]);
+  const messages = [];
+  const boxes = [];
+  visit.player.sendMessage = (message) => messages.push(message);
+  visit.player.getDialogueManager().startDialogues = (chain) => boxes.push([...chain.getDialogues().values()].map((line) => line.text).join(" / "));
+  let task = null;
+  let answering = true;
+  const slayer = PluginManager.createApi("AraxxorTunnelSlayer");
+  slayer.onCustomEvent("slayer:current-task", (query) => { if (answering) query.task = task; });
+  t.after(() => { questsDone.delete("priest_in_peril"); answering = false; });
+  const click = () => {
+    const event = { player: visit.player, object, objectId: object.getId(), clickType: 1, handled: false };
+    hooks.object(event);
+    assert.equal(event.handled, true);
+  };
+  visit.player.getSkillManager().setCurrentLevel(core.Skill.SLAYER, 91, false);
+  click();
+  visit.player.getSkillManager().setCurrentLevel(core.Skill.SLAYER, 92, false);
+  click();
+  questsDone.add("priest_in_peril");
+  task = { name: "Kalphite" };
+  click();
+  assert.deepEqual(messages, entry.requires.map((gate) => gate.refuse.message));
+  assert.deepEqual(visit.ticks.flat(), [], "a refusal plays nothing");
+  task = { name: "Spiders" };
+  click();
+  runTicks(visit, 6);
+  assert.deepEqual(boxes, ["You crawl through the webbed tunnel."]);
+  assert.deepEqual(visit.ticks, [
+    ["anim 844", "sound 2454", "open 174"],
+    ["varbit 6719=2"],
+    ["move 3647,9815,0"],
+    ["varbit 6719=0", "open 174"],
+    [],
+    ["close overlay"],
+    [],
+  ]);
+});
+
+test("Araxxor's outer web tunnels crawl with sound 2454 both ways; only 54271 long-crawls", () => {
+  const tunnels = data.locs.filter((loc) => loc.name.startsWith("araxxor_cave_outer_tunnel_multi") && loc.id !== 54274);
+  assert.equal(tunnels.length, 6);
+  for (const tunnel of tunnels) {
+    assert.equal(tunnel.sound, 2454, `${tunnel.name} at ${tunnel.x},${tunnel.y}`);
+    assert.equal(tunnel.anim, tunnel.id === 54271 ? 2796 : 844, `${tunnel.name} at ${tunnel.x},${tunnel.y}`);
+  }
+  // The east link's reverse: crawl and sound two ticks after arriving, the move a tick later.
+  const eastBack = tunnels.find((tunnel) => tunnel.id === 54272 && tunnel.x === 3693);
+  assert.deepEqual([eastBack.animTick, eastBack.tick, eastBack.recordings], [2, 3, 1]);
 });
 
 test("a Climb that Ladders would ask about goes the captured way: the Arceuus library stairs go up", () => {
@@ -983,6 +1066,65 @@ test("Draynor's trapdoor opens as captured, into the open trapdoor Ladders climb
   assert.equal(MapObjects.get(6434, new core.Location(3084, 3272, 0), null), null, "the closed one is gone");
 });
 
+/** An explorer whose client varbits are kept, as a real PacketSender keeps them. */
+function varbitExplorer(at) {
+  const visit = explorer(at);
+  const varbits = new Map();
+  const sender = visit.player.getPacketSender();
+  visit.player.getPacketSender = () => new Proxy(sender, {
+    get: (target, key) => {
+      if (key === "sendVarbit") return (id, value) => (varbits.set(id, value), target.sendVarbit(id, value));
+      if (key === "getVarbit") return (id) => varbits.get(id) ?? 0;
+      return target[key];
+    },
+  });
+  return { ...visit, varbits };
+}
+
+test("Evil Dave's trapdoor opens and closes per player by its varbit, and only the open one goes down", () => {
+  // Captured (rec 3212, rev 232; the user's Edgeville capture): Open sets varbit 1888
+  // hundred_dave_trapdoor 0 -> 1 with synth sound 89, Close sets it back with 88, on the tick
+  // the open trapdoor's Go-down plays its animation. Going down leaves it open.
+  const varbit = CacheDefinitions.getVarbitId("hundred_dave_trapdoor");
+  assert.equal(varbit, 1888);
+  const trapdoor = locAt(12266, 3077, 3493, 0);
+  const click = (visit, clickType) => {
+    const event = { player: visit.player, object: trapdoor, objectId: trapdoor.getId(), clickType, handled: false };
+    hooks.object(event);
+    return event.handled;
+  };
+
+  const visit = varbitExplorer([3078, 3493, 0]);
+  assert.equal(click(visit, 2), false, "the closed trapdoor has no Close");
+  assert.equal(click(visit, 1), true);
+  runTicks(visit, 2);
+  assert.deepEqual(visit.ticks, [[], ["sound 89", "varbit 1888=1"], []], "Open opens it in place");
+  assert.equal(visit.varbits.get(varbit), 1);
+  assert.deepEqual(visit.player.getAttribute(LocTeleports._test.TOGGLED_ATTRIBUTE), { hundred_dave_trapdoor: 1 });
+  assert.deepEqual([visit.player.getLocation().getX(), visit.player.getLocation().getY()], [3078, 3493], "Open doesn't go down");
+
+  const closing = visit.ticks.length - 1;
+  assert.equal(click(visit, 2), true);
+  runTicks(visit, 2);
+  assert.deepEqual(visit.ticks.slice(closing), [[], ["sound 88", "varbit 1888=0"], []], "Close closes it");
+  assert.deepEqual(visit.player.getAttribute(LocTeleports._test.TOGGLED_ATTRIBUTE), { hundred_dave_trapdoor: 0 });
+
+  click(visit, 1);
+  runTicks(visit, 2);
+  const down = visit.ticks.length - 1;
+  assert.equal(click(visit, 1), true, "the open trapdoor's option 1 is Go-down");
+  runTicks(visit, 4);
+  assert.deepEqual(visit.ticks.slice(down), [[], ["anim 827"], [], ["move 3077,9893,0"], []]);
+  assert.equal(visit.varbits.get(varbit), 1, "it stays open");
+});
+
+test("a toggled trapdoor is sent again at login, as live sends varbit 1888 on login", () => {
+  const visit = varbitExplorer([3078, 3493, 0]);
+  visit.player.setAttribute(LocTeleports._test.TOGGLED_ATTRIBUTE, { hundred_dave_trapdoor: 1 });
+  hooks.login({ player: visit.player });
+  assert.deepEqual(visit.ticks[0], ["varbit 1888=1"]);
+});
+
 test("Monk's Friend keeps its cave ladder; other cellar ladders of that id go where the captures show", () => {
   // The ordinary cellar ladder (17385) is placed in many cellars; Monk's Friend sent every one of
   // them to its cave exit in Ardougne.
@@ -1064,8 +1206,9 @@ test("the Lumbridge Swamp Caves dark hole needs a rope tied once, as the game's 
     emitCustomEvent: (name, payload) => (listeners.get(name) ?? []).forEach((handler) => handler(payload)),
     onPlayerLogin: (handler) => logins.push(handler),
     getTaskManager: () => core.TaskManager,
-    sendMultiChatboxPrompt: () => true,
+    sendMultiChatboxPrompt: (player, title, ...pairs) => { ropePrompts.push({ title, pairs }); return true; },
   };
+  const ropePrompts = [];
   require("../plugins/objects/Ladders.plugin").register(api);
   const Misthalin = require("../plugins/areas/Misthalin.plugin");
   Misthalin.register(api);
@@ -1094,6 +1237,19 @@ test("the Lumbridge Swamp Caves dark hole needs a rope tied once, as the game's 
   const rope = { player: visit.player, object, objectId: 5947, itemId: 954, location: { x: 3169, y: 3172, z: 0 }, handled: false };
   assert.equal(itemOnObject.get("Rope:Dark hole")(rope), true);
   assert.equal(rope.handled, true);
+  // rsprox 227/00075.txt:174556: the game asks first; No leaves the rope.
+  const [asked] = ropePrompts.splice(0);
+  assert.deepEqual([asked.title, asked.pairs[0], asked.pairs[2]], ["Attach a rope to the top of the hole?", "Yes.", "No."]);
+  asked.pairs[3]();
+  assert.ok(visit.player.getAttribute(Misthalin._test.SWAMP_CAVE_ROPED_ATTRIBUTE) !== true, "No: not tied");
+  assert.equal(visit.player.getInventory().getAmount(954), 1);
+  itemOnObject.get("Rope:Dark hole")(rope);
+  let box = null;
+  visit.player.getDialogueManager().startDialogues = (chain) => { box = [...chain.getDialogues().values()][0]; };
+  ropePrompts.splice(0)[0].pairs[1]();
+  assert.ok(box instanceof core.ItemStatementDialogue, "Yes: the line in an item box");
+  assert.ok(JSON.stringify(box).includes("You tie the rope to the top of the hole and throw it down."));
+  assert.ok(visit.ticks.flat().includes("anim 827") && visit.ticks.flat().includes("sound 1774"), JSON.stringify(visit.ticks.flat()));
   assert.equal(visit.player.getAttribute(Misthalin._test.SWAMP_CAVE_ROPED_ATTRIBUTE), true, "the rope stays tied");
   assert.equal(visit.player.getInventory().getAmount(954), 0, "the rope is used up");
   assert.ok(visit.ticks.flat().includes(`varbit ${Misthalin._test.SWAMP_CAVE_ROPED_VARBIT}=1`));

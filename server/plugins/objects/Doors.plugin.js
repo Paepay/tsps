@@ -33,7 +33,7 @@ const DOOR_NAMES = new Set([
   // The Ranging Guild's entrance (11665, diagonal, Open only). Its 40 Ranged gate is
   // areas/RangingGuild.plugin.js; this only swings the leaf.
   "Guild door",
-  "Gate", "Metal gate", "Doorway", "Tree Door", "Storeroom Door", "Ardougne Wall Door",
+  "Gate", "Metal gate", "Wooden gate", "Doorway", "Tree Door", "Storeroom Door", "Ardougne Wall Door",
   "Vitur door", "Myrmel door", "Shadum door", "Jovkai door", "Chained door", "Trapdoor",
   "Longhall door", "Prison door", "Arena Entrance", "Arena Exit",
   // Pollnivneach curtains: closed 1533 "Open" -> open 1534 "Close" (closed id + 1, cache-derived).
@@ -78,10 +78,13 @@ const NAMELESS_DOOR_LEAF_IDS = Object.freeze({
   PIP_CELL_GATE_OPEN: 3464,
   CRANDOR_SECRET_DOOR_OPEN: 25039, // dragonsecretdoor_open; capture 2951
   INVISWALL: 38848, // actionless collision blocker; captures 2951 and 740
+  HAROLD_DOOR_OPEN: 1542, // inactiveposhdoor: Harold's door (3747) open, 233/03247.txt:4726
+  CASTLE_DOOR_OPEN: 3744, // castledoor_inactive: the Death Plateau equipment room door (3743) open, 233/03252.txt:36063
   MOURNER_CAGE_GATE_LEFT_OPEN: 2059, // mournerquaters_gatelopen; Biohazard capture tick 557
   MOURNER_CAGE_GATE_RIGHT_OPEN: 2061, // mournerquaters_gateropen
-  // inactivepoordoor: Melzar's front door opens onto it (Dragon Slayer I capture 20261106T101002 tick
-  // 2070), which the cache doesn't pair by name; ObjectIdentifiers has no property for it.
+  // inactivepoordoor: Melzar's front door and the Mining Guild doors open onto it (Dragon Slayer I capture
+  // 20261106T101002 tick 2070, 233/03241.txt tick 12674), which the cache doesn't pair by name;
+  // ObjectIdentifiers has no property for it.
   MELZAR_DOOR_OPEN: 1539,
   // grim_inactiveposhdoor: Witch's House front and back doors open onto it (capture 20261108T030409
   // ticks 154, 389); ObjectIdentifiers has no property for it.
@@ -111,6 +114,7 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     // The Ranging Guild's entrance (11665) is Open only; 11666 is a ladder, so there is no
     // open leaf to pair with and the leaf swings in place.
     O.GUILD_DOOR,
+    // Harold's door and the equipment room door (Death Plateau) are pass-through gates, which take their clicks first.
     O.DOOR_287, O.DOOR_358, O.GATE_52, O.WALL_9, O.DOOR_115, O.LARGE_DOOR_23,
     // The Blood Moon Rises crank-wheel house exit (61824) has no cache Close partner.
     O.DOOR_831,
@@ -256,6 +260,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     woodenGate(O.GATE_322, O.GATE_319, O.GATE_320, O.GATE_321),
     // Tutorial Island survival gate: swings open into 8810/8811's open panels (Zenyte Gate.java).
     woodenGate(O.GATE_90, O.GATE_91, O.GATE_85, O.GATE_86),
+    // Shilo Village's inner gate: its nameless open panels (2263/2264) are not placed
+    // on the cache map, so the generic same-model pairing cannot find them.
+    woodenGate(O.WOODEN_GATE, O.WOODEN_GATE_2, 2263, 2264),
   ]);
 
   WOODEN_GATE_BY_ID = new Map();
@@ -418,6 +425,32 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // crossRows is a gate more than one tile thick whose tiles the map blocks: the player is carried
   // across, from the low side to the high side or back, along their own row.
   PASS_THROUGH_GATES = Object.freeze([
+    // Death Plateau: Harold's door (233/03247.txt:4726-4744, and leaving at :5755-5783). The doorway gets inviswall
+    // 38848 and the open door the tile south; the player walks over, and the door is back two ticks later. Entering,
+    // the quest knocks first ("You knock on the door.", "Harold: Come in!") and opens it through door:open.
+    Object.freeze({
+      closed: [[O.DOOR_115, 2906, 3543, 1, 3]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2906, 3543, 1, 3],
+        [NAMELESS_DOOR_LEAF_IDS.HAROLD_DOOR_OPEN, 2906, 3542, 1, 0],
+      ],
+      crossY: 3543,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 81,
+    }),
+    // Death Plateau equipment room door (233/03252.txt:36053-36090): the same swap, the open door the tile north.
+    Object.freeze({
+      closed: [[O.LARGE_DOOR_23, 2894, 3566, 0, 1]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2894, 3566, 0, 1],
+        [NAMELESS_DOOR_LEAF_IDS.CASTLE_DOOR_OPEN, 2894, 3567, 0, 2],
+      ],
+      crossY: 3567,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 81,
+    }),
     // Grand Tree footage at 6:58 and 7:48 shows the player walking through the opened leaves.
     Object.freeze({
       closed: [[O.PRISON_DOOR_8, 2465, 3496, 3, 0]],
@@ -496,6 +529,19 @@ function defineDoorData({ ObjectIdentifiers: O }) {
       closeTicks: 2,
       openSoundId: 71,
     }),
+    // Mining Guild doors (mguild_door, mguild_door_inner1/2), rsprox_transcripts/233/03241.txt tick 12674 and
+    // 233/03239.txt ticks 581 and 2234: Open puts inviswall 38848 on the doorway and inactivepoordoor (1539) on the
+    // tile north, sound 81, the player steps across and the door is back two ticks later. A distant observer gets
+    // the same swap (233/03241.txt ticks 13489, 13847). The Mining level and members checks are MiningGuild's
+    // (door:toggle).
+    ...[[O.DOOR_562, 3046, 9756], [O.DOOR_563, 3019, 9732], [O.DOOR_564, 3043, 9729]].map(([id, x, y]) => Object.freeze({
+      closed: [[id, x, y, 0, 1]],
+      opened: [[NAMELESS_DOOR_LEAF_IDS.INVISWALL, x, y, 0, 1], [NAMELESS_DOOR_LEAF_IDS.MELZAR_DOOR_OPEN, x, y + 1, 0, 2]],
+      crossY: y + 1,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 81,
+    })),
     // Waterfall guide xWBSnGkQTi4 3:53.2-3:54.4: Golrie's panel opens, the player walks
     // through, then it closes (~1.2s). Cache 1991 is Open-only model609, with no open loc.
     Object.freeze({
@@ -671,6 +717,21 @@ function defineDoorData({ ObjectIdentifiers: O }) {
       walkOver: true,
       closeTicks: 2,
       openSoundId: 71,
+    }),
+    // Necrovarus's tomb door in the Temple of Phasmatys once unlocked (Ghosts Ahoy capture
+    // 20261112T092603-5ab63b4 ticks 1691-1693 in, 1711-1713 out): INVISWALL on the door's tile and
+    // the open door on the tile west, sound 56, the player walks across and the door is back two
+    // ticks later. The quest keeps it locked until the bone key is used on it (door:toggle).
+    Object.freeze({
+      closed: [[O.DOOR_144, 3656, 3514, 1, 0]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 3656, 3514, 1, 0],
+        [O.DOOR_145, 3655, 3514, 1, 1],
+      ],
+      crossX: 3656,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 56,
     }),
     // Dragon Slayer's secret wall into Crandor's dungeon (capture 2951 ticks 85-89): the quest opens it
     // through door:open once the shortcut is unlocked. The player walks 2836,9598 -> 9599 -> 9600 while

@@ -6,7 +6,7 @@ const { CacheDefinitions } = require("../../src/main/typescript/elvarg/game/cach
 const { Wilderness } = require("../../src/main/typescript/elvarg/game/content/wilderness/Wilderness");
 const { Item } = require("../../src/main/typescript/elvarg/game/model/Item");
 const { Flag } = require("../../src/main/typescript/elvarg/game/model/Flag");
-const { JEWELLERY, DEFAULT_WILDERNESS_LEVEL, LOCKED_DESTINATION_MESSAGE } = require("./Teleports.Jewellery");
+const { JEWELLERY, DEFAULT_WILDERNESS_LEVEL, LOCKED_DESTINATION_MESSAGE, visitedKourend } = require("./Teleports.Jewellery");
 const { castRechargeDragonstone } = require("./RechargeDragonstone.Jewellery");
 
 /** Item param holding a worn item's first equipment option (RuneLite: OC_ITEM_OP1). */
@@ -124,19 +124,21 @@ function teleport(player, item, destination) {
     statement(player, destination.lockedMessage);
     return;
   }
-  if (destination.quest && !questComplete(player, destination.quest.key)) {
+  // The refusal for a Kourend destination before Veos's trip is ours: the Wiki gives none.
+  if ((destination.quest && !questComplete(player, destination.quest.key)) || (destination.kourend && !visitedKourend(player))) {
     statement(player, LOCKED_DESTINATION_MESSAGE);
     return;
   }
   const target = destinationTile(player, destination);
-  if (!TeleportHandler.checkReqs(player, target, piece.wildernessLevel ?? DEFAULT_WILDERNESS_LEVEL)) {
+  const wildernessLevel = piece.wildernessLevel ?? DEFAULT_WILDERNESS_LEVEL;
+  if (!TeleportHandler.checkReqs(player, target, wildernessLevel)) {
     return;
   }
   const castId = item.getId();
-  TeleportHandler.teleport(player, target, TeleportType.NORMAL, false, () => {
-    useCharge(player, item, castId);
+  TeleportHandler.confirm(player, target, (carried) => TeleportHandler.teleport(player, target, TeleportType.NORMAL, false, () => {
+    useCharge(player, carried, castId);
     pluginApi.emitCustomEvent("jewellery:teleport-arrival", { player, key: piece.key, label: destination.label });
-  });
+  }), wildernessLevel, { item });
 }
 
 function questComplete(player, key) {

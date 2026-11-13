@@ -103,6 +103,21 @@ function dropsFor(t, h, player) {
   return drops.map((drop) => drop.itemId);
 }
 
+test("the base drops distinguish upstairs and basement cyclopes", () => {
+  const { loadDrops, tableForNpc } = require("../plugins/npcs/NpcDrops.plugin").__internals;
+  loadDrops();
+  const upstairs = [2463, 2464, 2465, 2466, 2467, 2468];
+  const basement = [2137, 2138, 2139, 2140, 2141, 2142];
+  for (const id of [...upstairs, ...basement]) {
+    const { entries } = tableForNpc(id);
+    const bones = entries.filter((entry) => entry.item_id === I.BIG_BONES);
+    assert.equal(bones.length, 1, `cyclops ${id} has one Big bones row`);
+    assert.ok(bones[0].always);
+    assert.deepEqual(bones[0].quantity, [1, 1]);
+    assert.equal(entries.some((entry) => entry.item_id === I.DRAGON_DEFENDER), basement.includes(id));
+  }
+});
+
 test("tokens keep crumbling on the minute clock after a relog inside the room", (t) => {
   const h = cyclopesHandlers();
   const first = enterTopRoom(t, h, { tokens: 200 });
@@ -164,9 +179,13 @@ test("a player who logged out outside the room logs back in with no room state",
   first.p.setLocation(at(TOP_LOBBY_TILE));
   tick(h, first.p, ARRIVING_TICKS + 1); // the room clock notices they left
   const second = relog(t, h, first);
+  assert.deepEqual(second.p.getAttribute("warriors-guild:room"), {}, "no clock was resumed for someone who was outside");
+  // Put back in the room without the door, they are on a fresh clock from then (no entry fee, a minute to the first 10).
   second.p.setLocation(at(TOP_ROOM_TILE));
-  tick(h, second.p, ARRIVING_TICKS + MINUTE_TICKS);
-  assert.equal(tokensOf(second.p), 190, "no clock was resumed for someone who was outside");
+  tick(h, second.p, MINUTE_TICKS - 1);
+  assert.equal(tokensOf(second.p), 190, "not a stale clock");
+  tick(h, second.p, 1);
+  assert.equal(tokensOf(second.p), 180, "a fresh one");
 });
 
 /** Saves a player who is still online (autosave, shutdown or a crash: no logout hook) and loads a fresh Player at the same spot. */
@@ -206,9 +225,12 @@ test("a save taken after leaving the room carries no room state", (t) => {
   first.p.setLocation(at(TOP_LOBBY_TILE));
   tick(h, first.p, ARRIVING_TICKS + 1);
   const second = saveWithoutLogout(t, h, first);
+  assert.deepEqual(second.p.getAttribute("warriors-guild:room"), {});
   second.p.setLocation(at(TOP_ROOM_TILE));
-  tick(h, second.p, ARRIVING_TICKS + MINUTE_TICKS);
-  assert.equal(tokensOf(second.p), 190);
+  tick(h, second.p, MINUTE_TICKS - 1);
+  assert.equal(tokensOf(second.p), 190, "not a stale clock");
+  tick(h, second.p, 1);
+  assert.equal(tokensOf(second.p), 180, "a fresh one");
 });
 
 test("logging in inside a room with no saved state moves the player out", (t) => {

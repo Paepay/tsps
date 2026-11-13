@@ -12,6 +12,7 @@
 | `Pottery.Crafting.js` | Soft clay, potter's wheel, pottery oven |
 | `Spinning.Crafting.js` | Spinning wheels and looms |
 | `Battlestaves.Crafting.js` | Charged orbs on battlestaves |
+| `Limestone.Crafting.js` | A chisel on limestone carves a limestone brick |
 
 The recipes are in `server/plugins/skills/data/crafting.json`, items by their generated
 `ItemIdentifiers` names (an unknown name throws at load).
@@ -83,9 +84,26 @@ Recording ids refer to the capture database at https://rsprox.net/database.
   unstrung amulet strings it the tick after the click, with "You put some string on your amulet."
   (spam) and no animation. With several carried, rev 238 opens a "How many would you like to
   string?" menu (recording 4211); no capture shows that loop, so one is strung per use.
+- **Gem sickles** (ruby: recordings 102 and 1637, Yes at ticks 4380 and 6134; diamond: recording 4288
+  ticks 22092-22094): a gem used on a silver sickle (b) opens the chat menu "Craft a ruby sickle?" with
+  "Yes." and "No.". On Yes, that tick: "You embed the ruby into the sickle." as a mesbox line and
+  an item box with the new sickle, the gem's cutting animation (887 ruby, 886 diamond), sound 2586
+  and the Crafting XP; the gem and the sickle go and the new sickle takes the first empty slot (the gem's, in all three).
+  The quest that wants the sickle allows it (`crafting:gem-sickle-allowed`, answered by Sins of the
+  Father from Vertida's logs to the flail, A Taste of Hope once started, The Blood Moon Rises in its
+  preparations).
+- **Limestone bricks** (recording 261 tick 35, recording 690 ticks 294-303, rev 229): a chisel used
+  on limestone (either way round) carves one brick per use, on the tick of the use, with no menu.
+  The brick takes the first limestone's slot, whichever limestone was used (recording 690 tick 300:
+  used on slot 14, brick in slot 12); `human_limestonecutting` plays, "You use the chisel on the
+  limestone and carve it into a building block." is spam, 6 Crafting XP, no sound. The Wiki gives
+  level 12.
 
 ## Wiki-only (no capture)
 
+- **Gem sickles**: 20 (emerald), 26 (ruby) and 32 (diamond) Crafting XP and a chisel (Wiki:
+  Emerald/Ruby/Diamond sickle (b)). The emerald has no capture: its menu, message and animation
+  (889) follow the ruby and diamond.
 - **Pre-nature amulet**: magic string used on an unstrung emerald amulet makes a pre-nature
   amulet for 4 Crafting XP. Wool on the same amulet makes an ordinary emerald amulet. The selected
   material determines the result; the existing one-item stringing path is reused, with no separate
@@ -118,7 +136,13 @@ Recording ids refer to the capture database at https://rsprox.net/database.
 
 ## Not done
 
+- Gem sickles: the Wiki's Crafting levels (48/56/64) are marked unverified, so none is checked;
+  the refusal without a chisel is ours (no capture).
 - Golem crafting (Wyrmscraig) and fixing the Dorgesh-Kaan lamps: separate follow-ups.
+- Limestone bricks never fail: the Wiki says a heavy-handed carve below level 40 makes a rock
+  (1.5 XP), but nothing gives the rate or the line. The level-12 refusal line is ours.
+- Limestone bricks: two uses sent in one tick both carve on that tick. Recording 690 tick 302 answered
+  the second one tick later; one capture, cause unknown.
 - Splitbark, mixed hide armour, snelms, crab armour, and the Broodoo shields.
 - Pottery: the cup crack rate, exact crack messages, messages for other pottery types and
   full-inventory cup behaviour still need capture evidence. Cups retain their previous guaranteed

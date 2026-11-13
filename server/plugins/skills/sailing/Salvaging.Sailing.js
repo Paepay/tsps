@@ -14,7 +14,7 @@ const { Task } = require("../../../src/main/typescript/elvarg/game/task/Task");
 const { TaskManager } = require("../../../src/main/typescript/elvarg/game/task/TaskManager");
 const { DialogueChainBuilder } = require("../../../src/main/typescript/elvarg/game/model/dialogues/builders/DialogueChainBuilder");
 const { StatementDialogue } = require("../../../src/main/typescript/elvarg/game/model/dialogues/entries/impl/StatementDialogue");
-const { content, setVarbit, playSound, spam, animateDeckLoc } = require("./SailingContent.Sailing");
+const { content, setVarbit, playSound, spam, animateDeckLoc, later } = require("./SailingContent.Sailing");
 const facilities = require("./BoatFacilities.Sailing");
 const shipwrecks = require("./Shipwrecks.Salvaging");
 
@@ -44,16 +44,25 @@ const VARBIT_AT_FACILITY0 = 19193;
 const AT_FACILITY_HOTSPOTS = 11;
 /** How far (tiles) from the hook a wreck can be: about 8 in OSRS, as played. */
 const HOOK_RANGE = 8;
-/** Ticks from the cast until the hook settles, and until its first roll (captured: settled at 3, salvage at 10). */
+/** How far (tiles) from the boat a wreck can be inspected. */
+const WRECK_INSPECT_REACH = 32;
+/** Ticks from the cast until the hook settles and makes its first roll (rsprox captures). */
 const SETTLE_TICKS = 3;
-const FIRST_ROLL_TICKS = 6;
 /** Players roll every 4 ticks (OSRS Wiki). */
 const ROLL_TICKS = 4;
+/**
+ * Ticks after salvaging stops (inventory full, the player walking away) until the hook winds
+ * back in; when the wreck sinks, the hook and the player reset at once (rsprox captures).
+ */
+const HOOK_RESET_TICKS = 2;
 /** Sorting takes 3 ticks a salvage (captured). */
 const SORT_TICKS = 3;
 
 const NO_WRECK = "There are no shipwrecks within range of the salvaging hook.";
+/** A message box, when the only wrecks in range have sunk. */
+const PLUNDERED = "This shipwreck has already been plundered. Perhaps there's another one nearby?";
 const CAST = "You cast out your salvaging hook towards the shipwreck...";
+/** On the spam channel. */
 const REELED = "You reel in some salvage.";
 const SUNK = "You salvage all you can from the shipwreck before it is reclaimed by the sea.";
 const SORT_BEGIN = "You begin sorting through your salvage...";
@@ -61,6 +70,11 @@ const SORT_BEGIN = "You begin sorting through your salvage...";
 const NOTHING_TO_SORT = "You do not have any salvage to sort through.";
 /** Sent on the tick the last salvage is sorted. */
 const NO_MORE_TO_SORT = "You have no more salvage to sort.";
+/**
+ * Sorting stops with this once only salvage above the player's level is left (Wiki, Opulent
+ * salvage#Trivia). Ours: it is also the refusal when no salvage can be sorted at all.
+ */
+const LEVEL_TOO_LOW = "You do not have a high enough Sailing level to sort through any more salvage.";
 /** Clue chances are 5% better with the tier's combat achievements (Wiki, each salvage's page). */
 const CLUE_TIERS = {
   beginner: { scroll: "CLUE_SCROLL_BEGINNER_", achievements: false },
@@ -116,17 +130,48 @@ function inventoryFull(player, type) {
   messageBox(player, `Your inventory is too full to hold any more ${type.salvageName.toLowerCase()}.`);
 }
 
-function stop(player) {
+/** Ends the player's session; `animation` replaces theirs, unless null. */
+function stop(player, animation = Animation.DEFAULT_RESET_ANIMATION) {
   const session = sessions.get(player);
   if (!session) return;
   sessions.delete(player);
   session.task.stop();
   if (session.hotspot !== undefined) setVarbit(player, VARBIT_AT_FACILITY0 + session.hotspot, 0);
-  player.performAnimation(Animation.DEFAULT_RESET_ANIMATION);
+  if (animation) player.performAnimation(animation);
 }
 
-function begin(player, session, tick) {
+/**
+ * Ends a salvage and winds the hook back in: with the player's reset at once when the wreck
+ * sinks, otherwise a moment later.
+ */
+function stopSalvaging(player, session, sunk = false) {
+  if (sunk) {
+    stop(player, new Animation(session.anims.reset));
+    animateDeckLoc(player, session.boat, session.hook, session.anims.locReset);
+    return;
+  }
   stop(player);
+  windInLater(player, session);
+}
+
+/** The hook's reset, unless someone is working it again by then. */
+function windInLater(player, { boat, hook, anims }) {
+  later(player, HOOK_RESET_TICKS, () => {
+    if (!player.isRegistered?.() || hookInUse(boat, hook)) return;
+    animateDeckLoc(player, boat, hook, anims.locReset);
+  });
+}
+
+function hookInUse(boat, hook) {
+  for (const session of sessions.values()) if (session.boat === boat && session.hook === hook) return true;
+  return false;
+}
+
+/** Starts a session, ending the player's last one; a hook they were working winds back in. */
+function begin(player, session, tick) {
+  const previous = sessions.get(player);
+  stop(player, null);
+  if (previous?.hook) windInLater(player, previous);
   session.task = new (class extends Task {
     constructor() { super(1, player); }
     execute() {
@@ -158,6 +203,24 @@ function outwardFrom(boat, hook, owned, hotspot) {
   return new Location(boat.deckBaseX + hook.x + dx, boat.deckBaseY + hook.y, 0);
 }
 
+/**
+ * A raised wreck's Inspect: a message box naming it, and the level it needs when the player is
+ * below it. Ours: the level line uses the current level, as Deploy does.
+ */
+function inspectWreck(event) {
+  if (event.clickType !== 1) return;
+  const at = event.location;
+  const wreck = shipwrecks.raisedWreckAt(at.x, at.y, at.z ?? at.level ?? 0);
+  const type = wreck ? shipwrecks.wreckType(wreck.type) : undefined;
+  if (!type || type.active !== event.objectId) return;
+  event.handled = true;
+  const { player } = event;
+  const named = `It's a ${type.inspectName} shipwreck. You might be able to salvage something from the wreckage using a salvaging hook.`;
+  messageBox(player, player.getSkillManager().getCurrentLevel(Skill.SAILING) < type.level
+    ? `${named} However, you'll first need a Sailing level of ${type.level} to do so.`
+    : named);
+}
+
 /** A salvaging hook's Deploy: cast it towards the nearest raised wreck in range. */
 function deployHook(event) {
   if (event.clickType !== 1 || event.definition?.getInteractions?.()?.[0] !== "Deploy") return;
@@ -173,7 +236,8 @@ function deployHook(event) {
   const at = hookTile(boat, hook);
   const wreck = shipwrecks.raisedWreckNear(at.x, at.y, at.level, HOOK_RANGE);
   if (!wreck) {
-    player.sendMessage(NO_WRECK);
+    if (shipwrecks.sunkenWreckNear(at.x, at.y, at.level, HOOK_RANGE)) messageBox(player, PLUNDERED);
+    else player.sendMessage(NO_WRECK);
     return;
   }
   const type = shipwrecks.wreckType(wreck.type);
@@ -204,13 +268,21 @@ function deployHook(event) {
 
 function salvageTick(player, session) {
   const { boat, hook, wreck } = session;
-  if (moved(player) || BoatManager.getBoatAboard(player) !== boat) return stop(player);
+  if (moved(player) || BoatManager.getBoatAboard(player) !== boat) return stopSalvaging(player, session);
   if (wreck.generation !== session.generation) {
     player.sendMessage(SUNK);
-    return stop(player);
+    return stopSalvaging(player, session, true);
+  }
+  // The reel-in that fills the inventory ends the salvage on the next tick.
+  if (session.full) {
+    session.full = false;
+    if (!hasFreeSlot(player)) {
+      inventoryFull(player, shipwrecks.wreckType(wreck.type));
+      return stopSalvaging(player, session);
+    }
   }
   const at = hookTile(boat, hook);
-  if (shipwrecks.distanceTo(wreck, at.x, at.y) > HOOK_RANGE || wreck.z !== at.level) return stop(player);
+  if (shipwrecks.distanceTo(wreck, at.x, at.y) > HOOK_RANGE || wreck.z !== at.level) return stopSalvaging(player, session);
   session.ticks++;
   if (session.ticks === SETTLE_TICKS && session.hotspot !== undefined) {
     setVarbit(player, VARBIT_AT_FACILITY0 + session.hotspot, 1);
@@ -219,16 +291,17 @@ function salvageTick(player, session) {
     player.performAnimation(new Animation(session.anims.idle));
     animateDeckLoc(player, boat, hook, session.anims.locIdle);
   }
-  if (session.ticks < FIRST_ROLL_TICKS || (session.ticks - FIRST_ROLL_TICKS) % ROLL_TICKS !== 0) return;
+  if (session.ticks < SETTLE_TICKS || (session.ticks - SETTLE_TICKS) % ROLL_TICKS !== 0) return;
   const type = shipwrecks.wreckType(wreck.type);
   const [low, high] = type.success[session.tier];
   if (Math.random() >= successChance(low, high, player.getSkillManager().getCurrentLevel(Skill.SAILING))) return;
   if (!hasFreeSlot(player)) {
     inventoryFull(player, type);
-    return stop(player);
+    return stopSalvaging(player, session);
   }
   player.getInventory().addItem(new Item(type.salvage, 1));
-  player.sendMessage(REELED);
+  spam(player, REELED);
+  session.full = !hasFreeSlot(player);
   player.getSkillManager().addExperiences(Skill.SAILING, type.xp);
   if (type.petChance) {
     // Soup's chance is per wreck type, not level-scaled (Wiki, Soup#Drop rates).
@@ -240,18 +313,23 @@ function salvageTick(player, session) {
  * Rolls a salvage's loot: its pre-rolls first, then its main table; undefined is nothing. A
  * shared-table line comes back as { table, empty } for rollShared. `owns(ids)` says whether the
  * player owns any of a pre-roll's `unlessOwned` items, which skips that pre-roll. A pre-roll clue
- * (one in `clueOneIn`, 0 for none) is rolled first and comes back as { clue: true }.
+ * (one in `clueOneIn`, 0 for none) is rolled first and comes back as { clue: true }. A find the
+ * salvage's collection log holds comes back with `collectionLog: true`.
  */
 function rollLoot(salvage, random = Math.random, owns = () => false, clueOneIn = 0) {
-  const quantity = (line) => line.min + Math.floor(random() * (line.max - line.min + 1));
+  const find = (line) => {
+    const loot = { item: line.item, amount: line.min + Math.floor(random() * (line.max - line.min + 1)) };
+    if (line.collectionLog) loot.collectionLog = true;
+    return loot;
+  };
   if (clueOneIn > 0 && random() * clueOneIn < 1) return { clue: true };
   for (const line of salvage.preRolls) {
     if (line.unlessOwned && owns(line.unlessOwned)) continue;
-    if (random() < 1 / line.oneIn) return { item: line.item, amount: quantity(line) };
+    if (random() < 1 / line.oneIn) return find(line);
   }
   let roll = Math.floor(random() * salvage.total);
   for (const line of salvage.table) {
-    if (roll < line.weight) return line.table ? { table: line.table, empty: line.empty } : { item: line.item, amount: quantity(line) };
+    if (roll < line.weight) return line.table ? { table: line.table, empty: line.empty } : find(line);
     roll -= line.weight;
   }
   return undefined;
@@ -313,20 +391,40 @@ function rollClue(player, clue, random = Math.random) {
   player.getInventory().forceAdd(player, new Item(clueItem(player, clue), 1));
 }
 
-/** The first salvage in the inventory, with its sorting data. */
+/**
+ * The first salvage in the inventory the player has the level to sort, with its sorting data;
+ * `{ tooLow: true }` when all of it is above their level, undefined when there is none. Ours:
+ * salvage above the level is passed over for the next kind, in the data's order.
+ */
 function nextSalvage(player) {
   const table = salvageData().salvage;
   const inventory = player.getInventory();
+  const level = player.getSkillManager().getCurrentLevel(Skill.SAILING);
+  let tooLow;
   for (const id of Object.keys(table)) {
-    if (inventory.getAmount(Number(id)) > 0) return { id: Number(id), data: table[id] };
+    if (inventory.getAmount(Number(id)) <= 0) continue;
+    if (level >= table[id].level) return { id: Number(id), data: table[id] };
+    tooLow = { tooLow: true };
   }
-  return undefined;
+  return tooLow;
+}
+
+/** "You sort through the opulent salvage and find: 3,504 x Coins." (rsprox captures). */
+function findLine(salvageName, loot) {
+  if (!loot) return `You sort through the ${salvageName} and find nothing.`;
+  const itemName = CacheDefinitions.getItem(loot.item)?.name ?? "something";
+  return `You sort through the ${salvageName} and find: ${Number(loot.amount).toLocaleString("en-US")} x ${itemName}.`;
 }
 
 /** A salvaging station's Sort-salvage: sorts every salvage in the inventory, one each 3 ticks. */
 function sortSalvage({ player }) {
-  if (!nextSalvage(player)) {
+  const next = nextSalvage(player);
+  if (!next) {
     messageBox(player, NOTHING_TO_SORT);
+    return;
+  }
+  if (next.tooLow) {
+    player.sendMessage(LEVEL_TOO_LOW);
     return;
   }
   player.sendMessage(SORT_BEGIN);
@@ -342,9 +440,8 @@ function sortTick(player, session) {
   if (session.ticks % SORT_TICKS !== 0) return;
   const next = nextSalvage(player);
   if (!next) return stop(player);
-  const level = player.getSkillManager().getCurrentLevel(Skill.SAILING);
-  if (level < next.data.level) {
-    player.sendMessage(`You need a Sailing level of at least ${next.data.level} to sort ${next.data.name.toLowerCase()}.`);
+  if (next.tooLow) {
+    player.sendMessage(LEVEL_TOO_LOW);
     return stop(player);
   }
   player.getInventory().delete(next.id, 1);
@@ -361,18 +458,22 @@ function sortTick(player, session) {
     inventory.addItem(new Item(loot.item, loot.amount));
     const credited = Math.max(0, inventory.getAmount(loot.item) - before);
     if (credited > 0) pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId: loot.item, amount: credited });
-    const itemName = CacheDefinitions.getItem(loot.item)?.name ?? "something";
-    spam(player, `You sort through the ${salvageName} and find: ${loot.amount} x ${itemName}.`);
-  } else {
-    spam(player, `You sort through the ${salvageName} and find nothing.`);
   }
+  // A collection log find is a game message; every other find, and nothing, is spam (rsprox captures).
+  if (loot?.collectionLog) player.sendMessage(findLine(salvageName, loot));
+  else spam(player, findLine(salvageName, loot));
   player.getSkillManager().addExperiences(Skill.SAILING, next.data.xp);
   if (!clue?.preRoll) rollClue(player, clue);
   // Soup can also come from sorting, at one chance for every salvage (Wiki, Soup).
   pluginApi?.emitCustomEvent("sailing:success", { player, skill: Skill.SAILING, petChance: salvageData().sortPetChance });
   playSound(player, SOUND_SORTED);
-  if (!nextSalvage(player)) {
+  const after = nextSalvage(player);
+  if (!after) {
     player.sendMessage(NO_MORE_TO_SORT);
+    return stop(player);
+  }
+  if (after.tooLow) {
+    player.sendMessage(LEVEL_TOO_LOW);
     return stop(player);
   }
   player.performAnimation(new Animation(SEQ_SORT));
@@ -404,6 +505,10 @@ module.exports = {
     pluginApi = api;
     api.onServerStartup(startShipwrecks);
     api.onObjectInteraction(deployHook);
+    api.onObjectInteraction(inspectWreck);
+    // Raised wrecks are inspected from the boat's deck, the helm included, as far off as they
+    // are drawn. Ours: the reach is the scene's view distance.
+    api.setDeckReach?.(Object.values(salvageData().wrecks).map((type) => type.active), WRECK_INSPECT_REACH);
     api.onObjectInteraction("Salvaging station", { "Sort-salvage": sortSalvage });
     api.onPlayerLogout(forgetSession);
   },

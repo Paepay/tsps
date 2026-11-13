@@ -16,6 +16,7 @@ const {
   lowerSkillByMax,
   restoreSkillToBaseWithFormula,
 } = require("./ConsumableEffects");
+const { allowsBlightedItems, isBlightedItem } = require("./BlightedItems");
 
 const EAT_OPTION = "Eat";
 const EAT_ANIMATION = 829; // human_eat
@@ -267,6 +268,11 @@ function mayEat(player, itemId, food) {
     player.sendMessage("You cannot eat here.");
     return false;
   }
+  const refusal = food.refusedIn?.[player.getArea?.()?.getName?.()];
+  if (refusal) {
+    player.sendMessage(refusal);
+    return false;
+  }
   if (food.area) {
     // The area's owner may give its own refusal (a seasonal food that has gone off).
     const request = { player, area: food.area, inside: false, message: "You cannot eat these supplies here." };
@@ -282,12 +288,9 @@ function mayEat(player, itemId, food) {
     return false;
   }
   if (timers.has(food.combo ? core.TimerKey.KARAMBWAN : core.TimerKey.FOOD)) return false;
-  if (food.wildernessOnly) {
-    const location = player.getLocation();
-    if (core.Wilderness.levelAt(location.getX(), location.getY()) <= 0) {
-      player.sendMessage(`The ${itemName(itemId).toLowerCase()} can be eaten only in the Wilderness.`);
-      return false;
-    }
+  if (isBlightedItem(core, itemId) && !allowsBlightedItems(core, player)) {
+    player.sendMessage(`The ${itemName(itemId).toLowerCase()} can be eaten only in the Wilderness.`);
+    return false;
   }
   return true;
 }

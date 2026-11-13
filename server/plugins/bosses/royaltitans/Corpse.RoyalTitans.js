@@ -185,6 +185,17 @@ function holdPetForClaim(request) {
   if (ids.some((id) => TITAN_OR_CORPSE.has(id))) request.hold = true;
 }
 
+/**
+ * Wiki (Ironman Mode): "Iron accounts receive group-boss rewards when fighting with others", Royal Titans among them.
+ * The titan's death roll is thrown away (each claim rolls its claimant's own), so an Ironman's share of a team kill is
+ * kept, not wiped with the "others helped you" line.
+ */
+function ironmanKeeps(request) {
+  const ids = [request?.npcId, request?.npc?.getId?.()];
+  if (!ids.some((id) => TITAN_OR_CORPSE.has(id))) return;
+  request.keep.push(...request.drops.map((drop) => drop.itemId));
+}
+
 /** A claim's own Bran roll, at the table's rate. */
 function claimPet(drops, rate) {
   if (Math.random() < 1 / rate) drops.push({ itemId: BRAN_ITEM_ID, amount: 1 });
@@ -296,12 +307,20 @@ function claim({ player, npc }, option) {
   return true;
 }
 
+/** The Wiki gives each titan two primary rolls on its table (rolls=2 on its repeated rows). */
+const PRIMARY_ROLLS = 2;
+
 /** Loot: two primary rolls (death roll + one extra), scaled; no pages; tertiary as rolled. */
 function loot(player, session, npc, share) {
   const id = npc.getId() === Shared.BRANDA_CORPSE_ID ? Shared.BRANDA_ID : Shared.ELDRIC_ID;
-  // The death roll was the top damager's: every claimant rolls their own in its place, so nothing is copied between them.
-  const extra = { player, npc, npcId: id, rolls: 1, drops: [] };
-  api.emitCustomEvent("npc-drops:extra-rolls", extra);
+  // The death roll was the top damager's: every claimant rolls their own in its place, so nothing is copied between
+  // them. The table repeats itself `rolls` times when the export carries it (the Wiki's rolls=2), so only the primary
+  // rolls it does not already make are added: one extra with no exported count, none with rolls=2.
+  const own = { player, npc, npcId: id, rolls: 1 };
+  api.emitCustomEvent("npc-drops:table-rolls", own);
+  const missing = Math.max(0, PRIMARY_ROLLS - (Number.isInteger(own.rolls) ? Math.max(1, own.rolls) : 1));
+  const extra = { player, npc, npcId: id, rolls: missing, drops: [] };
+  if (missing > 0) api.emitCustomEvent("npc-drops:extra-rolls", extra);
   const drops = scaleDrops([...ownRoll(player, npc, id), ...extra.drops], share, false);
   claimPet(drops, CLAIM_PET_RATE);
   player.performAnimation(new core.Animation(CLAIM_ANIMATION));
@@ -417,6 +436,7 @@ function attach(pluginApi) {
   pluginApi.onNpcDeath(titanDied);
   pluginApi.onCustomEvent("npc-drops:generated", stashGenerated);
   pluginApi.onCustomEvent("pets:hold-for-claim", holdPetForClaim);
+  pluginApi.onCustomEvent("ironman:shared-kill-keeps", ironmanKeeps);
   pluginApi.onCombatHitResolved(trackDamage);
   pluginApi.onNpcsInteraction([Shared.BRANDA_NAME, Shared.ELDRIC_NAME], {
     Loot: claimLoot, Sacrifice: claimSacrifice, "Take pages": claimPages,

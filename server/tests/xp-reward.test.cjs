@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const path = require("node:path");
 
 const { Server } = require("../dist/Server");
+const { Dialogue } = require("../dist/game/model/dialogues/entries/Dialogue");
 Server.installProductionPathResolver();
 
 const { Skill } = require("../dist/game/model/Skill");
@@ -19,15 +20,18 @@ function createPlayer(levels = {}, attributes = {}) {
     sendInterfaceFlagsRange: (uid, from, to, flags) => { log.push(`flags ${uid >> 16}:${uid & 0xffff} ${from}-${to} ${flags}`); return sender; },
     sendString: (text, uid) => { log.push(`text ${uid >> 16}:${uid & 0xffff} ${text}`); return sender; },
     sendInterfaceRemoval: () => { log.push("close"); return sender; },
+    sendTypedMessage: (type, text) => { log.push(`chat ${type} ${text}`); return sender; },
   };
-  return {
+  const self = {
     log,
     getPacketSender: () => sender,
     getSkillManager: () => ({ getMaxLevel: (skill) => levels[skill.getName()] ?? 99 }),
-    getDialogueManager: () => ({ startDialogues: () => log.push("mesbox") }),
+    // The box logs its own chat line as it opens, as the real one does.
+    getDialogueManager: () => ({ startDialogues: (chain) => { Dialogue.sendBoxChatLine(self, chain.getDialogues().get(0)?.getText?.()); log.push("mesbox"); } }),
     getAttribute: (key) => attributes[key],
     sendMessage: (text) => log.push(`message ${text}`),
   };
+  return self;
 }
 
 Sounds.sendSound = () => {};
@@ -78,7 +82,8 @@ test("as captured: the confirmed slot is enum 681's key less one (slot 11 -> Run
   XpReward._test.confirm(event);
   assert.equal(event.handled, true);
   assert.deepEqual(chosen, [Skill.RUNECRAFTING, "Runecraft"]);
-  assert.deepEqual(player.log, ["close", "mesbox"]);
+  // The box's text goes to chat as a message box line, its line break a space.
+  assert.deepEqual(player.log, ["close", "chat 115 Your wish has been granted! You have been awarded 980 Runecraft XP!", "mesbox"]);
   assert.deepEqual(sounds, [2655]);
   player.log.length = 0;
   XpReward._test.confirm(event);

@@ -1,6 +1,7 @@
 let core;
 let pluginApi;
 const { restricted, PRESET_TEXT } = require("./PoweredStaff");
+const { takeInto } = require("./TakeInto");
 const methods = new Map();
 const uncappedDamage = new WeakMap();
 
@@ -19,6 +20,13 @@ const UNLOAD_WARNING = "If you uncharge the blowpipe, all darts will fall out.";
 // Wiki (Toxic blowpipe): uncharging returns the remaining darts and scales, and empties the pipe.
 const UNCHARGE_WARNING = "If you uncharge the blowpipe, all scales and darts will fall out.";
 const NO_SPACE = "You don't have enough free inventory space to do that.";
+// Wiki (Toxic blowpipe): an uncharged blowpipe dismantles into 20,000 Zulrah's scales.
+const DISMANTLE_SCALES = 20000;
+/** Settings > Gameplay > "Ammo-picking behaviour" (setting 305, `take_ammo_toggle`). */
+const AMMO_PICKUP_VARBIT = 5697;
+// Wiki (Zulrah's scales): scales charge serpentine helms, toxic blowpipes, toxic staves of the
+// dead and tridents of the swamp. The helms' recolours and every charge state count.
+const SCALE_USER_NAMES = /^(serpentine|tanzanite|magma) helm\b|^toxic staff\b|^trident of the swamp\b|^uncharged toxic trident\b/i;
 
 const DART_RANGED_STRENGTHS = new Map([
   ["BRONZE_DART", 1],
@@ -35,25 +43,76 @@ const DART_RANGED_STRENGTHS = new Map([
 // Venom starts at 6 damage and escalates (Wiki: Venom); poisonEntity stores it as the damage.
 const VENOM_START_DAMAGE = 6;
 const EMPTY_STATE = Object.freeze({ scales: 0, dartId: -1, dartAmount: 0 });
+// Wiki (Drygore blowpipe): "You can't use that kind of dart." for a poisoned dart.
+const POISONED_DART_TEXT = "You can't use that kind of dart.";
+const POISONED_DART_NAME = /\bdart\(p\+{0,2}\)$/i;
+
+/**
+ * The pipes this plugin loads, empty and charged ids paired. The Toxic blowpipe (and its blazing
+ * ornament) burns Zulrah scales and venoms; the Drygore blowpipe (Wiki: Drygore blowpipe, a
+ * Leagues VI echo item) holds darts alone (+50 ranged attack, +10 ranged strength loaded) and takes
+ * no poisoned darts; against players it is as slow as the toxic one (3 ticks on Rapid). Its passives
+ * are DrygoreBlowpipe.plugin.js's. Loading, Check and the attack's packets are as the Raging Echoes
+ * League's version of the pipe plays them (the same item there, without the burn).
+ */
+let PIPES = null;
+/** Item id -> { kind, empty, charged }. */
+const pipeByItem = new Map();
+
+function initializePipes() {
+  const I = core.ItemIdentifiers;
+  const toxic = {
+    name: "Toxic blowpipe", scales: true, venom: true, attack: 30, strength: 20,
+    weapon: core.RangedWeapon.TOXIC_BLOWPIPE,
+    pairs: [[I.TOXIC_BLOWPIPE_EMPTY_, I.TOXIC_BLOWPIPE], [I.BLAZING_BLOWPIPE_EMPTY_, I.BLAZING_BLOWPIPE]],
+  };
+  const drygore = {
+    name: "Drygore blowpipe", scales: false, venom: false, attack: 50, strength: 10,
+    weapon: core.RangedWeapon.DRYGORE_BLOWPIPE, rejectsPoisonedDarts: true,
+    pairs: [[I.DRYGORE_BLOWPIPE_EMPTY_, I.DRYGORE_BLOWPIPE]],
+  };
+  PIPES = [toxic, drygore];
+  pipeByItem.clear();
+  for (const kind of PIPES) {
+    for (const [empty, charged] of kind.pairs) {
+      pipeByItem.set(empty, { kind, empty, charged });
+      pipeByItem.set(charged, { kind, empty, charged });
+    }
+  }
+}
+
+function pipeOf(itemId) {
+  return pipeByItem.get(Number(itemId)) ?? null;
+}
+
+/** The kind of pipe a hit was fired from (its fired-shot snapshot), or null when unknown. */
+function firedKind(hit) {
+  const weapon = hit?.getFiredRangedShot?.()?.weapon ?? null;
+  return weapon ? pipeOf(weapon.getId())?.kind ?? null : null;
+}
+
+/** Player -> the pipe an attack's start has armed: its dart and scale are spent once its hit is rolled. */
+const pendingSpend = new WeakMap();
 
 function normalizeInt(value, fallback) {
   return Number.isFinite(value) ? Math.floor(Number(value)) : fallback;
 }
 
 function isToxicBlowpipeItemId(itemId) {
-  const I = core.ItemIdentifiers;
-  return itemId === I.TOXIC_BLOWPIPE_EMPTY_ || itemId === I.TOXIC_BLOWPIPE ||
-    itemId === I.BLAZING_BLOWPIPE_EMPTY_ || itemId === I.BLAZING_BLOWPIPE;
-}
-
-function isBlazingBlowpipeItemId(itemId) {
-  const I = core.ItemIdentifiers;
-  return itemId === I.BLAZING_BLOWPIPE_EMPTY_ || itemId === I.BLAZING_BLOWPIPE;
+  return pipeOf(itemId) !== null;
 }
 
 function isChargedBlowpipeItemId(itemId) {
-  const I = core.ItemIdentifiers;
-  return itemId === I.TOXIC_BLOWPIPE || itemId === I.BLAZING_BLOWPIPE;
+  return pipeOf(itemId)?.charged === Number(itemId);
+}
+
+function isPipeWeapon(rangedWeapon) {
+  return rangedWeapon != null && PIPES.some((kind) => kind.weapon === rangedWeapon);
+}
+
+function isPoisonedDart(itemId) {
+  const name = new core.Item(itemId).getDefinition()?.getName?.() ?? "";
+  return POISONED_DART_NAME.test(name);
 }
 
 function isToxicBlowpipeDartId(itemId) {
@@ -100,12 +159,11 @@ const BlowpipeState = {
     } else {
       item.setMetaValue(TOXIC_BLOWPIPE_META_KEY, state);
     }
-    if (item && isToxicBlowpipeItemId(item.getId())) {
-      const charged = state.scales > 0 || state.dartAmount > 0;
-      const blazing = isBlazingBlowpipeItemId(item.getId());
-      item.setId(blazing
-        ? (charged ? core.ItemIdentifiers.BLAZING_BLOWPIPE : core.ItemIdentifiers.BLAZING_BLOWPIPE_EMPTY_)
-        : (charged ? core.ItemIdentifiers.TOXIC_BLOWPIPE : core.ItemIdentifiers.TOXIC_BLOWPIPE_EMPTY_));
+    const pipe = item ? pipeOf(item.getId()) : null;
+    if (pipe) {
+      // A pipe without scales is charged while it holds darts.
+      const charged = (pipe.kind.scales && state.scales > 0) || state.dartAmount > 0;
+      item.setId(charged ? pipe.charged : pipe.empty);
     }
     return item;
   },
@@ -167,13 +225,6 @@ function getAmmo(player) {
   return BlowpipeState.ammo(BlowpipeState.equipped(player));
 }
 
-function getAmmoName(dartId) {
-  if (!isToxicBlowpipeDartId(dartId)) {
-    return "darts";
-  }
-  return new core.Item(dartId).getDefinition()?.getName?.()?.toLowerCase?.() ?? "darts";
-}
-
 function canReturnDarts(inventory, itemId, amount) {
   return inventory.getAddableAmount(new core.Item(itemId, amount)) >= amount;
 }
@@ -210,9 +261,14 @@ function refreshBlowpipeState(player, item, preferredSlot = -1) {
   core.BonusManager.update(player);
 }
 
+function kindOf(item) {
+  return item ? pipeOf(item.getId())?.kind ?? null : null;
+}
+
 function isReady(player, item, amountRequired = 1, silent = false) {
   const { scales, dartAmount } = BlowpipeState.read(item);
-  if (scales <= 0) {
+  const kind = kindOf(item);
+  if (kind?.scales !== false && scales <= 0) {
     if (!silent) {
       player.sendMessage("You must recharge your Toxic blowpipe using some Zulrah scales.");
       player.getCombat().reset();
@@ -221,7 +277,7 @@ function isReady(player, item, amountRequired = 1, silent = false) {
   }
   if (dartAmount < amountRequired) {
     if (!silent) {
-      player.sendMessage("You must load darts into the Toxic blowpipe.");
+      player.sendMessage(`You must load darts into the ${kind?.name ?? "Toxic blowpipe"}.`);
       player.getCombat().reset();
     }
     return false;
@@ -231,7 +287,7 @@ function isReady(player, item, amountRequired = 1, silent = false) {
 
 function isCharged(item, amountRequired = 1) {
   const { scales, dartAmount } = BlowpipeState.read(item);
-  return scales > 0 && dartAmount >= amountRequired;
+  return (kindOf(item)?.scales === false || scales > 0) && dartAmount >= amountRequired;
 }
 
 function chargeScales(player, blowpipeItem, blowpipeSlot, scaleItem) {
@@ -250,7 +306,8 @@ function chargeScales(player, blowpipeItem, blowpipeSlot, scaleItem) {
   player.getInventory().deleteAtSlot(slot, add);
   BlowpipeState.addScales(blowpipeItem, add);
   refreshBlowpipeState(player, blowpipeItem, blowpipeSlot);
-  player.sendMessage(`You add ${add} Zulrah scales to the blowpipe.`);
+  // Loading answers with the Check line and the new totals.
+  checkBlowpipe({ player, item: blowpipeItem });
 }
 
 function chargeDarts(player, blowpipeItem, blowpipeSlot, dartItem) {
@@ -262,29 +319,34 @@ function chargeDarts(player, blowpipeItem, blowpipeSlot, dartItem) {
     return;
   }
 
-  if (currentAmount > 0 && currentId !== dartId && !canReturnDarts(player.getInventory(), currentId, currentAmount)) {
+  const inventory = player.getInventory();
+  const swapping = currentAmount > 0 && currentId !== dartId;
+  const returned = swapping ? new core.Item(currentId, currentAmount) : null;
+  // A swap that loads the whole new stack frees its slot for the old darts, unless they would merge into a stack.
+  const freesSlot = swapping && dartItem.getAmount() <= TOXIC_BLOWPIPE_MAX_DARTS
+    && !inventory.getItems().some((held) => held && sameStack(held, returned));
+  if (swapping && !canReturnDarts(inventory, currentId, currentAmount) && !freesSlot) {
     player.sendMessage("You need more inventory space to swap the loaded darts.");
     return;
   }
 
-  if (currentAmount > 0 && currentId !== dartId) {
-    player.getInventory().add(new core.Item(currentId, currentAmount), true);
-    // Only the darts come out: clearing the whole state also emptied the scales (up to 16,383), lost for good.
-    BlowpipeState.swapDarts(blowpipeItem, -1, 0);
-  }
-
-  const add = Math.min(dartItem.getAmount(), TOXIC_BLOWPIPE_MAX_DARTS - BlowpipeState.read(blowpipeItem).dartAmount);
+  const add = Math.min(dartItem.getAmount(), TOXIC_BLOWPIPE_MAX_DARTS - (swapping ? 0 : currentAmount));
   if (add <= 0) {
     return;
   }
 
   // Only the stack used pays, by its slot: an id-wide delete could take a preset copy instead.
-  const slot = player.getInventory().getItems().indexOf(dartItem);
+  const slot = inventory.getItems().indexOf(dartItem);
   if (slot < 0) return;
-  player.getInventory().deleteAtSlot(slot, add);
+  inventory.deleteAtSlot(slot, add);
+  if (swapping) {
+    inventory.add(returned, true);
+    // Only the darts come out: clearing the whole state also emptied the scales (up to 16,383), lost for good.
+    BlowpipeState.swapDarts(blowpipeItem, -1, 0);
+  }
   BlowpipeState.addDarts(blowpipeItem, dartId, add);
   refreshBlowpipeState(player, blowpipeItem, blowpipeSlot);
-  player.sendMessage(`You load ${add} ${getAmmoName(dartId)} into the blowpipe.`);
+  checkBlowpipe({ player, item: blowpipeItem });
   // "toxic-blowpipe:darts-loaded" { player, itemId, amount }: those darts loaded into it.
   pluginApi.emitCustomEvent("toxic-blowpipe:darts-loaded", { player, itemId: dartId, amount: add });
 }
@@ -301,14 +363,17 @@ function getAmmoDisplayName(dartId) {
 
 /**
  * The pipe's Check line, as live prints it (rsprox 1637/4121): "Darts:
- * <col=007f00>Iron dart x 1,687</col>. Scales: <col=007f00>794 (4.8%)</col>." Only the parts
- * the pipe holds are printed (rsprox 1858: a drygore's darts alone).
+ * <col=007f00>Iron dart x 1,687</col>. Scales: <col=007f00>794 (4.8%)</col>." A pipe with
+ * scales and no darts prints "Darts: <col=007f00>None</col>." first. Ours: darts without scales
+ * print the darts alone, as a drygore's line does.
  */
 function checkBlowpipe({ player, item }) {
   const { scales, dartId, dartAmount } = BlowpipeState.read(item);
   const parts = [];
   if (dartAmount > 0 && isToxicBlowpipeDartId(dartId)) {
     parts.push(`Darts: <col=007f00>${getAmmoDisplayName(dartId)} x ${formatAmount(dartAmount)}</col>.`);
+  } else if (scales > 0) {
+    parts.push("Darts: <col=007f00>None</col>.");
   }
   if (scales > 0) {
     const percent = ((scales / TOXIC_BLOWPIPE_MAX_SCALES) * 100).toFixed(1);
@@ -460,13 +525,123 @@ function unchargeBlowpipe({ player, item, slot }) {
   return true;
 }
 
+/**
+ * Dismantle on the empty toxic blowpipe: the pipe becomes 20,000 Zulrah's scales, in its own slot
+ * unless a stack of scales is already carried. The Blazing one's Dismantle takes the kit off
+ * instead (OrnamentKits). Ours: no prompt or message.
+ */
+function dismantleBlowpipe({ player, item, slot }) {
+  if (item?.getId?.() !== core.ItemIdentifiers.TOXIC_BLOWPIPE_EMPTY_) return false;
+  const inventory = player.getInventory();
+  if (inventory.getItems()[slot] !== item) return true;
+  // A preset pipe would come back as free, unrestricted scales.
+  if (restricted(item)) {
+    player.sendMessage(PRESET_TEXT);
+    return true;
+  }
+  const scales = new core.Item(core.ItemIdentifiers.ZULRAHS_SCALES, DISMANTLE_SCALES);
+  if (inventory.getItems().some((held) => held && sameStack(held, scales))) {
+    if (inventory.getAddableAmount(scales) < DISMANTLE_SCALES) {
+      player.sendMessage(NO_SPACE);
+      return true;
+    }
+    inventory.deleteAtSlot(slot, 1);
+    inventory.add(scales, true);
+  } else {
+    inventory.setItem(slot, scales);
+    inventory.refreshItems();
+  }
+  return true;
+}
+
+/** Whether an item is charged with Zulrah's scales (Wiki: Zulrah's scales). */
+function usesScales(item) {
+  const id = item?.getId?.() ?? -1;
+  if (id < 0) return false;
+  if (isToxicBlowpipeItemId(id)) return pipeOf(id).kind.scales;
+  const definition = item.getDefinition?.();
+  return definition?.isNoted?.() !== true && SCALE_USER_NAMES.test(definition?.getName?.() ?? "");
+}
+
+/**
+ * Picked-up darts go into a carried blowpipe already loaded with that dart, worn or in the
+ * inventory, while Ammo-picking behaviour is on (Wiki: Toxic blowpipe). The worn pipe goes first.
+ * Ours: a Drygore blowpipe takes them the same way.
+ */
+function pickupDarts(event, dartId) {
+  const { player } = event;
+  if (player.getPacketSender?.().getVarbit?.(AMMO_PICKUP_VARBIT) !== 1) return;
+  const loadedWith = (pipe) => !!pipe && isToxicBlowpipeItemId(pipe.getId()) && BlowpipeState.read(pipe).dartId === dartId;
+  const pipe = [BlowpipeState.equipped(player), ...player.getInventory().getItems()].find(loadedWith);
+  if (!pipe) return;
+  takeInto(pluginApi, event, {
+    room: () => (loadedWith(pipe) && getItemContainer(player, pipe)
+      ? TOXIC_BLOWPIPE_MAX_DARTS - BlowpipeState.read(pipe).dartAmount : 0),
+    store: (amount) => {
+      BlowpipeState.addDarts(pipe, dartId, amount);
+      refreshBlowpipeState(player, pipe);
+      return amount;
+    },
+  });
+}
+
+/**
+ * Picked-up Zulrah's scales go into a blowpipe in the inventory when it is the only item there
+ * that uses scales (Wiki: Toxic blowpipe).
+ */
+function pickupScales(event) {
+  const { player } = event;
+  const inventory = player.getInventory();
+  const users = inventory.getItems().filter(usesScales);
+  const pipe = users.length === 1 && pipeOf(users[0].getId())?.kind.scales ? users[0] : null;
+  if (!pipe) return;
+  takeInto(pluginApi, event, {
+    room: () => (inventory.getItems().includes(pipe) && isToxicBlowpipeItemId(pipe.getId())
+      ? TOXIC_BLOWPIPE_MAX_SCALES - BlowpipeState.read(pipe).scales : 0),
+    store: (amount) => {
+      BlowpipeState.addScales(pipe, amount);
+      refreshBlowpipeState(player, pipe);
+      return amount;
+    },
+  });
+}
+
+function pickupIntoBlowpipe(event) {
+  const itemId = event.groundItem?.getItem?.()?.getId?.() ?? event.groundItemId;
+  if (itemId === core.ItemIdentifiers.ZULRAHS_SCALES) {
+    pickupScales(event);
+  } else if (isToxicBlowpipeDartId(itemId)) {
+    pickupDarts(event, itemId);
+  }
+}
+
+/**
+ * A pipe without scales spends darts alone, so content that saves a shot's ammunition (a league's
+ * Regenerate) saves its dart, as core asks for quiver ammunition; a further proc puts darts back.
+ */
+function dartSaved(player, blowpipeItem) {
+  if (kindOf(blowpipeItem)?.scales !== false) return false;
+  const { dartId } = BlowpipeState.read(blowpipeItem);
+  const restock = (amount) => {
+    const before = BlowpipeState.read(blowpipeItem).dartAmount;
+    BlowpipeState.addDarts(blowpipeItem, dartId, amount);
+    return BlowpipeState.read(blowpipeItem).dartAmount - before;
+  };
+  const saving = { player, itemId: dartId, amount: 1, saved: 0, restock };
+  pluginApi.emitCustomEvent("ranged:ammo-saving", saving);
+  return (saving.saved | 0) > 0;
+}
+
 function maybeConsumeLoadedDart(player, blowpipeItem) {
+  if (dartSaved(player, blowpipeItem)) {
+    return false;
+  }
   // An Ava's device keeps its share of the darts out of the pipe's count (Wiki: 60/72/80%).
   if (core.Misc.getRandom(99) < core.CombatFactory.ammoRecovery(player)) {
     return false;
   }
   if (BlowpipeState.consumeDart(blowpipeItem) <= 0) {
-    player.sendMessage("Your Toxic blowpipe has run out of darts!");
+    player.sendMessage(`Your ${kindOf(blowpipeItem)?.name ?? "Toxic blowpipe"} has run out of darts!`);
     player.getCombat().reset();
     return true;
   }
@@ -474,6 +649,9 @@ function maybeConsumeLoadedDart(player, blowpipeItem) {
 }
 
 function maybeConsumeScale(player, blowpipeItem) {
+  if (kindOf(blowpipeItem)?.scales === false) {
+    return false;
+  }
   if (core.Misc.getRandom(2) !== 0) {
     if (BlowpipeState.consumeScale(blowpipeItem) <= 0) {
       player.sendMessage("Your Toxic blowpipe has run out of scales!");
@@ -510,7 +688,11 @@ function combatMethod(special) {
     }
     hits(character, target) {
       const delay = core.RangedCombatMethod.landingDelays(character, target)[0];
-      return [new core.PendingHit(character, target, this, delay)];
+      const hit = new core.PendingHit(character, target, this, delay);
+      // The shot is rolled with the pipe as it was loaded: the last dart (which may empty a pipe
+      // without scales) is spent only after the roll.
+      spendArmedShot(character);
+      return [hit];
     }
     start(character, target) {
       const player = character.getAsPlayer();
@@ -521,7 +703,7 @@ function combatMethod(special) {
       }
       const ammo = getAmmo(player);
       if (!ammo) {
-        player.sendMessage("You must load darts into the Toxic blowpipe.");
+        player.sendMessage(`You must load darts into the ${kindOf(blowpipeItem)?.name ?? "Toxic blowpipe"}.`);
         player.getCombat().reset();
         return;
       }
@@ -550,11 +732,7 @@ function combatMethod(special) {
         const drainAmount = player.getCombatSpecial?.()?.getDrainAmount?.() ?? 50;
         core.CombatSpecial.drain(player, drainAmount);
       }
-      const dartsDepleted = maybeConsumeLoadedDart(player, blowpipeItem);
-      const scalesDepleted = maybeConsumeScale(player, blowpipeItem);
-      if (dartsDepleted || scalesDepleted) {
-        refreshBlowpipeState(player, blowpipeItem);
-      }
+      pendingSpend.set(player, blowpipeItem);
     }
     handleAfterHitEffects(hit) {
       const attacker = hit?.getAttacker?.();
@@ -567,7 +745,8 @@ function combatMethod(special) {
       if (totalDamage <= 0 || hit.isAccurate?.() !== true) {
         return;
       }
-      if (core.Misc.getRandom(3) === 0) {
+      // The pipe that fired it, not the one worn when it lands; an unknown one gives no venom.
+      if (firedKind(hit)?.venom === true && core.Misc.getRandom(3) === 0) {
         core.CombatFactory.poisonEntity(target, VENOM_START_DAMAGE, 2);
       }
       if (!this.special) {
@@ -589,6 +768,19 @@ function combatMethod(special) {
   return method;
 }
 
+/** Spends the dart and scale of the attack `start` armed, once. */
+function spendArmedShot(character) {
+  const player = character?.isPlayer?.() ? character.getAsPlayer() : null;
+  const blowpipeItem = player ? pendingSpend.get(player) : null;
+  if (!blowpipeItem) return;
+  pendingSpend.delete(player);
+  const dartsDepleted = maybeConsumeLoadedDart(player, blowpipeItem);
+  const scalesDepleted = maybeConsumeScale(player, blowpipeItem);
+  if (dartsDepleted || scalesDepleted) {
+    refreshBlowpipeState(player, blowpipeItem);
+  }
+}
+
 function rangedAmmoResolverResolve(player) {
   const blowpipeItem = BlowpipeState.equipped(player);
   if (!blowpipeItem || !isChargedBlowpipeItemId(blowpipeItem.getId())) {
@@ -599,7 +791,7 @@ function rangedAmmoResolverResolve(player) {
 
 function rangedAmmoHandlerCheckAmmo(player, amountRequired, silent = false) {
   const rangedWeapon = player?.getCombat?.()?.getRangedWeapon?.();
-  if (rangedWeapon !== core.RangedWeapon.TOXIC_BLOWPIPE) {
+  if (!isPipeWeapon(rangedWeapon)) {
     return null;
   }
   return isReady(player, BlowpipeState.equipped(player), amountRequired, silent);
@@ -607,12 +799,19 @@ function rangedAmmoHandlerCheckAmmo(player, amountRequired, silent = false) {
 
 function rangedAmmoHandlerDecrementAmmo(player, pos, amount) {
   const rangedWeapon = player?.getCombat?.()?.getRangedWeapon?.();
-  if (rangedWeapon !== core.RangedWeapon.TOXIC_BLOWPIPE) {
+  if (!isPipeWeapon(rangedWeapon)) {
     return false;
   }
   const blowpipeItem = BlowpipeState.equipped(player);
   if (!blowpipeItem) {
     player.getCombat().reset();
+    return true;
+  }
+  if (kindOf(blowpipeItem)?.scales === false) {
+    // Darts are its only ammunition: each shot spends one (saved, recovered or not).
+    let depleted = false;
+    for (let shot = 0; shot < amount && !depleted; shot++) depleted = maybeConsumeLoadedDart(player, blowpipeItem);
+    if (depleted) refreshBlowpipeState(player, blowpipeItem);
     return true;
   }
   // Content may keep some shots from costing a scale (a league relic), as core asks for quiver ammunition.
@@ -650,9 +849,10 @@ function bonusProviderApply(event) {
   if (!isToxicBlowpipeDartId(dartId)) {
     return;
   }
-  bonuses[core.BonusManager.ATTACK_RANGE] += 30 - getDefinitionBonus(blowpipeItem, core.BonusManager.ATTACK_RANGE);
+  const kind = kindOf(blowpipeItem);
+  bonuses[core.BonusManager.ATTACK_RANGE] += kind.attack - getDefinitionBonus(blowpipeItem, core.BonusManager.ATTACK_RANGE);
   bonuses[10 + core.BonusManager.RANGED_STRENGTH] +=
-    20 + getToxicBlowpipeDartStrength(dartId) - getDefinitionBonus(blowpipeItem, 10 + core.BonusManager.RANGED_STRENGTH);
+    kind.strength + getToxicBlowpipeDartStrength(dartId) - getDefinitionBonus(blowpipeItem, 10 + core.BonusManager.RANGED_STRENGTH);
 }
 
 function combatMethodResolverResolve(attacker) {
@@ -681,13 +881,19 @@ function itemOnItem(event) {
   const blowpipeItem = blowpipeOnLeft ? usedItem : usedWithItem;
   const otherItem = blowpipeOnLeft ? usedWithItem : usedItem;
   const otherItemId = blowpipeOnLeft ? usedWithItemId : usedItemId;
+  const kind = pipeOf(blowpipeOnLeft ? usedItemId : usedWithItemId).kind;
+  if (kind.rejectsPoisonedDarts && isPoisonedDart(otherItemId)) {
+    event.handled = true;
+    player.sendMessage(POISONED_DART_TEXT);
+    return;
+  }
   // Preset copies never load: Unload and Uncharge pay back plain scales and darts.
   if ((otherItemId === core.ItemIdentifiers.ZULRAHS_SCALES || isToxicBlowpipeDartId(otherItemId)) && restricted(otherItem)) {
     event.handled = true;
     player.sendMessage(PRESET_TEXT);
     return;
   }
-  if (otherItemId === core.ItemIdentifiers.ZULRAHS_SCALES) {
+  if (otherItemId === core.ItemIdentifiers.ZULRAHS_SCALES && kind.scales) {
     event.handled = true;
     chargeScales(player, blowpipeItem, blowpipeSlot, otherItem);
     return;
@@ -713,7 +919,7 @@ function fillCharges(event) {
   const { item } = event;
   if (!item || !isToxicBlowpipeItemId(item.getId())) return;
   BlowpipeState.write(item, {
-    scales: TOXIC_BLOWPIPE_MAX_SCALES,
+    scales: kindOf(item).scales ? TOXIC_BLOWPIPE_MAX_SCALES : 0,
     dartId: core.ItemIdentifiers.DRAGON_DART,
     dartAmount: TOXIC_BLOWPIPE_MAX_DARTS,
   });
@@ -722,11 +928,12 @@ function fillCharges(event) {
 
 module.exports = {
   name: "ToxicBlowpipe",
-  description: "Adds the toxic blowpipe: loading Zulrah's scales and darts, dart-based ranged strength, checking, unloading and uncharging.",
+  description: "Adds the toxic blowpipe: loading Zulrah's scales and darts, dart-based ranged strength, checking, unloading, uncharging, dismantling and picking ammunition up into it.",
   members: true,
   register(api) {
     core = api.core;
     pluginApi = api;
+    initializePipes();
     // The ornament changes appearance only. Native ranged-weapon and profile lookups
     // should see the corresponding charged or empty Toxic Blowpipe definition.
     core.ItemAliases.register(core.ItemIdentifiers.BLAZING_BLOWPIPE, core.ItemIdentifiers.TOXIC_BLOWPIPE);
@@ -737,7 +944,9 @@ module.exports = {
     api.registerBonusProvider({ apply: bonusProviderApply });
     api.registerCombatMethodResolver({ resolve: combatMethodResolverResolve });
     api.onItemOnItem(itemOnItem);
+    api.onGroundItemPickup(pickupIntoBlowpipe);
     api.onCustomEvent("item:fill-charges", fillCharges);
+    api.onItemAction("Drygore blowpipe", { Check: checkBlowpipe, Unload: unloadBlowpipe });
     api.onItemAction("Toxic blowpipe", {
       Check: checkBlowpipe,
       Unload: unloadBlowpipe,
@@ -747,6 +956,7 @@ module.exports = {
       Check: checkBlowpipe,
       Unload: unloadBlowpipe,
       Uncharge: unchargeBlowpipe,
+      Dismantle: dismantleBlowpipe,
     });
     api.onItemAction("Blazing blowpipe", {
       Check: checkBlowpipe,
@@ -761,5 +971,5 @@ module.exports = {
     api.onInterfaceActionButton(CONFIRM_BUTTON, confirmPrompt);
     api.onCustomEvent("destroy-item:prompt", forgetPrompt);
   },
-  _test: { dartShot, BlowpipeState, checkBlowpipe, removeDarts, removeEverything, fillCharges, CONFIRM_GROUP_ID },
+  _test: { dartShot, BlowpipeState, checkBlowpipe, removeDarts, removeEverything, fillCharges, dismantleBlowpipe, pickupIntoBlowpipe, itemOnItem, unloadBlowpipe, combatMethod, spendArmedShot, CONFIRM_GROUP_ID },
 };

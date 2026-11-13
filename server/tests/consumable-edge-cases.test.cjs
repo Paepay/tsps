@@ -203,6 +203,25 @@ test("prayer potions restore 7 + 25%, or 27% with a holy wrench or worn prayer c
   assert.equal(cape.levels.get(Skill.PRAYER), 1 + 8 + 26);
 });
 
+test("prayer-restoring potions play no prayer recharge sound (only the drink sound)", () => {
+  const PRAYER_RECHARGE = 2674;
+  for (const [name, apply] of [
+    ["prayer potion", (player) => applyPrayerRestore(player, false)],
+    ["super restore", (player) => applyPrayerRestore(player, true)],
+    ["sanfew serum", applySanfewRestore],
+    ["ancient brew", (player) => applyAncientBrew(player, 2, 0.05)],
+  ]) {
+    const player = createPlayer();
+    const sounds = [];
+    const sender = player.getPacketSender();
+    sender.sendSoundEffect = (id) => { sounds.push(id); return sender; };
+    player.getPacketSender = () => sender;
+    player.getUsername = () => "drinker";
+    apply(player);
+    assert.ok(!sounds.includes(PRAYER_RECHARGE), `${name} sent ${sounds}`);
+  }
+});
+
 test("a Sanfew dose restores 4 + 30% (prayer 32% with the bonus)", () => {
   const player = createPlayer({ equipment: [ItemIdentifiers.RING_OF_THE_GODS_I_] });
   applySanfewRestore(player);
@@ -214,9 +233,9 @@ test("two divine potions keep their own five minutes: the second doesn't drop th
   const player = createPlayer({ current: 99 });
   let now = 1_000_000;
   t.mock.method(Date, "now", () => now);
-  applyDivine(player, (p) => p.levels.set(Skill.ATTACK, 118), [Skill.ATTACK], { damage: 0 });
+  applyDivine(player, (p) => p.levels.set(Skill.ATTACK, 118), [Skill.ATTACK]);
   now += 60_000;
-  applyDivine(player, (p) => p.levels.set(Skill.RANGED, 112), [Skill.RANGED], { damage: 0 });
+  applyDivine(player, (p) => p.levels.set(Skill.RANGED, 112), [Skill.RANGED]);
   const skills = () => (player.getAttribute("potions:divine:state")?.targets ?? []).map((entry) => entry.skillIndex).sort();
   assert.deepEqual(skills(), [Skill.ATTACK.getIndex(), Skill.RANGED.getIndex()].sort(), "both stay pinned");
   now += 4 * 60_000 + 1; // the first potion's five minutes are over, the second has a minute left
@@ -244,7 +263,7 @@ test("divine potions: the warning at 30 ticks left, the worn-off line at the end
     const player = createPlayer({ current: 99 });
     const lines = [];
     player.sendMessage = (text) => lines.push(text);
-    applyDivine(player, (p) => { for (const skill of skills) p.levels.set(skill, 112); }, skills, { damage: 0 });
+    applyDivine(player, (p) => { for (const skill of skills) p.levels.set(skill, 112); }, skills);
     return { player, lines };
   };
   const bastion = drink([Skill.RANGED, Skill.DEFENCE]);
@@ -312,6 +331,7 @@ SpellTeleports.register({
     ) }) },
     TeleportHandler: {
       checkReqs: () => allowTeleport,
+      confirm: (player, destination, go, level, { item } = {}) => go(item),
       teleport: (player, destination, type, warning, onArrival, onMiddle) =>
         teleports.push({ destination, type, onArrival, onMiddle }),
     },
@@ -386,7 +406,7 @@ test("a Nardah scroll uses its Teleport action and is used up on the click", () 
   assert.equal(teleports.length, 1);
   assert.deepEqual(
     [teleports[0].destination.getX(), teleports[0].destination.getY(), teleports[0].destination.getZ()],
-    [3401, 2918, 0]
+    [3419, 2917, 0], // the Wiki's Nardah teleport map
   );
   assert.equal(teleports[0].type, "TELE_SCROLL");
   assert.equal(player.items.length, 0, "scrolls go on the click (docs/teleport-tablets.md)");
@@ -471,9 +491,47 @@ test("Preserve stretches the boost cycle to 90 seconds once it has been on for 1
   assert.equal(player.levels.get(Skill.ATTACK), 109, "then the stretched cycle decays it");
 
   notePreserveActivated({ player, prayerId: PrayerHandler.PRESERVE });
+  // Its last warm moment was over 13 seconds ago, so the turn-off grace below does not apply either.
+  player.setAttribute("potions:preserve-warm-at", Date.now() - 14_000);
   player.setAttribute("potions:boost-cycle", Date.now() - 1);
   processBoostDecay(player);
   assert.equal(player.levels.get(Skill.ATTACK), 108, "Preserve switched on under 15 seconds ago does not stretch it");
+});
+
+// Wiki (Preserve): "Players can turn off Preserve when there are less than 13 seconds left until the next buff
+// drain, and still keep the full effect."
+test("Preserve turned off under 13 seconds before the cycle ends still stretches it; earlier does not", () => {
+  const { PrayerHandler } = core;
+  for (const [secondsLeft, stretched] of [[12, true], [14, false]]) {
+    const player = createPlayer({ base: 99, current: 99 });
+    player.levels.set(Skill.ATTACK, 110);
+    player.prayerActive[PrayerHandler.PRESERVE] = true;
+    player.setAttribute("potions:preserve-since", Date.now() - 20_000);
+    player.setAttribute("potions:boost-cycle", Date.now() + secondsLeft * 1000);
+    processBoostDecay(player); // a tick with Preserve on and warm
+    player.prayerActive[PrayerHandler.PRESERVE] = false;
+    // The cycle ends secondsLeft later: move it to now, keeping the gap since Preserve was warm.
+    player.setAttribute("potions:preserve-warm-at", Number(player.getAttribute("potions:preserve-warm-at")) - secondsLeft * 1000);
+    const cycleEnd = Date.now() - 1;
+    player.setAttribute("potions:boost-cycle", cycleEnd);
+    processBoostDecay(player);
+    assert.equal(player.levels.get(Skill.ATTACK), stretched ? 110 : 109, `turned off with ${secondsLeft} seconds left`);
+    if (stretched) assert.equal(player.getAttribute("potions:boost-cycle"), cycleEnd + 30_000);
+  }
+});
+
+test("the boost drain timer counts a Preserve turned off under 13 seconds before the cycle ends", () => {
+  const player = createPlayer({ base: 99, current: 99 });
+  const scripts = [];
+  player.getPacketSender = () => ({ sendClientScript: (...args) => { scripts.push(args); } });
+  player.levels.set(Skill.ATTACK, 110);
+  player.setAttribute("potions:preserve-warm-at", Date.now() - 1_000);
+  player.setAttribute("potions:boost-cycle", Date.now() + 10_000 - 100);
+  sendBoostDrainTimer({ player });
+  assert.deepEqual(scripts.pop(), [4518, 150, 67], "17 ticks left plus Preserve's 50");
+  player.setAttribute("potions:preserve-warm-at", Date.now() - 5_000);
+  sendBoostDrainTimer({ player });
+  assert.deepEqual(scripts.pop(), [4518, 100, 17], "turned off 15 seconds before the cycle ends: no stretch");
 });
 
 test("the modified stats overlay's boost drain timer shows the ticks left in the boost cycle", () => {
@@ -729,6 +787,29 @@ test("a Zamorak brew takes 12% of current Hitpoints, rounded down, with no flat 
     Potions._test.findPotionEntry(ItemIdentifiers.ZAMORAK_BREW_4_).potion.effect(player);
     assert.equal(player.levels.get(Skill.HITPOINTS), hp - lost, `at ${hp} Hitpoints`);
   }
+});
+
+// Wiki (Zamorak brew): Defence drops by 2 + 10% of the current level. rsprox 234/00831 (base Defence 99): 116 -> 103,
+// 103 -> 91; rsprox 237/04060 (base Prayer 99): Prayer 71 -> 80 and 79 -> 88, so the Prayer gain is 10% of the base level.
+test("a Zamorak brew drains Defence from the current level and restores Prayer from the base level", (t) => {
+  const { Player } = require("../dist/game/entity/impl/player/Player");
+  const player = new Player(null);
+  const sender = new Proxy({}, { get: () => () => sender });
+  t.mock.method(player, "getPacketSender", () => sender);
+  const skills = player.getSkillManager();
+  for (const skill of [Skill.DEFENCE, Skill.PRAYER, Skill.HITPOINTS]) skills.setMaxLevel(skill, 99);
+  skills.setCurrentLevel(Skill.HITPOINTS, 99, false);
+  skills.setCurrentLevel(Skill.DEFENCE, 116, false);
+  skills.setCurrentLevel(Skill.PRAYER, 71, false);
+  const brew = Potions._test.findPotionEntry(ItemIdentifiers.ZAMORAK_BREW_4_).potion.effect;
+  brew(player);
+  assert.equal(skills.getCurrentLevel(Skill.DEFENCE), 103, "116 loses 2 + 11");
+  assert.equal(skills.getCurrentLevel(Skill.PRAYER), 80, "71 gains 9 (10% of 99)");
+  brew(player);
+  assert.equal(skills.getCurrentLevel(Skill.DEFENCE), 91, "103 loses 2 + 10");
+  skills.setCurrentLevel(Skill.DEFENCE, 1, false);
+  brew(player);
+  assert.equal(skills.getCurrentLevel(Skill.DEFENCE), 0, "a drained Defence still loses the flat 2, floored at 0");
 });
 
 test("a weaker antipoison never shortens an active poison immunity", () => {

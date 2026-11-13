@@ -22,9 +22,12 @@ import { lockingQuest } from "./SpellbookLocks";
 import { DialogueOption } from "../../../model/dialogues/DialogueOption";
 import { PluginManager } from "../../../../plugins/PluginManager";
 import { CacheDefinitions } from "../../../cache/CacheDefinitions";
+import { Wilderness } from "../../wilderness/Wilderness";
+import { AreaManager } from "../../../model/areas/AreaManager";
 
 /** A cast's animation, graphic and sound on the caster (cache ids); `areaSound` is heard nearby. */
-type CastVisuals = { animation: number; graphic?: number; sound?: number; areaSound?: number };
+/** `graphicHeight`: the spotanim height rsprox captures show (0 when none is recorded). */
+type CastVisuals = { animation: number; graphic?: number; graphicHeight?: number; sound?: number; areaSound?: number };
 /**
  * Each spell's level and runes are the cache's (its spell obj's params); `experience` is the
  * Wiki's. `cast` is what the caster plays, as in rsprox captures of live OSRS; null for a
@@ -34,23 +37,23 @@ type CastVisuals = { animation: number; graphic?: number; sound?: number; areaSo
 type SpellData = { experience: number; cast?: CastVisuals | null; spellId?: number };
 type TeleportData = SpellData & { destination: Location };
 
-const UNCAPTURED: CastVisuals = { animation: 4413, graphic: 747 };
+const UNCAPTURED: CastVisuals = { animation: 4413, graphic: 747, graphicHeight: 92 };
 /** The Lunar spells rsprox captures show, by cache name: the caster's animation, then graphic. */
 const CASTS = {
     // lunar_human_magic_summon2, quest_lunar_bakepie_spotanim
     "bake pie": { animation: 4413, graphic: 746 },
     // dream_player_humidify_spell, dream_humidify_spell_spotanim; area sound 3614 (rsprox 547)
-    "humidify": { animation: 6294, graphic: 1061, areaSound: 3614 },
+    "humidify": { animation: 6294, graphic: 1061, graphicHeight: 72, areaSound: 3614 },
     // dream_player_hunter_box_spell, dream_hunter_spell_spotanim; sound 3615 (rsprox 75)
-    "hunter kit": { animation: 6303, graphic: 1074, sound: 3615 },
+    "hunter kit": { animation: 6303, graphic: 1074, graphicHeight: 62, sound: 3615 },
     // dream_player_make_plank_spell, dream_plank_make_spell_spotanim; sound 3617 (rsprox 3461)
-    "plank make": { animation: 6298, graphic: 1063, sound: 3617 },
+    "plank make": { animation: 6298, graphic: 1063, graphicHeight: 60, sound: 3617 },
     // dream_player_monsterexam_statspy, dream_spell_monsterexam_statspy_spotanim; sound 3620 (rsprox 3235)
-    "monster examine": { animation: 6293, graphic: 1059, sound: 3620 },
+    "monster examine": { animation: 6293, graphic: 1059, graphicHeight: 32, sound: 3620 },
     // lunar_human_magic_summon2, quest_lunar_magic_flax_strim; sound 3618 (rsprox 4045)
-    "astral contact": { animation: 4413, graphic: 728, sound: 3618 },
+    "astral contact": { animation: 4413, graphic: 728, graphicHeight: 92, sound: 3618 },
     // dream_player_spellbook_swap, dream_spellbook_spotanim
-    "spellbook swap": { animation: 6299, graphic: 1062 },
+    "spellbook swap": { animation: 6299, graphic: 1062, graphicHeight: 10 },
     // lunar_human_magic_summon1, quest_lunar_spellbook_string_jewelery_spot_anim
     "string jewellery": { animation: 4412, graphic: 730 },
     // quest_lunar_pushing_magic_animation; the target shows the Vengeance graphic (725)
@@ -68,7 +71,7 @@ const PIES = new Map<number, [number, number, number]>([
 ]);
 /** Empty vessel -> filled (Wiki: Humidify). Farming adds seedlings and part-filled watering cans. */
 const WATER_CONTAINERS = new Map<number, number>([
-    [1925, 1929], [1923, 1921], [1935, 1937], [229, 227], [6667, 6669], [1980, 4458], [434, 1761],
+    [1925, 1929], [1923, 1921], [1935, 1937], [229, 227], [6667, 6668], [1980, 4458], [434, 1761],
     [1825, 1823], [1827, 1823], [1829, 1823], [1831, 1823], [5331, 5340],
 ]);
 /** Unstrung -> strung (Wiki: String Jewellery); 4 Crafting XP each. */
@@ -105,6 +108,8 @@ const MONSTER_STATS_SCRIPT = 1179;
 const ELEMENTS = ["Air", "Water", "Earth", "Fire"];
 /** Magic Imbue lasts 21 ticks (12.6 s), its cooldown as long (Wiki). */
 const MAGIC_IMBUE_TICKS = 21;
+/** When Magic Imbue may be cast again: its own clock, so Spellbook Swap ending the effect keeps the cooldown. */
+const MAGIC_IMBUE_READY_AT_ATTRIBUTE = "lunar:magic-imbue-ready-at";
 /** Heal Group's cooldown: 90 s (Wiki). Heal Other's isn't settled on the Wiki, so it has none. */
 const HEAL_GROUP_COOLDOWN_TICKS = 150;
 /** Dream heals 1 Hitpoint every 20 s on its own timer (Wiki). */
@@ -119,9 +124,13 @@ const ENERGY_TRANSFER_HITPOINTS = 10;
  */
 const DREAM_MENTOR_SPELLS = new Set(["monster examine", "humidify", "hunter kit", "stat spy", "dream", "plank make", "spellbook swap"]);
 
-/** A Dream Mentor spell before the quest: refused (before any other check or cost), and true. */
+/**
+ * A Dream Mentor spell before the quest: refused (before any other check or cost), and true. The world's
+ * `quests:equipment-requirements` switch lifts this with the other quest spellbook requirements when false.
+ */
 export function refuseBeforeDreamMentor(player: Player, key: string): boolean {
     if (!DREAM_MENTOR_SPELLS.has(key)) return false;
+    if (PluginManager.getPluginConfig<boolean>("quests:equipment-requirements", true) === false) return false;
     const query = { player, key: "dream_mentor", complete: false };
     PluginManager.emitCustomEvent("quest:is-complete", query);
     if (query.complete === true) return false;
@@ -150,17 +159,22 @@ class LunarSpell extends Spell {
     equipmentRequired(): Item[] { return []; }
     startCast(): void { }
     getSpellbook(): MagicSpellbook { return MagicSpellbook.LUNAR; }
-    /** Pays for one cast and plays it; false (with the reason sent) when it can't be cast. */
-    pay(player: Player): boolean {
+    /** Whether the player could cast it now (Defence, level, runes), without paying; the reason sent when not. */
+    castable(player: Player): boolean {
         if (player.getSkillManager().getMaxLevel(Skill.DEFENCE) < 40) {
             player.sendMessage("You need at least level 40 Defence to cast Lunar spells.");
             return false;
         }
-        if (!this.canCast(player, false) || !this.canCast(player, true)) return false;
+        return this.canCast(player, false);
+    }
+    /** Pays for one cast and plays it; false (with the reason sent) when it can't be cast. */
+    pay(player: Player): boolean {
+        if (!this.castable(player) || !this.canCast(player, true)) return false;
         const cast = this.data.cast === undefined ? UNCAPTURED : this.data.cast;
         if (cast) {
             player.performAnimation(new Animation(cast.animation));
-            if (cast.graphic !== undefined) player.performGraphic(new Graphic(cast.graphic));
+            // (id, delay, height): a 2-argument number that is not a GraphicHeight member would be read as a delay.
+            if (cast.graphic !== undefined) player.performGraphic(new Graphic(cast.graphic, 0, (cast.graphicHeight ?? 0) as GraphicHeight));
             if (cast.sound !== undefined) player.getPacketSender().sendSoundEffect(cast.sound, 1, 0, 255);
             if (cast.areaSound !== undefined) {
                 const at = player.getLocation();
@@ -181,9 +195,12 @@ class LunarSpell extends Spell {
 class LunarTeleport extends LunarSpell {
     constructor(name: string, readonly teleport: TeleportData) { super(name, { ...teleport, cast: null }); }
     castTeleport(player: Player): boolean {
-        if (!TeleportHandler.checkReqs(player, this.teleport.destination)) return true;
-        return this.cast(player, () => TeleportHandler.teleport(player, this.teleport.destination, TeleportType.LUNAR, false,
-            () => PluginManager.emitCustomEvent("spell:teleport-arrival", { player, name: this.name })));
+        // The cast's own checks come before anything asks (the boat-at-sea warning), so it never asks for a cast that
+        // can't happen; paying checks them again.
+        if (!TeleportHandler.checkReqs(player, this.teleport.destination) || !this.castable(player)) return true;
+        TeleportHandler.confirm(player, this.teleport.destination, () => this.cast(player, () => TeleportHandler.teleport(player,
+            this.teleport.destination, TeleportType.LUNAR, false, () => PluginManager.emitCustomEvent("spell:teleport-arrival", { player, name: this.name }))));
+        return true;
     }
 }
 
@@ -289,16 +306,19 @@ export class LunarSpells {
     }
 
     private static castGroupTeleport(player: Player, spell: LunarTeleport): boolean {
-        if (!TeleportHandler.checkReqs(player, spell.teleport.destination)) return true;
-        return spell.cast(player, () => {
+        if (!TeleportHandler.checkReqs(player, spell.teleport.destination) || !spell.castable(player)) return true;
+        TeleportHandler.confirm(player, spell.teleport.destination, () => spell.cast(player, () => {
             TeleportHandler.teleport(player, spell.teleport.destination, TeleportType.LUNAR, false,
                 () => PluginManager.emitCustomEvent("spell:teleport-arrival", { player, name: spell.name }));
             this.forNearbyPlayers(player, 1, target => {
+                // A passenger is asked too (the boat-at-sea warning) before they go.
                 if (TeleportHandler.checkReqs(target, spell.teleport.destination)) {
-                    TeleportHandler.teleport(target, spell.teleport.destination, TeleportType.LUNAR, false);
+                    TeleportHandler.confirm(target, spell.teleport.destination,
+                        () => TeleportHandler.teleport(target, spell.teleport.destination, TeleportType.LUNAR, false));
                 }
             });
-        });
+        }));
+        return true;
     }
 
     /**
@@ -325,7 +345,10 @@ export class LunarSpells {
         TaskManager.cancelTasks(player.getIndex());
     }
 
-    /** Sleeps until full Hitpoints, healing 1 every 20 s; any action wakes the caster (Wiki: Dream). */
+    /**
+     * Sleeps until full Hitpoints, healing 1 every 20 s; any action wakes the caster, and so does
+     * poison damage (Wiki: Dream).
+     */
     private static castDream(player: Player, spell: LunarSpell): boolean {
         const hitpoints = () => player.getSkillManager().getCurrentLevel(Skill.HITPOINTS);
         const maximum = () => player.getSkillManager().getMaxLevel(Skill.HITPOINTS);
@@ -335,7 +358,11 @@ export class LunarSpells {
         }
         return spell.cast(player, () => {
             let ticks = 0;
+            // Every poison splat counts, even one landing on the tick of another hit.
+            const hits = player.getCombat().getHitQueue();
+            const poisonSplats = hits.getPoisonSplatCount();
             this.repeat(player, 1, () => {
+                if (hits.getPoisonSplatCount() !== poisonSplats) return false;
                 if (++ticks % DREAM_HEAL_TICKS === 0) player.heal(1);
                 return hitpoints() < maximum();
             }, () => player.performAnimation(new Animation(-1)));
@@ -385,12 +412,21 @@ export class LunarSpells {
     private static castSpellbookSwap(player: Player, spell: LunarSpell, option: number): boolean {
         const books = [MagicSpellbook.NORMAL, MagicSpellbook.ANCIENT, MagicSpellbook.ARCEUUS];
         const quick = option >= 2 && option <= 4 ? books[option - 2] : undefined;
-        if (quick && this.refuseLockedBook(player, quick)) return true;
+        if (quick) {
+            if (this.refuseLockedBook(player, quick)) return true;
+            return this.castSwapTo(player, spell, quick);
+        }
+        // Wiki (Spellbook Swap): the runes are spent when a book is selected, so the menu only checks them.
+        if (spell.castable(player)) this.openSpellbookSwap(player, spell);
+        return true;
+    }
+
+    /** Pays for the swap and moves to `book`. */
+    private static castSwapTo(player: Player, spell: LunarSpell, book: MagicSpellbook): boolean {
         return spell.cast(player, () => {
-            // Spellbook Swap ends Magic Imbue (Wiki).
+            // Spellbook Swap ends Magic Imbue's effect (Wiki), not its 21-tick cooldown.
             player.setAttribute("lunar:magic-imbue-until", null);
-            if (quick) this.swapTo(player, quick);
-            else this.openSpellbookSwap(player);
+            this.swapTo(player, book);
         });
     }
 
@@ -398,10 +434,11 @@ export class LunarSpells {
     private static refuseLockedBook(player: Player, book: MagicSpellbook): boolean {
         const quest = lockingQuest(player, book);
         if (!quest) return false;
-        // Captured (a league recording): "You need to have completed Desert Treasure I in order to use Ancient Magicks."
+        // Captured with its colours (rsprox_transcripts/227/00086.txt, a league recording): "You need to have completed
+        // <col=800000>Desert Treasure I<col=000000> in order to use <col=000000>Ancient Magicks."
         const bookName = book === MagicSpellbook.ANCIENT ? "Ancient Magicks" : "that spellbook";
-        player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(
-            new StatementDialogue(0, `You need to have completed ${quest.name} in order to use ${bookName}.`)));
+        player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(new StatementDialogue(0,
+            `You need to have completed <col=800000>${quest.name}<col=000000> in order to use <col=000000>${bookName}.`)));
         return true;
     }
 
@@ -473,12 +510,14 @@ export class LunarSpells {
     /** Lets combination runes be crafted without the talisman for 21 ticks (Wiki: Magic Imbue). */
     private static castMagicImbue(player: Player, spell: LunarSpell): boolean {
         const now = World.getProcessCycle();
-        if (Number(player.getAttribute("lunar:magic-imbue-until") ?? 0) > now) {
+        // Wiki: "This spell can only be cast once every 12.6 seconds (21 game ticks)."
+        if (Number(player.getAttribute(MAGIC_IMBUE_READY_AT_ATTRIBUTE) ?? 0) > now) {
             player.sendMessage("You can't use that spell yet.");
             return true;
         }
         return spell.cast(player, () => {
             player.setAttribute("lunar:magic-imbue-until", now + MAGIC_IMBUE_TICKS);
+            player.setAttribute(MAGIC_IMBUE_READY_AT_ATTRIBUTE, now + MAGIC_IMBUE_TICKS);
             player.sendMessage("You are charged to combine runes!");
         });
     }
@@ -512,6 +551,13 @@ export class LunarSpells {
         if (target === player || !this.acceptsAid(target) || (aid && (this.inDuel(player) || this.inDuel(target))) ||
             !this.sameInstance(player, target) ||
             !player.getLocation().isWithinDistance(target.getLocation(), 10)) return false;
+        // Wiki (Energy Transfer): it can't be cast in single-way combat PvP areas, nor from multi onto a player
+        // standing in single-way Wilderness.
+        if (key === "energy transfer" && (this.inSingleWayPvp(player) || this.inSingleWayPvp(target))) return false;
+        // Wiki (Vengeance Other): "unable to cast" it "in a single-combat area inside the Wilderness" (the house half
+        // is Construction's spell-disabled hook). The Wilderness itself, levelled: not a PvP zone elsewhere.
+        if (key === "vengeance other" && this.inSingleWayPvp(player) &&
+            Wilderness.levelAt(player.getLocation().getX(), player.getLocation().getY()) > 0) return false;
         this.interrupt(player);
         if (key === "vengeance other") return this.castVengeanceOther(player, target);
         const spell = this.SPELLS.get(key)!;
@@ -745,6 +791,11 @@ export class LunarSpells {
         return (player.getPrivateArea() ?? null) === (target.getPrivateArea?.() ?? null);
     }
 
+    /** Standing on single-way PvP ground (the Wilderness or another PvP zone, outside its safe spots). */
+    private static inSingleWayPvp(player: Player): boolean {
+        return Wilderness.isIn(player) && !AreaManager.inMulti(player);
+    }
+
     private static acceptsAid(player: Player): boolean {
         return player.getAttribute("accept-aid") !== false;
     }
@@ -788,14 +839,16 @@ export class LunarSpells {
     }
 
     /** Wiki (Spellbook Swap): the menu offers only "the spellbooks they have access to". */
-    private static openSpellbookSwap(player: Player): void {
+    private static openSpellbookSwap(player: Player, spell: LunarSpell): void {
         const books = ([[MagicSpellbook.NORMAL, "Standard"], [MagicSpellbook.ANCIENT, "Ancient"], [MagicSpellbook.ARCEUUS, "Arceuus"]] as const)
             .filter(([book]) => lockingQuest(player, book) === null);
         const builder = new DialogueChainBuilder();
         builder.add(new OptionDialogue(0, { executeOption: (option: DialogueOption) => {
             const book = books[(option as number) - 1]?.[0];
             player.getPacketSender().sendInterfaceRemoval();
-            if (book && !this.refuseLockedBook(player, book)) this.swapTo(player, book);
+            // The cast is paid now, so a menu left open while the book changed elsewhere casts nothing.
+            if (player.getSpellbook() !== MagicSpellbook.LUNAR) return;
+            if (book && !this.refuseLockedBook(player, book)) this.castSwapTo(player, spell, book);
         } }, ...books.map(([, label]) => label)));
         player.getDialogueManager().startDialogues(builder);
     }

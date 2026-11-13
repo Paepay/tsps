@@ -3,6 +3,7 @@ import { MAIN_PROFILE, type PlayerProfile } from "./persistence/PlayerProfile";
 import { Sound } from "../../../Sound";
 import { PrayerData, PrayerHandler } from "../../../content/PrayerHandler";
 import { CombatFactory } from "../../../content/combat/CombatFactory";
+import { HitQueue } from "../../../content/combat/hit/HitQueue";
 import { CombatSpecial } from "../../../content/combat/CombatSpecial";
 import { CombatType } from "../../../content/combat/CombatType";
 import { FightType } from "../../../content/combat/FightType";
@@ -306,17 +307,21 @@ export class Player extends Mobile {
 
     public appendDeath() {
         if (!this.isDying) {
-            const beforeDeath = { player: this, preventDeath: false, announce: true };
+            const beforeDeath: { player: Player; preventDeath: boolean; announce: boolean; message?: string } =
+                { player: this, preventDeath: false, announce: true };
             if (PluginManager.emitPlayerBeforeDeath(beforeDeath)) {
                 return;
             }
             // A respawn is the same Player object; drop rolls cached against the state it died in.
             CombatFactory.clearHitRollCache(this);
+            // Hits still in the air belong to this life too.
+            HitQueue.dropHitsFrom(this);
             // Kill credit is per life: damage this player dealt stops counting once they die.
             World.getPlayers().forEach((other) => {
                 if (other !== this) other.getCombat().removeDamager(this);
             });
-            TaskManager.submit(new PlayerDeathTask(this, beforeDeath.announce !== false));
+            TaskManager.submit(new PlayerDeathTask(this, beforeDeath.announce !== false,
+                typeof beforeDeath.message === "string" ? beforeDeath.message : undefined));
             this.isDying = true;
         }
     }
@@ -815,6 +820,14 @@ export class Player extends Mobile {
         }
     }
 
+    /**
+     * Held by a teleport (its cast, until the move) or an agility obstacle (the agility runner's "agility.obstacle"
+     * attribute). Other holds (a spell freeze, a boss's stun or knockback, a cutscene, a ride) are not counted.
+     */
+    isLocked(): boolean {
+        return this.isTeleportingReturn() || this.getAttribute("agility.obstacle") != null;
+    }
+
     busy(): boolean {
         if (this.interfaceId > 0) {
             return true;
@@ -896,7 +909,13 @@ export class Player extends Mobile {
             this.audioSettings[varpId] = Math.trunc(value) & Music.SETTINGS_MASK;
             return true;
         }
-        const maximum = varpId === 18 ? 2 : PACKED_AUDIO_VARPS.has(varpId) ? 0x7fffffff : 100;
+        if (PACKED_AUDIO_VARPS.has(varpId)) {
+            // Every bit is a setting (live sends 3109 with bits 30 and 31 set, so negative): keep the whole 32-bit
+            // value, as the client holds it, rather than clamp it to 0 and wipe the saved levels.
+            this.audioSettings[varpId] = Math.trunc(value) | 0;
+            return true;
+        }
+        const maximum = varpId === 18 ? 2 : 100;
         this.audioSettings[varpId] = Math.max(0, Math.min(maximum, Math.trunc(value)));
         return true;
     }
@@ -1034,6 +1053,17 @@ export class Player extends Mobile {
 
     public getViewDistance(): number {
         return this.fixedViewDistance ?? this.viewDistance;
+    }
+
+    public getFixedViewDistance(): number | null { return this.fixedViewDistance; }
+
+    /** Ephemeral appearance visibility; never changes participation or combat policy. */
+    private appearanceHidden = false;
+    public isAppearanceHidden(): boolean { return this.appearanceHidden; }
+    public setAppearanceHidden(hidden: boolean): void {
+        if (this.appearanceHidden === hidden) return;
+        this.appearanceHidden = hidden;
+        this.getUpdateFlag().flag(Flag.APPEARANCE);
     }
 
     /** A view distance kept regardless of the crowd (a spectator watching a room), or null. */
@@ -1357,9 +1387,11 @@ export class Player extends Mobile {
             return;
         }
         // Wiki (Skull (status), 9 December 2021): a skull "cannot disappear during PvP combat". Its last tick waits
-        // while a player is this player's target or attacker (the attacker clears six seconds after the last hit).
+        // while a player is this player's target or attacker (the attacker clears six seconds after the last hit),
+        // or a player's first hit is still on its way (the attacker is only set when it lands).
         const combat = this.getCombat();
-        const inPvpCombat = combat.getTarget?.()?.isPlayer?.() === true || combat.getAttacker?.()?.isPlayer?.() === true;
+        const inPvpCombat = combat.getTarget?.()?.isPlayer?.() === true || combat.getAttacker?.()?.isPlayer?.() === true
+            || combat.getHitQueue?.()?.hasIncomingPlayerHit?.() === true;
         if (this.skullTimer <= 1 && inPvpCombat) {
             return;
         }

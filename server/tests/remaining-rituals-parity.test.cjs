@@ -424,6 +424,20 @@ test("Shades of Mort'ton repairs to native 100/20, sanctifies serum and complete
   assert.equal(h.quest.getStage(h.player), 70);
   // Wiki (Pyre logs): magic pyre logs take 4 doses, at 5 Firemaking XP a dose.
   assert.deepEqual(h.xp.slice(xpBefore).map(({ skill, amount }) => [skill.getName?.() ?? String(skill), amount]), [["Firemaking", 20]]);
+  // Wiki (Pyre logs): the other woods the funeral pyres burn, each made into its own pyre logs.
+  h.give(I.SACRED_OIL_4_, 6);
+  for (const [logs, product, doses] of [
+    [I.ARCTIC_PINE_LOGS, I.ARCTIC_PYRE_LOGS, 2], [I.TEAK_LOGS, I.TEAK_PYRE_LOGS, 3], [I.MAHOGANY_LOGS, I.MAHOGANY_PYRE_LOGS, 3],
+    [I.CAMPHOR_LOGS, I.CAMPHOR_PYRE_LOGS, 4], [I.IRONWOOD_LOGS, I.IRONWOOD_PYRE_LOGS, 4],
+    [I.REDWOOD_LOGS, I.REDWOOD_PYRE_LOGS, 4], [I.ROSEWOOD_LOGS, I.ROSEWOOD_PYRE_LOGS, 4],
+  ]) {
+    h.give(logs, 1);
+    const xpAt = h.xp.length;
+    h.hooks.itemOnItem[0]({ player: h.player, usedItemId: logs, usedWithItemId: I.SACRED_OIL_4_ });
+    assert.equal(h.inventory.get(logs), 0, `log ${logs} is used`);
+    assert.equal(h.inventory.get(product), 1, `pyre logs ${product} are made`);
+    assert.deepEqual(h.xp.slice(xpAt).map(({ amount }) => amount), [doses * 5]);
+  }
   // The funeral pyres are the minigame's (ShadesOfMortton.plugin.js): it tells the quest.
   h.emit('shades-of-mortton:pyre-logs');
   assert.equal(h.quest.getStage(h.player), 75);
@@ -675,10 +689,24 @@ test("Shades of Mort'ton serums change the NPC for a while; Razmire's Trade opti
   assert.equal(razmire.form, N.RAZMIRE_KEELGAN, 'serum 207 turns Razmire into his cured, tradeable NPC');
   h.runTasks();
   assert.equal(razmire.form, -1, 'a 207 cure wears off');
+  const afflictedTalk = h.hooks.namedNpcs.find(({ name }) => name === 'Afflicted(Razmire)').actions['Talk-to'];
+  h.quest.setStage(h.player, 85);
+  let afflictedBoxes;
+  const dialogueManager = h.player.getDialogueManager();
+  h.player.getDialogueManager = () => ({
+    ...dialogueManager,
+    startDialogues(chain) { afflictedBoxes = [...chain.getDialogues().values()]; },
+  });
+  assert.equal(afflictedTalk({ player: h.player }), true, 'afflicted talk stops before the shop dialogue');
+  assert.equal(afflictedBoxes.length, 2);
+  assert.ok(afflictedBoxes.every((box) => box.getNpcId() === N.AFFLICTED_RAZMIRE_));
+  assert.match(afflictedBoxes[0].getText(), /^[a-z']+( [a-z']+){0,5}$/);
+  assert.equal(afflictedBoxes[1].getText(), "<col=0000ff>~ This person doesn't make any sense at all. ~");
   h.give(I.SERUM_208_4_, 1);
   use(I.SERUM_208_4_, N.AFFLICTED_RAZMIRE_, razmire);
   h.runTasks();
   assert.equal(razmire.form, -1);
+  assert.equal(afflictedTalk({ player: h.player }), false, 'permanent cure falls through to normal talk');
   for (const fn of h.hooks.variants) fn({ player: h.player, npc: razmire, npcId: N.AFFLICTED_RAZMIRE_ });
   assert.equal(razmire.form, N.RAZMIRE_KEELGAN, 'Wiki: a 208-cured Razmire is cured again when talked to');
 

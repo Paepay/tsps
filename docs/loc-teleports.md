@@ -88,7 +88,8 @@ Locs live OSRS turned some players away from need their requirement before they 
 **Requirement kinds:**
 - a total level;
 - worn items (any one set);
-- an item used on the loc once before, which stays (a rope tied to a crevice).
+- an item used on the loc once before, which stays (a rope tied to a crevice);
+- a skill level (`skill`, `atLeast`) or a Slayer task (`slayerTask`, any of the names; the Slayer plugin's `slayer:current-task` answers it).
 
 **Refusal kinds:**
 - a game message;
@@ -101,6 +102,7 @@ Locs live OSRS turned some players away from need their requirement before they 
 | | Zamorak monk robes or Zamorak robe top and legs, worn | The Monk of Zamorak: "You better dress appropriately, if you want to go up there!" |
 | Mos Le'Harmless underwater stairs (3788, 9254) | A fishbowl helmet and diving apparatus worn, or the Medallion of the Deep | "You cannot go diving without your diving helmet and diving apparatus!" |
 | The Elid crevice (all three tiles) | A rope used on it once | A message box: "That looks too steep to safely climb down with just your bare hands." |
+| Araxxor's lair web tunnel (3655, 9814) | 92 Slayer, Priest in Peril, an araxyte or spider task | Not captured: the lair's own lines ("You need a Slayer level of at least 92 to enter Araxxor's lair.") |
 
 The skill total's number is scrubbed in the captures (`#`), so 500 comes from the Wiki. Using a rope on the crevice ties it and goes down ("You climb down the rope."), as do later climbs; the rope isn't used up, as captured.
 
@@ -255,6 +257,10 @@ For Draynor's: "You open the trapdoor." a tick after arriving, the open-chest an
 
 Plugins that own a trapdoor (Edgeville's, the Werewolf course's) load first and keep it; Varrock's manholes stay with Misthalin. An open trapdoor is only on the map once opened, so the sync opens it while probing its Climb-down.
 
+**Per-player trapdoors** (`toggles` in `loc-swaps.json`) are a multiloc that a varbit shows closed or open for each player, so Open and Close set that varbit instead of swapping the loc. The open state's option 1 is the loc's `loc-teleports.json` entry; with the varbit at its closed value, option 1 is Open. The varbit is kept per player (`loc-teleports:toggled`, saved) and sent again at login, as live sends it on login.
+
+- **Evil Dave's cellar trapdoor** (multiloc 12266 at 3077,3493; 12267 closed "Open", 12268 open "Go-down"/"Close"), varbit 1888 `hundred_dave_trapdoor`. From rsprox captures: rec 3212 (rev 232) opens it (0 -> 1, synth sound 89) and closes it twice (1 -> 0, sound 88) on the tick the Go-down plays its animation (tick 2 after arriving, 0 when already beside it); recs 270, 271, 3216 and 3219 log in with it at 1 and go straight down (animation 827, move to 3077,9893 on tick 4); the user's Edgeville capture opens, closes, reopens and goes down. Going down and climbing the cellar stairs leave it open. The Wiki's Shadow of the Storm requirement isn't checked (no capture of a refusal).
+
 ## Playing an entry
 
 An entry can supply an `approach` tile when surrounding walls block ordinary loc reach.
@@ -334,3 +340,18 @@ conversation is the one branch the captures show (the player has "killed a few o
 
 Not part of this: the cave's darkness and insects without a light source, and the Witchwood
 icon's protection.
+
+## Araxxor's web tunnels
+
+The tunnel into Araxxor's lair (54161) and the one out (54274) are loc teleports, not crawls:
+captured (rev 237), the player crawls (844) with sound 2454 as the screen fades out, the minimap
+goes off a tick later, the teleport comes two ticks after the crawl, and the screen fades back
+in a tick after it. The way in also shows "You crawl through the webbed tunnel." The lair is the
+player's own instance, so the move out leaves it; the fade back in still plays after that.
+
+The outer tunnels' reverse directions (54272, 54273) crawl with 844 and sound 2454 as captured
+(rev 224 and 237), the east link's reverse (54272 at 3693, 9836) among them (224/1452); 54271
+long-crawls (2796) on all three of its links.
+
+Not done: the tunnel's toggle-able "Are you sure you wish to enter?" question (Yes. / Yes, and
+don't ask again. / No.), whose setting isn't known; the sound's two loops and delay.

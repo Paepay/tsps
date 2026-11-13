@@ -216,7 +216,7 @@ function chainhitScene(t, { multi = true, special = 100, outcomes = [], bounceTa
     getLocalPlayers: () => new Map(),
   });
   const styled = [];
-  t.mock.method(CombatFactory, "multiCombatBetween", () => multi);
+  t.mock.method(CombatFactory, "areaAttackSpreads", () => multi);
   t.mock.method(CombatFactory, "applyStyleDamage", (hit, maxHit) => styled.push([hit.getTarget(), maxHit]));
   t.mock.method(CombatFactory, "canAttackSecondaryTarget", (attacker, primary, candidate, radius) =>
     candidate !== primary && candidate.getLocation().getDistance(primary.getLocation()) <= radius);
@@ -381,7 +381,7 @@ test("a chinchompa that lands explodes on everyone within a tile of its target i
   const away = mobile(3207, 3200);
   player.getLocalNpcs = () => new Map([[1, target], ...beside.map((mob, index) => [index + 2, mob]), [9, away]]);
   let multi = true;
-  t.mock.method(CombatFactory, "multiCombatBetween", () => multi);
+  t.mock.method(CombatFactory, "areaAttackSpreads", () => multi);
   t.mock.method(CombatFactory, "canAttackSecondaryTarget", (attacker, primary, candidate, radius) =>
     candidate !== primary && candidate.getLocation().getDistance(primary.getLocation()) <= radius);
   t.mock.method(RangedCombatMethod.prototype, "hits", function (character, victim) {
@@ -420,9 +420,8 @@ test("each throw uses one chinchompa for good, and the last one empties the hand
   t.mock.method(TaskManager, "submit", (task) => submitted.push(task));
   const flying = thrower(ItemIdentifiers.RED_CHINCHOMPA_2, 5);
   ammo.decrementAmmo(flying, null, 1, 2);
-  assert.equal(flying.getEquipment().get(WEAPON).getAmount(), 5, "counted when the throw lands");
-  submitted[0].execute();
-  assert.equal(flying.getEquipment().get(WEAPON).getAmount(), 4);
+  assert.equal(flying.getEquipment().get(WEAPON).getAmount(), 4, "paid as it leaves the hand");
+  assert.deepEqual(submitted, [], "nothing waits for the landing");
 });
 
 test("a chinchompa has no special bar and the medium fuse has no accuracy boost", () => {
@@ -485,8 +484,10 @@ function blowpipeScene(t, { scales, darts, recovery = 0, special = false }) {
   return { player, pipe, meta, damageHandler, method: resolver.resolve(player), state: () => meta.get(BLOWPIPE_STATE_KEY) };
 }
 
+/** One attack: its start, then the dart and scale spent once its hit is rolled. */
 function throwOnce(scene) {
   scene.method.start(scene.player, mobile(3203, 3200));
+  require("../plugins/items/ToxicBlowpipe.plugin")._test.spendArmedShot(scene.player);
 }
 
 test("the blowpipe spends a dart a shot, saves the Ava's share and two scales in three shots", (t) => {
@@ -525,7 +526,9 @@ test("a blowpipe hit envenoms 25% of the time with venom's 6 starting damage", (
   const poisoned = [];
   t.mock.method(CombatFactory, "poisonEntity", (...args) => poisoned.push(args));
   const target = mobile(3203, 3200);
-  const hit = { getAttacker: () => scene.player, getTarget: () => target, getTotalDamage: () => 12, isAccurate: () => true };
+  // Fired from the toxic pipe (its fired-shot snapshot).
+  const hit = { getAttacker: () => scene.player, getTarget: () => target, getTotalDamage: () => 12, isAccurate: () => true,
+    getFiredRangedShot: () => ({ weapon: scene.pipe }) };
   for (const roll of [0, 1, 2, 3]) {
     t.mock.method(Misc, "getRandom", () => roll);
     scene.method.handleAfterHitEffects(hit);
@@ -758,15 +761,17 @@ test("normal throws spend one charge, keep the final charged shot and honour amm
   assert.equal(method.canAttack(ordinary, target), true);
   assert.equal(ordinaryItem.getMetaValue(TONALZTICS_CHARGES), 2, "the eligibility check spends nothing");
   method.start(ordinary, target);
-  assert.equal(ordinaryItem.getMetaValue(TONALZTICS_CHARGES), 1);
   assert.equal(method.hits(ordinary, target)[0].getHits().length, 2);
+  method.finished(ordinary, target); // the charge is spent once the throw is rolled
+  assert.equal(ordinaryItem.getMetaValue(TONALZTICS_CHARGES), 1);
 
   const last = tonalzticsPlayer();
   const lastItem = equipTonalztics(last, ItemIdentifiers.TONALZTICS_OF_RALOS, 1);
   method = CombatFactory.getMethod(last);
   method.start(last, target);
-  assert.equal(lastItem.getId(), ItemIdentifiers.TONALZTICS_OF_RALOS_UNCHARGED_);
   assert.equal(method.hits(last, target)[0].getHits().length, 2, "the last charge's throw is still charged");
+  method.finished(last, target);
+  assert.equal(lastItem.getId(), ItemIdentifiers.TONALZTICS_OF_RALOS_UNCHARGED_);
 
   const miss = tonalzticsPlayer();
   const missItem = equipTonalztics(miss, ItemIdentifiers.TONALZTICS_OF_RALOS, 1);
@@ -776,6 +781,7 @@ test("normal throws spend one charge, keep the final charged shot and honour amm
   const missed = method.hits(miss, target)[0];
   assert.equal(missed.getHits().length, 2);
   assert.equal(missed.getHits().every((hit) => hit.getDamage() === 0), true);
+  method.finished(miss, target);
   assert.equal(missItem.getMetaValue(TONALZTICS_CHARGES), undefined, "a miss still spends the charge");
 
   const saved = tonalzticsPlayer();
@@ -795,16 +801,18 @@ test("normal throws spend one charge, keep the final charged shot and honour amm
     return emit(name, event);
   });
   method.start(saved, target);
+  assert.equal(method.hits(saved, target)[0].getHits().length, 2);
+  method.finished(saved, target);
   assert.equal(savedItem.getId(), ItemIdentifiers.TONALZTICS_OF_RALOS);
   assert.equal(savedItem.getMetaValue(TONALZTICS_CHARGES), 1);
-  assert.equal(method.hits(saved, target)[0].getHits().length, 2);
 
   ammoSaved = tonalzticsPlayer();
   const ammoSavedItem = equipTonalztics(ammoSaved, ItemIdentifiers.TONALZTICS_OF_RALOS, 1);
   method = CombatFactory.getMethod(ammoSaved);
   method.start(ammoSaved, target);
-  assert.equal(ammoSavedItem.getMetaValue(TONALZTICS_CHARGES), 1, "core ammo saving also keeps the charge");
   assert.equal(method.hits(ammoSaved, target)[0].getHits().length, 2);
+  method.finished(ammoSaved, target);
+  assert.equal(ammoSavedItem.getMetaValue(TONALZTICS_CHARGES), 1, "core ammo saving also keeps the charge");
 });
 
 test("the last charge's hit profile is a snapshot even if the weapon is swapped before hits", (t) => {

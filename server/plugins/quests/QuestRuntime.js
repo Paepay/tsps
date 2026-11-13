@@ -100,6 +100,11 @@ const BOOK_PAGE_VARP = 334;
 const BOOK_TURN_RIGHT = { animation: 3140, graphic: 548 };
 const BOOK_TURN_LEFT = { animation: 3141, graphic: 549 };
 const BOOK_TURN_GRAPHIC_HEIGHT = 92;
+/** human_readbook: the reader holds the book open while it is up. */
+const BOOK_READ_ANIMATION = 1350;
+/** busy: set while the book is open, cleared when it closes. */
+const BUSY_VARBIT = 12393;
+const READING_ANIMATIONS = new Set([BOOK_READ_ANIMATION, BOOK_TURN_RIGHT.animation, BOOK_TURN_LEFT.animation]);
 // indexed_book (680): the two-page book with a contents page (RSProx capture of Atlax's Diary).
 const INDEXED_BOOK_GROUP = 680;
 const INDEXED_BOOK = {
@@ -210,13 +215,13 @@ function refreshQuestRequirements({ player }) {
  */
 
 
-function journalLines(quest, player) {
-  return typeof quest.buildJournal === "function" ? quest.buildJournal(player, quest) : [];
+function journalLines(quest, player, row) {
+  return typeof quest.buildJournal === "function" ? quest.buildJournal(player, quest, { row }) : [];
 }
 
 function openJournalById(player, id) {
   const quest = nativeQuestIndex(quests, coreApi?.CacheDefinitions).get(id);
-  if (quest) openJournal(player, quest);
+  if (quest) openJournal(player, quest, questRowById(id, coreApi?.CacheDefinitions));
 }
 
 /**
@@ -261,12 +266,12 @@ function questListAction({ player, slot, opId, action }) {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    start = startSentence(row, journalLines(quest, view));
+    start = startSentence(row, journalLines(quest, view, row));
   }
   if (op === 1 && start) {
     openOverview(player, { name: row.displayname[0] }, row, start);
   } else if (quest) {
-    openJournal(player, quest);
+    openJournal(player, quest, row);
   } else if (start) {
     openOverview(player, { name: row.displayname[0] }, row, start);
   }
@@ -360,13 +365,12 @@ function showStartOnMap({ player, slot }) {
  * The quest list's "Read journal": the overview for a quest not started yet (as live OSRS opens
  * it), otherwise the journal (119) with the quest's progress lines.
  */
-function openJournal(player, quest) {
-  const lines = journalLines(quest, player);
-  const row = questMetadata(quest, coreApi?.CacheDefinitions);
+function openJournal(player, quest, row = questMetadata(quest, coreApi?.CacheDefinitions)) {
+  const lines = journalLines(quest, player, row);
   if (row && !quest.isStarted(player)) {
     const start = startSentence(row, lines);
     if (start) {
-      openOverview(player, quest, row, start);
+      openOverview(player, { name: row.displayname?.[0] ?? quest.name }, row, start);
       return;
     }
   }
@@ -384,7 +388,7 @@ function openJournal(player, quest) {
   packet.sendInterfaceFlagsRange((JOURNAL_GROUP << 16) | JOURNAL_CLOSE_CHILD, -1, -1, 1 << 1);
   packet.sendInterfaceFlagsRange((JOURNAL_GROUP << 16) | JOURNAL_SWITCH_CHILD, -1, -1, 1 << 1);
   packet.sendInterfaceScript(SCRIPT_QJ_RESET, []);
-  setText((JOURNAL_GROUP << 16) | JOURNAL_TITLE_CHILD, `<col=7f0000>${quest.name}</col>`);
+  setText((JOURNAL_GROUP << 16) | JOURNAL_TITLE_CHILD, `<col=7f0000>${row?.displayname?.[0] ?? quest.name}</col>`);
   lines.forEach((line, index) => {
     setText((JOURNAL_GROUP << 16) | (JOURNAL_FIRST_LINE_CHILD + index), journalText(line));
   });
@@ -568,12 +572,17 @@ function registerQuestWidgets(api) {
 
 /**
  * The cache's two-page book (392), using the captured text lines for each spread.
+ * A page maps its text components (44-58 left, 60-74 right) to their lines, and may map a
+ * line's picture component (12-26 left, 28-42 right) to `{ item, zoom }`.
+ * Opening it sets busy and plays the reading animation; closing it clears both.
  * `onClose` runs once when the reader closes the book (X, close button, or the
  * interface being removed), so quests can advance only after it has been read.
  */
 function openBook(player, title, pages, onClose) {
   if (!pages.length) return;
   openBooks.set(player, { title, pages, page: 0, onClose });
+  player.getPacketSender().sendVarbit?.(BUSY_VARBIT, 1);
+  readingAnimation(player, BOOK_READ_ANIMATION);
   showBookPage(player);
 }
 
@@ -582,7 +591,32 @@ function closeBook(player) {
   const book = openBooks.get(player);
   if (!book) return;
   openBooks.delete(player);
+  if (!book.indexed) {
+    player.getPacketSender().sendVarbit?.(BUSY_VARBIT, 0);
+    // The reset stops the reading pose, not an animation the closing action has just started.
+    const current = player.getAnimation?.();
+    if (!current || READING_ANIMATIONS.has(current.getId?.())) readingAnimation(player, -1);
+  }
   if (typeof book.onClose === "function") book.onClose();
+}
+
+function readingAnimation(player, animation) {
+  if (coreApi?.Animation) player.performAnimation?.(new coreApi.Animation(animation));
+}
+
+/**
+ * Book 392 pages from `[left, right]` spreads of up to 15 lines a side: a line is its text,
+ * or `{ item, zoom }` for an item picture on that line.
+ */
+function bookPagesFromSpreads(spreads) {
+  return spreads.map((sides) => {
+    const page = {};
+    sides.forEach((lines, side) => lines.forEach((line, index) => {
+      if (typeof line === "string") page[(side ? 60 : 44) + index] = line;
+      else page[(side ? 28 : 12) + index] = { item: line.item, zoom: line.zoom };
+    }));
+    return page;
+  });
 }
 
 function showBookPage(player) {
@@ -593,8 +627,10 @@ function showBookPage(player) {
   packet.sendString(String(page * 2 + 2), (BOOK_GROUP << 16) | 10);
   for (let line = 0; line < 15; line++) {
     for (const [text, model] of [[44 + line, 12 + line], [60 + line, 28 + line]]) {
+      const picture = pages[page][model];
       packet.sendString(pages[page][text] ?? "", (BOOK_GROUP << 16) | text);
-      packet.sendInterfaceDisplayState((BOOK_GROUP << 16) | model, true);
+      packet.sendInterfaceDisplayState((BOOK_GROUP << 16) | model, !picture);
+      if (picture) packet.sendItemOnInterface((BOOK_GROUP << 16) | model, picture.item, 0, picture.zoom);
     }
   }
   packet.sendInterfaceDisplayState(BOOK_NEXT, page === pages.length - 1);
@@ -730,7 +766,7 @@ function sendQuestVarps({ player }) {
  *               xpRewards?, rewardItemId?, rewardItemLabel?, otherRewards?,
  *               rewardOrder? (the scroll's groups after the points: "xp", "item", "other"),
  *               scrollItemId? (item id or function of player),
- *               buildJournal?(player, quest), onReward?(player, quest),
+ *               buildJournal?(player, quest, { row }?), onReward?(player, quest),
  *               varpValue?(stage, player) }
  */
 function registerQuest(api, def) {
@@ -946,6 +982,7 @@ function giveReward(player, itemId, amount = 1) {
 module.exports = {
   rewardLines,
   openBook,
+  bookPagesFromSpreads,
   openIndexedBook,
   journalWidgets,
   QUEST_POINTS_VARP,

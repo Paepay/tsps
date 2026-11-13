@@ -14,6 +14,8 @@ const { Location } = require("../dist/game/model/Location");
 const { Skill } = require("../dist/game/model/Skill");
 const { Sounds } = require("../dist/game/Sounds");
 const { PluginManager } = require("../dist/plugins/PluginManager");
+const { Player } = require("../dist/game/entity/impl/player/Player");
+const { Item } = require("../dist/game/model/Item");
 const { ItemIdentifiers: Ids } = require("../dist/util/ItemIdentifiers");
 const Sos = require("../plugins/areas/strongholdofsecurity/StrongholdOfSecurity.plugin");
 const Data = require("../plugins/areas/strongholdofsecurity/Data.StrongholdOfSecurity");
@@ -231,6 +233,24 @@ test("as captured: the Cradle of Life speaks, shows the boots, offers all three;
   assert.deepEqual(player.inventory, [[28672, 1], [9005, 1]]);
 });
 
+test("as captured: the boots menu's amount is the free inventory space, starting at 1", () => {
+  const player = new Player(null);
+  player.getSession = () => ({ sendClientPacket: () => true, write: () => true });
+  for (let slot = 0; slot < 17; slot++) player.getInventory().setItem(slot, new Item(Ids.BRONZE_DAGGER, 1));
+  const scripts = [];
+  const sender = player.getPacketSender();
+  const sendInterfaceScript = sender.sendInterfaceScript.bind(sender);
+  sender.sendInterfaceScript = (id, args) => { scripts.push([id, args]); return sendInterfaceScript(id, args); };
+  Rewards.searchCradle(player, Data.FLOORS[3]);
+  for (let i = 0; i < 4; i++) player.getDialogueManager().advance();
+  const menu = scripts.find(([id]) => id === 2046)?.[1];
+  assert.ok(menu, "the boots menu opened");
+  // rsprox_transcripts/234/03275.txt: 17 items held, values [23, ..., 11, boots..., 1].
+  assert.equal(menu[0], 23);
+  assert.equal(menu[2], 11, "maxAmount: 11 free slots");
+  assert.equal(menu.at(-1), 1, "lastAmount");
+});
+
 test("as captured: the ladder down warns, then climbs; floor 2 completes the Varrock diary task", () => {
   const player = createPlayer();
   tasks.length = 0;
@@ -378,6 +398,17 @@ test("Wiki: only an imbued sceptre takes pieces and fragments, up to its maximum
   assert.equal(player.inv.getAmount(Ids.BONE_FRAGMENTS), 22);
   assert.equal(player.inv.contains(Ids.RUNED_SCEPTRE), false);
   assert.equal(Sceptre.chisel(use(player, Ids.CHISEL, Ids.SKULL_SCEPTRE_I_)), false, "the imbued sceptre is not chiselled");
+});
+
+// Wiki (Skull sceptre): Solztun imbues it with the boots "(equipped or in your inventory)".
+test("Solztun offers the imbue with the boots worn, not only carried", () => {
+  const player = sceptrePlayer([[Ids.SKULL_SCEPTRE]]);
+  player.worn.slots.push({ id: Ids.FIGHTING_BOOTS, amount: 1 });
+  const definition = { getName: () => "Solztun" };
+  const ask = (stepId) => Sceptre.solztunCondition({ player, definition, stepId });
+  assert.equal(ask("KfXhQ0"), true, "the imbue option shows with worn boots");
+  assert.equal(ask("VxmOO-"), true);
+  assert.equal(ask("DM2B8U"), true);
 });
 
 test("transcript: Solztun's imbue needs the sceptre and boots, and imbues every sceptre the player has", () => {

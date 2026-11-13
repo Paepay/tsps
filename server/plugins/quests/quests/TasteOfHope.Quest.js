@@ -206,8 +206,6 @@ module.exports = function registerTasteOfHopeQuest(api) {
   const VIAL_ITEM_ID = ItemIdentifiers.VIAL; // 229
   const VIAL_OF_WATER_ITEM_ID = ItemIdentifiers.VIAL_OF_WATER; // 227
   const PESTLE_AND_MORTAR_IDS = new Set([ItemIdentifiers.PESTLE_AND_MORTAR, ItemIdentifiers.PESTLE_AND_MORTAR_2, 15247]); // 233/234
-  const EMERALD_IDS = new Set([ItemIdentifiers.EMERALD, 1606, 6896, 16308]); // 1605
-  const CHISEL_ITEM_ID = ItemIdentifiers.CHISEL; // 1755
   const ENCHANT_EMERALD_TABLET_ITEM_ID = 8017; // Enchant emerald or jade (QH POH_TABLET_ENCHANTEMERALD)
   const SILVER_SICKLE_B_ITEM_ID = ItemIdentifiers.SILVER_SICKLE_B_; // 2963
   const ROD_OF_IVANDIS_ITEM_IDS = new Set([7639, 7640, 7641, 7642, 7643, 7644, 7645, 7646, 7647, 7648]);
@@ -1610,8 +1608,10 @@ module.exports = function registerTasteOfHopeQuest(api) {
         player.sendMessage("The fountain is bone dry.");
         return;
       }
-      // In place (setId keeps the vial's meta: a preset vial stays preset).
-      const converted = player.getInventory().getItems?.().find((item) => item?.getId() === VIAL_ITEM_ID);
+      // The vial the player used, in place (setId keeps the vial's meta: a preset vial stays preset).
+      const items = player.getInventory().getItems?.();
+      const converted = items?.[event.itemSlot]?.getId() === VIAL_ITEM_ID
+        ? items[event.itemSlot] : items?.find((item) => item?.getId() === VIAL_ITEM_ID);
       if (converted) converted.setId(VIAL_OF_WATER_ITEM_ID);
       else { player.getInventory().deleteNumber(VIAL_ITEM_ID, 1); player.getInventory().adds(VIAL_OF_WATER_ITEM_ID, 1); }
       player.getInventory().refreshItems?.();
@@ -1643,6 +1643,11 @@ module.exports = function registerTasteOfHopeQuest(api) {
   // ---------------------------------------------------------------------------
   // Items: combining the flail, the tome and the medallion
   // ---------------------------------------------------------------------------
+
+  /** The emerald on a silver sickle (b) (Crafting's gem sickles) can be made once the quest is started (Wiki). */
+  function allowEmeraldSickle(request) {
+    if (request.product === EMERALD_SICKLE_B_ITEM_ID && quest.getStage(request.player) >= STAGE_STARTED) request.allowed = true;
+  }
 
   function handleItemOnItem(event) {
     const { player, usedItemId, usedWithItemId } = event;
@@ -1687,23 +1692,6 @@ module.exports = function registerTasteOfHopeQuest(api) {
       player.getInventory().deleteNumber(UNFINISHED_BLOOD_POTION_ITEM_ID, 1);
       player.getInventory().adds(BLOOD_POTION_ITEM_ID, 1);
       player.sendMessage("You add the crushed meat to the unfinished blood potion.");
-      return;
-    }
-    if (pair.has(SILVER_SICKLE_B_ITEM_ID) && [...EMERALD_IDS].some((id) => pair.has(id))) {
-      const emerald = [...EMERALD_IDS].find((id) => pair.has(id));
-      event.handled = true;
-      if (!held(player, CHISEL_ITEM_ID)) {
-        player.sendMessage("You need a chisel to attach the emerald.");
-        return;
-      }
-      if (held(player, EMERALD_SICKLE_B_ITEM_ID)) {
-        player.sendMessage("You already have an emerald sickle (b).");
-        return;
-      }
-      player.getInventory().deleteNumber(emerald, 1);
-      player.getInventory().deleteNumber(SILVER_SICKLE_B_ITEM_ID, 1);
-      player.getInventory().adds(EMERALD_SICKLE_B_ITEM_ID, 1);
-      player.sendMessage("You use the chisel to attach the emerald to the silver sickle.");
       return;
     }
     if (pair.has(EMERALD_SICKLE_B_ITEM_ID) && pair.has(ENCHANT_EMERALD_TABLET_ITEM_ID)) {
@@ -1981,6 +1969,7 @@ module.exports = function registerTasteOfHopeQuest(api) {
   api.onObjectInteraction(handleObjectInteraction);
   api.onItemOnObject(handleItemOnObject, { noted: false });
   api.onItemOnItem(handleItemOnItem);
+  api.onCustomEvent("crafting:gem-sickle-allowed", allowEmeraldSickle);
   api.onCustomEvent("magic:enchant-item-recipe", provideSickleEnchantRecipe);
   api.onItemAction("Flaygian's notes", { Read: readFlaygiansNotes });
   api.onItemAction("Old notes", { Read: readOldNotes });

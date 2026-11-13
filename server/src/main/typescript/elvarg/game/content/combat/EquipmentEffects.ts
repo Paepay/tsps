@@ -3,6 +3,13 @@ import type { HitDamage } from "./hit/HitDamage";
 import type { CombatType } from "./CombatType";
 
 export type HitModifier = (entity: Mobile, baseHit: number) => number;
+/** Magic damage bonus in permille; `spell` is the spell whose max hit is being worked out, if any. */
+export type MagicDamageBonusModifier = (entity: Mobile, permille: number, spell?: unknown) => number;
+/**
+ * Percentage points the Wiki DPS calculator adds together before they scale the magic attack
+ * roll once (salve amulet (i)/(ei), smoke staves); `spell` is the spell being cast, if any.
+ */
+export type MagicAccuracyPercentModifier = (entity: Mobile, percent: number, spell?: unknown) => number;
 export interface CombatEffectiveLevelContext {
   combatType: CombatType;
   purpose: "accuracy" | "damage";
@@ -44,7 +51,8 @@ const meleeStrengthPercentModifiers: MeleeStrengthPercentModifier[] = [];
 const meleeStrengthBonusModifiers: MeleeStrengthBonusModifier[] = [];
 const rangedHitModifiers: HitModifier[] = [];
 const magicHitModifiers: HitModifier[] = [];
-const magicDamageBonusModifiers: HitModifier[] = [];
+const magicDamageBonusModifiers: MagicDamageBonusModifier[] = [];
+const magicAccuracyPercentModifiers: MagicAccuracyPercentModifier[] = [];
 const meleeAttackAccuracyModifiers: HitModifier[] = [];
 const meleeDefenseModifiers: HitModifier[] = [];
 const rangedAttackAccuracyModifiers: HitModifier[] = [];
@@ -80,6 +88,11 @@ export function withHitVictim<T>(attacker: Mobile, victim: Mobile | null | undef
 /** The victim of the hit being computed for `attacker`, or null outside a hit (use the combat target then). */
 export function hitVictimOf(attacker: Mobile): Mobile | null {
   return hitVictimScope?.attacker === attacker ? hitVictimScope.victim : null;
+}
+
+/** Who `attacker`'s hit is judged against: the victim of the hit being computed, else its combat target. */
+export function hitTargetOf(attacker: Mobile): Mobile | null {
+  return hitVictimOf(attacker) ?? attacker?.getCombat?.()?.getTarget?.() ?? null;
 }
 
 const applyModifiers = (modifiers: HitModifier[], entity: Mobile, baseHit: number): number =>
@@ -147,8 +160,16 @@ export function registerMagicHitModifier(modifier: HitModifier): void {
   registerModifier(magicHitModifiers, modifier);
 }
 
-export function registerMagicDamageBonusModifier(modifier: HitModifier): void {
-  registerModifier(magicDamageBonusModifiers, modifier);
+export function registerMagicDamageBonusModifier(modifier: MagicDamageBonusModifier): void {
+  if (typeof modifier === "function") {
+    magicDamageBonusModifiers.push(modifier);
+  }
+}
+
+export function registerMagicAccuracyPercentModifier(modifier: MagicAccuracyPercentModifier): void {
+  if (typeof modifier === "function") {
+    magicAccuracyPercentModifiers.push(modifier);
+  }
 }
 
 export function registerMeleeAttackAccuracyModifier(modifier: HitModifier): void {
@@ -239,8 +260,19 @@ export function applyMagicHitModifiers(entity: Mobile, baseHit: number): number 
 }
 
 /** The magic damage bonus in permille, after effects that add to it. */
-export function applyMagicDamageBonusModifiers(entity: Mobile, permille: number): number {
-  return applyModifiers(magicDamageBonusModifiers, entity, permille);
+export function applyMagicDamageBonusModifiers(entity: Mobile, permille: number, spell?: unknown): number {
+  return magicDamageBonusModifiers.reduce((value, modifier) => {
+    const next = modifier(entity, value, spell);
+    return Number.isFinite(next) ? next : value;
+  }, permille);
+}
+
+/** The additive magic accuracy percentage for this cast (0 when nothing adds to it). */
+export function applyMagicAccuracyPercentModifiers(entity: Mobile, spell?: unknown): number {
+  return magicAccuracyPercentModifiers.reduce((value, modifier) => {
+    const next = modifier(entity, value, spell);
+    return Number.isFinite(next) ? next : value;
+  }, 0);
 }
 
 export function applyMeleeAttackAccuracyModifiers(entity: Mobile, value: number): number {

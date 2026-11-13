@@ -135,7 +135,23 @@ give each destination's name, runes, Magic level and alternate). The player's sl
   faces the portal and leaves two ticks after arriving, with `poh_nexus_id` set (captures,
   revisions 228-239).
 - **Teleport Menu** opens `telenexus_teleport` (17); a row teleports at once, and the second
-  list gives the Grand Exchange, Seers' Village and Yanille (landings from captures).
+  list gives the Grand Exchange, Seers' Village and Yanille. Landings are the spell's: a standard
+  spellbook teleport lands anywhere in its 5x5 square (captures of Varrock, Lumbridge, Falador and
+  the left-click Grand Exchange), as do the Grand Exchange and Seers' Village alternates; Yanille
+  keeps its one captured tile. Framed portals in the portal chamber land the same way. Both ask
+  SpellTeleports for the tile (`spell:landing-tile`).
+- **Scry Mode** (captures 2899, 2901, 2854, 425, 1579; revisions 225-232): the menu's Scry Mode
+  button (`options_layer` sub 3) sets `poh_nexus_tele_scry_mode` to 1, and the menu opens again
+  with the nexus icon (`nexus_model`) clickable. A pick then views the destination as the scrying
+  pool does ("You view Lumbridge...", the overlay), the icon views the house's portal ("You view
+  the Yanille portal..."), and continuing says "You see N adventurers in the area." ("You see no
+  adventurers in the area.") and returns the player to the house. In building mode a pick is
+  refused with "You cannot use the scrying function while in building mode." A Wilderness
+  destination (Ghorrock, captured) gives only the adventurers line and no view (Wiki: Portal
+  nexus). Ours: sub 2 turns the mode off, the mode is kept across logins, "in the area" is 15
+  tiles, the line for one player reads "1 adventurer", and views other than Lumbridge, Falador,
+  the Grand Exchange, Seers' Village and Arceuus Library (captured view tiles) look from the
+  landing tile.
 - **Configuration** opens `telenexus` (19). Dragging a slot onto the portal makes it the
   left-click destination and its options pick it or its alternate; Done saves (captured). Adding
   a destination (dragging it from the available list), reordering and removing slots aren't
@@ -148,8 +164,9 @@ give each destination's name, runes, Magic level and alternate). The player's sl
   usual "Really remove it?". The recordings end at the warning, so that order is the generic
   remove flow's, not captured. Confirming Remove, or removing the room the nexus stands in,
   clears the player's slots and left-click destination, so the runes are paid again when a nexus
-  is rebuilt (Wiki, Portal Nexus). Upgrading a tier keeps them (Wiki). Room removal has no
-  capture of a warning, so none is shown.
+  is rebuilt (Wiki, Portal Nexus). Upgrading a tier keeps them (Wiki). Removing the room warns
+  first: "Warning: If you remove this room you will have to pay for your teleports to be used in
+  the nexus again." (recording 2904).
 
 ### Floors
 
@@ -171,7 +188,9 @@ the generic Ladders plugin's `ladders:climb`, which otherwise claims every Climb
   missing-materials message is inferred from the captured ones.
 - **Workbench:** Work-at opens the flatpack categories (enum 3526), then the category's
   furniture; a pick makes the flatpack with the furniture's materials and experience, up to the
-  bench's level. Using a flatpack on a hotspot installs it in building mode.
+  bench's level. The player sits down on the bench's stool as the flatpack is finished and works
+  from it (captures); moving or any other action gets them up again, and the stool is drawn
+  back. Using a flatpack on a hotspot installs it in building mode.
 - **Armour repair stand:** Barrows repair at Bob's price x (1 - Smithing / 200) (Wiki), through
   the `barrows:repair` event.
 - **Larders, shelves:** "Select an option", four at a time with More... (captures; contents
@@ -214,8 +233,10 @@ the generic Ladders plugin's `ladders:climb`, which otherwise claims every Climb
   captured contents box and takes them to the inventory or bank; Setup shows and switches
   notifications and banking on logout. One balance per house; Ironmen can't tip (Wiki).
 - **Scrying pool:** Scry offers the room's directed portals and the entrance, places the player
-  at the destination with the captured overlay and "You view ...", and brings them back to the
-  pool when they continue. The live game hides the scrying player; tsps has no hidden players.
+  at the destination with the captured overlay and "You view ..." ("You view the Yanille
+  portal..." for the entrance), and when they continue says how many players are there ("You see
+  no adventurers in the area.", "You see 2 adventurers in the area.") and brings them back to the
+  pool (capture 2854). The live game hides the scrying player; tsps has no hidden players.
 - **Garden plants:** furniture planted from a bagged plant (the `poh_sapling_*` objs: trees,
   plants, flowers, hedges, the topiary bush and the Zen theme) waters in, as rsprox captures
   show (rev 230-234, recordings 2856, 3267, 3275). The pick plays `farming_watering` with
@@ -297,17 +318,88 @@ Using a pet on menagerie furniture stores it; the pet house's View lists the sto
 
 Amy (Falador), then Marlo, Ellie and Angelo give contracts at the Wiki's tiers for a random
 client's home. Each home's hotspots show, per player, broken (Repair: a plank, or a steel bar
-for a sink, range or bath), old (Remove), empty (Build: the Wiki's planks) or the new piece.
+for a sink, range or bath), repaired, old (Remove), empty (Build: the Wiki's planks) or the new piece.
 The client pays the tier's experience and Carpenter points and restores run energy (the Carpenter's
 outfit adds to the experience, see below). Last-tier contract repeats the last tier; Rewards opens the shop
-(673) with the Wiki's prices; the supply crate rolls the Wiki's table. One Leagues capture
-(recording 1863, rev 227) gives the tier menu ("Select an option": "Beginner Contract", "Novice
-Contract (Requires 20 Construction)" ... "I'll pass actually.", every tier listed), Repair and
-Build playing `human_poh_build` with synth 938, Remove playing `human_throw_away` with synth 2097
-or 2098 (delay 20), and the last job's `<col=229628>Jeff seems happy with your work. Talk to him
-for your reward.</col>` (him/her from the Wiki's client genders). The rest of its dialogue and
-messages are ours (except "I'd better leave this alone right now."), and which pieces need work
-approximates the Wiki's per-client layouts.
+(673) with the Wiki's prices; the supply crate rolls the Wiki's table.
+
+**rsprox captures** (the user's own rev 241/242 runs in `rsprox/mahogany-homes/`: 42 sessions,
+143 completed contracts at every tier but Expert, all twelve clients; cited by recording id and tick):
+
+- **Amy's first Talk-to** (20261012T114410 t3706, 20261027T082315 t415): "Hey I'm Amy, how may I help
+  you?", the player's three questions and her answers, ending "The clients that I would offer you to
+  go help could be in any of those cities, it might be a bit of a journey to get there!". Continuing
+  that line sets `con_contract_discussed` and offers "I'd like a construction contract." / "Thanks
+  for the information."; the first is followed by "What kind of contract would you like?" and the
+  tier menu. A later Talk-to, and Marlo/Ellie/Angelo before Amy, are not captured (ours).
+- **Tier menu** (Contract, op3): "Select an option", `Beginner Contract`, `Novice Contract (Requires
+  20 Construction)` ..., `I'll pass actually.`; a tier above the player's level is prefixed `<str>`.
+  The pick says "Could I have a/an <tier> contract please?" ("an adept"), and on its continue the job
+  arrives as a game message `<col=ff0000>Novice Contract</col>: Go see <where>.` and the line
+  "Please could you go see <where> for us? You can get another job once you have furnished his/her
+  home." (20261027T082315 t509-514). Last-tier contract (op4) gives both at once (20261108T011509 t626);
+  with work unfinished it is "What's my current construction contract?" and "You're currently on
+  a/an <col=ff0000><tier> Contract</col>. Go see <where>. You can get another job once you have
+  furnished his/her home." (20261029T203602 t7142, 20261031T132042 t30455). Contract with work
+  unfinished is not captured and answers the same. `data/mahogany-homes.json` `descriptions` holds
+  each client's `<where>` as sent, including Bob's `Bob </col>in`.
+- **Hotspots:** Remove plays `human_throw_away` with synth 2097 or 2098 (delay 20), state 3 to 4;
+  Build and Repair play `human_poh_build` with synth 938; Build goes 4 to 5 + tier, Repair 1 to **2**.
+  Experience lands in the same tick (Novice 48 a plank, 160 a plank repair, 120 a steel repair;
+  Adept 72, 190, 120). The last job: `@mes_hl_gre@<client> seems happy with your work. Talk to
+  him/her for your reward.</col>` (resolved for the chatbox's transparency).
+- **Displays:** the eight `con_contract_hotspot_<n>_display` varbits are shared by all twelve homes,
+  so live sends a contract's states only while the player is in its home's area and zeroes them on
+  leaving (20261108T011509 t486 in, t618 out; every run). The areas in `data/mahogany-homes.json`
+  `areas` are the 8x8 zones where captures sent or cleared them, joined with the hotspots' zones; the
+  exact edges live uses are not known. After the reward the finished home stays on show until the
+  player leaves it (t610-618).
+- **Completion** (20261108T011509 t584-602, 143 alike): the player says "I've finished with the work
+  you wanted."; continuing it pays, with "You have completed <col=ef1020>N</col> contract(s) with a
+  total of <col=ef1020>P</col> points." and the contract experience, and the client answers "Thank you
+  so much! Would you like a cup of tea before you go?". The player says "Yes, I'd love a cuppa.", and
+  continuing it plays `human_eat`, synth `liquid` (2401), overhead "Aaah, nothing like a nice cuppa
+  tea!", the spam line "You drink the tea, you feel energized!" and sets run energy to 100%. P is
+  taken as the points held (a purchase between two completions is not captured).
+- **Reward shop** (20261012T114410 t3726): Rewards (op5) sends inv 247 with one `burntfish1` per
+  entry whose count is its price (400, 800, 600, 200, 350, 25, 500, 2000, enum 2645's order), opens
+  673 and enables `construction_contract_shop:confirm` (673:6) slots 0-7. Picking an entry is
+  client-side (script 3530); Confirm is created in child 6 at the entry's index, so its click names
+  the reward. What a purchase sends back is not captured.
+
+The worklist (one Leagues capture, recording 1863, decoded snapshot `recordings/1863.txt`, header
+revision 227.1, transcript SHA-256
+`4d6405c839d36cb0563148927df5527f54e22d94980103edc34a3a9ca40242df`, lines 88589–88820, and
+20261111T195440 t1024-1039): "Hey, I'm your contractor from Mahogany Homes, what did you want done?",
+then one line a piece in hotspot order, "I'd like a Wooden shelf built." ... "I'd like my mirror
+fixed.", "an" before Oak ("I'd like an Oak small table built.").
+The request vocabulary comes from the
+[homeowner transcripts](https://oldschool.runescape.wiki/w/Transcript:Jeff_(Mahogany_Homes)),
+not the loc's generic display names (for example, "Shelves"). The other homeowner transcripts
+also group duplicate pieces, such as Bob's bookcases/cabinets and Leela's small tables; requests
+combine unfinished pieces of the same kind. The exact singular wording after partially finishing
+a pair is a template inference, and unrecorded clients/tiers are not claimed as captured wording.
+The player question precedes the list. Removed spaces remain on the list until built; completed
+pieces disappear from it.
+
+[`Mahogany Homes/Mechanics`](https://oldschool.runescape.wiki/w/Mahogany_Homes/Mechanics?oldid=15141725)
+documents fixed client/tier layouts. `data/Layouts.Construction.js` records its 138 table rows as
+137 distinct work orders: Expert Larry has a duplicate row. Beginner Norman has two orders
+and Tau four; Sarah has two at every tier; Expert Bob and Jeff have two. The shared Beginner/
+Novice layouts and the Adept/Expert differences are retained. Equal selection among distinct
+documented orders is an inference; neither exact probabilities nor an undocumented third
+Expert Larry order are asserted. Every work order the user's captures assigned (137 contracts,
+Beginner to Adept, each client) is one of these rows. The Wiki's display-state table is explicitly unverified;
+work orders use the active cache's repair/remove states, and removal/building continue using
+its empty and tier-built states. Existing saved contracts are not migrated or rerolled, and
+both contractor actions refuse to overwrite unfinished work.
+
+Lines not listed above (a client before their contract, the refusals) are ours. The captures
+establish sent dialogue and actions, not probabilities or rendered UI. The native regression
+is `node --test tests/mahogany-homes-contract-work.test.cjs` after `yarn build` in `server/`.
+It loads the real cache and plugins and uses registered NPC/object hooks and dialogue resumes
+with seeded players/house ownership; it does not claim walking, login persistence or rendered
+client coverage.
 
 ### Adding a room
 
@@ -322,12 +414,16 @@ Rsprox captures of picking a room in the room menu (212, rev 229-236):
   1376), Clockwise and Anticlockwise turn it, Done builds it and opens the viewer again, and
   Cancel goes back to the plain viewer.
 
-Either way the room starts turned so one of its doorways meets a neighbour's. Rooms built
+Either way the room starts turned so one of its doorways meets a neighbour's. Build or Done (and
+moving or turning a room in the viewer) closes the menu and puts up the loading screen
+(`poh_loading`, minimap off) with the house style's loading jingle; the house is rebuilt a tick
+later and the screen closes the tick after, when the viewer opens again (captures 2591, 2621,
+3950; 167 of 187 viewer Done clicks). Rooms built
 through a staircase or trapdoor ask Yes/No instead (captures). No room build sends a "You build"
 line.
 
 Refusals (captures, rev 229-235): "You can't afford to build that room." is a chat line on the
-pick; the rest are message boxes: "You can only build 38 rooms with your Construction level."
+pick, and the room list opens again (recordings 2549, 2572); the rest are message boxes: "You can only build 38 rooms with your Construction level."
 (the player's cap), "That room can only be built underground." / "... on ground level.", "You
 can't build a room that would have no room to support it.", "Your house is already the maximum
 length.". A costume room, portal nexus or menagerie the house already has asks "You can only
@@ -344,7 +440,16 @@ can't move it above itself. It would fall down.", "You can't put it above that r
 Build on a door hotspot into a built room, or Delete in the viewer, asks "Remove the parlour?"
 Yes / No (captures, 14 of 16 recordings); Yes says "Room deleted!". The door removes the room on
 the far side from the player. "You can't remove a room that is supporting another room." and
-"Your house must have at least one exit portal." are message boxes.
+"Your house must have at least one exit portal." are message boxes. Yes rebuilds the house behind
+the loading screen, as building does (recording 2575).
+
+A room whose stairs lead to another floor first shows a red warning box, then the question
+(16 recordings, rev 229-230): "Warning: If you remove this room you may be unable to access the
+basement from the ground floor." for a basement room with stairs up (dungeon stairs, the
+oubliette's ladder), "... the basement level." for a ground floor room with stairs down, and
+"... the upper floor from the ground." for an upper floor hall. Not covered: recording 2575
+shows the basement-level warning on a study, which holds no stairs; Remove on stair furniture,
+which on live goes on to removing the room at the other end (recordings 251, 2551, 2864).
 
 ### Building furniture
 
@@ -385,6 +490,17 @@ rarely, so when it shows otherwise isn't known).
 A new house's save lists its garden's exit portal by hotspot only; loading a house now places
 such furniture, so the portal shows, and you arrive in front of it.
 
+Costume room storage (`Storage`): Open on a treasure chest, toy box or fancy dress box plays
+`human_openheavychest`, on an armour case or magic wardrobe `human_openhighcupboard`, both with
+sound 62. The furniture shows its open loc (`poh_cos_room_<piece>_open_<wood>`, options Search and
+Close) a tick later and the storage opens a tick after that, Bank PIN first if one is set. Search on
+the open loc opens the storage at once; Close plays `human_closechest` or `human_closehighcupboard`
+with sound 60 and shows the closed loc a tick later. The cape rack has no open loc and is searched
+as it stands. The treasure chest reopens on the tier last picked, in any chest, and the interface
+keeps its search and scroll when the same storage reopens, upgraded or not (rsprox captures 229/2803,
+229/2808, 229/2812, 229/271). Ours: the open state isn't saved, an upgrade builds the piece closed,
+and the remembered tier lasts until logout.
+
 Pools of restoration to ornate rejuvenation (RejuvenationPool plugin) play `poh_pool_drink`
 when drunk from, with no message or sound (captures).
 
@@ -400,10 +516,55 @@ so `House` keeps `visitedKourend` / `visitedVarlamore` in the house save from
 because both regions span hundreds of map squares, the case `docs/agents/areas.md` gives it for;
 the estate agent also accepts either varbit if a quest ever sets it.
 
+### Servants
+
+`Servants` speaks each servant's own lines, kept in `data/servants.json` by the cache name of
+the NPC (`poh_servant_dogsbody` Rick, `_waiter_woman` Maid, `_cook_woman` Cook,
+`_maitre_d_man` Butler, `_demon` Demon butler) and the situation. A situation a servant has
+no line for is left out and the flow goes on without it; the file's `_wiki` lists name the
+lines that come from the Wiki transcripts rather than captures.
+
+From rsprox recordings 303-311 and 2930-2947 (all revision 230), except where a line says
+Wiki:
+
+- Guild: greeting, then "What can you do?" / "Tell me about your previous jobs" / "You're
+  hired!". The level refusal is the servant's line (Wiki). A missing second bedroom is a
+  message box; so is "You already have a servant." (Wiki, a `tbox` like the bedroom line). With
+  no coins and a money bag built, the player says "...you should find some in a bag in the
+  bedroom. How's that?" and the servant refuses; without a bag the player's line is the Wiki's
+  "...can I owe you? I'm good for it, honest.". The Chief servant's first option is "Tell me
+  about servants." or, with a servant, "I'd like to dismiss my servant, please.".
+- While tea or drinks are being made the servant works in the kitchen (recording 2931): no
+  second order or errand is taken. Ours: Talk-to does nothing then, and a call says "The
+  servant is not back yet.". Dinner frees the servant once it is on the table.
+- `poh_servant_pay` is 16 on hire; an errand takes 2, tea 1, dinner 2, sending held items
+  back 1, drinks nothing. Tea is charged before the kitchen check (Rick still says he can't
+  work without the equipment); dinner checks the dining table first. At 0 the servant asks
+  for the wage on its return and on every talk; a money bag holding the wage pays it on the
+  return with "Your servant takes some payment from the money bag. N coins remain.".
+- `poh_servant_lasttasktype`: 1 bank, 2 un-note, 3 fetch, 4 sawmill. Talk-to offers
+  "Repeat last task?" with "<kind>: N x <item>" while the item is still where the task takes
+  it from; else the servant's greeting (or "You rang" from the bell) and the menu
+  "Serve... / Go to the bank... / Go to the sawmill... / Greet guests / You're fired".
+- Fetch: the player's line, the bank PIN if not yet entered, the servant's reply, then the
+  pages "Wooden planks..Mahogany planks", "Soft clay..Cloth", "Gold leaf..Magic housing
+  stone", each ending in "More..." (the last back to the first).
+- An item used on the servant: bones are refused in the servant's words; notes ask
+  "Yes / No, just take it to the bank. / No, never mind."; logs on a sawmill servant
+  "Sawmill / Bank / Never mind"; anything else "Yes / No". A full bank is answered before the
+  amount, an amount of 0 after it. Sawmill: the servant names the fee, then
+  "Convert the planks for N coins?".
+- Tea is offered 40 ticks after it was asked for, with "Yes please / No thanks / Actually I
+  don't want any"; drinks with "Yes please / No thanks / Something else". Ours: drinks after
+  27 ticks.
+
+Not covered by either source: the Maid's and Cook's in-house greeting and "You rang", the
+wage demand of Rick, the Maid and the Cook, a full-inventory line other than the Demon
+butler's, guests' conversations with the servant, and the Butler's guest greeting.
+
 ## Not done yet
 
 - The League hall (a Leagues-only room; the cache has its rows, `rooms.json` leaves it out).
-- Hosidius blueprints from the reward shop do nothing yet; Amy's saw works as a saw only.
 - The spice rack's build menu text: live shows "Spice rack|Teak plank: 3<br>Soft clay: 6<br>4 dose
   spice shaker<br>of each colour" (captures). Ours lists the cache name and its first four materials.
 - Fish trophy experience the Wiki doesn't list (haddock and orangefin on teak use the

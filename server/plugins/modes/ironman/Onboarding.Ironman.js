@@ -39,6 +39,11 @@ function login({ player, isNewAccount }) {
   queueMicrotask(() => schedule(player));
 }
 
+/** "account:skip-onboarding": a test account (the agent MCP's login) doesn't choose a mode. */
+function skip({ player }) {
+  if (player.getAttribute(PENDING_ATTRIBUTE) === true) finish(player);
+}
+
 function closed({ player }) {
   if (player.getAttribute(PENDING_ATTRIBUTE) === true) schedule(player);
 }
@@ -53,12 +58,23 @@ function worldInput(event) {
   if (event.player.getAttribute(PENDING_ATTRIBUTE) === true) event.handled = true;
 }
 
+/**
+ * "::" commands open interfaces over the designer and the setup too (::teleports), so they wait as well;
+ * so do the side journal's Teleports/Presets/Commands shortcuts for them ("side-journal:shortcut").
+ */
+function command(event) {
+  if (event.player.getAttribute(PENDING_ATTRIBUTE) === true) event.handled = true;
+}
+
 module.exports = function attach(pluginApi) {
   api = pluginApi;
   api.persistAttribute(PENDING_ATTRIBUTE, false);
   api.onPlayerLogin(login);
+  api.onCustomEvent("account:skip-onboarding", skip);
   api.onPlayerLogout(logout);
   api.onPlayerDisconnect(logout);
   api.onCustomEvent("interface:closed", closed);
   api.onCustomEvent("player:world-input", worldInput);
+  api.onCommand(command);
+  api.onCustomEvent("side-journal:shortcut", command);
 };

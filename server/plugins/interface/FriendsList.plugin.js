@@ -1,4 +1,4 @@
-const { FriendsChatManager, FriendsChatRank, CHAT_FILTERS_ATTRIBUTE, CLAN_CHAT_ATTRIBUTE } = require("./FriendsChatManager");
+const { FriendsChatManager, FriendsChatRank, CHAT_FILTERS_ATTRIBUTE, CLAN_CHAT_ATTRIBUTE, FRIENDS_PANEL_ATTRIBUTE } = require("./FriendsChatManager");
 
 let pluginApi = null;
 
@@ -30,6 +30,25 @@ function announceLeave(player, channelKey) {
   pluginApi?.emitCustomEvent("friends-chat:left", { player, channelKey });
 }
 
+/**
+ * "friends-chat:joined" ({ player, channelKey, rejoin }): the counterpart of "friends-chat:left".
+ * `rejoin` is true for the return to the player's last channel at login, not a join they made.
+ */
+function announceJoin(player, channelKey, { rejoin = false } = {}) {
+  pluginApi?.emitCustomEvent("friends-chat:joined", { player, channelKey, rejoin });
+}
+
+/**
+ * "friends-chat:system-channel" ({ key, channel }): runs a chat-channel no player owns under `key`
+ * ({ ownerName, channelName, entryRank?, talkRank?, kickRank?, admits?(player) }), or ends it
+ * when channel is null.
+ */
+function systemChannel({ key, channel }) {
+  if (!key) return;
+  if (channel) FriendsChatManager.registerSystemChannel(key, channel);
+  else FriendsChatManager.removeSystemChannel(key);
+}
+
 /** "friends:send-private-message" ({ sender, recipient, text, sent }): a message sent for a player, such as a bot's reply. */
 function sendPrivateMessage(event) {
   const { sender, recipient, text } = event ?? {};
@@ -54,6 +73,16 @@ function keepRecruitedBotsFriendly(event) {
   if (channel != null && channel === target.getAttribute?.(CLAN_CHAT_ATTRIBUTE)) event.allow = false;
 }
 
+const FRIENDS_LIST_GROUP = 429; // friends
+
+function restoreFriendsPanel({ player }) {
+  FriendsChatManager.restorePanel(player);
+}
+
+function restoreFriendsPanelOnMount({ player, group }) {
+  if (group === FRIENDS_LIST_GROUP) FriendsChatManager.restorePanel(player);
+}
+
 module.exports = {
   name: "FriendsList",
   description: "Friends list and friends chat: private messages, chat filters and friends-chat channels.",
@@ -61,11 +90,17 @@ module.exports = {
     api.onCustomEvent("friends:send-private-message", sendPrivateMessage);
     pluginApi = api;
     FriendsChatManager.memberRemoved = announceLeave;
+    FriendsChatManager.memberAdded = announceJoin;
+    api.onCustomEvent("friends-chat:system-channel", systemChannel);
     api.onCustomEvent("friends-chat:channel", describeChannel);
     api.onCustomEvent("friends-chat:join", joinChannel);
     api.onCustomEvent("friends-chat:leave", leaveChannel);
     api.onCustomEvent("display-names:changed", showChangedDisplayName);
     api.persistAttribute(CHAT_FILTERS_ATTRIBUTE);
+    api.persistAttribute(FRIENDS_PANEL_ATTRIBUTE, 0);
+    api.onCustomEvent("player:bootstrap-complete", restoreFriendsPanel);
+    api.onCustomEvent("gameframe:ready", restoreFriendsPanel);
+    api.onCustomEvent("gameframe:tab-mounted", restoreFriendsPanelOnMount);
     api.onCanAttack(keepRecruitedBotsFriendly);
 
     api.onPlayerLogin(({ player }) => {

@@ -105,7 +105,8 @@ function stageOf(itemId) {
 
 /**
  * The stage of a worn quiver. Dizana's max cape "retains the perks of the blessed Dizana's
- * quiver" (Wiki), so it is one while worn; its death rules stay with broken-items.json.
+ * quiver" (Wiki), so it is one while worn; the cape's own death rules stay with broken-items.json, its stored
+ * ammo's with maxCapeDeathAmmo.
  */
 function wornStageOf(itemId) {
   const I = itemIdentifiers();
@@ -355,7 +356,8 @@ function name(itemId) {
 function fill(player) {
   const worn = wornAmmo(player);
   if (!worn) {
-    player.sendMessage("You have nothing in your worn quiver to fill your Dizana's Quiver with.");
+    // rsprox 238/04144.txt:23998, :24037 (and the Wiki): in red.
+    player.sendMessage("<col=ff3045>You have nothing in your worn quiver to fill your Dizana's Quiver with.");
     return;
   }
   if (!isArrowOrBolt(worn.getId())) {
@@ -401,18 +403,28 @@ function canWear(player, ammo) {
   return PluginManager.emitCanEquip(player, core().Equipment.AMMUNITION_SLOT, item) !== false;
 }
 
+/** Moves the stored ammo to the inventory; true when any moved. */
 function remove(player) {
   const ammo = stored(player);
-  if (!ammo) return;
+  if (!ammo) return false;
   const inventory = player.getInventory();
   const moved = inventory.getAddableAmount(new (core().Item)(ammo.id, ammo.amount));
   if (moved <= 0) {
     player.sendMessage("You don't have enough inventory space to do that.");
-    return;
+    return false;
   }
   inventory.adds(ammo.id, moved);
   inventory.refreshItems();
   store(player, { id: ammo.id, amount: ammo.amount - moved }, true);
+  return true;
+}
+
+/**
+ * The worn slot's Remove: rsprox (238/04144.txt:23330, 237/01156.txt:880383, 234/03299.txt:388259)
+ * follows it with this spam line. The item's own Empty isn't recorded, so it stays silent.
+ */
+function removeWorn(player) {
+  if (remove(player)) player.getPacketSender().sendTypedMessage(core().ChatType.SPAM, "You remove the ammo from Dizana's Quiver.");
 }
 
 function examine(player) {
@@ -424,7 +436,7 @@ function slotClicked(event) {
   if (event.groupId !== SLOT_COMPONENT.group || event.childId !== SLOT_COMPONENT.child) return;
   const op = Number(event.opId ?? event.action);
   event.handled = true;
-  if (op === OP.REMOVE) remove(event.player);
+  if (op === OP.REMOVE) removeWorn(event.player);
   else if (op === OP.FILL_OR_SWAP) (stored(event.player) ? swap : fill)(event.player);
   else if (op === OP.EXAMINE) examine(event.player);
 }
@@ -471,7 +483,8 @@ function renderOpen(player) {
   const ammo = stored(player);
   const quiver = wornQuiverItem(player) ?? [player.getInventory().getItems?.() ?? [], player.getEquipment().getItems?.() ?? []]
     .flat().find((item) => stageOf(item?.getId?.()));
-  const stage = quiver ? stageOf(quiver.getId()) : "uncharged";
+  // A worn Dizana's max cape is a blessed quiver (wornStageOf), so a carried quiver's Open shows its permanence.
+  const stage = quiver ? wornStageOf(quiver.getId()) : "uncharged";
   const charges = quiver ? itemCharges(quiver) : 0;
   const blessing = quiver ? blessingProgress(quiver) : 0;
   const sender = player.getPacketSender();
@@ -626,9 +639,34 @@ function clearQuiverState(player, item) {
   store(player, null);
 }
 
+/**
+ * Dizana's max cape holds the quiver's ammo while worn, and its Wilderness death keeps the quiver's ammo rule (Wiki,
+ * Dizana's quiver: locking applies to "its max cape variant" too): up to level 20, or unlocked above it, the ammo
+ * drops where the player died; a locked cape above 20 loses it. The cape itself breaks by broken-items.json, which
+ * on a PvP death can change or destroy it before this plugin's death hook sees it, so that death comes through
+ * `broken-items:pvp-death`; other Wilderness deaths (to an NPC) through deathItemDrop.
+ */
+function maxCapeDeathAmmo(event) {
+  const { player, item } = event;
+  const I = itemIdentifiers();
+  if (item?.getId?.() !== I.DIZANAS_MAX_CAPE && item?.getId?.() !== I.DIZANAS_MAX_CAPE_L_) return;
+  const locked = item.getId() === I.DIZANAS_MAX_CAPE_L_;
+  const level = wildernessLevel(player);
+  const ammo = stored(player);
+  if (level <= 0 || !ammo || event.shouldDropItems === false) return;
+  if (event.location && (level <= 20 || !locked)) {
+    const { Item, ItemOnGroundManager } = core();
+    ItemOnGroundManager.registerLocation(PlayerDeathTask.lootOwner(player, event.killer), new Item(ammo.id, ammo.amount), event.location);
+  }
+  store(player, null);
+}
+
 function deathItemDrop(event) {
   const { player, item } = event;
-  if (!stageOf(item?.getId?.())) return;
+  if (!stageOf(item?.getId?.())) {
+    maxCapeDeathAmmo(event);
+    return;
+  }
   const level = wildernessLevel(player);
   if (level <= 0) return;
   const ammo = stored(player);
@@ -687,6 +725,7 @@ module.exports = {
     api.onCombatHitResolved(spendCharge);
     api.onShouldKeepItemOnDeath(shouldKeepQuiver);
     api.onPlayerDeathItemDrop(deathItemDrop);
+    api.onCustomEvent("broken-items:pvp-death", maxCapeDeathAmmo);
     api.registerCustomInterface(buildOpenInterface());
     for (const quiver of QUIVER_NAMES) {
       api.onItemAction(quiver, { Open: openQuiver, Empty: emptyQuiver, Uncharge: uncharge });

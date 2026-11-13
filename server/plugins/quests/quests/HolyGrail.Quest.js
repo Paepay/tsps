@@ -34,9 +34,11 @@
  * - The feather points to Sir Percival's sacks in Goblin Village, and opening
  *   them with the feather frees him.
  *
+ * - The fairy ring BJR opens once the crone has been spoken to (FairyRings
+ *   locks it before) and lands in whichever realm the whistle would.
+ *
  * Gaps: the crone is a chathead only (she does not appear beside the High
- * Priest), the fairy ring BJR is not gated on quest progress (the refusal
- * message is unknown), and Sir Percival's "Your father wishes to speak to you."
+ * Priest), and Sir Percival's "Your father wishes to speak to you."
  * option is unreachable because the wiki transcript indents the whistle
  * conditions between his two options (a dump fix, not a plugin one).
  */
@@ -430,7 +432,7 @@ module.exports = function registerHolyGrailQuest(api) {
     const { TeleportHandler, TeleportType } = api.core;
     const destination = toLocation(tile);
     if (!TeleportHandler.checkReqs(player, destination)) return;
-    TeleportHandler.teleport(player, destination, TeleportType.NORMAL, false);
+    TeleportHandler.confirm(player, destination, () => TeleportHandler.teleport(player, destination, TeleportType.NORMAL, false));
   }
 
   function blowWhistle({ player }) {
@@ -445,6 +447,16 @@ module.exports = function registerHolyGrailQuest(api) {
     }
     const restored = quest.getStage(player) >= STAGE_GIVEN_WHISTLE;
     whistleTo(player, restored ? RESTORED_ARRIVAL_TILE : WITHERED_ARRIVAL_TILE);
+  }
+
+  /**
+   * BJR: the cache's tile is in the restored realm; before Percival is king the
+   * ring there is the withered realm's, 128 tiles east (as the whistle).
+   */
+  function resolveFairyRingDestination(request) {
+    const { player, code, destination } = request;
+    if (code !== "BJR" || !destination || quest.getStage(player) >= STAGE_GIVEN_WHISTLE) return;
+    request.destination = new Location(destination.getX() + REALM_OFFSET_X, destination.getY(), destination.getZ());
   }
 
   /** Ringing the bell by the dismantled bricks: the transcript's two conditions pick the outcome. */
@@ -712,4 +724,5 @@ module.exports = function registerHolyGrailQuest(api) {
   api.onNpcHitModify(trackTitanHit);
   api.onNpcBeforeDeath(handleTitanDeath);
   api.onPlayerLogout(handleLogout);
+  api.onCustomEvent("fairy-rings:destination", resolveFairyRingDestination);
 };

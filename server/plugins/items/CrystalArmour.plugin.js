@@ -4,28 +4,43 @@
  * Each charged piece boosts the crystal bow and bow of Faerdhinen: helm
  * +5% accuracy / +2.5% damage, body +15% / +7.5%, legs +10% / +5% (30% / 15%
  * for the full set). Pieces start at 2,500 charges, lose one per successful
- * hit received and turn inactive at zero, losing their bonus. Crystal shards
- * add 100 charges each up to 20,000.
+ * hit received and turn inactive at zero, losing their bonus; an inactive
+ * piece can still be worn. Crystal shards add 100 charges each up to 20,000
+ * (CrystalShards.js). A worn elven or celestial signet gives each piece a 10%
+ * chance to keep its charge.
  *
- * Pieces are sung from crystal armour seeds and shards at a singing bowl
- * (requiring Song of the Elves), and Revert returns the seeds while
- * forfeiting the loaded charges.
+ * Every Elven Clan colour (CrystalRecolour.plugin.js) and the Deadman pieces
+ * behave as the base piece. Pieces are sung at a singing bowl
+ * (CrystalSinging.plugin.js), and Revert returns the seeds while forfeiting
+ * the loaded charges and the colour.
+ *
+ * Crystal blessing (https://oldschool.runescape.wiki/w/Crystal_blessing), worn in the ammunition
+ * slot, for a Demonic Pacts character (EchoItems.js): the armour's accuracy and damage bonus also
+ * applies to every melee attack (unarmed too) and to powered staves' built-in spells, and each
+ * active piece worn adds +20 magic attack and +2% magic damage to the worn bonuses. It is a bonus
+ * provider, so Tumeken's shadow, whose provider registers after this one, multiplies them (Wiki:
+ * Demonic Pacts League/Echo bosses and echo equipment). Not modelled: the Raging Echoes version,
+ * which worked with melee only.
  */
+const { promptShards, chargesWith } = require("./CrystalShards");
+const { isPoweredStaffSpell } = require("./PoweredStaff");
+const { inDemonicPacts } = require("./EchoItems");
+
 const START_CHARGES = 2500;
 const MAX_CHARGES = 20000;
-const SHARD_CHARGES = 100;
 const CHARGES_META_KEY = "crystal-armour";
-const SONG_OF_THE_ELVES = "song_of_the_elves";
-const SINGING_SEQUENCE = "prif_crystal_singing";
-const SINGING_SOUND = 8;
-const NO_MATERIALS = "You do not have all of the required materials and requirements to make anything.";
-const LEVEL_TOO_LOW = "You need to be at least level {level} Crafting and Smithing to create anything through crystal singing.";
-const SONG_LOCKED = "You need to complete Song of the Elves to create crystal armour.";
+const SIGNET_SAVE_CHANCE = 0.10;
+const BLESSING_MAGIC_ATTACK = 20;
+const BLESSING_MAGIC_DAMAGE = 2;
+const MAGIC_ATTACK = 3; // BonusManager.ATTACK_MAGIC
+const MAGIC_DAMAGE = 12; // BonusManager.MAGIC_STRENGTH among the "other" bonuses
+/** Colours with their own ids: every Elven Clan but Meilyr, whose colour is the base piece's, and Deadman. */
+const COLOURS = ["hefin", "ithell", "iorwerth", "trahaearn", "cadarn", "crwys", "amlodd", "deadman"];
 
 const PIECES = [
-  { slotName: "HEAD", itemName: "Crystal helm", activeIdName: "CRYSTAL_HELM", inactiveIdName: "CRYSTAL_HELM_INACTIVE_", accuracy: 0.05, damage: 0.025, label: "crystal helm", seeds: 1, shards: 50, level: 70, xp: 2500 },
-  { slotName: "BODY", itemName: "Crystal body", activeIdName: "CRYSTAL_BODY", inactiveIdName: "CRYSTAL_BODY_INACTIVE_", accuracy: 0.15, damage: 0.075, label: "crystal body", seeds: 3, shards: 150, level: 74, xp: 7500 },
-  { slotName: "LEG", itemName: "Crystal legs", activeIdName: "CRYSTAL_LEGS", inactiveIdName: "CRYSTAL_LEGS_INACTIVE_", accuracy: 0.10, damage: 0.05, label: "crystal legs", seeds: 2, shards: 100, level: 72, xp: 5000 },
+  { slotName: "HEAD", itemName: "Crystal helm", gameval: "crystal_helmet", accuracy: 0.05, damage: 0.025, label: "crystal helm", seeds: 1 },
+  { slotName: "BODY", itemName: "Crystal body", gameval: "crystal_chestplate", accuracy: 0.15, damage: 0.075, label: "crystal body", seeds: 3 },
+  { slotName: "LEG", itemName: "Crystal legs", gameval: "crystal_platelegs", accuracy: 0.10, damage: 0.05, label: "crystal legs", seeds: 2 },
 ];
 
 let core = null;
@@ -35,9 +50,7 @@ let activeByInactive = new Map();
 let activeIds = new Set();
 let pieceByItemId = new Map();
 let crystalWeaponIds = new Set();
-
-const activeId = (piece) => core.ItemIdentifiers[piece.activeIdName];
-const inactiveId = (piece) => core.ItemIdentifiers[piece.inactiveIdName];
+let signetIds = new Set();
 
 function charges(item) {
   const saved = Number(item.getMetaValue?.(CHARGES_META_KEY)?.charges);
@@ -82,8 +95,29 @@ function wieldingCrystalWeapon(player) {
   return crystalWeaponIds.has(weaponId);
 }
 
-function bonus(player) {
-  if (!wieldingCrystalWeapon(player)) {
+function wearingSignet(player) {
+  const ring = player.getEquipment().getItems()[core.Equipment.RING_SLOT];
+  return signetIds.has(Number(ring?.getId?.() ?? -1));
+}
+
+function wearsBlessing(player) {
+  const ammo = player.getEquipment().getItems()[core.Equipment.AMMUNITION_SLOT];
+  return Number(ammo?.getId?.() ?? -1) === core.ItemIdentifiers.CRYSTAL_BLESSING && !!pluginApi && inDemonicPacts(pluginApi, player);
+}
+
+/** The attack's spell: the one being cast, or the one about to be (a powered staff's built-in spell). */
+function attackSpell(player) {
+  const combat = player.getCombat?.();
+  return combat?.getCastSpell?.() ?? combat?.getSelectedSpell?.() ?? null;
+}
+
+/** The worn pieces' bonus for an attack of this style: "ranged" (the default), "melee" or "magic". */
+function bonus(player, style = "ranged") {
+  const applies = style === "ranged" ? wieldingCrystalWeapon(player)
+    : style === "melee" ? wearsBlessing(player)
+      : style === "magic" ? wearsBlessing(player) && isPoweredStaffSpell(attackSpell(player))
+        : false;
+  if (!applies) {
     return { accuracy: 0, damage: 0 };
   }
   let accuracy = 0;
@@ -95,35 +129,51 @@ function bonus(player) {
   return { accuracy, damage };
 }
 
-function applyCrystalAccuracy(entity, value) {
+function applyCrystalAccuracy(entity, value, style = "ranged") {
   if (!entity?.isPlayer?.()) {
     return value;
   }
-  const { accuracy } = bonus(entity.getAsPlayer());
+  const { accuracy } = bonus(entity.getAsPlayer(), style);
   return accuracy > 0 ? value * (1 + accuracy) : value;
 }
 
-function applyCrystalDamage(entity, baseHit) {
+function applyCrystalDamage(entity, baseHit, style = "ranged") {
   if (!entity?.isPlayer?.()) {
     return baseHit;
   }
-  const { damage } = bonus(entity.getAsPlayer());
+  const { damage } = bonus(entity.getAsPlayer(), style);
   return damage > 0 ? baseHit * (1 + damage) : baseHit;
 }
 
-/** One charge per piece for each successful hit received (Wiki). */
-function onIncomingDamage(entity, hitDamage) {
+const blessedMeleeAccuracy = (entity, value) => applyCrystalAccuracy(entity, value, "melee");
+const blessedMeleeDamage = (entity, baseHit) => applyCrystalDamage(entity, baseHit, "melee");
+const blessedMagicAccuracy = (entity, value) => applyCrystalAccuracy(entity, value, "magic");
+const blessedMagicDamage = (entity, baseHit) => applyCrystalDamage(entity, baseHit, "magic");
+
+/** With the crystal blessing: +20 magic attack and +2% magic damage a worn active piece. */
+function blessingBonuses({ player, bonuses }) {
+  if (!player || !wearsBlessing(player)) return;
+  const pieces = wornPieces(player).length;
+  if (!pieces) return;
+  bonuses[MAGIC_ATTACK] += BLESSING_MAGIC_ATTACK * pieces;
+  bonuses[MAGIC_DAMAGE] += BLESSING_MAGIC_DAMAGE * pieces;
+}
+
+/** One charge per piece for each successful hit received; the signet's 10% is rolled per piece (ours). */
+function onIncomingDamage(entity, hitDamage, random = Math.random) {
   if (!entity?.isPlayer?.() || !(hitDamage?.getDamage?.() > 0)) {
     return;
   }
   const player = entity.getAsPlayer();
+  const signet = wearingSignet(player);
   for (const { item } of wornPieces(player)) {
+    if (signet && random() < SIGNET_SAVE_CHANCE) continue;
     useCharge(player, item);
   }
 }
 
 function chargesLabel(piece, item) {
-  return `Your ${piece.label} has ${charges(item).toLocaleString("en-US")} charges left.`;
+  return `Your ${piece.label} has ${charges(item).toLocaleString("en-US")} charges remaining.`;
 }
 
 function checkCharges({ player, item }) {
@@ -133,6 +183,7 @@ function checkCharges({ player, item }) {
   }
 }
 
+/** Asks how many shards to add; an inactive piece comes back in its own colour. */
 function addShardCharges(event) {
   const { player } = event;
   const piece = [event.usedItem, event.usedWithItem].find((candidate) => {
@@ -142,112 +193,27 @@ function addShardCharges(event) {
   if (!piece) {
     return;
   }
-  const shardCount = player.getInventory().getAmount(core.ItemIdentifiers.CRYSTAL_SHARD);
-  if (shardCount <= 0) {
+  const shardId = core.ItemIdentifiers.CRYSTAL_SHARD;
+  event.handled = true;
+  if (player.getInventory().getAmount(shardId) <= 0) {
     return;
   }
   const left = charges(piece);
   if (left >= MAX_CHARGES) {
     player.sendMessage("Your crystal armour cannot hold any more charges.");
-    event.handled = true;
     return;
   }
-  const shards = Math.min(shardCount, Math.ceil((MAX_CHARGES - left) / SHARD_CHARGES));
-  player.getInventory().deleteNumber(core.ItemIdentifiers.CRYSTAL_SHARD, shards);
-  if (activeByInactive.has(piece.getId())) {
-    piece.setId(activeByInactive.get(piece.getId()));
-  }
-  piece.setMetaValue(CHARGES_META_KEY, { charges: Math.min(MAX_CHARGES, left + shards * SHARD_CHARGES) });
-  refresh(player);
-  player.sendMessage(`You add ${shards} crystal shard${shards === 1 ? "" : "s"} to the armour.`);
-  event.handled = true;
+  promptShards(player, piece, charges, shardId, (count) => {
+    const now = charges(piece);
+    if (activeByInactive.has(piece.getId())) {
+      piece.setId(activeByInactive.get(piece.getId()));
+    }
+    piece.setMetaValue(CHARGES_META_KEY, { charges: chargesWith(now, count) });
+    refresh(player);
+  });
 }
 
-function songOfTheElvesComplete(player) {
-  const request = { player, key: SONG_OF_THE_ELVES, complete: false };
-  pluginApi.emitCustomEvent("quest:is-complete", request);
-  return request.complete === true;
-}
-
-function maxCraftable(player, piece) {
-  const inventory = player.getInventory();
-  return Math.min(
-    Math.floor(inventory.getAmount(core.ItemIdentifiers.CRYSTAL_ARMOUR_SEED) / piece.seeds),
-    Math.floor(inventory.getAmount(core.ItemIdentifiers.CRYSTAL_SHARD) / piece.shards),
-  );
-}
-
-function meetsLevels(player, piece) {
-  const skills = player.getSkillManager();
-  return skills.getCurrentLevel(core.Skill.CRAFTING) >= piece.level
-    && skills.getCurrentLevel(core.Skill.SMITHING) >= piece.level;
-}
-
-function openCreationMenu(player) {
-  const items = PIECES.map(activeId);
-  player.getPacketSender().sendCreationMenu(new core.CreationMenu("What would you like to make?", items, {
-    execute: (itemId, amount) => {
-      const piece = PIECES.find((candidate) => activeId(candidate) === itemId);
-      if (piece) {
-        makeArmour(player, piece, amount);
-      }
-    },
-  }));
-}
-
-/** Sings up to `amount` pieces, consuming the seeds and shards for each. */
-function makeArmour(player, piece, amount = 1) {
-  if (!piece) {
-    return false;
-  }
-  if (!songOfTheElvesComplete(player)) {
-    player.sendMessage(SONG_LOCKED);
-    return false;
-  }
-  const made = Math.min(Math.max(1, Math.floor(Number(amount) || 1)), maxCraftable(player, piece));
-  if (made <= 0) {
-    player.sendMessage(NO_MATERIALS);
-    return false;
-  }
-  if (!meetsLevels(player, piece)) {
-    player.sendMessage(LEVEL_TOO_LOW.replace("{level}", piece.level));
-    return false;
-  }
-  const inventory = player.getInventory();
-  inventory.deleteNumber(core.ItemIdentifiers.CRYSTAL_ARMOUR_SEED, piece.seeds * made);
-  inventory.deleteNumber(core.ItemIdentifiers.CRYSTAL_SHARD, piece.shards * made);
-  for (let index = 0; index < made; index++) {
-    inventory.adds(activeId(piece), 1);
-  }
-  const sequence = core.CacheDefinitions?.getSeqId?.(SINGING_SEQUENCE);
-  if (sequence != null) {
-    player.performAnimation(new core.Animation(sequence));
-  }
-  player.getPacketSender().sendSound(SINGING_SOUND, 1, 0);
-  const skills = player.getSkillManager();
-  skills.addExperiences(core.Skill.SMITHING, piece.xp * made);
-  skills.addExperiences(core.Skill.CRAFTING, piece.xp * made);
-  inventory.refreshItems();
-  player.sendMessage(`You sing the crystal into ${made === 1 ? `a ${piece.label}` : `${made} ${piece.label} pieces`}.`);
-  return true;
-}
-
-/** Using a seed on a singing bowl opens the three armour recipes. */
-function useSeedOnBowl(event) {
-  const { player } = event;
-  if (!songOfTheElvesComplete(player)) {
-    player.sendMessage(SONG_LOCKED);
-    return true;
-  }
-  if (!PIECES.some((piece) => maxCraftable(player, piece) > 0)) {
-    player.sendMessage(NO_MATERIALS);
-    return true;
-  }
-  openCreationMenu(player);
-  return true;
-}
-
-/** Revert: returns the crystal armour seeds but forfeits the loaded charges. */
+/** Revert: returns the crystal armour seeds but forfeits the loaded charges and any colour. */
 function dismantle(event) {
   const { player, item } = event;
   const piece = pieceByItemId.get(item?.getId?.());
@@ -274,30 +240,30 @@ function dismantle(event) {
   player.sendMessage(`You revert the ${piece.label} to ${piece.seeds === 1 ? "a crystal armour seed" : `${piece.seeds} crystal armour seeds`}.`);
 }
 
-/** Inactive pieces have no stats, so they cannot be equipped until recharged. */
-function canEquip(event) {
-  const itemId = event?.item?.getId?.();
-  if (!itemId || !activeByInactive.has(itemId)) {
-    return;
+/** Every colour's active and inactive id of the piece: [active, inactive] pairs. */
+function idPairs(piece) {
+  const obj = (name) => core.CacheDefinitions.getObjId(name);
+  const pairs = [[obj(piece.gameval), obj(`${piece.gameval}_inactive`)]];
+  for (const colour of COLOURS) {
+    pairs.push([obj(`${piece.gameval}_${colour}`), obj(`${piece.gameval}_inactive_${colour}`)]);
   }
-  event.allow = false;
-  event.player.sendMessage("This crystal armour is inactive. Add crystal shards to it before wearing it.");
+  return pairs.filter(([active, inactive]) => active != null && inactive != null);
 }
 
-function attach(pluginApiInstance) {
-  pluginApi = pluginApiInstance;
-  core = pluginApi.core;
+function attach(api) {
+  pluginApi = api;
+  core = api.core;
   const { CRYSTAL_BOW_ALL_WEAPON_IDS, BOW_OF_FAERDHINEN_IDS, isChargedCrystalBow } = require("../../src/main/typescript/elvarg/game/content/combat/ranged/CrystalBow");
   inactiveByActive = new Map();
   activeByInactive = new Map();
   pieceByItemId = new Map();
   for (const piece of PIECES) {
-    const active = activeId(piece);
-    const inactive = inactiveId(piece);
-    inactiveByActive.set(active, inactive);
-    activeByInactive.set(inactive, active);
-    pieceByItemId.set(active, piece);
-    pieceByItemId.set(inactive, piece);
+    for (const [active, inactive] of idPairs(piece)) {
+      inactiveByActive.set(active, inactive);
+      activeByInactive.set(inactive, active);
+      pieceByItemId.set(active, piece);
+      pieceByItemId.set(inactive, piece);
+    }
   }
   activeIds = new Set(inactiveByActive.keys());
   crystalWeaponIds = new Set(BOW_OF_FAERDHINEN_IDS);
@@ -306,29 +272,35 @@ function attach(pluginApiInstance) {
       crystalWeaponIds.add(id);
     }
   }
+  const { ELVEN_SIGNET, CELESTIAL_SIGNET, CELESTIAL_SIGNET_UNCHARGED_ } = core.ItemIdentifiers;
+  signetIds = new Set([ELVEN_SIGNET, CELESTIAL_SIGNET, CELESTIAL_SIGNET_UNCHARGED_].filter((id) => id != null));
 }
 
 module.exports = {
   name: "CrystalArmour",
-  description: "Crystal armour: sung from seeds at a singing bowl, boosts crystal bow and Faerdhinen accuracy and damage, loses charges when hit, and takes shards.",
+  description: "Crystal armour in every colour: boosts crystal bow and Faerdhinen accuracy and damage (melee and powered staves too with the crystal blessing), loses charges when hit, takes shards and reverts to seeds.",
   members: true,
   register(api) {
     attach(api);
     api.registerRangedAttackAccuracyModifier(applyCrystalAccuracy);
     api.registerRangedHitModifier(applyCrystalDamage);
-    api.registerIncomingDamageModifier(onIncomingDamage);
-    api.onCanEquip(canEquip);
+    api.registerMeleeAttackAccuracyModifier(blessedMeleeAccuracy);
+    api.registerMeleeHitModifier(blessedMeleeDamage);
+    api.registerMagicAttackAccuracyModifier(blessedMagicAccuracy);
+    api.registerMagicHitModifier(blessedMagicDamage);
+    api.registerBonusProvider({ apply: blessingBonuses });
+    api.registerIncomingDamageModifier((entity, hitDamage) => onIncomingDamage(entity, hitDamage));
     for (const piece of PIECES) {
       api.onItemAction(piece.itemName, { Check: checkCharges, Revert: dismantle });
       api.onItemAction(`${piece.itemName} (inactive)`, { Revert: dismantle });
       api.onItemOnItem("Crystal shard", piece.itemName, addShardCharges, { noted: false });
       api.onItemOnItem("Crystal shard", `${piece.itemName} (inactive)`, addShardCharges, { noted: false });
     }
-    api.onItemOnObject("Crystal armour seed", "Singing bowl", useSeedOnBowl, { noted: false });
   },
   _test: {
     bonus, charges, useCharge, applyCrystalAccuracy, applyCrystalDamage, onIncomingDamage,
-    PIECES, START_CHARGES, MAX_CHARGES, addShardCharges, makeArmour, useSeedOnBowl,
-    dismantle, canEquip, songOfTheElvesComplete,
+    PIECES, START_CHARGES, MAX_CHARGES, addShardCharges, dismantle, checkCharges,
+    wearsBlessing, blessedMeleeAccuracy, blessedMeleeDamage, blessedMagicAccuracy, blessedMagicDamage, blessingBonuses,
+    pieceOf: (id) => pieceByItemId.get(id), inactiveOf: (id) => inactiveByActive.get(id), activeOf: (id) => activeByInactive.get(id),
   },
 };

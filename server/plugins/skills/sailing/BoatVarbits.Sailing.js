@@ -2,7 +2,7 @@
 // interface and the sidepanel read them). Live OSRS sends them at login; ids and values from a
 // live login capture and cache scripts 9013/9088 (docs/sailing-osrs-reference.md).
 const { boatType, dockById, setVarbit } = require("./SailingContent.Sailing");
-const { boatStats, partTiers } = require("./BoatParts.Sailing");
+const { boatStats, isCapsized, partTiers } = require("./BoatParts.Sailing");
 const { facilitiesOf, facilitiesUnaltered, teleportFocusOf } = require("./BoatFacilities.Sailing");
 
 const MAX_BOATS = 5;
@@ -22,6 +22,9 @@ const OFFSET = {
   steering: 11,
   /** `sailing_boat_N_teleport_focus`: which boats Summon and Teleport to Boat can choose. */
   teleportFocus: 12,
+  /** `sailing_boat_N_flag` and `_brazier`, as captured. */
+  flag: 13,
+  brazier: 14,
   hotspot: 15, // hotspot n: +15 + n
   trim: 26,
   hotspotData: 27, // hotspot n's extra data: +27 + n
@@ -38,12 +41,15 @@ const EXTRA_HOTSPOT_DATA = 2;
 const MAX_HOTSPOTS = 13;
 /**
  * Special `port` values (cache script 8997): 255 bottled, 254 capsized, 253 lost at sea. Port 0
- * is a real dock (Port Sarim), so a boat sunk by a teleport, Escape or death is "lost at sea".
+ * is a real dock (Port Sarim), so a boat sunk by a teleport, Escape or death is "lost at sea",
+ * and one that went down at 0 hitpoints is "capsized".
  */
 const LOST_AT_SEA = 253;
-/** `sailing_boarded_boat_last_dock` and `_last_standard_dock`: port ids, as captured. */
+const CAPSIZED = 254;
+/** `sailing_boarded_boat_last_dock`, `_last_standard_dock` and `_last_mooring_point`: port ids, as captured. */
 const VARBIT_LAST_DOCK = 19145;
 const VARBIT_LAST_STANDARD_DOCK = 19146;
+const VARBIT_LAST_MOORING_POINT = 19147;
 
 function blockVarbit(slot, offset) {
   return FIRST_BLOCK + BLOCK_SIZE * slot + offset;
@@ -64,11 +70,11 @@ function hotspotDataVarbit(slot, hotspot) {
 }
 
 /**
- * The port a boat is at, for its `port` varbit: the dock's id, "lost at sea" when sunk. At sea
+ * The port a boat is at, for its `port` varbit: the dock's id, "lost at sea" or "capsized" when sunk. At sea
  * it's the port it last docked at (captured: the Pandemonium's 1 while sailing to Port Sarim).
  */
 function portOf(boat) {
-  if (boat.location.kind === "sunk") return LOST_AT_SEA;
+  if (boat.location.kind === "sunk") return isCapsized(boat) ? CAPSIZED : LOST_AT_SEA;
   return dockById(boat.location.dock)?.portId ?? 0;
 }
 
@@ -84,7 +90,7 @@ function slotVarbits(slot, boat) {
   set(OFFSET.facilitiesUnaltered, boat && facilitiesUnaltered(boat) ? 1 : 0);
   for (let word = 0; word < 3; word++) set(OFFSET.name + word, boat?.name?.[word] ?? 0);
   const tiers = boat ? partTiers(boat) : {};
-  for (const part of ["keel", "hull", "sail", "steering", "trim"]) set(OFFSET[part], tiers[part] ?? 0);
+  for (const part of ["keel", "hull", "sail", "steering", "trim", "flag", "brazier"]) set(OFFSET[part], tiers[part] ?? 0);
   set(OFFSET.teleportFocus, boat && type ? teleportFocusOf(boat) : 0);
   const facilities = boat && type ? facilitiesOf(boat) : [];
   for (let hotspot = 0; hotspot < MAX_HOTSPOTS; hotspot++) values.set(hotspotVarbit(slot, hotspot), facilities[hotspot] ?? 0);
@@ -96,8 +102,8 @@ function slotVarbits(slot, boat) {
 }
 
 /**
- * Sends every boat slot's varbits, and the player's last dock and last port (not a mooring
- * point), as at login and after a boat changes.
+ * Sends every boat slot's varbits, and the player's last dock, last port (not a mooring point)
+ * and last mooring point, as at login and after a boat changes.
  */
 function sendBoatVarbits(player) {
   const state = player.getSailing();
@@ -107,6 +113,7 @@ function sendBoatVarbits(player) {
   }
   setVarbit(player, VARBIT_LAST_DOCK, dockById(state.lastDock)?.portId ?? 0);
   setVarbit(player, VARBIT_LAST_STANDARD_DOCK, dockById(state.lastStandardDock)?.portId ?? 0);
+  setVarbit(player, VARBIT_LAST_MOORING_POINT, dockById(state.lastMooringPoint)?.portId ?? 0);
 }
 
 module.exports = { blockVarbit, hotspotVarbit, hotspotDataVarbit, slotVarbits, sendBoatVarbits };

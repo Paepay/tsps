@@ -48,6 +48,8 @@ const YANILLE_GRAPPLE_CROSSINGS = [
 const HIGHLIGHTED_COURSE_VARBIT = 13140;
 const START_LAP_SCRIPT = 5173;
 const END_LAP_SCRIPT = 5174;
+/** The loot tracker's category for an Agility course (rsprox: every rooftop lap's script 7197). */
+const LOOT_TRACKER_CATEGORY = 5;
 const ADD_XP_SCRIPT = 5175;
 /** The lap clock counts game ticks; the client only reads differences. From 2024 so it fits an int. */
 const LAP_CLOCK_EPOCH_MS = Date.UTC(2024, 0, 1);
@@ -312,7 +314,7 @@ function completeLap(player, course) {
   const laps = { ...getLaps(player) };
   laps[course.key] = (laps[course.key] ?? 0) + Math.max(1, reward.count | 0);
   player.setAttribute(LAPS_ATTRIBUTE, laps);
-  rollMarkOfGrace(player, course);
+  const found = rollMarkOfGrace(player, course);
   if (reward.xp > 0) {
     addAgilityXp(player, reward.xp, course);
   }
@@ -332,18 +334,30 @@ function completeLap(player, course) {
     player.getPacketSender().sendVarbit(HIGHLIGHTED_COURSE_VARBIT, 0);
     player.getPacketSender().sendClientScript(END_LAP_SCRIPT, lapClock(), Math.max(1, reward.count | 0) - 1);
   }
+  // The lap goes in the loot tracker after the helper's end, with what spawned for it (rsprox: 7197, then 7198).
+  if (course.lootSource != null) {
+    pluginApi.emitCustomEvent("loot-tracker:add", { player, source: course.lootSource, category: LOOT_TRACKER_CATEGORY, items: found });
+  }
   pluginApi.emitCustomEvent("agility:lap", { player, course: course.key, laps: laps[course.key], count: Math.max(1, reward.count | 0) });
   // The giant squirrel rolls once per completed course.
   pluginApi.emitCustomEvent("agility:success", { player, skill: core.Skill.AGILITY, petBase: course.petBase });
 }
 
-/** Grace's Toggle Counter: turns the lap count message off or back on. Guessed messages. */
-function toggleLapCounter({ player }) {
+/**
+ * Grace's Toggle Counter: turns the lap count message off or back on. Grace says so with her
+ * chathead (chat_left, chathap3 569), as rsprox 233/03247.txt:25731 and :25773 record.
+ */
+const GRACE_HAPPY = 569; // chathap3
+function toggleLapCounter({ player, npc }) {
   const off = !player.getAttribute(LAP_COUNTER_OFF_ATTRIBUTE);
   player.setAttribute(LAP_COUNTER_OFF_ATTRIBUTE, off);
-  player.sendMessage(off
-    ? "Your lap count will no longer be shown when you complete a lap."
-    : "Your lap count will now be shown when you complete a lap.");
+  const text = off
+    ? "I've disabled your lap counter messages, if you want to turn it back on, so you can see your total laps after you finish one, speak to me again."
+    : "I've turned on your lap counter, you'll get a message when you complete a lap on a course. To help you keep track.";
+  const graceId = npc?.getId?.() ?? core.NpcIdentifiers.GRACE;
+  player.getDialogueManager().startDialogues(new core.DialogueChainBuilder().add(
+    new core.NpcDialogue(0, graceId, text, "Grace", GRACE_HAPPY),
+  ));
 }
 
 /**
@@ -384,11 +398,12 @@ function diaryBonusChance(player, bonuses) {
   return bonus ? bonus.chance : 0;
 }
 
+/** Rolls the lap's mark of grace (see MARK_COOLDOWN_ATTRIBUTE) and returns what spawned, [] for nothing. */
 function rollMarkOfGrace(player, course) {
   const marks = course.marks;
-  if (!marks || marks.tiles.length === 0) return;
+  if (!marks || marks.tiles.length === 0) return [];
   const minute = clockMinute();
-  if (minute < (player.getAttribute(MARK_COOLDOWN_ATTRIBUTE) ?? 0)) return;
+  if (minute < (player.getAttribute(MARK_COOLDOWN_ATTRIBUTE) ?? 0)) return [];
   let chance = marks.chance ?? MARK_LAP_CHANCE;
   const unboosted = player.getSkillManager().getMaxLevel(core.Skill.AGILITY);
   if (marks.overlevelPenalty !== false && unboosted >= marks.level + MARK_OVERLEVEL_THRESHOLD) {
@@ -398,7 +413,7 @@ function rollMarkOfGrace(player, course) {
   const request = { player, course: course.key, chance };
   pluginApi.emitCustomEvent("agility:mark-chance", request);
   if (Number.isFinite(request.chance)) chance = request.chance;
-  if (Math.random() >= chance && Math.random() >= diaryBonusChance(player, marks.rerolls)) return;
+  if (Math.random() >= chance && Math.random() >= diaryBonusChance(player, marks.rerolls)) return [];
   const short = Math.random() < diaryBonusChance(player, marks.shortCooldown);
   player.setAttribute(MARK_COOLDOWN_ATTRIBUTE, minute + (short ? MARK_SHORT_COOLDOWN_MINUTES : MARK_COOLDOWN_MINUTES));
   const tile = marks.tiles[Math.floor(Math.random() * marks.tiles.length)];
@@ -412,6 +427,7 @@ function rollMarkOfGrace(player, course) {
     ItemOnGroundManager.registerLocation(player, new core.Item(itemId, amount), position,
       player.getPrivateArea(), { goesGlobal: false, despawnDelay: MARK_DESPAWN_TICKS });
   }
+  return spawn.items;
 }
 
 /** The player's course marks on the floor; dropped marks go public and age as usual. */
@@ -443,6 +459,21 @@ function creditMarkTaken({ player, groundItem, source, itemId, amount }) {
   if (!course) return;
   pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId, amount });
   if (source !== "pickup") return;
+  finishLapOnFind(player, course);
+}
+
+/**
+ * A course find picked up that isn't a mark ("agility:course-find-taken" { player, course }: the Colossal Wyrm
+ * courses' termites). Content may make it finish the lap as a mark does (Wiki, Hotfoot: "Picking up some termites
+ * or a mark of grace from a course will automatically complete the lap").
+ */
+function courseFindTaken({ player, course: key }) {
+  const course = COURSES.find((entry) => entry.key === key);
+  if (player && course) finishLapOnFind(player, course);
+}
+
+/** "agility:mark-taken": content may make the find finish the lap, paid as the last obstacle would, with `items`. */
+function finishLapOnFind(player, course) {
   const request = { player, course: course.key, completesLap: false, items: [] };
   pluginApi.emitCustomEvent("agility:mark-taken", request);
   if (!request.completesLap) return;
@@ -474,6 +505,11 @@ function giveCourseItem(player, course, gives) {
   const added = Math.min(amount, player.getInventory().getAddableAmount(item));
   if (added > 0) player.getInventory().adds(itemId, added);
   if (amount > added) ItemOnGroundManager.registerLocation(player, new core.Item(itemId, amount - added), player.getLocation().clone());
+}
+
+/** No run energy comes back while an Agility obstacle is being crossed (Wiki: Energy). */
+function pauseEnergyRecoveryMidObstacle(entity, units) {
+  return ObstacleRunner.isCrossingAgilityObstacle(entity, core.World.getProcessCycle()) ? 0 : units;
 }
 
 function pauseMarksOnLogout({ player }) {
@@ -635,6 +671,7 @@ function attemptObstacle(player, context, entry) {
   ObstacleRunner.run(context, steps, {
     render: success ? obstacle.render : fail?.render ?? obstacle.render,
     busyVarbit: obstacle.course != null,
+    agility: true,
     keepAnimation: success && obstacle.keepAnimation,
     onFinish: (completed) => {
       finishObstacle(player, obstacle, success, completed, fail, lapStart);
@@ -793,13 +830,16 @@ module.exports = {
     api.onNpcInteraction("Agility Trainer", { "Give-Stick": operateNpcObstacle });
     api.registerArea(createTileObstacleArea());
     api.onCanTeleport(blockTeleportMidObstacle);
+    api.registerRunEnergyRestoreModifier(pauseEnergyRecoveryMidObstacle);
     api.onPlayerLogout(finishObstacleOnLogout);
     api.onPlayerLogout(pauseMarksOnLogout);
     api.onPlayerLogin(resumeMarksOnLogin);
     api.onPlayerLogin(Pyramid.syncPyramidTop);
+    api.onPlayerLogin(Pyramid.syncPyramidLevel);
     // A taken top clears once its player is off the pyramid by any way but the doorway (a teleport, a death).
     api.onPlayerProcess(({ player }) => Pyramid.clearPyramidTop(player));
     api.onCustomEvent("ground-items:taken", creditMarkTaken);
+    api.onCustomEvent("agility:course-find-taken", courseFindTaken);
 
     api.log("registered", {
       courses: COURSES.length,

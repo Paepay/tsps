@@ -240,6 +240,8 @@ function useTablet(event) {
   const target = tabletDestination(event, name, option);
   if (!target) return;
   const { player } = event;
+  const locked = tabletQuestLock(player, name);
+  if (locked) return player.sendMessage(locked);
   if (name === POLLNIVNEACH_REDIRECT) {
     const arrival = target.onArrival;
     target.onArrival = () => {
@@ -251,7 +253,9 @@ function useTablet(event) {
   if (!usable()) return;
   // OSRS uses the tablet up two ticks in, as it is absorbed (docs/teleport-tablets.md).
   const useUp = () => player.getInventory().deleteNumber(event.itemId, 1);
-  const breakTablet = () => core.TeleportHandler.teleport(player, target.destination, core.TeleportType.TELE_TAB, false, target.onArrival, useUp);
+  // The Wilderness warning asks first, then any other (the boat-at-sea warning).
+  const breakTablet = () => core.TeleportHandler.confirm(player, target.destination,
+    () => core.TeleportHandler.teleport(player, target.destination, core.TeleportType.TELE_TAB, false, target.onArrival, useUp), 20, { item: event.itemId });
   const warning = TABLET_WARNINGS.get(name);
   if (!warning || !warningOn(player, warning)) return breakTablet();
   const [title, yes, no] = tabletWarning(warning);
@@ -268,8 +272,10 @@ function readScroll(event, destination) {
   const { player } = event;
   event.handled = true;
   if (!player.getInventory().contains(event.itemId) || !core.TeleportHandler.checkReqs(player, destination)) return;
-  player.getInventory().deleteNumber(event.itemId, 1);
-  core.TeleportHandler.teleport(player, destination, core.TeleportType.TELE_SCROLL, false);
+  core.TeleportHandler.confirm(player, destination, () => {
+    player.getInventory().deleteNumber(event.itemId, 1);
+    core.TeleportHandler.teleport(player, destination, core.TeleportType.TELE_SCROLL, false);
+  }, 20, { item: event.itemId });
 }
 
 function syncAlternates({ player }) {
@@ -360,8 +366,8 @@ function castAlternate(event) {
 }
 
 /**
- * Wiki (Standard spellbook): these teleports each require a quest's completion. The spells only; the tablets are
- * separate. TSPS wording for the refusal: the retail line has not been established.
+ * Wiki (Standard spellbook): these teleports each require a quest's completion. The spells; the tablets are
+ * QUEST_LOCKED_TABLETS. TSPS wording for the refusal: the retail line has not been established.
  */
 const QUEST_LOCKED_SPELLS = new Map([
   ["kourend castle teleport", { key: "client_of_kourend", name: "Client of Kourend" }],
@@ -386,6 +392,24 @@ function questLockRefusal(player, name, action) {
   pluginApi.emitCustomEvent("quest:get-stage", stage);
   if (Number(stage.stage) >= locked.stage) return null;
   return locked.unread.replace("cast this spell", action);
+}
+
+/**
+ * Wiki (Ardougne, Kourend Castle and Civitas illa Fortis teleport tablets): using the tablet requires the spell's
+ * quest; Ardougne's needs Plague City finished but not Edmond's scroll read, and Trollheim's tablet needs nothing.
+ */
+const QUEST_LOCKED_TABLETS = ["ardougne teleport", "kourend castle teleport", "civitas illa fortis teleport"];
+
+/**
+ * The refusal for a quest-locked tablet, or null. Recorded: "You need to have completed the Plague City quest to use
+ * this spell." (rsprox_transcripts/242/900268.txt) and the Twilight's Promise line (242/900261.txt), tablet kept.
+ */
+function tabletQuestLock(player, name) {
+  if (!QUEST_LOCKED_TABLETS.includes(name)) return null;
+  const locked = QUEST_LOCKED_SPELLS.get(name);
+  const quest = { player, key: locked.key, complete: false };
+  pluginApi.emitCustomEvent("quest:is-complete", quest);
+  return quest.complete ? null : `You need to have completed the ${locked.name} quest to use this spell.`;
 }
 
 /**
@@ -463,6 +487,17 @@ function castSpell(event) {
   }
 }
 
+/**
+ * "spell:landing-tile" { name, alternate?, tile }: where a teleport that goes where the spell `name` goes lands (the
+ * house portals and nexus). `tile` becomes a tile of the spell's landing square, or of its alternate's
+ * (`alternate: true`); it is left as it was for a spell that lands on its own tile.
+ */
+function landingTile(request) {
+  const alternate = request.alternate ? ALTERNATES.get(request.name) : null;
+  const centre = alternate ? tile(alternate.tile) : standardCentre(request.name);
+  if (centre) request.tile = landing(centre);
+}
+
 module.exports = {
   name: "SpellTeleports",
   description: "Teleport tablets and spell teleports, including house tablets and redirected scrolls, from the teleport-tablets data file.",
@@ -478,6 +513,7 @@ module.exports = {
     api.onSpellCast(castAlternate);
     api.onInterfaceActionClick(castSpell);
     api.onCustomEvent("magic:teleport-quest-lock", teleportQuestLock);
+    api.onCustomEvent("spell:landing-tile", landingTile);
     api.onCustomEvent("spell:teleport-confirm", confirmSpell);
     api.onCustomEvent("settings:setting-clicked", setAllWarnings);
   },

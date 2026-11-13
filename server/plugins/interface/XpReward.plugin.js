@@ -4,7 +4,8 @@
  * the main modal with its 24 skill slots (240:0) as pause buttons and writes the title. Picking a
  * skill and pressing Confirm are the cache's own scripts (3804/3806); only the confirmed slot
  * reaches the server, as a resume on 240:0 whose sub is the slot (enum 681, key = slot + 1, gives the stat). The
- * reward's message box follows, the interface closes, and busy clears when the box is dismissed.
+ * reward's message box follows, with its text (line breaks as spaces) in chat as a message box
+ * line, the interface closes, and busy clears when the box is dismissed.
  *
  * Varp 261 is the lowest base level the cache lets a skill be chosen at, and varp 262 the skills
  * it offers, one bit each (enum 81 gives a stat's bit; script 3809 refuses a skill whose bit is

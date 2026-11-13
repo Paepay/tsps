@@ -9,7 +9,7 @@ const AdmZip = require("adm-zip");
 const PLUGIN = path.join(__dirname, "../plugins/tools/WorldAdmin.plugin.js");
 const ENV_KEYS = [
   "WORLD_ADMIN_PORT", "WORLD_ADMIN_TOKEN", "WORLD_ADMIN_BIND", "BROWSER_HOST",
-  "TSPS_SUPERVISED", "npm_lifecycle_event", "TSPS_RESTARTER", "WT_SLOT",
+  "TSPS_SUPERVISED", "npm_lifecycle_event", "TSPS_RESTARTER", "WT_SLOT", "PORT",
 ];
 const TOKEN = "test-token-abcdefghijklmnop";
 
@@ -252,6 +252,23 @@ test("GET /?token= sets an HttpOnly SameSite=Strict cookie and redirects to /; t
   const otherPort = `wa_token_${port + 1}=${encodeURIComponent(TOKEN)}`;
   assert.equal((await request(port, { path: "/api/catalog", headers: { Cookie: otherPort } })).status, 401);
   assert.equal((await request(port, { path: "/api/catalog", headers: { Cookie: `wa_token=${TOKEN}` } })).status, 401);
+});
+
+test("the panel links to the map and cache editors on this worktree's client port", async (t) => {
+  const { port } = await start(t, { PORT: "3103" });
+  const catalog = await request(port, { path: "/api/catalog", headers: auth });
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.json.mapEditorUrl, "http://localhost:3103/?edit=1");
+  assert.equal(catalog.json.cacheEditorUrl, "http://localhost:3103/?cache=1");
+
+  const page = await request(port, { path: "/", headers: auth });
+  assert.equal(page.status, 200);
+  assert.match(page.text, /id="map-editor-link" class="tool-link"/);
+  assert.match(page.text, /id="cache-editor-link" class="tool-link"/);
+  assert.match(page.text, /<nav class="tool-group" aria-label="Tools">/);
+  assert.match(page.text, /<div class="tool-group-label">Tools<\/div>/);
+  assert.match(page.text, /\.tool-link:hover \{ background: #2a2c30; color: #fff; \}/);
+  assert.match(page.text, /function updateToolLink\(id, href, flag\)/);
 });
 
 test("the panel serves its bundled assets with authentication", async (t) => {
@@ -795,4 +812,15 @@ test("WORLD_ADMIN_BIND beyond loopback needs a WORLD_ADMIN_TOKEN of 24+ token ch
   const text = logs.join("\n");
   assert.match(text, /WORLD_ADMIN_BIND ignored/);
   assert.match(text, /listening on 127\.0\.0\.1:/);
+});
+
+test("every pluginPanel method page.html calls is one the bundle's createPluginPanel returns", () => {
+  const dir = path.join(__dirname, "../plugins/tools/worldadmin/panel");
+  const page = fs.readFileSync(path.join(dir, "page.html"), "utf8");
+  const bundle = fs.readFileSync(path.join(dir, "panel.js"), "utf8");
+  const called = [...new Set([...page.matchAll(/pluginPanel\.([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]))];
+  assert.ok(called.length > 0, "page.html drives the plugin panel");
+  // A minified method is `name(){` or `name:` in the returned object.
+  const missing = called.filter((name) => !new RegExp("[,{]" + name + "(\\(|:)").test(bundle));
+  assert.deepEqual(missing, [], "a missing method throws in enterReconnect before the reconnect overlay starts (#4501)");
 });

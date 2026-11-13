@@ -414,6 +414,8 @@ export interface PluginPrayerDisabledEvent {
 
 export interface PluginSpecialAttackDisabledEvent {
   player: any;
+  /** The actual selected special's registration id, including native offhand selection. Legacy queries may omit it. */
+  specialAttackId?: string;
   disabled: boolean | null;
   /** Shown to the player when disabled is true. */
   message?: string;
@@ -580,6 +582,8 @@ export interface PluginPlayerBeforeDeathEvent {
   preventDeath: boolean;
   /** Set false when the plugin says "Oh dear, you are dead!" itself (at the moment it chooses). */
   announce?: boolean;
+  /** The line the respawn tick prints instead of "Oh dear, you are dead!" (a safe minigame's own). */
+  message?: string;
 }
 
 export interface PluginPlayerOptionEvent {
@@ -1275,6 +1279,11 @@ export interface PluginApi {
     buttonIds: number | number[],
     handler: (event: PluginInterfaceActionClickEvent) => void | boolean
   ): void;
+  /**
+   * While the player is locked (a teleport's cast, an agility obstacle: Player.isLocked), a click on
+   * one of these buttons answers "Please finish what you are doing first." and reaches no handler.
+   */
+  refuseWhileBusy(buttonIds: number | number[]): void;
   onCommand(handler: (event: PluginCommandEvent) => void): void;
   /**
    * Registers a command handler. `minimumRights` is the lowest rank that may run it -
@@ -1491,10 +1500,18 @@ export interface PluginApi {
   /**
    * Adds to the magic damage bonus, in tenths of a percent, before it scales the
    * spell's base max hit - for effects the Wiki counts as magic damage %, like the
-   * salve amulet (i)'s 15% against the undead.
+   * salve amulet (i)'s 15% against the undead. `spell` is the spell whose max hit it is.
    */
   registerMagicDamageBonusModifier(
-    modifier: (entity: any, permille: number) => number
+    modifier: (entity: any, permille: number, spell?: any) => number
+  ): void;
+  /**
+   * Adds percentage points to the magic attack roll; the total scales the roll once, before
+   * the registerMagicAttackAccuracyModifier multipliers (the Wiki DPS calculator adds the
+   * salve amulet (i) and smoke staff bonuses this way). `spell` is the spell being cast.
+   */
+  registerMagicAccuracyPercentModifier(
+    modifier: (entity: any, percent: number, spell?: any) => number
   ): void;
   /**
    * Accuracy modifiers scale the finished attack roll - effective level times
@@ -1604,6 +1621,8 @@ export interface PluginCoreApi {
   WeaponInterfaces: any;
   Barrows: any;
   applyPrayerDrainModifiers(entity: any, amount: number, context?: any): number;
+  /** Who an attacker's hit is judged against: an area hit's own victim while it is rolled, else the combat target. */
+  hitTargetOf(attacker: any): any;
   CombatEquipment: any;
   CanAttackResponse: any;
   CombatType: any;
@@ -1626,6 +1645,8 @@ export interface PluginCoreApi {
   ItemActionPacketListener: any;
   /** Run shared item alchemy; plugins authorize opaque alternate payment sources via magic:alchemy-payment. */
   castAlchemy: (player: any, spellId: number | string, itemId: number, slot: number, source?: unknown) => boolean;
+  /** An item's examine text, then the price line the player's settings ask for. */
+  examineItem: typeof import("../game/content/ExaminePrice").examineItem;
   ChatType: any;
   /** `@mes_hl_<colour>@` tags as `<col=...>` for the chatbox's background (ClientProtocol.CHAT_HIGHLIGHTS). */
   resolveChatHighlights: typeof import("../net/protocol/ClientProtocol").resolveChatHighlights;
@@ -1661,6 +1682,8 @@ export interface PluginCoreApi {
   Misc: any;
   ChatTextLayout: any;
   TimerKey: any;
+  /** A countdown in whole seconds, the one Trading spaces trade requests with (game/model/SecondsTimer). */
+  SecondsTimer: typeof import("../game/model/SecondsTimer").SecondsTimer;
   Sound: any;
   Sounds: any;
   Location: any;

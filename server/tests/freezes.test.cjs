@@ -146,13 +146,13 @@ test("a frozen player's walk click gets no message", (t) => {
   assert.deepEqual([target.p.getLocation().getX(), target.p.getLocation().getY()], [3240, 3561]);
 });
 
-test("binding a target still immune after a freeze says 'Your target is currently immune to that spell.'", (t) => {
+test("binding a target still immune after a freeze says the Wiki's 'The target is currently immune to that spell.'", (t) => {
   const caster = player(t, 3240, 3560), target = player(t, 3240, 3561);
   t.mock.method(caster.p.getCombat(), "getTarget", () => target.p);
   target.p.getTimers().registers(core.TimerKey.FREEZE_IMMUNITY, 5);
   const spell = core.CombatSpells.BIND;
   assert.equal(PluginManager.emitSpellDisabled(caster.p, core.MagicSpellbook.NORMAL, spell.spellId(), spell), true);
-  assert.ok(caster.messages.includes("Your target is currently immune to that spell."), JSON.stringify(caster.messages));
+  assert.ok(caster.messages.includes("The target is currently immune to that spell."), JSON.stringify(caster.messages));
 });
 
 test("a frozen player still interacts with an NPC in reach, and cannot reach one further away", (t) => {
@@ -183,7 +183,40 @@ test("a frozen player still interacts with an NPC in reach, and cannot reach one
   frozen.messages.length = 0;
   queue.walkToEntity(npc, () => talked++);
   assert.equal(talked, 0, "a stunned frozen player does not interact");
-  assert.deepEqual(frozen.messages, ["You're stunned!"]);
+  assert.deepEqual(frozen.messages, [[core.ChatType.SPAM, "You're stunned!"]], "the stun refusal is a spam line");
+});
+
+test("a frozen player at a counter still talks to the NPC behind it", (t) => {
+  // A counter row at y=3562: from 3240,3561 the shopkeeper at 3240,3563 has no reachable adjacent
+  // tile, and this tile is the nearest one, so an unfrozen player interacts without a step. A freeze
+  // stops movement only (Wiki: Freeze), so it must not refuse that.
+  const { PathFinder } = require("../dist/game/model/movement/path/PathFinder");
+  const { RsmodRouteFinding } = require("../dist/game/model/movement/path/RsmodRouteFinding");
+  const previous = PathFinder.rsmodRouteFinding;
+  PathFinder.rsmodRouteFinding = new RsmodRouteFinding((x, y) => (y === 3562 ? 0x100 : 0));
+  t.after(() => { PathFinder.rsmodRouteFinding = previous; });
+  for (const freeze of [false, true]) {
+    const shopper = player(t, 3240, 3561);
+    const queue = shopper.p.getMovementQueue();
+    t.mock.method(queue, "checkDestination", () => true);
+    t.mock.method(queue, "isInteractionTargetValid", () => true);
+    if (freeze) shopper.p.getTimers().registers(core.TimerKey.FREEZE, 10);
+    const npc = new core.NPC(core.NpcIdentifiers.MAN, new core.Location(3240, 3563));
+    let talked = 0;
+    queue.walkToEntity(npc, () => talked++);
+    assert.equal(talked, 1, `frozen=${freeze}: talks across the counter`);
+    assert.deepEqual(shopper.messages, []);
+    assert.equal(queue.points.length, 0);
+
+    // One tile along the counter the nearest tile is a step away: frozen, that is out of reach.
+    if (!freeze) continue;
+    shopper.p.setLocation(new core.Location(3238, 3561));
+    talked = 0;
+    queue.walkToEntity(npc, () => talked++);
+    assert.equal(talked, 0, "frozen a step from the nearest tile");
+    assert.deepEqual(shopper.messages, ["I can't reach that!"]);
+    assert.equal(queue.points.length, 0, "no step queued");
+  }
 });
 
 /** The 0..2047 angle the client is sent for `player`'s face target. */

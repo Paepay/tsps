@@ -11,7 +11,7 @@ import { Inventory } from "../model/container/impl/Inventory";
 import { Misc } from "../../util/Misc";
 import { PluginManager } from "../../plugins/PluginManager";
 import { PlayerSave } from "../entity/impl/player/persistence/PlayerSave";
-import { encodeChatMessage, encodeTradeClose, encodeTradeOpen, encodeTradeRequest, encodeTradeUpdate, TradePartyView } from "../../net/protocol/ClientProtocol";
+import { ChatType, encodeChatMessage, encodeTradeClose, encodeTradeOpen, encodeTradeRequest, encodeTradeUpdate, TradePartyView } from "../../net/protocol/ClientProtocol";
 
 const ATTR_SKIP_PERSISTENCE = "bot-skip-persistence";
 
@@ -55,6 +55,8 @@ export class Trading {
     private static readonly CONFIRM_INTERFACE = 334;
     private static readonly INVENTORY_INTERFACE = 336;
     private static readonly TRADE_REQUEST_CHAT_TYPE = 101;
+    /** The completed trade's line (rsprox: "Accepted trade.", type=trade). */
+    public static readonly ACCEPTED_MESSAGE = "Accepted trade.";
     /** All Settings "Accept trade delay" (205): while 1, Accept waits 3 seconds after any change to the offers. */
     private static readonly ACCEPT_DELAY_VARBIT = 13130;
     public static readonly ACCEPT_DELAY_MS = 3000;
@@ -179,11 +181,13 @@ export class Trading {
                     initiateTrade = true;
                 }
             }
+            // rsprox 227/00548.txt:3891 (38 recordings): a trade-type line, no name. Answering a pending
+            // request sends it too, on the same tick just before the trade screen (229/02510.txt:3835).
+            this.player.getPacketSender().sendTypedMessage(ChatType.TRADE, "Sending trade offer...");
             if (initiateTrade) {
                 this.player.getTrading().initiateTrade();
                 t_.getTrading().initiateTrade();
             } else {
-                this.player.sendMessage("You've sent a trade request to " + t_.getDisplayName() + ".");
                 // The client shows "<name> wishes to trade with you." and makes it clickable.
                 t_.getSession().sendClientPacket(encodeChatMessage(
                     "trade", "wishes to trade with you.", this.player.getDisplayName(), "",
@@ -281,14 +285,8 @@ export class Trading {
         let interact_: Player = this.interact;
         let t_state = interact_.getTrading().getState();
         if (this.state == TradeState.TRADE_SCREEN) {
-            let freeSlots = this.interact.getInventory().getFreeSlots();
             if (!Trading.receiverCanHold(this.interact, this.container.getValidItems())) {
-                this.player.sendMessage("");
-                this.player.sendMessage("@or3@" + this.interact.getDisplayName() + " will not be able to hold that item.");
-                this.player.sendMessage(
-                    "@or3@They have " + freeSlots + " free inventory slot" + (freeSlots == 1 ? "." : "s."));
-
-                this.interact.sendMessage("Trade cannot be accepted, you don't have enough free inventory space.");
+                Trading.sendCannotHold(this.interact);
                 return;
             }
             this.state = (TradeState.ACCEPTED_TRADE_SCREEN);
@@ -318,8 +316,7 @@ export class Trading {
                     interact_.getTrading().setState(TradeState.CONFIRM_SCREEN);
                     this.sendState(false);
                     interact_.getTrading().sendState(false);
-                    short.sendMessage("Trade cannot be accepted, you don't have enough free inventory space.");
-                    short.getTrading().getInteract().sendMessage("@or3@" + short.getDisplayName() + " will not be able to hold that item.");
+                    Trading.sendCannotHold(short);
                     return;
                 }
                 // Capture both authoritative states *before* changing anything, so
@@ -406,14 +403,14 @@ export class Trading {
                     Trading.save(this.player);
                     Trading.save(interact_);
                 }
-                this.player.getSession().sendClientPacket(encodeTradeClose("Trade accepted!"));
-                interact_.getSession().sendClientPacket(encodeTradeClose("Trade accepted!"));
+                this.player.getSession().sendClientPacket(encodeTradeClose(Trading.ACCEPTED_MESSAGE));
+                interact_.getSession().sendClientPacket(encodeTradeClose(Trading.ACCEPTED_MESSAGE));
                 // Send interface removal for both players...
                 this.player.getPacketSender().sendInterfaceRemoval();
                 interact_.getPacketSender().sendInterfaceRemoval();
-                // Send successful trade message!
-                this.player.sendMessage("Trade accepted!");
-                interact_.sendMessage("Trade accepted!");
+                // rsprox 227/00548.txt:4488, 227/01734.txt:8213 (26 recordings): a trade-type line.
+                this.player.getPacketSender().sendTypedMessage(ChatType.TRADE, Trading.ACCEPTED_MESSAGE);
+                interact_.getPacketSender().sendTypedMessage(ChatType.TRADE, Trading.ACCEPTED_MESSAGE);
             }
         } else {
             if (interact_.isPlayerBot && interact_.isPlayerBot()) {
@@ -580,6 +577,16 @@ export class Trading {
         return this.state;
     }
 
+    /** The refusal when `receiver` lacks room: the same lines at either accept, to both sides. */
+    static sendCannotHold(receiver: Player): void {
+        const freeSlots = receiver.getInventory().getFreeSlots();
+        const giver = receiver.getTrading().getInteract();
+        giver.sendMessage("");
+        giver.sendMessage("@or3@" + receiver.getDisplayName() + " will not be able to hold that item.");
+        giver.sendMessage("@or3@They have " + freeSlots + " free inventory slot" + (freeSlots == 1 ? "." : "s."));
+        receiver.sendMessage("Trade cannot be accepted, you don't have enough free inventory space.");
+    }
+
     /**
      * Whether `receiver` can take all of `items`: a slot for each non-stackable and each stack not held, and room under
      * the cap on a stack that is held (a capped stack would otherwise clamp the trade away).
@@ -659,7 +666,7 @@ export class Trading {
             ? [
                 [Trading.CONFIRM_OPPONENT, `Trading with:<br>${name}`],
                 [Trading.CONFIRM_OWN_HEADING, `You are about to give:<br>${Trading.formatValue(this.container)}`],
-                [Trading.CONFIRM_OTHER_HEADING, `In return you will receive:<br>${Trading.formatValue(other.getTrading().getContainer())}`],
+                [Trading.CONFIRM_OTHER_HEADING, `In return you will receive:<br>${Trading.formatValue(other.getTrading().getContainer(), true)}`],
                 [Trading.CONFIRM_STATUS, Trading.statusText(
                     this.state === TradeState.ACCEPTED_CONFIRM_SCREEN,
                     otherState === TradeState.ACCEPTED_CONFIRM_SCREEN,
@@ -684,11 +691,16 @@ export class Trading {
         }
     }
 
-    private static formatValue(items: ItemContainer): string {
+    /**
+     * `redWhenZero`: the confirm screen's "you will receive" value is red at 0 (every such recording, e.g.
+     * rsprox_transcripts/227/00548.txt, 229/00253.txt); every other value, 0 included, stays white.
+     */
+    private static formatValue(items: ItemContainer, redWhenZero = false): string {
         const value = items.getValidItems()
             // Wiki (Trading): the value shown uses the Grand Exchange price; the store value only where there is none.
             .reduce((total, item) => total + item.getDefinition().getGrandExchangeValue() * item.getAmount(), 0);
-        return `(Value: <col=ffffff>${Misc.format(value)}</col> coins)`;
+        const colour = redWhenZero && value === 0 ? "ff0000" : "ffffff";
+        return `(Value: <col=${colour}>${Misc.format(value)}</col> coins)`;
     }
 
     private static freeSlotsText(name: string, freeSlots: number): string {

@@ -65,11 +65,11 @@ function teleport(player, destination = TEMPLE) {
   const [x, y, z] = destination;
   const target = new core.Location(x, y, z);
   if (!core.TeleportHandler.checkReqs(player, target)) return;
-  core.TeleportHandler.teleport(player, target, core.TeleportType.NORMAL, false, () => {
+  core.TeleportHandler.confirm(player, target, () => core.TeleportHandler.teleport(player, target, core.TeleportType.NORMAL, false, () => {
     if (!unlimited(player)) setCharges(player, charges(player) - 1);
     api.emitCustomEvent("camulet:teleported", { player, destination: destination === ENTRANCE ? "entrance" : "temple" });
     if (destination === TEMPLE) api.emitCustomEvent("diary:task", { player, diary: "desert", task: TEMPLE_TASK });
-  });
+  }));
 }
 
 /**
@@ -83,7 +83,6 @@ function chargedTeleport(player, destination) {
   }
   const { DialogueChainBuilder, ItemStatementDialogue } = core;
   // The box's mesbox chat line goes first, its <br> a space (231/03021.txt:24821, tick 5260), as Arclight's.
-  player.getPacketSender().sendTypedMessage(core.ChatType.MESBOX, OUT_OF_CHARGES_BOX.replace(/<br>/g, " "));
   player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(
     new ItemStatementDialogue(0, core.ItemIdentifiers.CAMULET, OUT_OF_CHARGES_BOX)));
 }

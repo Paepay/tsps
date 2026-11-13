@@ -10,7 +10,8 @@
  * time, with the cache's leagues_6_echo_arrow projectile and leagues_6_ranged_mastery_vfx_left /
  * _right on the player (alternating, as the Raging Echoes melee echo did: no capture of either).
  * Never against a player, never from a special attack, and never from another echo except with
- * talent_ranged_echo_cyclical. Its XP is the usual (the Wiki does not say).
+ * talent_ranged_echo_cyclical. A melee echo pays Ranged XP, not the melee style's (issue #4922's
+ * live Leagues VI report; the Wiki does not say).
  *
  * - 8 talent_crossbow_echo_reproc_chance: a crossbow (or ballista) attack has the pact's % chance
  *   to fire an echo when its hit lands, hit or miss (onCombatHitResolved). Read as its own trigger;
@@ -60,10 +61,31 @@
  *
  * Ours, beside the readings above: an echo's max hit is the ordinary ranged max hit; the
  * crossbow pact's echo chance is its own roll, not added to the Regenerate one's.
+ *
+ * For weapons that answer to them:
+ * - `league:pact-echo-hit` { hit } -> echo: whether the hit is a pact echo (Nature's recurve's heal
+ *   is not triggered by one, Wiki).
+ * - `combat:extra-hit` { attacker, hit } -> extra: a weapon's extra hit of the same attack (King's
+ *   barrage's ice bolt) is no attack of its own, so the crossbow echo pact rolls once an attack.
+ * - A ranged "ice" hit (King's barrage's second bolt) counts as water with 46 talent_ice_counts_as_water
+ *   (Wiki, Echo bosses: "Second hit can scale with water weaknesses and pacts, if the pact for ice
+ *   spells to be water spells is taken"): `combat:ranged-ice-attack-roll` { attacker, target,
+ *   attackRoll, baseAttackRoll } and `combat:ranged-ice-max-hit` { ..., maxHit, baseMaxHit } add an
+ *   NPC's water weakness % (the shared `elemental-spells:weakness`, so gear that changes it counts) as the
+ *   elemental spells do, and 29 talent_water_spell_damage_high_hp's
+ *   +20% x HP/max HP; `combat:ranged-ice-hit-landed` { attacker, target, hit } heals 60% of a landed
+ *   hit with 31 talent_water_spell_bouce_heal. The values mirror Magic.LeaguePacts.js's for water spells.
  */
 const Common = require("./Common.LeaguePacts");
+const ElementalSpells = require("../../combat/elementalspells/Common.ElementalSpells");
 
 let core;
+let api;
+
+/** NpcDefinition.getElementalWeakness's type for water (air 1, water 2, earth 3, fire 4). */
+const WATER_WEAKNESS = 2;
+const WATER_HP_DAMAGE_PERCENT = 20;
+const WATER_HEAL_FRACTION = 0.6;
 
 const BOW_CATEGORY = 3;
 const CROSSBOW_CATEGORY = 5;
@@ -138,7 +160,10 @@ function prayerPercents(player) {
   const { PrayerHandler } = core;
   if (PrayerHandler.isActivated(player, PrayerHandler.SHARP_EYE)) return { accuracy: 105, damage: 105 };
   if (PrayerHandler.isActivated(player, PrayerHandler.HAWK_EYE)) return { accuracy: 110, damage: 110 };
-  if (PrayerHandler.isActivated(player, PrayerHandler.EAGLE_EYE)) return { accuracy: 115, damage: 115 };
+  if (PrayerHandler.isActivated(player, PrayerHandler.EAGLE_EYE)) {
+    // Deadeye (Eagle Eye's slot after its scroll): 18% accuracy and strength (Wiki).
+    return PrayerHandler.deadeyeActive(player) ? { accuracy: 118, damage: 118 } : { accuracy: 115, damage: 115 };
+  }
   if (PrayerHandler.isActivated(player, PrayerHandler.RIGOUR)) return { accuracy: 120, damage: 123 };
   return null;
 }
@@ -320,8 +345,10 @@ function fireEcho(player, target, { source = "ranged", chance = 0, depth = 0 } =
   const { CombatFactory, PendingHit, Projectile, CacheDefinitions, Graphic } = core;
   const method = source === "melee" ? meleeEcho() : CombatFactory.RANGED_COMBAT;
   const distance = player.getLocation().getDistance(target.getLocation());
+  // A melee echo is a ranged attack for XP even though its rolls use the melee stats.
+  const experienceSkills = source === "melee" ? [core.Skill.RANGED.getIndex()] : undefined;
   const echo = build({ player, echo: true, source }, () =>
-    new PendingHit(player, target, method, { delay: 1 + Math.floor((3 + distance) / 6), ordinary: true }));
+    new PendingHit(player, target, method, { delay: 1 + Math.floor((3 + distance) / 6), ordinary: true, experienceSkills }));
   echoes.set(echo, { depth, chance, source });
   CombatFactory.addPendingHit(echo);
   const side = graphicSide.get(player) ?? 0;
@@ -357,7 +384,51 @@ function hitResolved({ attacker, target, hit }) {
   const kind = weaponKind(attacker);
   if (kind === "bow" && hit.isAccurate()) addStack(attacker);
   if (kind !== "crossbow" || !againstNpc(target) || target.getHitpoints() <= 0) return;
+  const extra = { attacker, hit, extra: false };
+  api.emitCustomEvent("combat:extra-hit", extra);
+  if (extra.extra) return;
   rollEcho(attacker, target, effect(attacker, "talent_crossbow_echo_reproc_chance") / 100);
+}
+
+/** `league:pact-echo-hit` { hit } -> echo. */
+function echoQuery(query) {
+  if (query?.hit && echoes.has(query.hit)) query.echo = true;
+}
+
+const iceAsWater = (attacker) => attacker?.isPlayer?.() && effect(attacker, "talent_ice_counts_as_water") > 0;
+
+/**
+ * An NPC's water weakness, in percent, for a hit that counts as water: the shared weakness
+ * (Common.ElementalSpells elementWeakness), so an effect that changes or adds to it counts too.
+ */
+function waterWeakness(attacker, target) {
+  return Math.max(0, ElementalSpells.elementWeakness(attacker, target, null, WATER_WEAKNESS));
+}
+
+/** A ranged ice hit's attack roll: the water weakness, with the ice-as-water pact. */
+function iceAttackRoll(request) {
+  if (!iceAsWater(request.attacker)) return;
+  const percent = waterWeakness(request.attacker, request.target);
+  if (percent) request.attackRoll += Math.floor((request.baseAttackRoll * percent) / 100);
+}
+
+/** A ranged ice hit's max hit: the water weakness and the water hitpoints pact, with the ice-as-water pact. */
+function iceMaxHit(request) {
+  const { attacker } = request;
+  if (!iceAsWater(attacker)) return;
+  const percent = waterWeakness(attacker, request.target);
+  if (percent) request.maxHit += Math.floor((request.baseMaxHit * percent) / 100);
+  if (effect(attacker, "talent_water_spell_damage_high_hp")) {
+    const hitpoints = Math.min(1, attacker.getHitpoints() / Math.max(1, attacker.getSkillManager().getMaxLevel(core.Skill.HITPOINTS)));
+    request.maxHit = Math.floor((request.maxHit * (100 + WATER_HP_DAMAGE_PERCENT * hitpoints)) / 100);
+  }
+}
+
+/** A landed ranged ice hit heals as a water spell's does, with both pacts. */
+function iceHitLanded({ attacker, hit }) {
+  if (!iceAsWater(attacker) || !effect(attacker, "talent_water_spell_bouce_heal") || !hit?.isAccurate?.()) return;
+  const amount = Math.floor(hit.getTotalDamage() * WATER_HEAL_FRACTION);
+  if (amount > 0) api.emitCustomEvent("league:pact-heal", { player: attacker, amount });
 }
 
 function addStack(player) {
@@ -422,7 +493,8 @@ function pactsChanged({ player }) {
   if (Common.isPacts(player)) sendStacks(player);
 }
 
-module.exports = function attach(api) {
+module.exports = function attach(pluginApi) {
+  api = pluginApi;
   core = api.core;
   RANGED_ATTACK_BONUS = core.BonusManager.ATTACK_RANGE;
   MELEE_STRENGTH_BONUS = OTHER_BONUSES + core.BonusManager.STRENGTH;
@@ -440,6 +512,10 @@ module.exports = function attach(api) {
   api.onCustomEvent("league:pact-unlocked", pactsChanged);
   api.onCustomEvent("league:pacts-reset", pactsChanged);
   api.onCustomEvent("league:login", pactsChanged);
+  api.onCustomEvent("league:pact-echo-hit", echoQuery);
+  api.onCustomEvent("combat:ranged-ice-attack-roll", iceAttackRoll);
+  api.onCustomEvent("combat:ranged-ice-max-hit", iceMaxHit);
+  api.onCustomEvent("combat:ranged-ice-hit-landed", iceHitLanded);
 };
 
 module.exports.isEcho = (hit) => echoes.has(hit);

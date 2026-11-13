@@ -1,8 +1,10 @@
 "use strict";
 
 const C = require("./Context.Hunter");
-const { H, ANIM, level, requireLevel, hasTool, nearby, active, available, roll, exchange, xp, begin, hide, chance } = C;
+const { H, ANIM, level, requireLevel, hasTool, nearby, active, available, roll, exchange, catchExchange, xp, begin, hide, chance } = C;
 const tables = require("../data/impling-loot.json");
+const Matthias = require("./Matthias.Hunter");
+const { boostSkill } = require("../../items/ConsumableEffects");
 const falcons = new Map();
 const caught = new Map();
 // Players wearing a falconer's glove, so leaving the falconry grounds is checked for them only.
@@ -47,7 +49,8 @@ function hire({ player }) {
   if ([E.WEAPON_SLOT, E.SHIELD_SLOT, E.HANDS_SLOT].some(slot => player.getEquipment().get(slot).getId() > 0)) {
     player.sendMessage("Remove your weapon, shield and gloves before borrowing a falcon."); return true;
   }
-  if (!exchange(player, [[I.COINS, 500]], [])) { player.sendMessage("It costs 500 coins to borrow a falcon."); return true; }
+  // Wiki (Falconry): an investor borrows falcons without the 500-coin fee.
+  if (!Matthias.invested(player) && !exchange(player, [[I.COINS, 500]], [])) { player.sendMessage("It costs 500 coins to borrow a falcon."); return true; }
   gloves(player, I.FALCONERS_GLOVE_2);
   H.players.add(player);
   player.sendMessage("Matthias lends you a falcon. Catch a kebbit, then retrieve the falcon and its prey.");
@@ -97,7 +100,7 @@ function collect(player, npc, def) {
   const generated = { player, npc, npcId: def.npc, drops: prey(def), handled: false };
   H.api.emitCustomEvent("npc-drops:generated", generated);
   if (generated.handled) return;
-  for (const drop of generated.drops) exchange(player, [], [[drop.itemId, drop.amount]]);
+  for (const drop of generated.drops) catchExchange(player, [], [[drop.itemId, drop.amount]]);
 }
 
 function retrieve({ player, npc }) {
@@ -230,7 +233,8 @@ function catchImpling(player, npc, npcId, def) {
   }
   if (!exchange(player, inputs, outputs)) return;
   player.getPacketSender().sendSound(IMPLING_CATCH_SOUND, 1, 0);
-  player.sendMessage(jarred ? JAR_MESSAGE : LOOT_MESSAGE);
+  // Spam in every recording: the jar line 395 times, the loot line 7.
+  player.getPacketSender().sendTypedMessage(H.core.ChatType.SPAM, jarred ? JAR_MESSAGE : LOOT_MESSAGE);
   xp(player, puro ? def.puroXp : def.xp, "impling", npcId);
   npc.performAnimation(new H.core.Animation(ANIM.IMPLING_CAUGHT));
   // Roaming spawns (Puro-Puro's and the overworld's) manage their own removal and respawn.
@@ -267,7 +271,7 @@ function bonus(player, def) {
   const skills = player.getSkillManager(), max = skills.getMaxLevel(def.boost), current = skills.getCurrentLevel(def.boost);
   if (def.boost === H.core.Skill.PRAYER) skills.setCurrentLevels(def.boost, Math.min(max, current + 22));
   else if (def.boost === H.core.Skill.HITPOINTS) skills.setCurrentLevels(def.boost, Math.min(max, current + 8));
-  else skills.setCurrentLevels(def.boost, Math.max(current, max + Math.floor(max * 0.15) + 4));
+  else boostSkill(player, def.boost, 4, 0.15);
 }
 
 function boost(event) {

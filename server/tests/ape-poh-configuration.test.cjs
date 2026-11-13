@@ -4,6 +4,7 @@ const path = require('node:path');
 const { before, after, test } = require('node:test');
 process.env.DISABLE_PLAYER_BOTS = '1';
 require('../dist/Server').Server.installProductionPathResolver();
+require("./helpers/quest-requirements-on.cjs");
 const { CachePipeline } = require('../dist/game/cache/CachePipeline');
 const { PluginManager: PM } = require('../dist/plugins/PluginManager');
 const { Player } = require('../dist/game/entity/impl/player/Player');
@@ -107,8 +108,9 @@ function actor(t, kind, { rescued = false, full = false } = {}) {
   p.moveTo(new core.Location(2542, 3096, 0)); p.setNeedsPlacement(false);
   const portal = new GameObject(yanillePortal, portalAt, 10, 2, null);
   const definition = ObjectDefinition.forPlayer(yanillePortal, p) ?? ObjectDefinition.forId(yanillePortal);
-  assert.equal(PM.emitObjectInteraction({ player: p, object: portal, objectId: yanillePortal, definition, clickType: 1,
+  assert.equal(PM.emitObjectInteraction({ player: p, object: portal, objectId: yanillePortal, definition, clickType: 2,
     location: { x: 2542, y: 3097, z: 0 }, sourceLocation: { x: 2542, y: 3096, z: 0 }, handled: false }), true);
+  for (let tick = 0; tick < 3; tick++) core.TaskManager.process(); // Home loads two ticks later
   const house = House.houseFor(p);
   ownedHouse = house;
   assert.ok(house instanceof Instance.PlayerHouseInstance); assert.equal(house.owner, p);
@@ -233,6 +235,32 @@ test('chamber: 99 noted bananas cannot pay the 100-banana cost', async t => {
   for (const [id, amount] of cost) assert.equal(f.p.getInventory().getAmount(id), amount - (id === 1964 ? 1 : 0));
 });
 
+// Wiki (Portal chamber): bank notes are accepted for the bananas, so a mix pays (#3045 review).
+for (const [label, unnoted, noted, allowed] of [['22 unnoted and 80 noted bananas pay', 22, 80, true],
+  ['20 unnoted and 79 noted bananas do not', 20, 79, false]]) {
+  test(`chamber: ${label} the 100-banana cost`, async t => {
+    const f = actor(t, 'chamber', { rescued: true }), existing = seedExisting(f, 'chamber');
+    const cost = setupCost(f, 'chamber', 'ape atoll teleport');
+    f.p.getInventory().delete(1964, 100 - noted);
+    f.p.getInventory().add(new core.Item(1963, unnoted), false);
+    assert.equal(f.p.getInventory().getAmount(1963), unnoted);
+    assert.equal(f.p.getInventory().getAmount(1964), noted);
+    await chamberReady(f, 'ape atoll teleport'); await prompt(f, /consume these runes/i, /^yes$/i);
+    if (allowed) {
+      assert.deepEqual(f.frame.destinations, ['ape atoll teleport']);
+      // The notes go first: all 80 noted and 20 of the unnoted, leaving 2.
+      assert.equal(f.p.getInventory().getAmount(1964), 0);
+      assert.equal(f.p.getInventory().getAmount(1963), unnoted + noted - 100);
+      for (const [id] of cost) if (id !== 1964) assert.equal(f.p.getInventory().getAmount(id), 0);
+    } else {
+      assert.deepEqual(f.frame.destinations, existing);
+      assert.equal(f.p.getInventory().getAmount(1963), unnoted);
+      assert.equal(f.p.getInventory().getAmount(1964), noted);
+      for (const [id, amount] of cost) if (id !== 1964) assert.equal(f.p.getInventory().getAmount(id), amount);
+    }
+  });
+}
+
 function seedExisting(f, kind) {
   if (kind === 'chamber') {
     f.frame.destinations = ['varrock teleport'];
@@ -330,8 +358,12 @@ test('nexus: stale removed furniture cannot commit a previously opened configura
   await nexusReady(f, 8);
   const at = f.object.getLocation(), loc = { x: at.getX(), y: at.getY(), z: at.getZ() };
   assert.equal(f.house.removeFurniture(loc, f.object.getId(), f.object.getType()), f.furnishing);
+  const sender = f.p.getPacketSender();
+  const removals = t.mock.method(sender, 'sendInterfaceRemoval');
   await nexusConfirm(f);
   assert.equal(messages.filter(message => message === 'This nexus is no longer available for configuration.').length, 1);
+  // The panel of a nexus that is gone closes with the message, as a saved configuration's does.
+  assert.equal(removals.mock.callCount(), 1, 'the stale configuration panel closes');
   for (const [id, amount] of cost) assert.equal(f.p.getInventory().getAmount(id), amount);
   assert.deepEqual(f.p.getAttribute('construction:nexus'), existing);
   await nexusConfirm(f);
@@ -450,7 +482,12 @@ test('nexus: Remove warns, then discards the paid destinations', async t => {
 test('nexus: removing its room discards the paid destinations', async t => {
   const f = actor(t, 'nexus', { rescued: true }); seedExisting(f, 'nexus');
   f.house.buildingMode = true;
+  const warnings = [], send = core.StatementDialogue.send;
+  t.mock.method(core.StatementDialogue, 'send', (player, text, ...rest) => { warnings.push(text); return send(player, text, ...rest); });
   House.removeRoomPrompt(f.p, f.house, { plane: 1, x: 4, y: 6 });
+  assert.deepEqual(warnings, [Nexus.ROOM_REMOVAL_WARNING], 'removing the room warns first');
+  await f.conn.dispatch([{ type: 'dialogue_continue', widgetId: (229 << 16) | 4, childIndex: -1 }]);
+  f.conn.processTurnPackets();
   await prompt(f, /remove the/i, /^yes$/i);
   assert.equal(f.house.getRoom({ plane: 1, x: 4, y: 6 }), null);
   assert.deepEqual(f.p.getAttribute('construction:nexus'), { slots: [], left: 0 });

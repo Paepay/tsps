@@ -249,8 +249,6 @@ module.exports = function registerGertrudesCatQuest(api) {
       return;
     }
     if (event.kind === "message" && String(stepId ?? "").startsWith(HINT_BOX_PREFIX)) {
-      // The mesbox chat line goes with the box, as the repo's other message boxes (Barrows, Mining Guild).
-      player.getPacketSender().sendTypedMessage(api.core.ChatType.MESBOX, String(event.text ?? ""));
       event.box = { statement: true };
       event.handled = true;
       return;
@@ -338,6 +336,15 @@ module.exports = function registerGertrudesCatQuest(api) {
       if (itemId === MILK_ITEM_ID) {
         player.getInventory().deleteNumber(MILK_ITEM_ID, 1);
         player.getInventory().adds(BUCKET_ITEM_ID, 1);
+      } else {
+        // Wiki (Bottomless milk bucket): one use of its regular milk, not the whole bucket.
+        const use = { player, type: MILK_ITEM_ID, item: event.item, spent: false };
+        api.emitCustomEvent?.("bottomless-milk:spend", use);
+        if (!use.spent) {
+          player.sendMessage("Fluffs is not interested right now.");
+          event.handled = true;
+          return;
+        }
       }
       quest.setStage(player, STAGE_GAVE_MILK);
       player.sendMessage("Fluffs laps up the milk.");

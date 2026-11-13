@@ -3,7 +3,9 @@
  * close, played as live OSRS does (docs/loc-teleports.md):
  * - plugins/world/data/loc-teleports.json: where a loc placement takes the player
  *   (scripts/sync-loc-teleports.cjs writes it from the rsprox capture database);
- * - plugins/world/data/loc-swaps.json: trapdoors whose Open/Close swaps the loc for its other state.
+ * - plugins/world/data/loc-swaps.json: trapdoors whose Open/Close swaps the loc for its other state,
+ *   and (`toggles`) per-player multiloc trapdoors whose Open/Close sets the varbit showing the other
+ *   state, kept across logins (Evil Dave's cellar trapdoor).
  *
  * - A loc nobody else handles: the generic object hook takes the click when the clicked tile
  *   and option have an entry, or the loc and option have a swap.
@@ -12,7 +14,8 @@
  *
  * Gates (an entry's `requires`, decided in plugins/world/data/loc-teleport-sync.json) are checked in
  * order first: a total level, worn items (any one set), an item used on the loc once before (a
- * rope tied to the Elid crevice), or a completed quest (`quest`: the Prifddinas gates, Dorgesh-Kaan's doors). The first one the player lacks plays its captured refusal: a
+ * rope tied to the Elid crevice), a completed quest (`quest`: the Prifddinas gates, Dorgesh-Kaan's doors),
+ * a skill level or a Slayer task (`skill`, `slayerTask`: Araxxor's lair). The first one the player lacks plays its refusal: a
  * game message, a message box, or an NPC's line.
  *
  * A loc whose option asks first (`ask`: "Climb out of the window?") shows the game's question and
@@ -44,6 +47,8 @@ const FADE_CYCLES = 50;
 const TIED_ATTRIBUTE = "loc-teleports:tied";
 /** Warnings a player has turned off (Toggle-warning), by varbit name; the varbit is sent again at login. */
 const WARNINGS_OFF_ATTRIBUTE = "loc-teleports:warnings-off";
+/** Toggled trapdoor varbits a player has changed, by varbit name -> value; sent again at login. */
+const TOGGLED_ATTRIBUTE = "loc-teleports:toggled";
 /** The handler runs one tick after the arrival the captured ticks count from. */
 const HANDLER_TICK = 1;
 
@@ -53,6 +58,8 @@ let pluginApi = null;
 let entries = new Map();
 /** "id:op" -> trapdoor swap. */
 let swaps = new Map();
+/** "id:op" -> the varbit toggles of a per-player multiloc trapdoor for that option. */
+let toggles = new Map();
 
 const keyOf = (x, y, z, op) => `${x},${y},${z}:${op}`;
 /** A captured tick, counted from the click instead of the arrival. */
@@ -68,6 +75,15 @@ function loadEntries() {
 
 function loadSwaps() {
   return new Map(readDefinitions("loc-swaps.json").swaps.map((swap) => [`${swap.id}:${swap.op}`, swap]));
+}
+
+function loadToggles() {
+  const byKey = new Map();
+  for (const toggle of readDefinitions("loc-swaps.json").toggles ?? []) {
+    const key = `${toggle.id}:${toggle.op}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), toggle]);
+  }
+  return byKey;
 }
 
 function entryFor(object, clickType) {
@@ -121,8 +137,10 @@ function runSteps(player, steps, holdUntil) {
     constructor() { super(1, player, false); }
     execute() {
       tick++;
-      const moved = tick <= holdUntil && !player.getLocation().equals(start);
-      if (!player.isRegistered() || player.getHitpoints() <= 0 || player.getPrivateArea() !== privateArea || moved) {
+      // Until the move: the player walked off, or something else moved them into or out of an instance.
+      // After it, leaving an instance (Araxxor's lair) is the move itself, and the fade back in still plays.
+      const moved = tick <= holdUntil && (!player.getLocation().equals(start) || player.getPrivateArea() !== privateArea);
+      if (!player.isRegistered() || player.getHitpoints() <= 0 || moved) {
         this.stop();
         return;
       }
@@ -208,6 +226,41 @@ function swapLoc(player, object, swap) {
   runSteps(player, steps, swapTick);
 }
 
+function toggled(player) {
+  const value = player.getAttribute(TOGGLED_ATTRIBUTE);
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+/** The toggle this click plays: the option whose `from` state the player's varbit shows. */
+function toggleFor(player, object, clickType) {
+  const candidates = object ? toggles.get(`${object.getId()}:${clickType}`) : null;
+  if (!candidates) return null;
+  return candidates.find((toggle) => {
+    const id = varbitId(toggle.varbit);
+    return id != null && player.getPacketSender().getVarbit(id) === toggle.from;
+  }) ?? null;
+}
+
+/** A per-player trapdoor's Open or Close: the animation and sound, and the varbit, kept for the next login. */
+function toggleLoc(player, toggle) {
+  const { steps, at } = schedule();
+  const tick = fromClick(toggle.tick);
+  at(fromClick(toggle.animTick ?? toggle.tick), () => animateAndSound(player, toggle));
+  at(tick, () => {
+    player.getPacketSender().sendVarbit(varbitId(toggle.varbit), toggle.to);
+    player.setAttribute(TOGGLED_ATTRIBUTE, { ...toggled(player), [toggle.varbit]: toggle.to });
+  });
+  runSteps(player, steps, tick);
+}
+
+/** The client's copy of the toggled trapdoors, which a login starts without. */
+function restoreToggled(player) {
+  for (const [name, value] of Object.entries(toggled(player))) {
+    const id = varbitId(name);
+    if (id != null && Number.isInteger(value)) player.getPacketSender().sendVarbit(id, value);
+  }
+}
+
 function tied(player) {
   const value = player.getAttribute(TIED_ATTRIBUTE);
   return Array.isArray(value) ? value : [];
@@ -220,7 +273,17 @@ function meets(player, entry, requirement) {
   if (requirement.tied !== undefined) return tied(player).includes(entry.name);
   if (requirement.varbit !== undefined) return player.getPacketSender().getVarbit(requirement.varbit) >= (requirement.atLeast ?? 1);
   if (requirement.quest !== undefined) return questComplete(player, requirement.quest);
+  if (requirement.skill !== undefined) return player.getSkillManager().getCurrentLevel(core.Skill[requirement.skill.toUpperCase()]) >= requirement.atLeast;
+  if (requirement.slayerTask !== undefined) return onSlayerTask(player, requirement.slayerTask);
   return true;
+}
+
+/** Whether the player's Slayer task is one of `names` (araxyte or spider), as the Slayer plugin answers. */
+function onSlayerTask(player, names) {
+  const query = { player, task: null };
+  pluginApi.emitCustomEvent("slayer:current-task", query);
+  const task = String(query.task?.name ?? "").toLowerCase();
+  return names.some((name) => task.includes(name));
 }
 
 /** A quest the loc needs done (`{ quest: key }`), answered by the quest system. */
@@ -272,8 +335,9 @@ function warningOff(player, name) {
   return warningsOff(player).includes(name);
 }
 
-/** The client's copy of the warnings turned off, which a login starts without. */
-function restoreWarnings({ player }) {
+/** The client's copy of the warnings turned off and the toggled trapdoors, which a login starts without. */
+function restoreVarbits({ player }) {
+  restoreToggled(player);
   for (const name of warningsOff(player)) {
     const id = varbitId(name);
     if (id != null) player.getPacketSender().sendVarbit(id, 1);
@@ -312,6 +376,12 @@ function failedGate(player, entry) {
 
 /** Plays the entry or swap for this click, if there is one; true when it did. */
 function play(player, object, clickType) {
+  // A per-player trapdoor's closed Open and open Close; the open state's option 1 is its entry below.
+  const toggle = toggleFor(player, object, clickType);
+  if (toggle) {
+    toggleLoc(player, toggle);
+    return true;
+  }
   const entry = entryFor(object, clickType);
   if (entry) {
     if (entry.toggle) {
@@ -388,15 +458,17 @@ function claimDoorToggle(request) {
 module.exports = {
   name: "LocTeleports",
   description: "Handles ladders, stairs, caves and holes with no other handler from captured data, plus opening and closing trapdoors, with level, item and quest gates.",
-  _test: { entryFor, destinationFor, play, useItemOnLoc, claimDoorToggle, get entries() { return entries; }, get swaps() { return swaps; } },
+  _test: { entryFor, destinationFor, play, useItemOnLoc, claimDoorToggle, get entries() { return entries; }, get swaps() { return swaps; }, get toggles() { return toggles; }, TOGGLED_ATTRIBUTE },
   register(api) {
     core = api.core;
     pluginApi = api;
     entries = loadEntries();
     swaps = loadSwaps();
+    toggles = loadToggles();
     api.persistAttribute(TIED_ATTRIBUTE);
     api.persistAttribute(WARNINGS_OFF_ATTRIBUTE);
-    api.onPlayerLogin(restoreWarnings);
+    api.persistAttribute(TOGGLED_ATTRIBUTE);
+    api.onPlayerLogin(restoreVarbits);
     api.onObjectInteraction(useLoc);
     api.onObjectRoute(routeToLoc);
     api.onItemOnObject(useItemOnLoc);

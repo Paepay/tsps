@@ -16,10 +16,12 @@ const registerRondacheEffects = require("./effects/Rondache.EquipmentEffects");
 const registerOsmumtensFangEffects = require("./effects/OsmumtensFang.EquipmentEffects");
 const registerBrimstoneRingEffects = require("./effects/BrimstoneRing.EquipmentEffects");
 const registerRegenBraceletEffects = require("./effects/RegenBracelet.EquipmentEffects");
+const registerConflictionGauntletsEffects = require("./effects/ConflictionGauntlets.EquipmentEffects");
+const registerSmokeStaffEffects = require("./effects/SmokeStaves.EquipmentEffects");
 
 module.exports = {
   name: "EquipmentEffects",
-  description: "Worn-gear combat effects: Dharok's, obsidian, Inquisitor's, Justiciar, the Salve amulet, dragon hunter and demonbane gear, and similar sets.",
+  description: "Worn-gear combat effects: Dharok's, obsidian, Inquisitor's, Justiciar, the Salve amulet, dragon hunter and demonbane gear, the confliction gauntlets, the smoke staves' standard-spellbook bonus, and similar sets.",
   register(api) {
     registerDharoksArmourEffects(api);
     registerObsidianEffects(api);
@@ -39,5 +41,7 @@ module.exports = {
     registerRondacheEffects(api);
     registerOsmumtensFangEffects(api);
     registerBrimstoneRingEffects(api);
+    registerConflictionGauntletsEffects(api);
+    registerSmokeStaffEffects(api);
   },
 };

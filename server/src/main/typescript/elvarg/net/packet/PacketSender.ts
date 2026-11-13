@@ -181,7 +181,23 @@ export interface SubInterfaceMount {
 /** OSRS's worn-equipment inventory. */
 const WORN_INVENTORY_ID = 94;
 
+type CameraTarget = Parameters<typeof encodeCameraTarget>[0];
+export type CameraState = { mode: "follow" } | { mode: "target"; target: CameraTarget } | { mode: "controlled" };
+
 export class PacketSender {
+  // Last server-requested mode, not the client's unreported yaw/pitch or an
+  // in-flight cinematic position. Controlled scenes cannot be suspended safely.
+  private cameraState: CameraState = { mode: "follow" };
+  getCameraState(): CameraState {
+    return this.cameraState.mode === "target"
+      ? { mode: "target", target: { ...this.cameraState.target } } : { ...this.cameraState };
+  }
+  restoreCameraState(state: CameraState): this {
+    if (state.mode === "controlled") throw new Error("Cannot resume an in-flight camera scene");
+    this.sendCameraReset();
+    if (state.mode === "target") this.sendCameraTarget(state.target);
+    return this;
+  }
   /** Viewer-only slot customization, delivered after this viewer's NPC info. */
   sendNpcHeadIconSpecific(npc: NPC, slot: number, archive: number, frame: number): this {
     this.player.getSession()?.queueNpcSpecificEffect(npc,
@@ -1093,26 +1109,31 @@ export class PacketSender {
   }
 
   sendCameraShake(slot: number, randomAmplitude: number, sineAmplitude = 0, sineFrequency = 0): this {
+    // Shake is additive; starting or stopping an axis does not change the base camera mode.
     this.player.getSession().sendClientPacket(encodeCameraShake(slot, randomAmplitude, sineAmplitude, sineFrequency));
     return this;
   }
 
   sendCameraMoveTo(x: number, y: number, height: number, motion: boolean | CameraMovementOptions = true): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraMoveTo(x, y, height, motion));
     return this;
   }
 
   sendCameraLookAt(x: number, y: number, height: number, motion: boolean | CameraMovementOptions = true): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraLookAt(x, y, height, motion));
     return this;
   }
 
   sendCameraRotateBy(pitch: number, yaw: number, cycles: number, easing: CameraEasing = "linear"): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraRotateBy(pitch, yaw, cycles, easing));
     return this;
   }
 
   sendCameraRotateToCoordinate(x: number, y: number, height: number, cycles: number, easing: CameraEasing = "linear"): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraRotateToCoordinate(x, y, height, cycles, easing));
     return this;
   }
@@ -1120,11 +1141,13 @@ export class PacketSender {
   /** cam_moveto_arc: swings the camera to (x, y) around (centreX, centreY) over client cycles. */
   sendCameraMoveArc(centreX: number, centreY: number, x: number, y: number, height: number, cycles: number,
     easing: CameraEasing = "linear", ignoreTerrain = false): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraMoveArc(centreX, centreY, x, y, height, cycles, easing, ignoreTerrain));
     return this;
   }
 
   sendCameraUnlock(unlock: boolean): this {
+    // cam_unlock changes only the scripted pitch constraint, not follow/target/scene ownership.
     this.player.getSession().sendClientPacket(encodeCameraUnlock(unlock));
     return this;
   }
@@ -1136,6 +1159,7 @@ export class PacketSender {
   }
 
   sendCameraTranslate(dx: number, dy: number): this {
+    this.cameraState = { mode: "controlled" };
     this.player.getSession().sendClientPacket(encodeCameraTranslate(dx, dy));
     return this;
   }
@@ -1174,12 +1198,17 @@ export class PacketSender {
   sendCameraTarget(
     target: { x: number; y: number; level: number; cycles?: number } | { player: number } | { npc: number } | { worldEntity: number },
   ): this {
+    // A timed tile target interpolates from client-only camera coordinates.
+    // Keep it controlled until an explicit reset or untimed target replaces it.
+    this.cameraState = "cycles" in target && target.cycles !== undefined && target.cycles > 0
+      ? { mode: "controlled" } : { mode: "target", target: { ...target } };
     this.player.getSession().sendClientPacket(encodeCameraTarget(target));
     return this;
   }
 
   /** Resets the camera, ending any shake. */
   sendCameraReset(): this {
+    this.cameraState = { mode: "follow" };
     this.player.getSession().sendClientPacket(encodeCameraReset());
     return this;
   }
@@ -1529,10 +1558,6 @@ export class PacketSender {
     type = 1,
     options: Parameters<typeof encodeWidgetOpenSub>[3] = {}
   ): SubInterfaceMount {
-    const existing = this.subInterfaceTargets.get(groupId);
-    if (existing && existing.targetUid !== targetUid) {
-      this.player.getSession().sendClientPacket(encodeWidgetCloseSub(existing.targetUid));
-    }
     const mount = this.rememberSubInterface(targetUid, groupId, type);
     // A (re)mounted group starts with its cache text, so resend everything written to it.
     this.player.getFrameUpdater().clearGroup(groupId);
@@ -1546,8 +1571,15 @@ export class PacketSender {
     return mount;
   }
 
-  /** Include legacy native mounts without changing their packet or event sequence. */
+  /**
+   * Track a mount (the tab and chatbox paths too). A group lives at one target, so one still
+   * mounted at another is closed there first.
+   */
   private rememberSubInterface(targetUid: number, groupId: number, type: number): SubInterfaceMount {
+    const existing = this.subInterfaceTargets.get(groupId);
+    if (existing && existing.targetUid !== targetUid) {
+      this.player.getSession().sendClientPacket(encodeWidgetCloseSub(existing.targetUid));
+    }
     for (const [mountedGroupId, mounted] of this.subInterfaceTargets) {
       if (mounted.targetUid === targetUid) {
         this.subInterfaceTargets.delete(mountedGroupId);

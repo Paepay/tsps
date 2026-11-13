@@ -62,6 +62,7 @@ beforeEach(() => {
   Manager.offlinePlayerIds.clear();
   Manager.pendingJoins.clear();
   Manager.pendingSetups.clear();
+  Manager.systemProfiles.clear();
   online.length = 0;
   World.getPlayers = () => ({
     search: (match) => online.find(match),
@@ -218,6 +219,57 @@ test('the rejoin at login shows the join messages', () => {
   assert.match(member.texts(), /Now talking in chat-channel Blur/);
 });
 
+test('a system channel is joined by its name, wins over an account of that name and has no owner', () => {
+  // Live (rev 242): the Grouping tab's Shooting Stars channel, owner "osrs star cc", kick rank General.
+  // The cache writes the name with no-break spaces; a typed one has ordinary spaces or underscores.
+  Manager.registerSystemChannel('osrs star cc', { ownerName: 'osrs star cc', channelName: 'Stars', kickRank: FriendsChatRank.General });
+  const namesake = player('osrs star cc');
+  Manager.setOwnChannelName(namesake, 'Mine');
+  const member = player('Member');
+  const other = player('Other');
+  Manager.handleAction(member, { action: 'join', name: 'Osrs_Star_Cc' });
+  runTicks(2);
+  assert.equal(Manager.channelOf(member)?.name, 'Stars');
+  assert.equal(member.getRelations().getFriendsChatLastOwner(), 'osrs star cc', 'rejoined by the key');
+  assert.equal(Manager.join(namesake, 'osrs star cc', true), true);
+  assert.equal(Manager.channelOf(namesake)?.name, 'Stars', 'an account of the same name joins the system channel');
+  assert.equal(Manager.channelOf(namesake).rankOf(namesake), FriendsChatRank.Unranked, 'and is not its owner');
+  Manager.join(other, 'osrs star cc', false);
+  Manager.kick(member, 'Other');
+  assert.match(member.texts(), /You are not a high enough rank to kick from this chat-channel\./);
+  assert.equal(Manager.channelOf(other)?.name, 'Stars');
+});
+
+test('a system channel admits only whom it says, is rejoined at login, and its end removes everyone', () => {
+  const allowed = player('Allowed');
+  const stranger = player('Stranger');
+  const added = [];
+  const announce = Manager.memberAdded;
+  Manager.memberAdded = (member, key) => added.push([member.getUsername(), key]);
+  try {
+    Manager.registerSystemChannel('#group-1', { ownerName: 'Allowed', channelName: 'Group', admits: (p) => p === allowed });
+    assert.equal(Manager.join(stranger, '#group-1', true), false);
+    assert.match(stranger.texts(), /You are not allowed to join this user's chat-channel\./);
+    assert.equal(Manager.join(allowed, '#group-1', true), true);
+    assert.deepEqual(added, [['Allowed', '#group-1']]);
+    assert.equal(Manager.channelOf(allowed)?.name, 'Group');
+
+    Manager.onLogout(allowed);
+    Manager.offlinePlayerIds.delete(allowed.getIndex());
+    Manager.onLogin(allowed);
+    assert.equal(Manager.channelOf(allowed)?.key, '#group-1', 'a login rejoins it by its key');
+
+    Manager.registerSystemChannel('#group-1', { ownerName: 'Someone Else', channelName: 'Group', admits: () => true });
+    assert.equal(Manager.channelByKey('#group-1').ownerName, 'Someone Else', 'an update reaches the open channel');
+    Manager.removeSystemChannel('#group-1');
+    assert.equal(Manager.channelOf(allowed), null);
+    assert.match(allowed.texts(), /You have been removed from this channel\./);
+    assert.equal(Manager.join(allowed, '#group-1', true), false, 'an ended system channel does not exist');
+  } finally {
+    Manager.memberAdded = announce;
+  }
+});
+
 test('the social tab mounts side_channels with the chat-channel inside it', () => {
   const opens = (packets) => packets.map((packet) => packet.toString('hex'));
   const bootstrap = opens(encodeGameframeBootstrap('Someone', 161));
@@ -226,11 +278,17 @@ test('the social tab mounts side_channels with the chat-channel inside it', () =
   assert.ok(bootstrap.includes(inner), 'the login mounts the same content');
 });
 
-function panel() {
+function panel({ members = true } = {}) {
   const hooks = { custom: new Map() };
   const plugin = require('../plugins/interface/SideChannels.plugin.js');
   plugin.register({
+    core: {
+      // Enum 850 as the cache has it: activity -> suggested world (-1 for none).
+      CacheDefinitions: { getEnumValues: (id) => (id === 850 ? new Map([[1, 306], [5, 334], [7, -1]]) : new Map()) },
+      WorldDefinition: { isMembersWorld: () => members },
+    },
     persistAttribute() {},
+    onPlayerLogin: (hook) => { hooks.login = hook; },
     onInterfaceActionClick: (hook) => { hooks.click = hook; },
     onCustomEvent: (name, hook) => hooks.custom.set(name, hook),
   });
@@ -243,10 +301,24 @@ function panel() {
       sendVarbit(id, value) { sent.push(['varbit', id, value]); return this; },
       sendSubInterface: (uid, group) => sent.push(['mount', uid >>> 16, uid & 0xffff, group]),
       sendInterfaceFlagsRange: (uid, from, to, flags) => sent.push(['flags', uid >>> 16, uid & 0xffff, from, to, flags]),
+      sendContentData(source, datasets) { sent.push(['content', source, datasets]); return this; },
+      sendClientScript(id, ...args) { sent.push(['script', id, ...args]); return this; },
     }),
   };
   return { hooks, sent, someone };
 }
+
+test("Grouping's Switch world button never shows: one world, so no activity suggests another", () => {
+  for (const members of [true, false]) {
+    const { hooks, sent, someone } = panel({ members });
+    hooks.login({ player: someone });
+    assert.deepEqual(sent, [
+      ['content', 'grouping-tab', [{ key: 'enumOverrides', rows: [{ enumId: 850, valueType: 'I', defaultValue: -1, entries: [[1, -1], [5, -1], [7, -1]] }] }]],
+      // Live's playermember (828) as the social tab mounts: script 435 then reads Castle Wars from the enum too.
+      ['script', 828, members ? 1 : 0],
+    ]);
+  }
+});
 
 test('each tab button selects its tab, as live does', () => {
   const { hooks, sent, someone } = panel();
@@ -257,7 +329,8 @@ test('each tab button selects its tab, as live does', () => {
     assert.equal(event.handled, true);
     assert.deepEqual(sent[0], ['varbit', 13071, tab]);
     assert.deepEqual(sent[1], ['mount', 707, 7, group]);
-    if (group === 76) assert.deepEqual(sent[2], ['flags', 76, 30, 0, 27, 2]);
+    // Live (rev 242): op1 on the Teleport and world-hop buttons, slots 0-30.
+    if (group === 76) assert.deepEqual(sent.slice(2), [['flags', 76, 32, 0, 30, 2], ['flags', 76, 26, 0, 30, 2]]);
   }
   const other = { player: someone, groupId: 7, childId: 3 };
   hooks.click(other);
@@ -537,7 +610,75 @@ test('social list toggles synchronize the cache icon state without changing othe
   assert.equal(mounts.length, before);
   sender.sendVarbit(6516, 1);
   Manager.onLogin(p);
-  assert.equal(sender.getVarbit(6516), 0, 'bootstrap always mounts Friends429 on login');
+  assert.equal(sender.getVarbit(6516), 0, 'login matches the bootstrap mount of Friends429');
   assert.equal(sender.getVarp(1055), unrelated);
   assert.equal(mounts.length, before, 'login does not add a competing panel mount');
+});
+
+// rsprox_transcripts/227/00242.txt: a player who left on the ignore list logs in with friends_panel 1
+// and ignore (432) in side9, and gets it again when the gameframe is mounted after the welcome screen.
+test('the social tab logs in on the list last shown', async () => {
+  const { CachePipeline } = require('../dist/game/cache/CachePipeline');
+  const { Player } = require('../dist/game/entity/impl/player/Player');
+  await CachePipeline.initialize(require('node:path').resolve(__dirname, '..'));
+  const hooks = new Map();
+  const persisted = new Map();
+  const api = new Proxy({}, {
+    get: (_, name) => {
+      if (name === 'onCustomEvent') return (event, hook) => hooks.set(event, [...(hooks.get(event) ?? []), hook]);
+      if (name === 'persistAttribute') return (key, fallback) => persisted.set(key, fallback);
+      return () => {};
+    },
+  });
+  require('../plugins/interface/FriendsList.plugin.js').register(api);
+  const { FRIENDS_PANEL_ATTRIBUTE } = require('../plugins/interface/FriendsChatManager');
+  assert.equal(persisted.get(FRIENDS_PANEL_ATTRIBUTE), 0, 'the choice is saved with the character');
+  const fire = (event, payload) => (hooks.get(event) ?? []).forEach((hook) => hook(payload));
+
+  const p = new Player(null);
+  p.getSession = () => ({ sendClientPacket: () => true });
+  const sender = p.getPacketSender();
+  const mounts = [];
+  const mount = sender.sendSubInterface.bind(sender);
+  sender.sendSubInterface = (...args) => { mounts.push(args); return mount(...args); };
+  assert.equal(Manager.handleWidgetAction(p, 429, 1, 'View ignore list', 1), true);
+  assert.equal(p.getAttribute(FRIENDS_PANEL_ATTRIBUTE), 1);
+
+  for (const [event, payload] of [
+    ['player:bootstrap-complete', { player: p }],
+    ['gameframe:ready', { player: p }],
+    ['gameframe:tab-mounted', { player: p, group: 429 }],
+  ]) {
+    sender.sendVarbit(6516, 0);
+    mounts.length = 0;
+    fire(event, payload);
+    assert.equal(sender.getVarbit(6516), 1, `${event} restores the ignore list's icon`);
+    assert.deepEqual(mounts, [[(161 << 16) | 85, 432, 1]], `${event} mounts the ignore list over Friends429`);
+  }
+  mounts.length = 0;
+  fire('gameframe:tab-mounted', { player: p, group: 707 });
+  assert.deepEqual(mounts, [], 'another tab mounting leaves the social tab alone');
+
+  assert.equal(Manager.handleWidgetAction(p, 432, 1, 'View friends list', 1), true);
+  assert.equal(p.getAttribute(FRIENDS_PANEL_ATTRIBUTE), 0);
+  mounts.length = 0;
+  sender.sendVarbit(6516, 0);
+  fire('player:bootstrap-complete', { player: p });
+  fire('gameframe:ready', { player: p });
+  assert.deepEqual(mounts, [], 'a player who left on Friends keeps the bootstrap mount');
+  assert.equal(sender.getVarbit(6516), 0);
+});
+
+test('an offline owner channel is read from the character this world logs in (the league one on a league world)', (t) => {
+  const { MAIN_PROFILE, LEAGUE_PROFILE } = require('../dist/game/entity/impl/player/persistence/PlayerProfile');
+  const loads = [];
+  GameConstants.PLAYER_PERSISTENCE = { requestSave() {}, load: (name, profile) => { loads.push([name, profile]); return null; } };
+  const world = GameConstants.WORLD_PROFILE;
+  t.after(() => { GameConstants.WORLD_PROFILE = world; });
+  const owner = { key: 'owner', display: 'Owner' };
+  GameConstants.WORLD_PROFILE = LEAGUE_PROFILE;
+  assert.equal(Manager.loadOwnerProfile(owner), undefined);
+  GameConstants.WORLD_PROFILE = MAIN_PROFILE;
+  Manager.loadOwnerProfile(owner);
+  assert.deepEqual(loads, [['Owner', LEAGUE_PROFILE], ['Owner', MAIN_PROFILE]]);
 });

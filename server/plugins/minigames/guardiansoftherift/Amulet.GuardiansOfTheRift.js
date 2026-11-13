@@ -20,13 +20,24 @@ const NO_SPACE = "9nafop";
 const RECLAIM = "xm3rMD";
 const EXCHANGE = "HnwS8y";
 
+/**
+ * Wiki (Amulet of the Eye): "If the amulet was recoloured before it was destroyed, then it will still be recoloured
+ * when it is reclaimed." The last colour seen on the player is kept (index into AMULETS).
+ */
+const COLOUR_ATTRIBUTE = "guardians-of-the-rift:amulet-colour";
+
 function owns(player) {
   const { Bank } = Shared.core();
-  return AMULETS.some(name => {
+  const index = AMULETS.findIndex(name => {
     const id = Shared.obj(name);
     return player.getInventory().contains(id) || player.getEquipment().contains(id)
       || player.getBanks().some((bank, tab) => tab !== Bank.BANK_SEARCH_TAB_INDEX && bank?.contains(id));
   });
+  if (index >= 0) player.setAttribute(COLOUR_ATTRIBUTE, index);
+  return index >= 0;
+}
+function noteColour({ player }) {
+  if (player?.getInventory && player.getBanks) owns(player);
 }
 function questDone(player) {
   const request = { player, key: QUEST_KEY, complete: false };
@@ -59,7 +70,8 @@ function action(event) {
     return;
   }
   if (exchange) inventory.deleteNumber(locket, 1);
-  const amulet = Shared.obj(AMULETS[0]);
+  const colour = exchange ? 0 : Number(player.getAttribute(COLOUR_ATTRIBUTE)) || 0;
+  const amulet = Shared.obj(AMULETS[colour] ?? AMULETS[0]);
   inventory.adds(amulet, 1);
   if (exchange) Records.setSetting(player, UNLOCK, 1);
   event.box = { items: exchange ? [locket, amulet] : [amulet] };
@@ -80,7 +92,7 @@ function teleport(player) {
   if (!TeleportHandler.checkReqs(player, target)) return;
   // Leave the game on arrival, as walking out through the barrier does: a teleport from inside the
   // rift does not always pass the temple Area's postLeave (the arrival, by the portal, is south of it).
-  TeleportHandler.teleport(player, target, TeleportType.NORMAL, false, () => Game.leave(player));
+  TeleportHandler.confirm(player, target, () => TeleportHandler.teleport(player, target, TeleportType.NORMAL, false, () => Game.leave(player)));
 }
 function wornOption(event) {
   const { CacheDefinitions, Equipment } = Shared.core();
@@ -104,6 +116,9 @@ module.exports = {
     api.onCustomEvent("npc-dialogue:action", action);
     api.onItemOnNpc(locketOnGuide);
     api.onItemAction(amuletAction);
+    api.persistAttribute(COLOUR_ATTRIBUTE);
+    api.onCustomEvent("equipment:changed", noteColour);
+    api.onPlayerLogin(noteColour);
     api.onItemAction("Tarnished locket", { Inspect: inspectLocket });
   },
 };

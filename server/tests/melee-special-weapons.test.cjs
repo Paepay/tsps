@@ -284,7 +284,32 @@ test("Dragon Hasta Unleash scales accuracy 5% and damage 2.5% per 5% of energy s
     assert.ok(Math.abs(traits.accuracyMultiplier - accuracy) < 1e-9, `${energy}%: accuracy x${accuracy}`);
     assert.ok(Math.abs(traits.damageMultiplier - damage) < 1e-9, `${energy}%: damage x${damage}`);
     assert.equal(traits.meleeAttackBonusIndex, 0, "rolls against stab defence");
-    assert.equal(traits.ignoreProtectionPrayer, true);
+    hasta.getCombatMethod().handleAfterHitEffects({ isAccurate: () => false, getAttacker: () => attacker });
+  }
+});
+
+test("Dragon Hasta Unleash damage scaling is integral: 80% energy on a 45 max hit is 63", () => {
+  const { DamageFormulas } = require("../dist/game/content/combat/formula/DamageFormulas");
+  const hasta = special("dragon_hasta");
+  const attacker = fakeFighter({ special: 80 });
+  attacker.getCombatSpecial = () => hasta;
+  hasta.getCombatMethod().start(attacker, fakeTarget());
+  const traits = CombatSpecial.activeTraitsFor(attacker);
+  // floor(45 * 1.4); in floats 45 * (1 + 80 * 0.005) is 62.99999999999999.
+  assert.equal(DamageFormulas.applyDamageMultiplierTraits(45, traits, 1), 63);
+  hasta.getCombatMethod().handleAfterHitEffects({ isAccurate: () => false, getAttacker: () => attacker });
+});
+
+// Wiki: Unleash "ignores the 40% damage reduction from Protect from Melee" (a player's prayer); a demonic
+// gorilla's prayers "cannot be bypassed with special attacks".
+test("Dragon Hasta Unleash ignores a player's Protect from Melee, not an NPC's protection prayer", () => {
+  const hasta = special("dragon_hasta");
+  for (const [target, ignores] of [[fakeFighter(), true], [fakeTarget(), false]]) {
+    const attacker = fakeFighter();
+    attacker.getCombatSpecial = () => hasta;
+    attacker.getCombat = () => ({ setAttackDelay() {}, getTarget: () => target });
+    hasta.getCombatMethod().start(attacker, target);
+    assert.equal(CombatSpecial.activeTraitsFor(attacker).ignoreProtectionPrayer, ignores, target.isPlayer() ? "a player" : "an NPC");
     hasta.getCombatMethod().handleAfterHitEffects({ isAccurate: () => false, getAttacker: () => attacker });
   }
 });

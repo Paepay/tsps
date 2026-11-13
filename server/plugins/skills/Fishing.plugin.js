@@ -127,7 +127,7 @@ class FishingTool {
     id, level, animation, loopAnimation = animation, catchAnimation = null, fish, variants, bait = [], worn = [], quest = null, multi = false,
     requires = [], interval = FISHING_ACTION_INTERVAL_TICKS, firstRoll = null, animateOnRoll = true, unboostable = false, spot = null,
     vessel = null, stationary = false, startMessage = "You begin to fish..", followMessage = null, missMessage = null,
-    noToolStatement = null, noBaitStatement = null, noToolMessage = null, levelStatement = null, table = null, barehand = false,
+    noToolStatement = null, noBaitStatement = null, noToolMessage = null, levelStatement = null, table = null, barehand = false, clueBase = null,
   }) {
     this.id = id;
     this.level = level;
@@ -143,6 +143,7 @@ class FishingTool {
     this.requires = requires;
     this.interval = interval;
     this.firstRoll = firstRoll;
+    this.clueBase = clueBase;
     this.animateOnRoll = animateOnRoll;
     this.unboostable = unboostable;
     this.spot = spot;
@@ -470,10 +471,13 @@ const SPOT_TOOLS_BY_OPTIONS = new Map([
 ]);
 
 const FROG_SPAWN_AND_EELS = { "Small Net": TOOLS.FROG_SPAWN_NET, Net: TOOLS.FROG_SPAWN_NET, Bait: TOOLS.CAVE_EEL_ROD };
+const CAMDOZAAL_FISHING_SPOTS = [10686, 10687, 10688]; // cache camdozaal_fishingspot_1/2/3, Wiki Fishing spot (Camdozaal)
+const CAMDOZAAL_TOOLS = require("./fishing/Camdozaal.Fishing")(Fish, FishingTool, ItemIds);
 
 // Option lists that mean different fish at different spots, so they go by id. Spot types are
 // the Wiki's "Fishing spot (...)" pages, which list each type's ids.
 const SPOT_TOOLS_BY_NPC = new Map([
+  ...CAMDOZAAL_FISHING_SPOTS.map(id => [id, CAMDOZAAL_TOOLS]),
   // Tutorial Island's shrimp pond only offers "Net".
   [NpcIds.FISHING_SPOT_43, { Net: TOOLS.NET }],
   // Lumbridge Swamp's small net/bait spot labels its net "Net".
@@ -547,10 +551,22 @@ function getSpotTool(npcId, definition, clickType, player = null) {
   const tools = SPOT_TOOLS_BY_NPC.get(npcId) ??
     SPOT_TOOLS_BY_OPTIONS.get(actions.filter(Boolean).join("/"));
   const tool = option ? tools?.[option] : undefined;
-  // No harpoon carried or wielded: the harpoon option falls back to Barbarian barehanding.
-  if (tool === TOOLS.SHARK_HARPOON && player && !hasHarpoon(player)) return TOOLS.BAREHAND_SHARK;
-  if (tool === TOOLS.HARPOON && player && !hasHarpoon(player)) return TOOLS.BAREHAND_HARPOON;
+  // No harpoon carried or wielded: the harpoon option falls back to Barbarian barehanding, once
+  // Otto has taught it (otherwise the harpoon's own "no harpoon" refusal).
+  if (tool === TOOLS.SHARK_HARPOON && player && !hasHarpoon(player) && barehandTaught(player)) return TOOLS.BAREHAND_SHARK;
+  if (tool === TOOLS.HARPOON && player && !hasHarpoon(player) && barehandTaught(player)) return TOOLS.BAREHAND_HARPOON;
   return tool;
+}
+
+/**
+ * "fishing:barehand-unlocked" { player, allowed }: Barbarian Training answers whether Otto has
+ * set the harpoon section (Wiki: Barbarian Training#Barehanded fishing). No answer locks it: the
+ * members-only Barbarian Training isn't loaded on a free world.
+ */
+function barehandTaught(player) {
+  const request = { player, allowed: null };
+  pluginApi?.emitCustomEvent("fishing:barehand-unlocked", request);
+  return request.allowed === true;
 }
 
 function hasHarpoon(player) {
@@ -742,12 +758,15 @@ function rollCatch(player, tool, random = Math.random, bonus = 100) {
   if (tool.table) return random() < catchChance(level, tool.table, bonus) ? rollTable(tool.table, random) : [];
   const caught = [];
   for (const fish of tool.fish) {
+    if (!WorldDefinition.isMembersWorld() && CacheDefinitions.getItem(fish.id)?.isMembers === true) continue;
     if (getFishingLevel(player) < fish.level || !meetsLevels(player, fish.requires)) {
       continue;
     }
     const charted = rollsFor(player, fish);
     for (let roll = 0; roll < charted.rolls.length; roll++) {
-      if (random() < catchChance(level, charted, bonus, roll)) {
+      const chanceRequest = { player, toolId: tool.id, itemId: fish.id, chance: catchChance(level, charted, bonus, roll) };
+      pluginApi?.emitCustomEvent("fishing:catch-chance", chanceRequest);
+      if (random() < Math.max(0, Math.min(1, chanceRequest.chance))) {
         caught.push(fish);
         if (!tool.multi) {
           return caught;
@@ -848,7 +867,7 @@ function landCatch(player, tool, variant, caught, spotId = null) {
   // The park uses its own base even though its successful catches are labelled junk.
   if (spotId !== NpcIds.FISHING_SPOT_43) {
     const clueFish = landed.find(({ kind }) => CLUE_BOTTLE_FISH.has(kind))?.kind;
-    const clueBase = landed.length && tool === TOOLS.PARK_NET ? PARK_CLUE_BASE : clueFish?.petBase;
+    const clueBase = landed.length ? tool.clueBase ?? (tool === TOOLS.PARK_NET ? PARK_CLUE_BASE : clueFish?.petBase) : null;
     if (clueBase > 0) ClueBottles.rollClueBottles(player, clueBase);
   }
 
@@ -1012,7 +1031,9 @@ class FishingTask extends Task {
       if (session.tool.spot?.takesCatch(player, npc)) {
         continue;
       }
-      const stopAfterCatch = landCatch(player, session.tool, variant, caught, session.npcId);
+      const catchRequest = { player, npcId: session.npcId, caught };
+      pluginApi.emitCustomEvent("fishing:catch", catchRequest);
+      const stopAfterCatch = landCatch(player, session.tool, variant, catchRequest.caught, session.npcId);
 
       // ponytail: spots without their own movement still stop at random instead of moving. A full
       // inventory waits for the next tick's check, which says so.
@@ -1031,6 +1052,20 @@ let activeSessionsRef = null;
 
 function isFishingActive(player) {
   return activeSessionsRef?.has(player) === true;
+}
+
+/**
+ * An inventory item action (eat, drink, drop...) clears the interaction and ends fishing; worn
+ * items' actions don't (osrs-docs: Entity Interactions - Interruptions). The new action's
+ * animation is kept.
+ */
+function interruptFishingForInteraction({ player }) {
+  stopFishing(activeSessionsRef, player, false);
+}
+
+/** An accepted emote replaces fishing while keeping the emote's animation. */
+function interruptFishingForEmote({ player }) {
+  stopFishing(activeSessionsRef, player, false);
 }
 
 function pauseFishing(event) {
@@ -1061,6 +1096,8 @@ module.exports = {
       stopFishing(activeSessions, player, false);
     });
     api.onCustomEvent("level-up:popup-opened", pauseFishing);
+    api.onCustomEvent("player:interaction-cleared", interruptFishingForInteraction);
+    api.onCustomEvent("player:emote", interruptFishingForEmote);
 
     // Returning false leaves spots this plugin doesn't fish (aerial...) to others.
     function startFishingInteraction(event) {

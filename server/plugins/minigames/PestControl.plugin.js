@@ -37,7 +37,18 @@ const GAME_OVERLAY = 408;
 const ACTIVITY_VARBIT = 5662;
 const OUTPOST = new Boundary(2626, 2682, 2632, 2681, 0);
 const GAME_BOUNDS = new Boundary(2616, 2691, 2556, 2624, 0);
+/**
+ * Where a player off the island stands when no boat is known (a login inside the game bounds).
+ * Everyone else goes back to their own boat's `returnLocation`: the jetty tile by its gangplank,
+ * where the lander ladder, the Squire's Leave and the end of a game all put them (rsprox
+ * captures: docs/pest-control.md).
+ */
 const OUTPOST_RETURN = new Location(2657, 2639, 0);
+/** The in-game Squire's conversation (generated npc-dialogues.json page and variant). */
+const MATCH_SQUIRE_DIALOGUE = { page: "Squire (Void Knights)", variant: "minigame-dialogue-standard-dialogue" };
+/** That conversation's "I want to leave." action step ("The player is taken back to the Void Knights' Outpost."). */
+const MATCH_SQUIRE_LEAVE_STEP = "nMpuCa";
+const LEAVE_LANDER_MESSAGE = "You leave the lander.";
 const GAME_START = new Location(2657, 2611, 0);
 const KNIGHT_LOCATION = new Location(2656, 2592, 0);
 const GAME_SQUIRE_LOCATION = new Location(2655, 2607, 0);
@@ -52,6 +63,8 @@ const MAX_PESTS = 100;
 const MIN_REWARD_ACTIVITY = 1;
 const MAX_ACTIVITY = 100;
 const ATTR_WAITING_BOAT = "pest-control:waiting-boat";
+/** This minigame's name to the Grouping plugin ("grouping:activity", "grouping:members"). */
+const GROUPING_ACTIVITY = "Pest Control";
 
 const BOATS = [
   {
@@ -62,6 +75,7 @@ const BOATS = [
     gangplankId: ObjectIdentifiers.GANGPLANK_27,
     exitId: ObjectIdentifiers.LADDER_175,
     waitingLocation: new Location(2661, 2639, 0),
+    returnLocation: new Location(2657, 2639, 0),
     waitingBounds: new Boundary(2660, 2663, 2638, 2643, 0),
     squireId: NpcIdentifiers.SQUIRE_NOVICE_,
     portalHp: 200,
@@ -87,6 +101,7 @@ const BOATS = [
     gangplankId: ObjectIdentifiers.GANGPLANK_48,
     exitId: ObjectIdentifiers.LADDER_326,
     waitingLocation: new Location(2640, 2644, 0),
+    returnLocation: new Location(2644, 2644, 0),
     waitingBounds: new Boundary(2638, 2641, 2642, 2647, 0),
     squireId: NpcIdentifiers.SQUIRE_INTERMEDIATE_,
     portalHp: 250,
@@ -112,6 +127,7 @@ const BOATS = [
     gangplankId: ObjectIdentifiers.GANGPLANK_49,
     exitId: ObjectIdentifiers.LADDER_327,
     waitingLocation: new Location(2634, 2653, 0),
+    returnLocation: new Location(2638, 2653, 0),
     waitingBounds: new Boundary(2632, 2635, 2651, 2656, 0),
     squireId: NpcIdentifiers.SQUIRE_VETERAN_,
     portalHp: 250,
@@ -325,6 +341,41 @@ function botsNeeded(queueLength) {
   return Math.max(0, MAX_PLAYERS - queueLength);
 }
 
+/** Tells the Grouping plugin how many players a lander takes. */
+function announceToGrouping() {
+  pluginApi.emitCustomEvent("grouping:activity", { name: GROUPING_ACTIVITY, maxSize: MAX_PLAYERS });
+}
+
+/** The player's group (from the Grouping plugin), or 0 for none or for a group too big for a lander. */
+function boardingGroupOf(player) {
+  const request = { player, activity: GROUPING_ACTIVITY, maxSize: MAX_PLAYERS };
+  pluginApi.emitCustomEvent("grouping:members", request);
+  return request.groupId && request.fits !== false ? request.groupId : 0;
+}
+
+/**
+ * Who leaves on a departing lander, in waiting order. With room for everyone, everyone. Otherwise
+ * the first MAX_PLAYERS, except that a group's waiting members board or wait together, at the place
+ * of the first of them to board: a group that doesn't fit in the seats left waits for the next
+ * lander, and later players who fit take those seats. Should that leave too few to play, the
+ * lander takes the first MAX_PLAYERS as it would without groups.
+ */
+function boardingParty(queue) {
+  if (queue.length <= MAX_PLAYERS) return queue.slice();
+  const groupIds = new Map(queue.map((player) => [player, boardingGroupOf(player)]));
+  const boarding = new Set();
+  const decided = new Set();
+  for (const player of queue) {
+    const groupId = groupIds.get(player);
+    if (decided.has(groupId)) continue;
+    if (groupId) decided.add(groupId);
+    const together = groupId ? queue.filter((other) => groupIds.get(other) === groupId) : [player];
+    if (boarding.size + together.length <= MAX_PLAYERS) together.forEach((member) => boarding.add(member));
+  }
+  if (boarding.size < MIN_PLAYERS) return queue.slice(0, MAX_PLAYERS);
+  return queue.filter((player) => boarding.has(player));
+}
+
 function adoptPendingBots(state, players) {
   for (const bot of players) {
     if (bot.isPlayerBot?.() !== true
@@ -347,10 +398,10 @@ function logoutBot(player) {
   player.requestLogout();
 }
 
-function releaseMatchPlayer(player, area) {
+function releaseMatchPlayer(player, area, boat) {
   if (player.isPlayerBot?.() === true) return logoutBot(player);
   area.leave(player, false);
-  player.moveTo(OUTPOST_RETURN.clone());
+  player.moveTo(boat.returnLocation.clone());
 }
 
 function cleanupMatchNpcs(npcs, world) {
@@ -585,7 +636,7 @@ class PestControlMatch {
     if (!this.players.has(player)) return;
     this.players.delete(player);
     this.bots.delete(player);
-    if (logout) player.setLocation(OUTPOST_RETURN.clone());
+    if (logout) player.setLocation(this.boat.returnLocation.clone());
     if (!this.ended && this.players.size === 0) this.finish(false, "All players left the island.");
   }
 
@@ -904,7 +955,7 @@ class PestControlMatch {
       closeOverlay(player);
       player.setAttribute("pest-control:match", null);
       this.players.delete(player);
-      releaseMatchPlayer(player, this.area);
+      releaseMatchPlayer(player, this.area, this.boat);
     }
     this.bots.clear();
     this.cleanupStructures();
@@ -999,7 +1050,9 @@ function createPestControl(api) {
       },
       launch() {
         if (this.queue.length < MIN_PLAYERS) return;
-        const players = this.queue.splice(0, MAX_PLAYERS);
+        const players = boardingParty(this.queue);
+        const boarding = new Set(players);
+        this.queue = this.queue.filter((player) => !boarding.has(player));
         for (const player of players) player.setAttribute(ATTR_WAITING_BOAT, null);
         this.countdown = LANDER_WAIT_TICKS;
         const match = new PestControlMatch(boat, players, (finished) => matches.delete(finished));
@@ -1066,7 +1119,8 @@ function createPestControl(api) {
     }
     const exitBoat = boatByExit.get(event.objectId);
     if (exitBoat && event.player.getArea?.() === stateByBoat.get(exitBoat.key).area) {
-      event.player.moveTo(OUTPOST_RETURN.clone());
+      event.player.getPacketSender().sendTypedMessage(api.core.ChatType.SPAM, LEAVE_LANDER_MESSAGE);
+      event.player.moveTo(exitBoat.returnLocation.clone());
       event.handled = true;
       return;
     }
@@ -1078,6 +1132,7 @@ function createPestControl(api) {
   api.onInterfaceActionButton(Rewards.CONFIRM_UID, Rewards.confirmReward);
   api.onNpcInteraction("Squire", { "Talk-to": talkToMatchSquire, Leave: leaveMatch });
   api.onCustomEvent("escape-crystal:escape", escapeCrystal);
+  api.onCustomEvent("npc-dialogue:action", squireDialogueLeave);
 
   api.onCanAttack((event) => {
     const player = event.attacker?.getAsPlayer?.();
@@ -1109,8 +1164,11 @@ function createPestControl(api) {
 
   // Players whose death began in a match. A game that ends during the death animation moves them to the outpost and
   // clears the match, and the death then dropped their items there: Pest Control is a safe minigame (as LMS guards).
+  // Every death starts here, so one begun outside a match drops a mark an earlier death left (a death another hook
+  // handled first, or one that never finished): only the death that began in the game is safe.
   api.onPlayerBeforeDeath((event) => {
     if (event.player.getAttribute?.("pest-control:match") instanceof PestControlMatch) dyingInMatch.add(event.player);
+    else dyingInMatch.delete(event.player);
   });
 
   api.onPlayerDeath((event) => {
@@ -1159,15 +1217,35 @@ function exchangeRewards({ player }) {
 function talkToMatchSquire({ player, npc }) {
   const match = player.getAttribute?.("pest-control:match");
   if (!(match instanceof PestControlMatch) || npc !== match.squire) return false;
-  player.sendMessage("Destroy the portals while keeping the Void Knight alive.");
+  pluginApi.emitCustomEvent("npc-dialogue:start", { player, npc, npcId: npc.getId(), variant: MATCH_SQUIRE_DIALOGUE });
+}
+
+/**
+ * Off the island to the player's own boat's jetty, a tick after the order (rsprox captures: the
+ * Leave option teleports the tick after the arrival tick, "I want to leave." the tick after the
+ * last line closes; neither sends a message).
+ */
+function leaveIslandNextTick(player, match) {
+  pluginApi.core.TaskManager.submit(new pluginApi.core.CountdownTask(player, 1, () => {
+    if (player.getAttribute?.("pest-control:match") !== match || !match.players.has(player)) return;
+    match.area.leave(player, false);
+    player.moveTo(match.boat.returnLocation.clone());
+  }));
 }
 
 function leaveMatch({ player, npc }) {
   const match = player.getAttribute?.("pest-control:match");
   if (!(match instanceof PestControlMatch) || npc !== match.squire) return false;
-  player.sendMessage("You leave the island before the battle is over.");
-  match.area.leave(player, false);
-  player.moveTo(OUTPOST_RETURN.clone());
+  leaveIslandNextTick(player, match);
+}
+
+/** The in-game Squire's "I want to leave." ends with the island left, as his Leave option does. */
+function squireDialogueLeave(action) {
+  if (action.stepId !== MATCH_SQUIRE_LEAVE_STEP) return;
+  const match = action.player?.getAttribute?.("pest-control:match");
+  if (!(match instanceof PestControlMatch)) return;
+  action.handled = true;
+  leaveIslandNextTick(action.player, match);
 }
 
 /**
@@ -1180,7 +1258,7 @@ function escapeCrystal(request) {
   if (!(match instanceof PestControlMatch)) return;
   request.handled = true;
   match.area.leave(request.player, false);
-  request.player.moveTo(OUTPOST_RETURN.clone());
+  request.player.moveTo(match.boat.returnLocation.clone());
   request.escaped = true;
 }
 
@@ -1197,6 +1275,7 @@ module.exports = {
     Rewards.initRewards(api);
     api.registerNpcCombatMethodProvider(DEFILER_IDS, DefilerCombatMethod);
     api.registerNpcCombatMethodProvider(TORCHER_IDS, TorcherCombatMethod);
+    api.onServerStartup(announceToGrouping);
     createPestControl(api);
   },
   _test: {
@@ -1206,6 +1285,7 @@ module.exports = {
     choosePortalOrder,
     clampActivity,
     botsNeeded,
+    boardingParty,
     moveBetweenAreas,
     adoptPendingBots,
     chooseDefenceTarget: Bots.chooseDefenceTarget,
@@ -1216,6 +1296,9 @@ module.exports = {
     gateGroupKey,
     escapeCrystal,
     releaseMatchPlayer,
+    talkToMatchSquire,
+    leaveMatch,
+    squireDialogueLeave,
     cleanupMatchNpcs,
     resetStructures,
     constants: {

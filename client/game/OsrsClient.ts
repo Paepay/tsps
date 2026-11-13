@@ -8,7 +8,7 @@ import { initializeWidgetItemModel } from "../widgets/WidgetItemModel";
 import { LISTENED_CLAN_TYPE, OWN_CLAN_TYPE } from "../common/social/Clans";
 import type { MinimapGeometry, SceneGeometry } from "./scene/SceneGeometry";
 import { vec3 } from "gl-matrix";
-import { closeOpenModal } from "./widgets/input/widgetKeyboardInput";
+import { closeOpenModal, hasOpenModal } from "./widgets/input/widgetKeyboardInput";
 import { getNpcMenuActions } from "./menu/WorldMenuBuilder";
 import { handleCommandShortcut } from "./chat/commandShortcuts";
 
@@ -55,6 +55,7 @@ import {
     VARBIT_ACTIVE_SPELLBOOK,
     VARBIT_FOLLOWEROPS_DEPRIORITISED,
     VARBIT_HOTKEY_CANNOT_CLOSE_SIDEPANEL,
+    VARBIT_KEYBINDING_ESC_TO_CLOSE,
     VARBIT_MOUSECAM_DISABLED,
     VARBIT_WORLDSWITCHER_DISABLE_CONFIRMATION,
     VARBIT_STAMINA_ACTIVE,
@@ -196,6 +197,7 @@ import {
     ArchiveMapElementTypeLoader,
     type MapElementTypeLoader,
 } from "../rs/config/meltype/MapElementTypeLoader";
+import type { NpcType } from "../rs/config/npctype/NpcType";
 import { NpcTypeLoader } from "../rs/config/npctype/NpcTypeLoader";
 import { ObjModelLoader } from "../rs/config/objtype/ObjModelLoader";
 import { ObjTypeLoader, PostProcessedObjTypeLoader } from "../rs/config/objtype/ObjTypeLoader";
@@ -1609,8 +1611,11 @@ export class OsrsClient {
         return false;
     }
 
-    /** Mounts a sub-interface and runs everything the open packet asked for. */
-    private mountSubInterface(payload: any): void {
+    /**
+     * Mounts a sub-interface and runs everything the open packet asked for. `remount` mounts
+     * an open again after a root change, which the server does not resend the contents of.
+     */
+    private mountSubInterface(payload: any, remount = false): void {
         if (!this.widgetManager) {
             return;
         }
@@ -1660,7 +1665,7 @@ export class OsrsClient {
                 this.widgetManager.invalidateWidgetRender(w);
             }
         }
-        this.customInterfaces.onInterfaceOpened(payload.groupId | 0);
+        this.customInterfaces.onInterfaceOpened(payload.groupId | 0, remount);
     }
 
     /**
@@ -2846,8 +2851,9 @@ export class OsrsClient {
                         ? new Map<number, number>() : undefined;
                     const transferredTargets = new Set<number>();
                     if (transfers) {
+                        const parents = this.widgetManager.interfaceParents;
                         // Nested mounts keep their component address when their containing pane moves.
-                        for (const [target] of this.widgetManager.interfaceParents) {
+                        for (const [target] of parents) {
                             if ((target >>> 16) !== previousRoot) transfers.set(target, target);
                         }
                         for (const [standardTargetUid, entry] of previousMounts) {
@@ -2857,6 +2863,18 @@ export class OsrsClient {
                                 this.widgetManager.getSubInterface(source)?.group === entry.payload.groupId) {
                                 transfers.set(source, target);
                                 transferredTargets.add(standardTargetUid);
+                            }
+                        }
+                        // ...but not when that pane is dropped: a mount inside it closes with it (and is
+                        // announced as closed), however deep, instead of staying mounted out of sight.
+                        for (let pruned = true; pruned;) {
+                            pruned = false;
+                            const keptGroups = new Set([...transfers.keys()].map((target) => parents.get(target)?.group));
+                            for (const source of [...transfers.keys()]) {
+                                if ((source >>> 16) === previousRoot || keptGroups.has(source >>> 16)) continue;
+                                transfers.delete(source);
+                                transferredTargets.delete(source);
+                                pruned = true;
                             }
                         }
                     }
@@ -2900,10 +2918,14 @@ export class OsrsClient {
                     // panes previously absent from the layout need initialization.
                     for (const [standardTargetUid, entry] of previousMounts) {
                         if (transferredTargets.has(standardTargetUid)) continue;
+                        // A nested mount comes back with its pane (opened before it), not into an unmounted one.
+                        const container = (standardTargetUid >>> 16) & 0xffff;
+                        if (!gameframes.includes(container) &&
+                            this.widgetManager.getContainerUidForGroup(container) === undefined) continue;
                         this.mountSubInterface({
                             ...entry.payload,
                             targetUid: standardTargetUid,
-                        });
+                        }, true);
                     }
                     // Trigger initial onVarTransmit for root interface widgets
                     this.triggerInitialVarTransmitForGroup(payload.groupId);
@@ -2957,9 +2979,8 @@ export class OsrsClient {
                         this.mountSubInterface(payload);
                     } else {
                         // A server-defined interface the client has not seen yet: fetch its
-                        // definition, then mount. This costs one round trip on the first
-                        // open of a session, so a server should not send component updates
-                        // in the same batch as that open - they would land before the
+                        // definition, then mount. Updates for it that arrive in the meantime
+                        // (its contents, sent with the open) are held and applied once its
                         // widgets exist.
                         const pendingGroupId = payload.groupId | 0;
                         const pendingTargetUid = payload.targetUid | 0;
@@ -3243,7 +3264,7 @@ export class OsrsClient {
                     }
                 }
             } else if (payload?.action === "inventory_stop_transmit") {
-                stopInventoryTransmit(inventoriesMap, payload.inventoryId);
+                stopInventoryTransmit(inventoriesMap, payload.inventoryId, this.serverSentInventoryIds);
             } else if (payload?.action === "run_script") {
                 // RUNCLIENTSCRIPT packet - run a CS2 script with arguments
                 const scriptId = Number(payload.scriptId) | 0;
@@ -3363,7 +3384,7 @@ export class OsrsClient {
         this.unsubscribeNpcSpecificEffects = subscribeNpcSpecificEffects(effect => {
             if (effect.kind === "headicon") {
                 applyNpcSpecificHeadIcon(this.npcEcs, this.npcHeadIcons,
-                    typeId => this.npcTypeLoader?.load(typeId), effect);
+                    typeId => this.headIconNpcType(typeId), effect);
             } else {
                 applyNpcSpecificEffect(this.npcEcs, this.renderer, effect, getClientCycle());
             }
@@ -4442,6 +4463,16 @@ export class OsrsClient {
     private handleSidePanelHotkey(event: KeyboardEvent): void {
         const shortcut = this.resolveKeyShortcut(event);
         if (!this.isLoggedIn() || event.repeat || shortcut === undefined) {
+            return;
+        }
+        // Script 2068 (toplevel_keypress): with "Esc closes current interface" on, an Esc that
+        // closes a modal does only that; the side panel stays as it is.
+        if (
+            (event.key === "Escape" || event.code === "Escape") &&
+            (this.varManager?.getVarbit(VARBIT_KEYBINDING_ESC_TO_CLOSE) ?? 0) !== 0 &&
+            this.widgetManager &&
+            hasOpenModal(this.widgetManager)
+        ) {
             return;
         }
 
@@ -7410,6 +7441,8 @@ export class OsrsClient {
             }
         }
 
+        // Sent again after a stop-transmit: getItemContainer(BANK) answers for it again.
+        this.serverSentInventoryIds.add(95);
         // Mark inv cycle for bank (95) - handlers fire during processWidgetTransmits()
         markInvTransmit(95);
 
@@ -8428,6 +8461,21 @@ export class OsrsClient {
         this.npcInstances.scheduleFlush();
     }
 
+    /**
+     * The type whose head icons a specific-headicon packet starts from: the transformed one, as the
+     * head-icon renderer draws (getEffectiveNpcType), so a transformed NPC keeps its own defaults.
+     */
+    private headIconNpcType(typeId: number): NpcType | undefined {
+        if ((typeId | 0) < 0) return undefined;
+        try {
+            const base = this.npcTypeLoader?.load(typeId | 0);
+            if (!base?.transforms) return base;
+            return base.transform(this.varManager, this.npcTypeLoader);
+        } catch {
+            return undefined;
+        }
+    }
+
     private despawnNpcBinary(serverId: number): void {
         const sid = serverId | 0;
         if (sid <= 0) return;
@@ -8827,7 +8875,8 @@ export class OsrsClient {
     /**
      * Forget the extra inventories the last session sent: ids no longer count as sent, VM entries
      * the server added are dropped, and the startup-seeded trade/shop/collection ones are put back
-     * to their empty seeded state. INV/WORN/BANK are left alone.
+     * to their empty seeded state. INV/WORN/BANK keep their objects; the bank counts as unsent
+     * until the server sends it again.
      */
     private forgetSentInventories(): void {
         this.serverSentInventoryIds.clear();

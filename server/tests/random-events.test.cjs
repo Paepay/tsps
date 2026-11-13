@@ -26,6 +26,7 @@ const { NpcDialogue } = require('../dist/game/model/dialogues/entries/impl/NpcDi
 const { PlayerDialogue } = require('../dist/game/model/dialogues/entries/impl/PlayerDialogue');
 const { StatementDialogue } = require('../dist/game/model/dialogues/entries/impl/StatementDialogue');
 const { ItemStatementDialogue } = require('../dist/game/model/dialogues/entries/impl/ItemStatementDialogue');
+const { Dialogue } = require('../dist/game/model/dialogues/entries/Dialogue');
 const { EndDialogue } = require('../dist/game/model/dialogues/entries/impl/EndDialogue');
 const { ActionDialogue } = require('../dist/game/model/dialogues/entries/impl/ActionDialogue');
 
@@ -186,13 +187,18 @@ function harness(t, members = true) {
       getInterfaceId: () => p.interfaceId, setInterfaceId(id) { p.interfaceId = id; },
       sendMessage: text => messages.push(text), forceChat(text) { p.chat = text; },
       setNpcTransformationId(id) { p.transformation = id; },
-      performAnimation(animation) { p.animation = animation.getId(); },
+      performAnimation(animation) { p.animation = animation.getId(); p.animationDelay = animation.getDelay(); },
       setPositionToFace(location) { p.face = location; },
       moveTo(location) { p.location = location; }, setLocation(location) { p.location = location; },
       getEquipment: () => ({ containsNumber: () => false }),
       getBank: () => ({ containsNumber: () => false }),
       getDialogueManager: () => ({
-        startDialogues(builder) { p.dialogue = builder; },
+        startDialogues(builder) {
+          p.dialogue = builder;
+          // The box logs its own chat line as it opens, as the real one does.
+          const first = builder.getDialogues?.().get(0);
+          if (first instanceof StatementDialogue || first instanceof ItemStatementDialogue) Dialogue.sendBoxChatLine(p, first.getText());
+        },
         isActive: () => !!p.dialogue,
       }),
       getInventory: () => ({ get: slot => slots[slot], getItems: () => slots, getFreeSlots: () => p.free,
@@ -743,6 +749,27 @@ test('dismissal, expiry, distance, plane, instances, logout, death and shutdown 
   }
 });
 
+// No, Wave, Yawn, Angry and Ya boo sucks.
+const DISMISS_EMOTES = [856, 863, 2111, 859, 2110];
+
+test('Dismiss makes the owner play one of the five dismissive emotes, chosen at random', t => {
+  const h = harness(t), random = Math.random, seen = new Set();
+  t.after(() => { Math.random = random; });
+  DISMISS_EMOTES.forEach((emote, index) => {
+    const p = h.player(), npc = h.spawn(p, 1);
+    Math.random = () => (index + 0.5) / DISMISS_EMOTES.length;
+    h.hooks['Sandwich lady'].Dismiss({ player: p, npc });
+    Math.random = random;
+    assert.equal(p.animation, emote); assert.equal(p.animationDelay, 10); assert.equal(npc.removed, true);
+    seen.add(p.animation);
+  });
+  assert.equal(seen.size, DISMISS_EMOTES.length);
+  const owner = h.player(), stranger = h.player(), npc = h.spawn(owner);
+  h.hooks.Genie.Dismiss({ player: stranger, npc });
+  assert.equal(stranger.animation, undefined, 'only the owner can dismiss the event');
+  assert.equal(npc.removed, undefined);
+});
+
 function rub(h, p, slot = 3) {
   const item = new Item(I.LAMP, 1); p.slots[slot] = item;
   assert.equal(h.hooks.Lamp.Rub({ player: p, item, itemId: I.LAMP, slot, clickType: 1, handled: false }), true);
@@ -759,6 +786,20 @@ test('real Rub event reaches every skill, uses base level XP, exact slot and one
     assert.equal(confirm(h, skill), `Your wish has been granted!<br>You have been awarded 370 ${skill.getName()} XP!`);
     assert.equal(confirm(h, skill), null, 'once');
     assert.equal(p.xp.get(skill), 370, skill.getName()); assert.equal(p.slots[3], undefined);
+  }
+});
+
+test('the lamp leaves the chat line to the xpreward interface; the book has its own lines at 15 x level', t => {
+  const h = harness(t), skill = Skill.values()[0];
+  const lamp = h.player(); lamp.levels.set(skill, 37); rub(h, lamp);
+  confirm(h, skill);
+  assert.equal((lamp.typed ?? []).some(([type]) => type === 115), false, 'no second chat copy');
+  for (const [level, amount] of [[49, '735'], [85, '1,275']]) {
+    const p = h.player(); p.levels.set(skill, level);
+    const item = new Item(I.BOOK_OF_KNOWLEDGE, 1); p.slots[2] = item;
+    assert.equal(h.hooks['Book of Knowledge'].Read({ player: p, item, itemId: I.BOOK_OF_KNOWLEDGE, slot: 2, clickType: 1, handled: false }), true);
+    assert.equal(confirm(h, skill), `Your brain power serves you well!<br>You have been awarded ${amount} ${skill.getName()} experience!`);
+    assert.equal(p.slots[2], undefined);
   }
 });
 
@@ -1126,8 +1167,16 @@ test('gift events follow the captured overhead timeline, smoke and refusal lines
 const FROG_TOUCH = ["Very well, if a touch is all you need, I'll do it.", "Yes, I will touch you.",
   "Sure, I'll touch you.", "A touch? Yes, I'll do that."];
 const FROG_KISS = ["How about if we kiss?", "May I kiss you instead?", "Would a kiss be acceptable?"];
-const FROG_POLITE = ["I would prefer not to, sorry.", "I'm sorry, I'd prefer not to do that."];
-const FROG_BECOME = ["I'd rather become a frog too!", "What if I want to be a frog like you?"];
+const FROG_POLITE = ["I would prefer not to, sorry.", "I'm sorry, I'd prefer not to do that.",
+  "This really isn't a good time for me, sorry."];
+const FROG_BECOME = ["I'd rather become a frog too!", "What if I want to be a frog like you?",
+  "It looks better to be a frog. Make me one!"];
+
+// The chathead animation of each open dialogue page.
+function pageHeads(p) {
+  return [...p.dialogue.getDialogues().values()].filter(entry => entry.getText?.())
+    .map(entry => typeof entry.expression === 'number' ? entry.expression : entry.expression?.getExpression?.());
+}
 
 function frogEvent(t) {
   const h = harness(t), p = eventPlayer(h), before = h.npcs.length;
@@ -1162,6 +1211,43 @@ test('Kiss the frog: the kiss turns the frog back, pays the token and the royal 
   assert.notEqual(npc.removed, true);
   h.ticks(3);
   assert.ok(frogs.every(entry => entry.removed), 'the whole group leaves together');
+});
+
+// 1702 ticks 2008-2035 and the user's capture gotr/20261020T153228 ticks 1513-1556.
+test("Kiss the frog: every recorded line carries live's chathead", t => {
+  const { h, p, npc, frogs } = frogEvent(t);
+  h.hooks.Frog['Talk-to']({ player: p, npc, handled: false });
+  assert.deepEqual(pageTexts(p), ['Please help me. I was transformed into a frog by a well-meaning but sadly frog-obsessed old wizard. Only your touch can turn me back. Will you help me?']);
+  assert.deepEqual(pageHeads(p), [612], 'chatsad3');
+  const kiss = openOptions(h, p).options.findIndex(entry => FROG_KISS.includes(entry.label));
+  choose(h, p, kiss);
+  assert.deepEqual(pageHeads(p), [567], 'the kiss is chathap1');
+  endChat(p);
+  assert.deepEqual(pageTexts(p), ['Yes!']);
+  assert.deepEqual(pageHeads(p), [567], "the frog's Yes! is chathap1");
+  endChat(p);
+  h.ticks(4);
+  assert.match(pageTexts(p)[0], /^Thank you so much, Player\./);
+  assert.deepEqual(pageHeads(p), [570], 'the four-line thanks is chathap4 (1702 tick 2035)');
+  const speaker = frogs.find(entry => entry.definition.id === N.FROG_5);
+  const other = frogs.find(entry => entry.definition.id === N.FROG_6);
+  for (const frog of [speaker, other]) {
+    h.hooks.Frog['Talk-to']({ player: p, npc: frog, handled: false });
+    assert.deepEqual(pageHeads(p), [588], 'the other frogs are chatneu1');
+  }
+});
+
+test('Kiss the frog: the touch line is chatquiz1, and the menu holds the captured wordings', t => {
+  const { h, p, npc } = frogEvent(t);
+  // pick() takes the last wording of each list at a high roll.
+  const random = t.mock.method(Math, 'random', () => 0.99);
+  h.hooks.Frog['Talk-to']({ player: p, npc, handled: false });
+  const labels = openOptions(h, p).options.map(entry => entry.label);
+  random.mock.restore();
+  assert.ok(labels.includes("This really isn't a good time for me, sorry."));
+  assert.ok(labels.includes('It looks better to be a frog. Make me one!'));
+  choose(h, p, labels.findIndex(label => FROG_TOUCH.includes(label)));
+  assert.deepEqual(pageHeads(p), [554]);
 });
 
 test('Kiss the frog: a touch turns the frog back without the kiss animation', t => {
@@ -1216,6 +1302,27 @@ test('Kiss the frog: the other frogs give the live lines, by owner', t => {
   const q = h.player();
   h.hooks.Frog['Talk-to']({ player: q, npc: other, handled: false });
   assert.deepEqual(pageTexts(q), ['The frogs do not need your help right now.']);
+});
+
+test('Kiss the frog: Dismiss on the crier or another chorus frog sends the whole event away', t => {
+  for (const id of [N.FROG_5, N.FROG_6]) {
+    const { h, p, npc, frogs } = frogEvent(t);
+    const frog = frogs.find(entry => entry.definition.id === id), q = h.player();
+    h.hooks.Frog.Dismiss({ player: q, npc: frog });
+    assert.equal(q.animation, undefined); assert.ok(frogs.every(entry => !entry.removed), 'only the owner can dismiss it');
+    h.hooks.Frog.Dismiss({ player: p, npc: frog });
+    assert.ok(DISMISS_EMOTES.includes(p.animation));
+    assert.equal(npc.removed, true); assert.ok(frogs.every(entry => entry.removed), 'the whole group leaves together');
+    assert.equal(Events.activeFor(p), null);
+  }
+  const { h, p, npc, frogs, prompt } = frogEvent(t);
+  choose(h, p, prompt.options.findIndex(entry => FROG_KISS.includes(entry.label)));
+  endChat(p); endChat(p);
+  h.hooks.Frog.Dismiss({ player: p, npc: frogs.find(entry => entry.definition.id === N.FROG_6) });
+  assert.equal(npc.removed, undefined, 'the turning-back scene carries on');
+  assert.equal(Events.activeFor(p)?.npc, npc);
+  h.ticks(4); endChat(p);
+  assert.deepEqual(p.rewards, [I.FROG_TOKEN], 'and still pays the token');
 });
 
 test('Thessalia exchanges a frog token for costume pieces, keeping the rest', t => {
@@ -1520,12 +1627,31 @@ test('Quiz Master wrong answers only reset the streak and ask again', t => {
   answerQuiz(h, p, session.data.models.indexOf(session.data.odd));
   h.ticks(QUIZ_REPLY_TICKS);
   assert.equal(session.data.streak, 1);
+  assert.ok(sentWith(p, 'sendSound', 2309), 'a right answer plays its sound');
+  assert.ok(sentWith(p, 'sendInterfaceAnimation', (231 << 16) | 2, 569), 'chathap3 for a right answer');
+  p.sent.length = 0;
   answerQuiz(h, p, session.data.models.findIndex(model => model !== session.data.odd));
   assert.equal(session.data.streak, 0);
-  assert.match(p.strings.get((231 << 16) | 6), /<br>Okay, next question!$/);
+  const text = p.strings.get((231 << 16) | 6);
+  assert.match(text, /<br>Okay, next question!$/);
+  // User capture randomevents/quizmaster tick 626: sound 2277 and the sad head, by line count.
+  assert.ok(sentWith(p, 'sendSound', 2277), 'a wrong answer plays 2277');
+  assert.ok(!sentWith(p, 'sendSound', 2309), 'and not the right-answer sound');
+  const lines = text.split('<br>').length;
+  assert.ok(sentWith(p, 'sendInterfaceAnimation', (231 << 16) | 2, 610 + lines - 1), `chatsad${lines} for a wrong answer`);
   assert.equal(session.data.phase, 'reply');
   h.ticks(QUIZ_REPLY_TICKS);
   assert.equal(session.data.phase, 'question');
+});
+
+test("Quiz Master's recorded wrong reply keeps live's three lines", t => {
+  const h = harness(t), p = eventPlayer(h), npc = h.spawn(p, 11);
+  const session = startQuiz(h, p, npc);
+  t.mock.method(Math, 'random', () => 0);
+  answerQuiz(h, p, session.data.models.findIndex(model => model !== session.data.odd));
+  assert.equal(p.strings.get((231 << 16) | 6), "WRONG!<br>That's just WRONG!<br>Okay, next question!");
+  assert.ok(sentWith(p, 'sendClientScript', 600, 1, 1, 20, (231 << 16) | 6));
+  assert.ok(sentWith(p, 'sendInterfaceAnimation', (231 << 16) | 2, 612), 'chatsad3');
 });
 
 test('Quiz Master holds the player: tabs closed, seated, and a closed chatbox comes back', t => {
@@ -2769,7 +2895,7 @@ test('Book of Knowledge grants 15 times the level and keeps itself when XP is bl
   const event = { player: p, item: p.slots[slot], itemId: I.BOOK_OF_KNOWLEDGE, slot, handled: false };
   assert.equal(h.hooks['Book of Knowledge'].Read(event), true);
   const request = h.xpRewards.at(-1);
-  assert.equal(request.onConfirm(Skill.values()[0]), 'You have been awarded 150 Attack XP!');
+  assert.equal(request.onConfirm(Skill.values()[0]), 'Your brain power serves you well!<br>You have been awarded 150 Attack experience!');
   assert.equal(p.xp.get(Skill.values()[0]), 150);
   assert.equal(p.slots[slot], undefined);
 });
@@ -2860,10 +2986,15 @@ test('native random-event followers and Count Check use real movement, account m
       assert.deepEqual(tile, { x: npc.getLocation().getX(), y: npc.getLocation().getY(), level: 0 }, 'native NPC_INFO encoded the walked tile');
       const dismiss = npc.getCurrentDefinition(f.p).getActions().indexOf('Dismiss') + 1;
       assert.ok(dismiss > 0, 'the cache supplies the Dismiss option');
+      const played = [], perform = f.p.performAnimation.bind(f.p);
+      f.p.performAnimation = animation => { played.push([animation.getId(), animation.getDelay()]); return perform(animation); };
       await f.connection.dispatch([{ type: 'npc_option', index: npc.getIndex(), clickType: dismiss }]);
       f.connection.processTurnPackets();
       for (let tick = 0; tick < 5; tick++) turn();
       assert.equal(npc.isRegistered(), false, 'dismissal removes the actual invitation from world scheduling');
+      assert.equal(played.length, 1, 'the owner plays one dismissive emote');
+      assert.ok(DISMISS_EMOTES.includes(played[0][0]), `emote ${played[0][0]} is No, Wave, Yawn, Angry or Ya boo sucks`);
+      assert.equal(played[0][1], 10);
       const retiredTile = npc.getLocation().clone();
       f.p.getMovementQueue().requestWalk(new Location(3222, 3218, 0));
       for (let tick = 0; tick < 8; tick++) turn();

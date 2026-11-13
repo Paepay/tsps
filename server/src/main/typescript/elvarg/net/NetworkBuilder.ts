@@ -48,9 +48,11 @@ import {
   PlayerAppearance,
   resolveGameframeRoot,
   encodePluginMessage,
+  ChatType,
 } from "./protocol/ClientProtocol";
 import {
   WORLD_MAP_CLOSE_WIDGET_ID,
+  WORLD_MAP_KEYBOARD_CLOSE_WIDGET_ID,
   isWorldMapOrbWidget,
 } from "./protocol/WorldMapProtocol";
 import { ObjectActionPacketListener } from "./packet/impl/ObjectActionPacketListener";
@@ -1018,7 +1020,8 @@ export class ClientConnection {
               : EquipPacketListener.resolveEquipmentSlot(actionPacket.groupId, actionPacket.childId);
             if (isWorldMapOrbWidget(actionPacket.widgetId) && actionPacket.buttonNum === 2) {
               this.player.getPacketSender().toggleWorldMap();
-            } else if (actionPacket.widgetId === WORLD_MAP_CLOSE_WIDGET_ID) {
+            } else if (actionPacket.widgetId === WORLD_MAP_CLOSE_WIDGET_ID ||
+              actionPacket.widgetId === WORLD_MAP_KEYBOARD_CLOSE_WIDGET_ID) {
               this.player.getPacketSender().closeWorldMap();
             } else if (equipmentSlot >= 0) {
               const item = this.player.getEquipment().getItems()[equipmentSlot];
@@ -1257,11 +1260,16 @@ export class ClientConnection {
           if (this.player) {
             const close = { player: this.player, handled: false };
             PluginManager.emitCustomEvent("interface:close", close);
-            if (close.handled) continue;
+            // Capture: close_modal aborts the chatbox prompt whatever closes (rsprox_transcripts/223/00014.txt
+            // cycle 19, 224/01440.txt cycle 26293), so a plugin or overlay taking the close still drops it.
+            if (close.handled) {
+              this.player.getPacketSender().abortInputPrompt();
+              continue;
+            }
             const closeOverlayId = this.player.getAttribute?.(CLOSE_ON_INTERFACE_CLOSE_ATTRIBUTE);
             if (typeof closeOverlayId === "number" && Number.isInteger(closeOverlayId)) {
               this.player.setAttribute(CLOSE_ON_INTERFACE_CLOSE_ATTRIBUTE, null);
-              this.player.getPacketSender().closeInterface(closeOverlayId);
+              this.player.getPacketSender().abortInputPrompt().closeInterface(closeOverlayId);
               continue;
             }
             const hadSomethingOpen =
@@ -1308,7 +1316,8 @@ export class ClientConnection {
         case "examine_npc":
           if (this.player) {
             const definition = NpcDefinition.forId(packet.id);
-            this.player.sendMessage(definition.getExamine());
+            // rsprox: examines have their own chat types (npc_examine, e.g. 237/01098.txt).
+            this.player.getPacketSender().sendTypedMessage(ChatType.NPC_EXAMINE, definition.getExamine());
           }
           continue;
         case "examine_object":
@@ -1323,7 +1332,9 @@ export class ClientConnection {
             // A multi-loc's text can be recorded under the variant this player sees.
             const definition = ObjectDefinition.forId(packet.id);
             const seen = ObjectDefinition.examineText(packet.id) === null ? ObjectDefinition.forPlayer(packet.id, this.player) : null;
-            this.player.sendMessage((seen && ObjectDefinition.examineText(seen.id) ? seen : definition)?.getExamine() ?? "It's nothing special.");
+            // rsprox 237/01098.txt:334474, 237/01104.txt:13832: `type=loc_examine`.
+            this.player.getPacketSender().sendTypedMessage(ChatType.LOC_EXAMINE,
+              (seen && ObjectDefinition.examineText(seen.id) ? seen : definition)?.getExamine() ?? "It's nothing special.");
           }
           continue;
         case "appearance":
@@ -1951,6 +1962,7 @@ export class ClientConnection {
     const displayEquipment = player.getEquipment().getItems();
     return {
       gender: look[Appearance.GENDER] ?? 0,
+      hidden: player.isAppearanceHidden(),
       pronouns: player.getAppearance().getPronouns(),
       colors: [
         look[Appearance.HAIR_COLOUR],

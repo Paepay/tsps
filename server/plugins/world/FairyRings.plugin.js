@@ -64,6 +64,15 @@ const FAVOURITE_CODE_TEXT = 151;
 const FAVOURITE_STARS = [161, 162, 163, 164, 165, 167, 168, 169, 170, 171];
 const MAX_FAVOURITES = 10;
 const LOG_FAVOURITE_OP = 2;
+/**
+ * fairyring_fave_1..10: each favourite slot is 64 + the code's index (its dial letters and a set
+ * flag), 0 when empty. fairyrings_favourite_opvis has one bit per filled slot.
+ */
+const FAVOURITE_VARBITS = Array.from({ length: MAX_FAVOURITES }, (_, slot) => 20240 + slot);
+const FAVOURITE_SET = 64;
+const FAVOURITE_OPVIS_VARBIT = 20239;
+/** The dials turning to a code picked from the travel log. */
+const USE_CODE_SOUND = 2871;
 
 const FLOWERS_GRAPHIC = 569;
 const VANISH_ANIMATION = 3265;
@@ -156,12 +165,10 @@ function questAllows(player) {
   return request.allowed === true;
 }
 
-/** Content can resolve a code differently without changing the cache's ordinary destination. */
 /**
  * Codes whose destination needs a quest done (Wiki, Fairy ring: AJQ "Completion of Death to the Dorgeshuun is
  * required", BJS "Requires completion of the Regicide quest", CIP "...The Fremennik Trials quest", CLR "...the Monkey
- * Madness I quest", DLS "...the In Search of the Myreque quest"). The partial-completion and travelled-first codes
- * (BJR, BLQ, AIS, AJP, CKQ, AKP) aren't here: the stage each needs isn't stated.
+ * Madness I quest", DLS "...the In Search of the Myreque quest"). The message is TSPS wording: the Wiki quotes none.
  */
 const CODE_QUESTS = new Map([
   ["AJQ", { key: "death_to_the_dorgeshuun", name: "Death to the Dorgeshuun" }],
@@ -171,15 +178,51 @@ const CODE_QUESTS = new Map([
   ["DLS", { key: "in_search_of_the_myreque", name: "In Search of the Myreque" }],
 ]);
 
-/** The refusal for a code whose quest the player hasn't done (TSPS wording: the Wiki quotes none), or null. */
-function codeQuestRefusal(player, code) {
-  const quest = CODE_QUESTS.get(code);
-  if (!quest) return null;
-  const query = { player, key: quest.key, complete: false };
-  pluginApi.emitCustomEvent("quest:is-complete", query);
-  return query.complete === true ? null : `You need to complete ${quest.name} to travel there.`;
+/** Set by the first quetzal flight to Civitas illa Fortis (plugins/world/quetzals/Primio.Quetzals.js). */
+const VARLAMORE_VISITED_VARBIT = "varlamore_visited";
+/** rsprox_transcripts/226/01695.txt:8854 (AJP before the first flight). */
+const VARLAMORE_REFUSAL = "You can't use the fairy ring to go there until you have visited Varlamore.";
+
+/**
+ * Every locked code: a quest done, a quest stage reached, or Varlamore visited. Wiki (Fairy ring): AIS, AJP and CKQ
+ * "Requires having travelled to Civitas illa Fortis via Regulus Cento"; AKP is "Unlocked by entering the Necropolis
+ * in the beginning of Beneath Cursed Sands"; BJR and BLQ need "partial completion" of Holy Grail and Land of the
+ * Goblins. The stages are TSPS choices (the Wiki names none): Beneath Cursed Sands' entry to the Necropolis (14), Land
+ * of the Goblins' arrival in Yu'biusk (52) and Holy Grail from speaking to the crone (4), when the Fisher Realm opens.
+ * Their messages are TSPS wording in the recorded Varlamore line's style.
+ */
+const CODE_LOCKS = new Map([
+  ...[...CODE_QUESTS].map(([code, quest]) => [code, {
+    complete: quest.key, message: `You need to complete ${quest.name} to travel there.`,
+  }]),
+  ...["AIS", "AJP", "CKQ"].map((code) => [code, { varbit: VARLAMORE_VISITED_VARBIT, message: VARLAMORE_REFUSAL }]),
+  ["AKP", { stage: { key: "beneath_cursed_sands", min: 14 },
+    message: "You can't use the fairy ring to go there until you have visited the Necropolis." }],
+  ["BLQ", { stage: { key: "land_of_the_goblins", min: 52 },
+    message: "You can't use the fairy ring to go there until you have visited Yu'biusk." }],
+  ["BJR", { stage: { key: "holy_grail", min: 4 },
+    message: "You can't use the fairy ring to go there until you have visited the Fisher King's realm." }],
+]);
+
+/** The refusal for a code the player hasn't unlocked, or null. */
+function codeLockRefusal(player, code) {
+  const lock = CODE_LOCKS.get(code);
+  if (!lock) return null;
+  if (lock.complete) {
+    const query = { player, key: lock.complete, complete: false };
+    pluginApi.emitCustomEvent("quest:is-complete", query);
+    return query.complete === true ? null : lock.message;
+  }
+  if (lock.stage) {
+    const query = { player, key: lock.stage.key, stage: undefined };
+    pluginApi.emitCustomEvent("quest:get-stage", query);
+    return Number(query.stage) >= lock.stage.min ? null : lock.message;
+  }
+  const id = core.CacheDefinitions.getVarbitId(lock.varbit);
+  return id != null && player.getPacketSender().getVarbit(id) > 0 ? null : lock.message;
 }
 
+/** Content can resolve a code differently without changing the cache's ordinary destination. */
 function resolveRing(player, ring, origin) {
   if (!ring) return null;
   const request = { player, code: ring.code, destination: ring.destination, origin };
@@ -212,25 +255,81 @@ function setDials(player, code) {
   });
 }
 
-function sendFavourites(player) {
-  const sender = player.getPacketSender();
-  const favourites = codeList(player, FAVOURITES_ATTRIBUTE);
-  for (let slot = 0; slot < MAX_FAVOURITES; slot++) {
-    const ring = rings.get(favourites[slot]);
-    sender.sendString(ring?.logText ?? "", (LOG_INTERFACE << 16) | (FAVOURITE_TEXT + slot));
-    sender.sendString(ring?.code ?? "", (LOG_INTERFACE << 16) | (FAVOURITE_CODE_TEXT + slot));
-  }
+/**
+ * The 10 favourite slots, in order, "" where empty. A removed favourite leaves its slot empty and
+ * the next one added fills the first empty slot.
+ */
+function favouriteSlots(player) {
+  const saved = String(player.getAttribute(FAVOURITES_ATTRIBUTE) ?? "").split(",");
+  const slots = Array.from({ length: MAX_FAVOURITES }, (_, slot) => (rings.has(saved[slot]) ? saved[slot] : ""));
+  return slots.map((code, slot) => (code && slots.indexOf(code) === slot ? code : ""));
 }
 
+function saveFavourites(player, slots) {
+  player.setAttribute(FAVOURITES_ATTRIBUTE, slots.join(",").replace(/,+$/, ""));
+}
+
+/** A code as the travel log and its messages write it: "A K R". */
+function spacedCode(code) {
+  return code.split("").join(" ");
+}
+
+function sendFavouriteVarbits(player, slots = favouriteSlots(player)) {
+  const sender = player.getPacketSender();
+  let filled = 0;
+  slots.forEach((code, slot) => {
+    const ring = rings.get(code);
+    sender.sendVarbit(FAVOURITE_VARBITS[slot], ring ? FAVOURITE_SET + ring.index : 0);
+    if (ring) filled |= 1 << slot;
+  });
+  sender.sendVarbit(FAVOURITE_OPVIS_VARBIT, filled);
+}
+
+function sendFavourites(player, slots) {
+  const sender = player.getPacketSender();
+  slots.forEach((code, slot) => {
+    const ring = rings.get(code);
+    sender.sendString(ring?.logText ?? "", (LOG_INTERFACE << 16) | (FAVOURITE_TEXT + slot));
+    sender.sendString(ring ? spacedCode(ring.code) : "", (LOG_INTERFACE << 16) | (FAVOURITE_CODE_TEXT + slot));
+  });
+}
+
+/** The used codes, less the favourites (shown in their own slots instead), the hideout and the favourites. */
 function sendTravelLog(player) {
   const sender = player.getPacketSender();
+  const slots = favouriteSlots(player);
   const used = new Set(codeList(player, USED_CODES_ATTRIBUTE));
   for (const ring of rings.values()) {
     if (ring.logComponent <= 0) continue;
-    sender.sendString(used.has(ring.code) ? ring.logText : "", (LOG_INTERFACE << 16) | ring.logComponent);
+    const shown = used.has(ring.code) && !slots.includes(ring.code);
+    sender.sendString(shown ? ring.logText : "", (LOG_INTERFACE << 16) | ring.logComponent);
   }
   sender.sendString(HIDEOUT_TEXT, (LOG_INTERFACE << 16) | HIDEOUT_COMPONENT);
-  sendFavourites(player);
+  sendFavourites(player, slots);
+}
+
+/** The modal background, the dials on the main modal and the travel log beside them. */
+function openDialInterfaces(player) {
+  player.getPacketSender()
+    .sendClientScript(MODAL_BACKGROUND_SCRIPT, ...MODAL_BACKGROUND)
+    .sendInterface(DIALS_INTERFACE)
+    .sendSubInterface(SIDE_MODAL, LOG_INTERFACE, 3);
+}
+
+/**
+ * After a favourite is added or removed: the log's text again, both interfaces reopened (the log
+ * lays its rows out as it opens) and its search box closed.
+ */
+function refreshTravelLog(player) {
+  sendTravelLog(player);
+  openDialInterfaces(player);
+  player.getPacketSender().sendClientScript(MESLAYER_CLOSE_SCRIPT, SEARCH_MESLAYER);
+}
+
+/** "Use code": the dials turn to the code. */
+function useCode(player, code) {
+  player.getPacketSender().sendSoundEffect(USE_CODE_SOUND, 1, 0, 1);
+  setDials(player, code);
 }
 
 function ringTile(location) {
@@ -261,10 +360,7 @@ function openDial({ player, location }) {
   configuredRing.set(player, ringTile(location));
   setDials(player, "");
   sendTravelLog(player);
-  player.getPacketSender()
-    .sendClientScript(MODAL_BACKGROUND_SCRIPT, ...MODAL_BACKGROUND)
-    .sendInterface(DIALS_INTERFACE)
-    .sendSubInterface(SIDE_MODAL, LOG_INTERFACE, 3);
+  openDialInterfaces(player);
   core.TaskManager.submit(new (class extends core.Task {
     constructor() {
       super(1, player, false);
@@ -371,7 +467,7 @@ function fairyTeleport(player, ring, from, fromClick) {
         if (sameRing) {
           if (!sameTile(locationSnapshot(player), ring.destination)) player.moveTo(ring.destination);
           pending.landed = true;
-          if (!ring.invalid) rememberUse(player, ring);
+          if (!ring.invalid && !ring.refusal) rememberUse(player, ring);
         } else {
           const teleportFrom = locationSnapshot(player);
           const fromInstance = privateArea != null;
@@ -396,7 +492,9 @@ function fairyTeleport(player, ring, from, fromClick) {
           });
           rememberUse(player, ring);
         }
-        pluginApi.emitCustomEvent("fairy-rings:travelled", { player, code: ring.code, destination: player.getLocation() });
+        if (!ring.refusal) {
+          pluginApi.emitCustomEvent("fairy-rings:travelled", { player, code: ring.code, destination: player.getLocation() });
+        }
         player.performAnimation(new core.Animation(APPEAR_ANIMATION));
       }
       if (tick === delay + 4) {
@@ -404,13 +502,46 @@ function fairyTeleport(player, ring, from, fromClick) {
         player.performAnimation(core.Animation.DEFAULT_RESET_ANIMATION);
         cancelPendingTeleport(player, pending);
         this.stop();
-        if (sameRing) {
+        if (ring.refusal) {
+          refusalBox(player, ring.refusal);
+        } else if (sameRing) {
           player.getDialogueManager().startDialogues(new core.DialogueChainBuilder()
             .add(new core.PlayerDialogue(0, HARDLY_MOVED, HARDLY_MOVED_EXPRESSION)));
         }
       }
     }
   })());
+}
+
+/** The refusal's mesbox, logged as a mesbox chat line too (as recorded). */
+function refusalBox(player, text) {
+  const { DialogueChainBuilder, StatementDialogue } = core;
+  player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(new StatementDialogue(0, text)));
+}
+
+/** The ring at a configured tile: the one whose arrival tile is on or beside it. */
+function ringAt(from) {
+  return from ? [...rings.values()].find((candidate) => candidate.destination?.getDistance(from) <= 1) ?? null : null;
+}
+
+/**
+ * A locked code (rsprox_transcripts/226/01695.txt:8805-8865, AJP before the first visit to Varlamore): the code
+ * becomes the last destination, the fairy teleport plays back onto the player's own ring and, on arrival, a mesbox
+ * says why. Nothing goes in the travel log. A ring with no arrival tile of its own in the cache (the withered Fisher
+ * Realm's) lands on the ring's tile. Returns false when the teleport checks stop it.
+ */
+function refuseLockedCode(player, ring, from, fromClick, message) {
+  const back = ringAt(from)?.destination ?? from ?? null;
+  if (!core.TeleportHandler.checkReqs(player, back ?? locationSnapshot(player), 20)) return false;
+  sendLastDestination(player, ring);
+  player.setAttribute(LAST_CODE_ATTRIBUTE, ring.code);
+  if (!back) {
+    player.getPacketSender().sendVarbit(BUSY_VARBIT, 0);
+    refusalBox(player, message);
+    return true;
+  }
+  fairyTeleport(player, { ...ring, destination: back, refusal: message }, from, fromClick);
+  return true;
 }
 
 function playerDied({ player }) {
@@ -440,7 +571,7 @@ function confirmDial(player) {
     pluginApi.emitCustomEvent("fairy-rings:invalid", { player, code: codeFromDials(player) });
     // The ring being used, as its own destination: the same "hardly moved" outcome (Wiki).
     const from = configuredRing.get(player);
-    const here = from && [...rings.values()].find((candidate) => candidate.destination?.getDistance(from) <= 1);
+    const here = ringAt(from);
     if (!here) {
       player.sendMessage("The fairy ring combination is not a valid destination.");
       return;
@@ -453,14 +584,14 @@ function confirmDial(player) {
     fairyTeleport(player, { ...here, invalid: true }, from, true);
     return;
   }
-  const locked = codeQuestRefusal(player, ring.code);
-  if (locked) {
-    player.sendMessage(locked);
-    return;
-  }
   // The open dials count as busy for the teleport checks, so they close first.
   closeDials(player, true);
   const sender = player.getPacketSender();
+  const locked = codeLockRefusal(player, ring.code);
+  if (locked) {
+    if (!refuseLockedCode(player, ring, configuredRing.get(player), true, locked)) sender.sendVarbit(BUSY_VARBIT, 0);
+    return;
+  }
   if (!core.TeleportHandler.checkReqs(player, ring.destination, 20)) {
     sender.sendVarbit(BUSY_VARBIT, 0);
     return;
@@ -486,38 +617,45 @@ function confirmDial(player) {
  * op. Decided from the op: IF_BUTTON packets carry no menu text.
  */
 function logAction(player, childId, op) {
-  const favourites = codeList(player, FAVOURITES_ATTRIBUTE);
+  const slots = favouriteSlots(player);
   const favouriteSlot = childId >= FAVOURITE_TEXT && childId < FAVOURITE_TEXT + MAX_FAVOURITES
     ? childId - FAVOURITE_TEXT
     : FAVOURITE_STARS.indexOf(childId);
   if (favouriteSlot >= 0) {
+    if (!slots[favouriteSlot]) return;
     if (op === LOG_FAVOURITE_OP || FAVOURITE_STARS.includes(childId)) {
-      favourites.splice(favouriteSlot, 1);
-      player.setAttribute(FAVOURITES_ATTRIBUTE, favourites.join(","));
-      sendFavourites(player);
-    } else if (favourites[favouriteSlot]) {
-      setDials(player, favourites[favouriteSlot]);
+      slots[favouriteSlot] = "";
+      saveFavourites(player, slots);
+      sendFavouriteVarbits(player, slots);
+      refreshTravelLog(player);
+    } else {
+      useCode(player, slots[favouriteSlot]);
     }
     return;
   }
   if (childId === HIDEOUT_COMPONENT) {
-    setDials(player, HIDEOUT_CODE);
+    useCode(player, HIDEOUT_CODE);
     return;
   }
   const ring = ringsByComponent.get(childId);
   if (!ring) return;
   const adding = op === LOG_FAVOURITE_OP || childId === ring.starComponent;
   if (!adding) {
-    setDials(player, ring.code);
+    useCode(player, ring.code);
     return;
   }
-  if (favourites.includes(ring.code)) return;
-  if (favourites.length >= MAX_FAVOURITES) {
+  if (slots.includes(ring.code)) return;
+  const free = slots.indexOf("");
+  if (free < 0) {
+    // Ours: the line when all 10 slots are full.
     player.sendMessage("You can't have more than 10 favourite fairy ring codes.");
     return;
   }
-  player.setAttribute(FAVOURITES_ATTRIBUTE, [...favourites, ring.code].join(","));
-  sendFavourites(player);
+  slots[free] = ring.code;
+  saveFavourites(player, slots);
+  player.sendMessage(`Added ${spacedCode(ring.code)} to your favourites.`);
+  sendFavouriteVarbits(player, slots);
+  refreshTravelLog(player);
 }
 
 function interfaceAction(event) {
@@ -573,9 +711,9 @@ function lastDestination({ player, location }) {
     player.sendMessage("You haven't used the fairy ring teleportation system yet.");
     return;
   }
-  const locked = codeQuestRefusal(player, ring.code);
+  const locked = codeLockRefusal(player, ring.code);
   if (locked) {
-    player.sendMessage(locked);
+    refuseLockedCode(player, ring, ringTile(location), false, locked);
     return;
   }
   if (!core.TeleportHandler.checkReqs(player, ring.destination, 20)) return;
@@ -597,9 +735,21 @@ function useExitRing({ player, objectId, location }) {
   fairyTeleport(player, ring, ringTile(location), false);
 }
 
+/**
+ * The ring's "Favourites" picks a favourite from its sub-menu; chosen without one (the option
+ * itself), it only says so.
+ */
+function favouritesOption({ player }) {
+  if (!player) return;
+  player.sendMessage("You will need to select a favourite from the sub-menu.");
+}
+
+/** At login: the last destination and the favourite slots. */
 function sendLastOnLogin({ player }) {
   const ring = rings.get(String(player.getAttribute(LAST_CODE_ATTRIBUTE) ?? ""));
   if (ring) sendLastDestination(player, ring);
+  const slots = favouriteSlots(player);
+  if (slots.some(Boolean)) sendFavouriteVarbits(player, slots);
 }
 
 function attach(api) {
@@ -625,7 +775,9 @@ function protectRingCentre(event) {
 
 /** The rings' options, as the cache names them (op 3 is a plain "Last-destination", not a multiloc). */
 function ringOptions() {
-  return { Zanaris: zanaris, Configure: openDial, "Last-destination": lastDestination, Use: useExitRing };
+  return {
+    Zanaris: zanaris, Configure: openDial, "Last-destination": lastDestination, Favourites: favouritesOption, Use: useExitRing,
+  };
 }
 
 module.exports = {
@@ -646,7 +798,11 @@ module.exports = {
     hasLightSource,
     playerDied,
     ringOptions,
+    sendLastOnLogin,
     rings: () => rings,
+    FAVOURITE_VARBITS,
+    FAVOURITE_OPVIS_VARBIT,
+    USE_CODE_SOUND,
     DIAL_VARBITS,
     DIAL_LETTERS,
     LAST_CODE_ATTRIBUTE,

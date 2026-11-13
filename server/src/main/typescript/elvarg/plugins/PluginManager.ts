@@ -394,6 +394,8 @@ export class PluginManager {
   private static buttonClickHooks: PluginHook<PluginButtonClickEvent>[] = [];
   private static interfaceActionClickHooks: PluginHook<PluginInterfaceActionClickEvent>[] =
     [];
+  /** Buttons that answer "Please finish what you are doing first." while the player is locked (refuseWhileBusy). */
+  private static busyRefusalButtons = new Set<number>();
   private static commandHooks: PluginHook<PluginCommandEvent>[] = [];
   private static commandHandlersByBase = new Map<
     string,
@@ -1715,9 +1717,9 @@ export class PluginManager {
   }
 
   /** The plugin's refusal message when the special attack bar is disabled, or null when it is usable. */
-  public static emitSpecialAttackDisabled(player: any): string | null {
+  public static emitSpecialAttackDisabled(player: any, specialAttackId?: string): string | null {
     if (PluginManager.specialAttackDisabledHooks.length === 0) return null;
-    const event: PluginSpecialAttackDisabledEvent = { player, disabled: null };
+    const event: PluginSpecialAttackDisabledEvent = { player, specialAttackId, disabled: null };
     return PluginManager.firstAnswer(PluginManager.specialAttackDisabledHooks, event, "special_attack_disabled", "disabled") === true
       ? event.message ?? "You can't use special attacks here."
       : null;
@@ -2086,6 +2088,11 @@ export class PluginManager {
       PluginManager.executeHook(hook, event, "button_click", "button_click");
     }
     return event.handled === true;
+  }
+
+  /** Whether `buttonId` was registered with refuseWhileBusy. */
+  public static refusesWhileBusy(buttonId: number): boolean {
+    return PluginManager.busyRefusalButtons.has(buttonId);
   }
 
   public static emitInterfaceActionClick(
@@ -2675,6 +2682,7 @@ export class PluginManager {
       WeaponInterfaces: require(`${combat}/WeaponInterfaces`).WeaponInterfaces,
       Barrows: require(`${combat}/Barrows`).Barrows,
       applyPrayerDrainModifiers: require(`${combat}/EquipmentEffects`).applyPrayerDrainModifiers,
+      hitTargetOf: require(`${combat}/EquipmentEffects`).hitTargetOf,
       CombatEquipment: require(`${combat}/CombatEquipment`).CombatEquipment,
       CombatRange: require(`${combat}/CombatRange`).CombatRange,
       CombatPosition: require(`${combat}/CombatPosition`).CombatPosition,
@@ -2702,6 +2710,7 @@ export class PluginManager {
         const listener = new MagicOnItemPacketListener();
         return listener.castOnItem(player, typeof spellId === "string" ? listener.resolveSpellId(spellId) : spellId, itemId, slot, source);
       },
+      examineItem: require("../game/content/ExaminePrice").examineItem,
       ChatType: require("../net/protocol/ClientProtocol").ChatType,
       resolveChatHighlights: require("../net/protocol/ClientProtocol").resolveChatHighlights,
       DuelRule: require("../game/content/Duelling").DuelRule,
@@ -2736,6 +2745,7 @@ export class PluginManager {
       Misc: require("../util/Misc").Misc,
       ChatTextLayout: require("../game/model/dialogues/ChatTextLayout").ChatTextLayout,
       TimerKey: require("../util/timers/TimerKey").TimerKey,
+      SecondsTimer: require(`${model}/SecondsTimer`).SecondsTimer,
       Sound: require("../game/Sound").Sound,
       Sounds: require("../game/Sounds").Sounds,
       Location: require(`${model}/Location`).Location,
@@ -4450,6 +4460,11 @@ export class PluginManager {
           "interface_action_button"
         );
       },
+      refuseWhileBusy: (buttonIds) => {
+        for (const id of [].concat(buttonIds as any)) {
+          if (Number.isInteger(id) && id >= 0) PluginManager.busyRefusalButtons.add(id);
+        }
+      },
       onCommand: (handler) => {
         if (typeof handler !== "function") {
           return;
@@ -4791,6 +4806,10 @@ export class PluginManager {
         ),
       registerRangedAttackAccuracyModifier: (modifier) =>
         require("../game/content/combat/EquipmentEffects").registerRangedAttackAccuracyModifier(
+          modifier
+        ),
+      registerMagicAccuracyPercentModifier: (modifier) =>
+        require("../game/content/combat/EquipmentEffects").registerMagicAccuracyPercentModifier(
           modifier
         ),
       registerMagicAttackAccuracyModifier: (modifier) =>

@@ -55,6 +55,7 @@ export const enum ServerPacket {
 
 export type PlayerAppearance = {
   gender: number;
+  hidden?: boolean;
   pronouns?: number;
   colors: number[];
   kits: number[];
@@ -369,6 +370,14 @@ function withCtrl<T extends ClientMessage>(message: T, modifierFlags: number): T
   return modifierFlags ? { ...message, modifierFlags } : message;
 }
 
+/**
+ * An item id the client writes as two unsigned bytes, with 65535 (its -1) for "no item": ids 32768-65534 are real
+ * items, so the field must not be read as signed.
+ */
+function unsignedItemId(raw: number): number {
+  return raw === 0xffff ? -1 : raw;
+}
+
 class Reader {
   private offset = 0;
 
@@ -522,7 +531,7 @@ export function decodeClientPacket(frame: Buffer): ClientMessage {
         type: "widget_target",
         targetWidgetId: reader.intIME(), targetSlot: reader.shortAddLE(),
         sourceWidgetId: reader.intLE(), sourceSlot: reader.shortLE(),
-        sourceItemId: reader.signedShort(), targetItemId: reader.shortAddLE(),
+        sourceItemId: unsignedItemId(reader.short()), targetItemId: reader.shortAddLE(),
       };
     case NativeClientPacket.IF_TRIGGEROPLOCAL: {
       const blockLength = reader.short();
@@ -536,7 +545,7 @@ export function decodeClientPacket(frame: Buffer): ClientMessage {
       return {
         type: "local_trigger", opcodeParam,
         childIndex: childRaw > 0x7fff ? childRaw - 0x10000 : childRaw,
-        widgetId, itemId: itemRaw > 0x7fff ? itemRaw - 0x10000 : itemRaw,
+        widgetId, itemId: unsignedItemId(itemRaw),
         argsData: reader.bytes(blockLength - 12),
       };
     }
@@ -950,7 +959,7 @@ export function decodeClientPacket(frame: Buffer): ClientMessage {
       reader.short();
       reader.short();
       reader.byte();
-      const slot = reader.signedShort(), itemId = reader.signedShort();
+      const slot = reader.signedShort(), itemId = unsignedItemId(reader.short());
       return { type: "widget_action", widgetId, groupId, childId, opId, buttonNum, option, target, slot: slot >= 0 ? slot : undefined, itemId: itemId >= 0 ? itemId : undefined };
     }
     case HighClientPacket.IF_BUTTOND:
@@ -964,7 +973,7 @@ export function decodeClientPacket(frame: Buffer): ClientMessage {
     case HighClientPacket.TRADE_ACTION: {
       const action = (["offer", "remove", "accept", "decline", "confirm_accept", "confirm_decline"] as const)[reader.byte()];
       if (!action) return { type: "raw", opcode, payload: frame.subarray(frame.length) };
-      const slot = reader.short(), quantity = reader.int(), itemId = reader.signedShort();
+      const slot = reader.short(), quantity = reader.int(), itemId = unsignedItemId(reader.short());
       return { type: "trade_action", action, slot, quantity, itemId: itemId >= 0 ? itemId : undefined };
     }
     case HighClientPacket.ITEM_SPAWNER_SEARCH:
@@ -1101,24 +1110,32 @@ export const ChatType = {
   FRIENDS_CHAT_NOTIFICATION: 11,
   /** Filtered out with "Filter: on" (the Game tab's filter). */
   SPAM: 105,
+  /** A trade/duel status line ("Sending trade offer...", "Accepted trade."; rsprox `type=trade`, RuneLite TRADE). */
+  TRADE: 102,
   /** An NPC's overhead line, shown as "Name: text"; the NPC's name goes in `from`. */
   NPC_SAY: 116,
   /** A message box's text, logged in the chatbox as live does when one opens (rsprox `type=mesbox`). */
   MESBOX: 115,
   /** The login greeting, "Welcome to Old School RuneScape." (rsprox `type=108`). */
   WELCOME: 108,
+  /** An NPC's examine (rsprox `type=npc_examine`; RuneLite NPC_EXAMINE). */
+  NPC_EXAMINE: 28,
+  /** An object's examine (rsprox `type=loc_examine`; RuneLite OBJECT_EXAMINE). */
+  LOC_EXAMINE: 29,
 } as const;
 
 /**
  * Live's highlight tags (`@mes_hl_gre@...</col>`): the official client colours them by the
  * chatbox's transparency (varbit chatbox_transparency 4608), this client does not, so content
  * resolves them before sending. gre and red are from captures (GotR); ora (Hardcore Worlds' death
- * broadcasts) is UNVERIFIED: the classic orange, for both backgrounds.
+ * broadcasts) is UNVERIFIED: the classic orange, for both backgrounds. pur is Death Charge's
+ * (rsprox_transcripts/237/04102.txt: a53fff with chatbox_transparency 1, 6800bf after it went to 0).
  */
 export const CHAT_HIGHLIGHTS: Record<string, { opaque: string; transparent: string }> = {
   gre: { opaque: "06600c", transparent: "229628" },
   red: { opaque: "ef1020", transparent: "ef1020" },
   ora: { opaque: "ff9040", transparent: "ff9040" },
+  pur: { opaque: "6800bf", transparent: "a53fff" },
 };
 
 /** `text` with each known `@mes_hl_<colour>@` tag as a `<col=...>` for that chatbox background. */
@@ -3020,7 +3037,7 @@ export function encodePlayerAppearance(
   text(name);
   byte(combatLevel);
   short(skillLevel);
-  byte(0); // visible
+  byte(appearance.hidden ? 1 : 0);
   short(0); // no colour/texture overrides
   text("");
   text("");

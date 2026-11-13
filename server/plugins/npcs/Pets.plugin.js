@@ -25,6 +25,7 @@ const Dialogue = require("./pets/Dialogue.Pets");
 const RiftGuardian = require("./pets/RiftGuardian.Pets");
 const TombsOfAmascut = require("./pets/TombsOfAmascut.Pets");
 const Beaver = require("./pets/Beaver.Pets");
+const GiantSquirrel = require("./pets/GiantSquirrel.Pets");
 
 const CURRENT_PET_ATTRIBUTE = "pets:current";
 /** The item of the follower the player logged out with; re-summoned on login. */
@@ -984,11 +985,12 @@ const CAT_WOOL_MS = 51 * 60 * 1000;
 const CAT_STROKE_MS = 18 * 60 * 1000;
 const CAT_STROKE_SATIATED_MS = 25 * 60 * 1000;
 // Wiki "Wily cat" / "Lazy cat": a 50% and about 33% base success rate. Their extra
-// activity-level roll is not modelled.
+// activity-level roll is not modelled. Wiki "Overgrown cat": it "will lose its ability to
+// catch vermin", so its chase never succeeds.
 const CAT_RAT_CHANCE = {
   kitten: 0.1, hellkitten: 0.1,
   cat: 0.5, hellcat: 0.5,
-  overgrown: 0.75, overgrown_hellcat: 0.75,
+  overgrown: 0, overgrown_hellcat: 0,
   wily: 0.5, wily_hellcat: 0.5,
   lazy: 1 / 3, lazy_hellcat: 1 / 3,
 };
@@ -2205,6 +2207,16 @@ function addBeaverForms({ CacheDefinitions }) {
   }
 }
 
+/** The giant squirrel's other forms, each its own item and follower (pets/GiantSquirrel.Pets.js). */
+function addGiantSquirrelForms({ CacheDefinitions }) {
+  const base = PET_BY_NAME.get("GIANT_SQUIRREL");
+  for (const pet of GiantSquirrel.rows(base, CacheDefinitions)) {
+    if (PET_BY_ID.has(pet.petId) || PET_BY_ITEM_ID.has(pet.itemId)) continue;
+    PETS.push(pet); PET_BY_ID.set(pet.petId, pet); PET_BY_NAME.set(pet.enumName, pet); PET_BY_ITEM_ID.set(pet.itemId, pet);
+    if (Number.isInteger(pet.houseNpcId)) PET_BY_HOUSE_ID.set(pet.houseNpcId, pet);
+  }
+}
+
 /** The player's own active follower, free to change form now. */
 function isOwnFollower(player, npc) {
   return player?.getAttribute?.(CURRENT_PET_ATTRIBUTE) === npc && npc?.getOwner?.() === player
@@ -2252,6 +2264,7 @@ module.exports = {
     ItemDefinitionClass = api.core?.ItemDefinition ?? null;
     fillSkillPetVariants(api.core);
     addBeaverForms(api.core);
+    addGiantSquirrelForms(api.core);
     addExtensionPets(api);
     api.persistAttribute(OWNED_ATTRIBUTE);
     api.persistAttribute(LAST_PET_ATTRIBUTE);
@@ -2293,6 +2306,7 @@ module.exports = {
     RiftGuardian.attach(api, {pets: PETS, skill: Skill.RUNECRAFTING, world: World, currentAttribute: CURRENT_PET_ATTRIBUTE,
       activeAttribute: ACTIVE_PET_ATTRIBUTE, lastAttribute: LAST_PET_ATTRIBUTE, getPetByNpcId, setStoredVariant, recordOwnership, syncFollowerIndex});
     Beaver.attach(api, {getPetForItemId, recordOwnership, setStoredVariant, transformFollower, isOwnFollower});
+    GiantSquirrel.attach(api, {getPetForItemId, recordOwnership, setStoredVariant, transformFollower, isOwnFollower});
     TombsOfAmascut.attach(api, {world: World, currentAttribute: CURRENT_PET_ATTRIBUTE, activeAttribute: ACTIVE_PET_ATTRIBUTE,
       lastAttribute: LAST_PET_ATTRIBUTE, getPetByNpcId, setStoredVariant});
 

@@ -325,3 +325,74 @@ test("the house cider sends its captured line, two spaces after the first senten
   assert.equal(slotId(f, 10), I.BEER_GLASS_4);
   assert.deepEqual(f.spam, ["You drink the cider.  You feel slightly reinvigorated...", "...and slightly dizzy too."]);
 });
+
+// Sailing drinks, rsprox rec 237/04103 (human_eat, two spam lines, the glass left) and the Wiki pages.
+function setLevels(f, levels) {
+  for (const [name, value] of Object.entries(levels)) {
+    const skill = core.Skill[name];
+    f.skills.setMaxLevel(skill, value);
+    f.skills.setCurrentLevel(skill, value, false);
+  }
+}
+const ALL_99 = { DEFENCE: 99, SAILING: 99, FISHING: 99, SLAYER: 99, HUNTER: 99, COOKING: 99, AGILITY: 99,
+  THIEVING: 99, RANGED: 99, MAGIC: 99 };
+const SAILING_DRINKS = [
+  ["BARNACLE_BLASTER", "COCKTAIL_GLASS", ["You drink the Barnacle blaster.", "It has a bit of a crunch to it."],
+    { ATTACK: 96, DEFENCE: 96, STRENGTH: 96, SAILING: 96, FISHING: 100 }],
+  ["KRAKEN_COLADA", "COCKTAIL_GLASS", ["You drink the Kraken colada.", "You find yourself feeling rather woozy."],
+    { ATTACK: 96, DEFENCE: 96, STRENGTH: 96, SAILING: 96, SLAYER: 100 }],
+  ["SAILORS_MIRAGE", "COCKTAIL_GLASS", ["You drink the Sailor's mirage.", "You feel something sharp in your mouth."],
+    { ATTACK: 96, DEFENCE: 96, STRENGTH: 96, SAILING: 96, HUNTER: 100 }],
+  ["WHIRLPOOL_SURPRISE", "BEER_GLASS", ["You drink the rum cocktail. It tastes great!", "You feel inspired to both cook and sail!"],
+    { COOKING: 101, SAILING: 102, AGILITY: 97 }],
+  ["HORIZONS_LURE", "BEER_GLASS", ["You drink the rich golden ale. It tastes like a fond memory.", "You feel optimistic about the future."],
+    { SAILING: 103, THIEVING: 97 }],
+  ["TRAWLERS_TRUST", "BEER_GLASS", ["You drink the refreshing beer. It tastes foamy and salty.", "You feel at one with the sea!"],
+    { SAILING: 101, FISHING: 101, ATTACK: 97 }],
+  ["PERILDANCE_BITTER", "BEER_GLASS", ["You drink the deep red bitter. It tastes paradoxically sweet!", "You feel your muscles bulge and your sight become sharp!"],
+    { SAILING: 100, STRENGTH: 101, RANGED: 101, MAGIC: 97 }],
+  ["KRAKEN_INK_STOUT", "BEER_GLASS", ["You drink the rich stout. It thickly coats the back of your throat.", "Somehow you feel more adept at magic."],
+    { SAILING: 100, MAGIC: 101, ATTACK: 97 }],
+];
+for (const [item, glass, lines, expected] of SAILING_DRINKS) {
+  test(`${item} drinks with its captured lines, boosts and drains, leaving a glass`, async t => {
+    const f = actor(t);
+    setLevels(f, ALL_99);
+    f.inv.setItem(2, new core.Item(I[item], 1));
+    await drink(f, 2);
+    assert.equal(slotId(f, 2), I[glass]);
+    assert.deepEqual(f.spam, lines);
+    assert.deepEqual(f.game, []);
+    assert.deepEqual(f.animations, [829]);
+    assert.equal(f.p.getHitpoints(), 80, "no healing");
+    const after = { ATTACK: 99, STRENGTH: 99, DEFENCE: 99, ...ALL_99, ...expected };
+    for (const [name, value] of Object.entries(after)) assert.equal(level(f, name), value, name);
+  });
+}
+
+// Wiki (Brewing): each mature brew heals 2, at 99 Attack/Strength/Defence and 50 in the boosted skill.
+const ale = reinvigorated => [`You drink the ${reinvigorated}. You feel slightly reinvigorated...`, "...and slightly dizzy too."];
+const MATURE_BREWS = [
+  ["ASGARNIAN_ALE_M_", ale("ale"), { STRENGTH: 102, ATTACK: 92 }],
+  ["GREENMANS_ALE_M_", ["You drink the Greenman's Ale.", "It has a strange taste."], { HERBLORE: 52, ATTACK: 93, STRENGTH: 93, DEFENCE: 93 }],
+  ["DRAGON_BITTER_M_", ale("Dragon Bitter"), { STRENGTH: 102, ATTACK: 93 }],
+  ["DWARVEN_STOUT_M_", ["You drink the Dwarven Stout. It tastes foul.", "It tastes pretty strong too."], { MINING: 52, SMITHING: 52, ATTACK: 93, STRENGTH: 93, DEFENCE: 93 }],
+  ["AXEMANS_FOLLY_M_", null, { WOODCUTTING: 52, ATTACK: 95, STRENGTH: 95 }],
+  ["CHEFS_DELIGHT_M_", ale("ale"), { COOKING: 54, ATTACK: 92, STRENGTH: 92 }],
+  ["MATURE_WMB", ["You drink the Wizard's Mind Bomb.", "You feel very strange."], { MAGIC: 54, ATTACK: 93, STRENGTH: 93, DEFENCE: 93 }],
+  ["MATURE_CIDER", ale("cider"), { FARMING: 52, ATTACK: 95, STRENGTH: 95 }],
+];
+for (const [item, lines, expected] of MATURE_BREWS) {
+  test(`${item} drinks: heals 2 with the Wiki's mature boost and drain, leaving a beer glass`, async t => {
+    const f = actor(t);
+    setLevels(f, { DEFENCE: 99, HERBLORE: 50, MINING: 50, SMITHING: 50, WOODCUTTING: 50, COOKING: 50, MAGIC: 50, FARMING: 50 });
+    f.inv.setItem(3, new core.Item(I[item], 1));
+    await drink(f, 3);
+    assert.equal(slotId(f, 3), I.BEER_GLASS);
+    assert.equal(f.p.getHitpoints(), 82);
+    if (lines) assert.deepEqual(f.spam, lines);
+    assert.deepEqual(f.animations, [829]);
+    const after = { ATTACK: 99, STRENGTH: 99, DEFENCE: 99, ...expected };
+    for (const [name, value] of Object.entries(after)) assert.equal(level(f, name), value, name);
+  });
+}

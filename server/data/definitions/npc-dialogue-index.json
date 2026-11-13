@@ -6704,7 +6704,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -6762,7 +6762,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -6820,7 +6820,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -6878,7 +6878,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -6936,7 +6936,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -20790,6 +20790,12 @@
       "page": "Transcript:Death to the Dorgeshuun",
       "variants": [
         "a-tour-of-lumbridge-father-aereck"
+      ]
+    },
+    {
+      "page": "Transcript:The Lost Tribe",
+      "variants": [
+        "a-hole-in-the-wall-asking-father-aereck"
       ]
     },
     {
@@ -40515,7 +40521,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -46740,6 +46746,7 @@
         "witchaven-talking-to-mayor-hobb",
         "witchaven-talking-to-mayor-hobb-2",
         "witchaven-talking-to-mayor-hobb-again",
+        "the-pages-mayor-hobb-leaving-the-church",
         "the-imposing-door-opening-the-door-with-the-runes-and-commorb",
         "the-imposing-door-reentering-the-fight",
         "the-imposing-door-after-killing-the-slug-prince"
@@ -46753,6 +46760,7 @@
         "witchaven-talking-to-mayor-hobb",
         "witchaven-talking-to-mayor-hobb-2",
         "witchaven-talking-to-mayor-hobb-again",
+        "the-pages-mayor-hobb-leaving-the-church",
         "the-imposing-door-opening-the-door-with-the-runes-and-commorb",
         "the-imposing-door-reentering-the-fight",
         "the-imposing-door-after-killing-the-slug-prince"
@@ -46885,7 +46893,8 @@
       "variants": [
         "witchaven-talking-to-jeb",
         "witchaven-talking-to-jeb-after-holgart-says-to-ask-him-about-a-boat",
-        "witchaven-talking-to-jeb-at-the-fishing-platform"
+        "witchaven-talking-to-jeb-at-the-fishing-platform",
+        "witchaven-talking-to-jeb-before-holgart-mentions-the-boat"
       ]
     }
   ],
@@ -46903,7 +46912,8 @@
       "variants": [
         "witchaven-talking-to-jeb",
         "witchaven-talking-to-jeb-after-holgart-says-to-ask-him-about-a-boat",
-        "witchaven-talking-to-jeb-at-the-fishing-platform"
+        "witchaven-talking-to-jeb-at-the-fishing-platform",
+        "witchaven-talking-to-jeb-before-holgart-mentions-the-boat"
       ]
     }
   ],
@@ -48087,10 +48097,14 @@
       "page": "Transcript:The Slug Menace",
       "variants": [
         "starting-off-contact-with-commorb-v2",
+        "witchaven-savant-asking-to-scan-the-mayor",
+        "witchaven-scanning-the-mayor",
+        "witchaven-contacting-the-commorb-while-investigating-witchaven",
         "the-shrine-contacting-commorb-before-scanning-the-shrine",
         "the-shrine-scanning-the-commorb-near-the-door",
         "the-shrine-scanning-commorb-near-the-door",
         "the-shrine-contacting-the-commorb-after-scanning-the-doors",
+        "the-shrine-picking-up-the-dead-sea-slug",
         "the-pages-talking-to-jorral",
         "the-pages-after-talking-to-jorral",
         "the-pages-contacting-the-commorb-after-learning-about-mother-mallum",
@@ -50170,7 +50184,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -50385,7 +50399,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -50443,7 +50457,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -50501,7 +50515,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -50559,7 +50573,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -50617,7 +50631,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -53078,7 +53092,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -53136,7 +53150,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -53332,7 +53346,7 @@
       "variants": [
         "a-hole-in-the-wall-the-duke-s-adviser",
         "a-hole-in-the-wall-the-duke-s-adviser-talking-to-sigmund-again-after-starting-the-quest",
-        "a-hole-in-the-wall-asking-bob-talking-to-sigmund-after-talking-to-bob",
+        "a-hole-in-the-wall-talking-to-the-npc-who-saw-the-goblin-talking-to-sigmund-after-talking-to-who-saw-the-goblin",
         "a-hole-in-the-wall-convincing-horacio",
         "a-hole-in-the-wall-convincing-horacio-talking-to-sigmund-again",
         "a-hole-in-the-wall-opening-the-tunnel-talking-to-the-duke-after-opening-the-tunnel",
@@ -93467,8 +93481,7 @@
     {
       "page": "Transcript:The Lost Tribe",
       "variants": [
-        "a-hole-in-the-wall-asking-bob",
-        "a-hole-in-the-wall-asking-bob-talking-to-bob-again"
+        "a-hole-in-the-wall-asking-bob"
       ]
     }
   ],

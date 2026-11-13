@@ -6,7 +6,7 @@ import { Misc } from "../../../../util/Misc";
 import { Mobile } from "../../../entity/impl/Mobile";
 import { BonusManager } from "../../../model/equipment/BonusManager";
 import { Skill } from "../../../model/Skill";
-import { withHitVictim, hitVictimOf, applyCombatEffectiveLevelModifiers, applyMeleeAttackAccuracyModifiers, applyRangedAttackAccuracyModifiers, applyMagicAttackAccuracyModifiers, applyMeleeDefenseModifiers, applyRangedDefenseModifiers, applyMagicDefenseModifiers } from "../EquipmentEffects";
+import { withHitVictim, hitVictimOf, applyCombatEffectiveLevelModifiers, applyMeleeAttackAccuracyModifiers, applyRangedAttackAccuracyModifiers, applyMagicAttackAccuracyModifiers, applyMagicAccuracyPercentModifiers, applyMeleeDefenseModifiers, applyRangedDefenseModifiers, applyMagicDefenseModifiers } from "../EquipmentEffects";
 import type { Player } from '../../../entity/impl/player/Player';
 import { World } from "../../../World";
 import { PluginManager } from "../../../../plugins/PluginManager";
@@ -148,7 +148,16 @@ export class AccuracyFormulasDpsCalc {
             && fightType.getStyle() == FightStyle.ACCURATE;
     }
 
+    /**
+     * Wiki (Deadeye, Mystic Vigour): +5% Defence, the only Defence boosts that stack with the skin
+     * prayers; multiple prayers' Defence boosts add up.
+     */
     private static defencePrayerPercent(player: Player): number {
+        const upgradeBonus = (PrayerHandler.deadeyeActive(player) || PrayerHandler.mysticVigourActive(player)) ? 5 : 0;
+        return AccuracyFormulasDpsCalc.baseDefencePrayerPercent(player) + upgradeBonus;
+    }
+
+    private static baseDefencePrayerPercent(player: Player): number {
         if (PrayerHandler.isActivated(player, PrayerHandler.THICK_SKIN)) {
             return 105;
         } else if (PrayerHandler.isActivated(player, PrayerHandler.ROCK_SKIN)) {
@@ -174,7 +183,7 @@ export class AccuracyFormulasDpsCalc {
         } else if (PrayerHandler.isActivated(player, PrayerHandler.HAWK_EYE)) {
             return 110;
         } else if (PrayerHandler.isActivated(player, PrayerHandler.EAGLE_EYE)) {
-            return 115;
+            return PrayerHandler.deadeyeActive(player) ? 118 : 115; // Wiki: Deadeye
         } else if (PrayerHandler.isActivated(player, PrayerHandler.RIGOUR)) {
             return 120;
         }
@@ -187,7 +196,7 @@ export class AccuracyFormulasDpsCalc {
         } else if (PrayerHandler.isActivated(player, PrayerHandler.MYSTIC_LORE)) {
             return 110;
         } else if (PrayerHandler.isActivated(player, PrayerHandler.MYSTIC_MIGHT)) {
-            return 115;
+            return PrayerHandler.mysticVigourActive(player) ? 118 : 115; // Wiki: Mystic Vigour
         } else if (PrayerHandler.isActivated(player, PrayerHandler.AUGURY)) {
             return 125;
         }
@@ -289,6 +298,11 @@ export class AccuracyFormulasDpsCalc {
             defRoll = AccuracyFormulasDpsCalc.magicDefenceRollEvent(entity, enemy, defRoll);
         }
 
+        const defenceRequest = { attacker: entity, target: enemy, combatType: defenceStyle, defenceRoll: defRoll };
+        PluginManager.emitCustomEvent("combat:defence-roll", defenceRequest);
+        if (Number.isFinite(defenceRequest.defenceRoll) && defenceRequest.defenceRoll >= 0) {
+            defRoll = Math.floor(defenceRequest.defenceRoll);
+        }
         attRoll = Math.floor(attRoll * AccuracyFormulasDpsCalc.scopedAccuracyScale);
 
         return { attack: attRoll, defence: defRoll };
@@ -695,6 +709,11 @@ export class AccuracyFormulasDpsCalc {
         const baseAttackRoll = cache.attackMagicRoll ??= Math.floor(AccuracyFormulasDpsCalc.effectiveMagicLevel(entity) * (accuracyBonus + 64));
         let attRoll = baseAttackRoll;
         if (entity.isPlayer()) {
+            // The Wiki DPS calculator adds these percentages up, then scales the roll once.
+            const percent = applyMagicAccuracyPercentModifiers(entity, entity.getCombat().getSelectedSpell());
+            if (percent !== 0) {
+                attRoll = Math.floor((attRoll * (100 + percent)) / 100);
+            }
             attRoll = Math.floor(applyMagicAttackAccuracyModifiers(entity, attRoll));
         }
 

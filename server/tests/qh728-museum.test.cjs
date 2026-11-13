@@ -515,7 +515,7 @@ test("Museum: real cache actions, transcript assessment, display cases and Minas
     world.itemAction({ player: relogged, item: relogged.inventory.get(slot), itemId, slot });
     const prompt = world.xpreward.at(-1);
     assert.equal(prompt.minLevel, lamp.minLevel);
-    assert.equal(prompt.onConfirm(skill, "Attack"), `<col=0000ff>Your wish has been granted!</col> You have been awarded ${lamp.xp.toLocaleString("en-GB")} Attack experience!`);
+    assert.equal(prompt.onConfirm(skill, "Attack"), `<col=0000ff>Your wish has been granted!</col><br>You have been awarded ${lamp.xp.toLocaleString("en-GB")} Attack experience!`);
     expectedXp += lamp.xp;
     assert.equal(relogged.inventory.getAmount(itemId), 0);
   }
@@ -584,7 +584,8 @@ test("Museum: lamp reports show the lamp box and go on to the next report", () =
   assert.equal(getKudos(world, player), 20);
   assert.deepEqual(new Set(player.getAttribute(STATE).minas),
     new Set(["shield_of_arrav", "merlins_crystal", "making_history", "demon_slayer"]));
-  assert.equal(player.messages.filter((message) => message === "You receive an old lamp.").length, 3);
+  // Each lamp: the game message, and the box's own mesbox copy (rsprox 3278 ticks 5785, 5796, 5821).
+  assert.equal(player.messages.filter((message) => message === "You receive an old lamp.").length, 6);
   assert.equal(player.spam.filter((message) => message === KUDOS_MESSAGE).length, 4);
   for (const varbit of [VM.silverlight, VM.soa, VM.soaVisible, VM.excalibur, VM.lathas]) assert.equal(player.getVarbit(varbit), 1, `varbit ${varbit}`);
   for (const lamp of [11185, 11186, 11187]) assert.equal(player.inventory.getAmount(lamp), 1, `lamp ${lamp}`);
@@ -660,7 +661,25 @@ test("Museum: Curse of the Empty Lord pays 10 Kudos and its 10,000 XP lamp only 
   const prompt = world.xpreward.at(-1);
   assert.equal(prompt.minLevel, 50);
   dressed.setLevel("Attack", 50);
-  assert.equal(prompt.onConfirm(skill, "Attack"), "<col=0000ff>Your wish has been granted!</col> You have been awarded 10,000 Attack experience!");
+  assert.equal(prompt.onConfirm(skill, "Attack"), "<col=0000ff>Your wish has been granted!</col><br>You have been awarded 10,000 Attack experience!");
+});
+
+test("Museum: the Sailing salvage lamps open xpreward at 30/40/50 and pay 5,000/10,000/15,000 XP", () => {
+  const world = makeApi(new Set());
+  const skill = { getName: () => "Sailing", getIndex: () => 0 };
+  for (const [itemId, minLevel, xp] of [[32871, 30, "5,000"], [32872, 40, "10,000"], [32873, 50, "15,000"]]) {
+    const player = makePlayer({}, { [itemId]: 1 }, []);
+    player.setLevel("Sailing", minLevel);
+    const slot = player.inventory.slotOf(itemId);
+    world.itemAction({ player, item: player.inventory.get(slot), itemId, slot });
+    const prompt = world.xpreward.at(-1);
+    assert.equal(prompt.player, player);
+    assert.equal(prompt.minLevel, minLevel);
+    assert.equal(prompt.skills, undefined, "any skill");
+    assert.equal(prompt.onConfirm(skill, "Sailing"), `<col=0000ff>Your wish has been granted!</col><br>You have been awarded ${xp} Sailing experience!`);
+    assert.equal(player.inventory.getAmount(itemId), 0);
+    assert.equal(player.getExperience("Sailing"), Number(xp.replace(",", "")));
+  }
 });
 
 test("Museum: Minas lamps enforce minimum level and full-bag retry without duplication", () => {

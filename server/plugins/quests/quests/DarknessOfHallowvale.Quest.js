@@ -622,7 +622,9 @@ module.exports = function registerDarknessOfHallowvaleQuest(api) {
   const REQUIRED_SKILLS = [
     { skill: Skill.CONSTRUCTION, level: 5, label: "Construction", boostable: true },
     { skill: Skill.MINING, level: 20, label: "Mining" },
-    { skill: Skill.THIEVING, level: 22, label: "Thieving" },
+    // Wiki (Darkness of Hallowvale): "The level 22 Thieving requirement to begin the quest is boostable"; the latch
+    // in Meiyerditch keeps an unboostable 22 (the base-level check below).
+    { skill: Skill.THIEVING, level: 22, label: "Thieving", boostable: true },
     { skill: Skill.AGILITY, level: 26, label: "Agility", boostable: true },
     { skill: Skill.CRAFTING, level: 32, label: "Crafting" },
     { skill: Skill.MAGIC, level: 33, label: "Magic", boostable: true },
@@ -2607,6 +2609,13 @@ module.exports = function registerDarknessOfHallowvaleQuest(api) {
     player.sendMessage("The book crumbles into a dust cloud of knowledge.");
   }
 
+  /** Wiki: Tome of Experience (Darkness of Hallowvale) "cannot be banked"; the refusal is the recorded one (223/00013). */
+  function refuseTomeBanking(event) {
+    if (TOME_ITEM_IDS.indexOf(event.item?.getId?.()) < 0) return;
+    event.allow = false;
+    if (!event.quiet) event.player.sendMessage("A magical force prevents you from banking this item!");
+  }
+
   function readTome(event) {
     const { player, item, slot } = event;
     if (TOME_ITEM_IDS.indexOf(event.itemId) < 0) return false;
@@ -2732,6 +2741,7 @@ module.exports = function registerDarknessOfHallowvaleQuest(api) {
   api.onItemAction("Tome of Experience (3)", { Read: readTome });
   api.onItemAction("Tome of Experience (2)", { Read: readTome });
   api.onItemAction("Tome of Experience (1)", { Read: readTome });
+  api.onCanBankItem(refuseTomeBanking);
   api.onItemAction("Sealed message", { Read: readSealedMessage });
   api.onGroundItemPickup(handleGroundItemPickup);
   api.onCustomEvent("destroy-item:destroyed", handleItemDestroyed);

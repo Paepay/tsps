@@ -66,6 +66,15 @@ function playHurtSoundForListeners(attacker, target, hurtIds) {
   }
 }
 
+/**
+ * Damage the player takes on itself (a divine potion's shock): only they hear it, in their own voice.
+ * Ours: Type B's voices here follow combat's; only Type A's were recorded for it.
+ */
+function playOwnHurtSound(player) {
+  if (!core || !player?.isRegistered?.() || player.isPlayerBot?.() || player.getNpcTransformationId() >= 0) return;
+  playHurtSound(player, hitSoundsType(player) === TYPE_A ? HURT_IDS.body0 : HURT_IDS.body1);
+}
+
 function initialize(coreApi) {
   core = coreApi;
 }
@@ -96,15 +105,33 @@ function playResolvedHitSound({ attacker, target, hit }) {
   }
 }
 
+/**
+ * A rebound that hurt a player (Vengeance, recoil, Retribution) is ordinary red damage, so it gets the
+ * struck player's hurt voice like any hit, heard by the same participants: in rsprox_transcripts/242/900257.txt
+ * tick 102 the recorder takes 32, says "Taste vengeance!", and hears both their own voice (518) and the
+ * opponent's (521) as the rebound lands, before their own next attack has reached them. Poison and venom have
+ * their own hitsplats and stay silent: in every recording only 1 of 3,393 poison-only ticks and none of
+ * 5,848 venom-only ticks carry a hurt voice, against 55,613 of 56,044 for ordinary damage.
+ */
+function playReflectedHurtSound({ target, source, taken }) {
+  if (!core || !(taken > 0) || !target?.isPlayer?.() || !source) return;
+  if (!source.isPlayer?.() && !source.isNpc?.()) return;
+  const player = target.getAsPlayer();
+  if (player.getNpcTransformationId() >= 0) return;
+  playHurtSoundForListeners(source, player, hitSoundsType(player) === TYPE_A ? HURT_IDS.body0 : HURT_IDS.body1);
+}
+
 module.exports = {
   name: "PlayerHitSounds",
   description: "Plays the hurt sound to players struck in combat, in the voice their Hit sounds setting chooses.",
   hitSoundsType,
+  playOwnHurtSound,
   register(api) {
     api.persistAttribute(HIT_SOUNDS_ATTRIBUTE, null);
     api.onCustomEvent("settings:option-chosen", chooseHitSounds);
     api.onPlayerLogin(sendHitSounds);
     api.onServerStartup(initialize.bind(null, api.core));
     api.onCombatHitResolved(playResolvedHitSound);
+    api.onCustomEvent("combat:reflected-damage", playReflectedHurtSound);
   },
 };

@@ -31,7 +31,7 @@ import { encodeContentData } from "../../net/protocol/ClientProtocol";
 
 const STRUCT_PARAMS_OPCODE = 249;
 const CACHE_EDITOR_SOURCE = "cache-editor";
-type CustomDefinitionFields = { baseId: number; fields: Record<string, unknown> };
+type CustomDefinitionFields = { baseId: number | null; fields: Record<string, unknown> };
 
 function customDefinitionRows(definitions: ReadonlyMap<string, CustomDefinitionFields>) {
     return [...definitions].map(([key, row]) => {
@@ -219,7 +219,7 @@ export class CacheDefinitions {
         for (const [key, row] of this.customDefinitions) {
             const [kind, id] = key.split(":");
             const archiveKind = (kind === "item" ? "obj" : kind) as ArchivedDefinitionKind;
-            if (changed[archiveKind].includes(row.baseId)) changed[archiveKind].push(Number(id));
+            if (row.baseId !== null && changed[archiveKind].includes(row.baseId)) changed[archiveKind].push(Number(id));
         }
     }
 
@@ -440,18 +440,22 @@ export class CacheDefinitions {
     static getStructParams(id: number): ReadonlyMap<number, number | string> {
         const cached = this.structParams.get(id);
         if (cached) return cached;
-        const params = new Map<number, number | string>();
         this.structArchive ??= CacheIndexDat2.fromStore(IndexType.DAT2.configs, CachePipeline.getStore())
             .getArchive(ConfigType.OSRS.struct);
         const file = this.structArchive.getFile(id);
-        if (file) {
-            const buffer = new ByteBuffer(new Int8Array(file.data));
-            for (let opcode = buffer.readUnsignedByte(); opcode !== 0; opcode = buffer.readUnsignedByte()) {
-                if (opcode !== STRUCT_PARAMS_OPCODE) break; // the only struct opcode
-                Type.readParamsMap(buffer, params);
-            }
-        }
+        const params = file ? this.decodeStructParams(new Int8Array(file.data)) : new Map<number, number | string>();
         this.structParams.set(id, params);
+        return params;
+    }
+
+    /** A struct file's params; also read from an older cache by scripts/league-era-cache.ts. */
+    static decodeStructParams(data: Int8Array): Map<number, number | string> {
+        const params = new Map<number, number | string>();
+        const buffer = new ByteBuffer(data);
+        for (let opcode = buffer.readUnsignedByte(); opcode !== 0; opcode = buffer.readUnsignedByte()) {
+            if (opcode !== STRUCT_PARAMS_OPCODE) break; // the only struct opcode
+            Type.readParamsMap(buffer, params);
+        }
         return params;
     }
 
@@ -472,34 +476,38 @@ export class CacheDefinitions {
     static getEnumValues(id: number): ReadonlyMap<number, number | string> {
         const cached = this.enumValues.get(id);
         if (cached) return cached;
-        const values = new Map<number, number | string>();
         // The enums archive is decoded once; decompressing it for each new enum caused a hitch.
         this.enumArchive ??= CacheIndexDat2.fromStore(IndexType.DAT2.configs, CachePipeline.getStore())
             .getArchive(ConfigType.DAT2.enums);
         const file = this.enumArchive.getFile(id);
-        if (file) {
-            const buffer = new ByteBuffer(new Int8Array(file.data));
-            for (let opcode = buffer.readUnsignedByte(); opcode !== 0; opcode = buffer.readUnsignedByte()) {
-                if (opcode === 1 || opcode === 2) buffer.readUnsignedByte(); // key / value type
-                else if (opcode === 3) buffer.readString(); // default string
-                else if (opcode === 4) buffer.readInt(); // default int
-                else if (opcode === 5 || opcode === 6) {
-                    const size = buffer.readUnsignedShort();
-                    for (let i = 0; i < size; i++) {
-                        const key = buffer.readInt();
-                        values.set(key, opcode === 5 ? buffer.readString() : buffer.readInt());
-                    }
-                } else if (opcode === 7 || opcode === 8) {
-                    buffer.readUnsignedShort(); // the dense table's size
-                    const size = buffer.readUnsignedShort();
-                    for (let i = 0; i < size; i++) {
-                        const key = buffer.readUnsignedShort();
-                        values.set(key, opcode === 7 ? buffer.readString() : buffer.readInt());
-                    }
-                } else break;
-            }
-        }
+        const values = file ? this.decodeEnumValues(new Int8Array(file.data)) : new Map<number, number | string>();
         this.enumValues.set(id, values);
+        return values;
+    }
+
+    /** An enum file's key -> value entries; also read from an older cache by scripts/league-era-cache.ts. */
+    static decodeEnumValues(data: Int8Array): Map<number, number | string> {
+        const values = new Map<number, number | string>();
+        const buffer = new ByteBuffer(data);
+        for (let opcode = buffer.readUnsignedByte(); opcode !== 0; opcode = buffer.readUnsignedByte()) {
+            if (opcode === 1 || opcode === 2) buffer.readUnsignedByte(); // key / value type
+            else if (opcode === 3) buffer.readString(); // default string
+            else if (opcode === 4) buffer.readInt(); // default int
+            else if (opcode === 5 || opcode === 6) {
+                const size = buffer.readUnsignedShort();
+                for (let i = 0; i < size; i++) {
+                    const key = buffer.readInt();
+                    values.set(key, opcode === 5 ? buffer.readString() : buffer.readInt());
+                }
+            } else if (opcode === 7 || opcode === 8) {
+                buffer.readUnsignedShort(); // the dense table's size
+                const size = buffer.readUnsignedShort();
+                for (let i = 0; i < size; i++) {
+                    const key = buffer.readUnsignedShort();
+                    values.set(key, opcode === 7 ? buffer.readString() : buffer.readInt());
+                }
+            } else break;
+        }
         return values;
     }
 
@@ -693,15 +701,16 @@ export class CacheDefinitions {
      * refused.
      */
     static registerCustomDefinitions(
-        rows: readonly { kind: string; id: number; baseId: number; fields?: Record<string, unknown> }[],
+        rows: readonly { kind: string; id: number; baseId: number | null; fields?: Record<string, unknown> }[],
         source = CACHE_EDITOR_SOURCE,
     ): number {
         const next = new Map<string, CustomDefinitionFields>();
         const counts = this.getBaseCounts();
         for (const row of rows) {
             const count = row?.kind === "loc" ? counts.objects : row?.kind === "npc" ? counts.npcs : counts.items;
+            const validBase = row?.baseId === null || (!!row && Number.isInteger(row.baseId) && row.baseId >= 0 && row.baseId < count);
             if (!row || !["loc", "npc", "item"].includes(row.kind) || !Number.isInteger(row.id) || row.id < Math.max(50000, count) || row.id >= 65535 ||
-                !Number.isInteger(row.baseId) || row.baseId < 0 || row.baseId >= count || next.has(`${row.kind}:${row.id}`)) throw new Error("Invalid custom definition identity");
+                !validBase || next.has(`${row.kind}:${row.id}`)) throw new Error("Invalid custom definition identity");
             if (row.kind === "item" && this.customItems.has(row.id)) throw new Error("Item ID already belongs to custom-items");
             const owner = this.getCustomDefinitionOwner(row.kind, row.id);
             if (owner !== undefined && owner !== source) throw new Error(`Custom ${row.kind} ${row.id} already belongs to ${owner}`);
@@ -730,7 +739,7 @@ export class CacheDefinitions {
         return undefined;
     }
 
-    static getCustomDefinitions(): Array<{ kind: string; id: number; baseId: number; fields: Record<string, unknown> }> {
+    static getCustomDefinitions(): Array<{ kind: string; id: number; baseId: number | null; fields: Record<string, unknown> }> {
         return customDefinitionRows(this.customDefinitions);
     }
 
@@ -755,13 +764,21 @@ export class CacheDefinitions {
      * The overlay applied: the base definition cloned with its overridden fields. A shallow clone is
      * enough because every overridable field is a scalar or a whole array.
      */
+    private static createBlankCustomDefinition(kind: string, id: number): object {
+        const info = this.getState().info;
+        if (kind === "loc") return new LocType(id, info);
+        if (kind === "npc") return new NpcType(id, info);
+        if (kind === "item") return new ObjType(id, info);
+        throw new Error(`Cannot create a blank ${kind} definition`);
+    }
+
     private static applyCustomDefinition<T extends object>(kind: string, id: number, loadBase: (baseId: number) => T): T | undefined {
         const row = this.customDefinitions.get(`${kind}:${id}`);
         if (!row) return undefined;
         const key = `${kind}:${id}`;
         const cached = this.customDefinitionCache.get(key) as T | undefined;
         if (cached) return cached;
-        const base = loadBase(row.baseId);
+        const base = row.baseId === null ? this.createBlankCustomDefinition(kind, id) as T : loadBase(row.baseId);
         if (!base) return undefined;
         const clone = Object.assign(Object.create(Object.getPrototypeOf(base)), base) as T;
         for (const [field, value] of Object.entries(base)) {
@@ -771,11 +788,16 @@ export class CacheDefinitions {
             (clone as any)[field] = field === "params" && value && !Array.isArray(value)
                 ? new Map(Object.entries(value).map(([id, entry]) => [Number(id), entry])) : structuredClone(value);
         }
-        if (Object.prototype.hasOwnProperty.call(row.fields, "actions") && !Object.prototype.hasOwnProperty.call(row.fields, "isInteractive") && "isInteractive" in clone) {
+        if (row.baseId !== null && Object.prototype.hasOwnProperty.call(row.fields, "actions") && !Object.prototype.hasOwnProperty.call(row.fields, "isInteractive") && "isInteractive" in clone) {
             (clone as any).isInteractive = ((clone as any).actions ?? []).some(Boolean) ? 1 : 0;
         }
         if (kind === "item") delete (clone as any).__postProcessed;
         (clone as { id: number }).id = id;
+        if (row.baseId === null) {
+            // Fresh definitions bypass the native loader, so finalize derived defaults only after
+            // authored fields have been applied (for example, loc model/action interactivity).
+            (clone as Type).post();
+        }
         this.customDefinitionCache.set(key, clone);
         return clone;
     }

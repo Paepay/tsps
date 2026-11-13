@@ -68,13 +68,14 @@ export class DamageFormulas {
         const stages = traits.damageMultiplierStages;
         if (stages && stages.length > 0) {
             return stages.reduce((value, multiplier, index) => {
-                const scaled = value * multiplier;
-                return traits.damageMultiplierStageRounding?.[index] === "ceil"
-                    ? Math.ceil(scaled)
-                    : Math.floor(scaled);
+                if (traits.damageMultiplierStageRounding?.[index] !== "ceil") {
+                    return DamageFormulas.scaleSpecial(value, multiplier);
+                }
+                return Math.ceil((value * Math.round(multiplier * 1000)) / 1000);
             }, maxHit);
         }
-        return Math.floor(maxHit * (traits.damageMultiplier ?? 1));
+        // Integer scaling, as accuracy uses: 45 * (1 + 80 * 0.005) is 62.99... in floats.
+        return DamageFormulas.scaleSpecial(maxHit, traits.damageMultiplier ?? 1);
     }
 
     private static applyVisibleLevelMultiplier(level: number, multiplier: number | undefined): number {
@@ -134,7 +135,7 @@ export class DamageFormulas {
         } else if (PrayerHandler.isActivated(player, PrayerHandler.HAWK_EYE)) {
             return 110;
         } else if (PrayerHandler.isActivated(player, PrayerHandler.EAGLE_EYE)) {
-            return 115;
+            return PrayerHandler.deadeyeActive(player) ? 118 : 115; // Wiki: Deadeye
         } else if (PrayerHandler.isActivated(player, PrayerHandler.RIGOUR)) {
             return 123;
         }
@@ -226,7 +227,7 @@ export class DamageFormulas {
         maxHit = CombatSpells.applyChargeMaxHit(c, maxHit, spell);
         const baseMaxHit = maxHit;
 
-        maxHit = DamageFormulas.applyMagicDamageBonus(c, maxHit);
+        maxHit = DamageFormulas.applyMagicDamageBonus(c, maxHit, spell);
 
         const demonbaneMultiplier = (spell as any)?.demonbaneDamageMultiplier?.(c);
         if (typeof demonbaneMultiplier === "number") {
@@ -381,7 +382,8 @@ export class DamageFormulas {
         return DamageFormulas.maximumRangeHitDpsCalc(player, includeSpecial);
     }
 
-    public static applyMagicDamageBonus(entity: Mobile, maxHit: number): number {
+    /** `spell` is the spell whose max hit this is, for bonuses that only some spells get. */
+    public static applyMagicDamageBonus(entity: Mobile, maxHit: number, spell?: CombatSpell | null): number {
         if (!entity.isPlayer()) {
             return maxHit;
         }
@@ -394,7 +396,8 @@ export class DamageFormulas {
 
         const bonusPermille = applyMagicDamageBonusModifiers(
             player,
-            equipmentPermille + prayerPermille
+            equipmentPermille + prayerPermille,
+            spell ?? undefined
         );
         return DamageFormulas.scaleRatio(maxHit, 1000 + bonusPermille, 1000);
     }
@@ -404,7 +407,7 @@ export class DamageFormulas {
             return 40;
         }
         if (PrayerHandler.isActivated(player, PrayerHandler.MYSTIC_MIGHT)) {
-            return 20;
+            return PrayerHandler.mysticVigourActive(player) ? 30 : 20; // Wiki: Mystic Vigour +3%
         }
         if (PrayerHandler.isActivated(player, PrayerHandler.MYSTIC_LORE)) {
             return 10;

@@ -164,3 +164,114 @@ test("a hunter reminds a player with an unfinished rumour with the captured word
   Rumours.assign(p, 0, NPC.GILMAN);
   assert.equal(said(), "You're hunting for me at the moment. This rumour was about a embertailed jerboa. You'll need to bring back its tail.");
 });
+
+// A catch of the rumour's creature: the red chinchompa from Aco, caught in a box trap.
+function catchPart(p, { count = 0, random = 0 } = {}) {
+  const state = Rumours.state(p);
+  state.assignments[3] = { task: Rumours.tasks.findIndex((t) => t.npc === "CARNIVOROUS_CHINCHOMPA"), count, found: false };
+  state.active = 3;
+  const realRandom = Math.random;
+  Math.random = () => random;
+  try { Rumours.success({ player: p, npcId: C.H.core.NpcIdentifiers.CARNIVOROUS_CHINCHOMPA, method: "box" }); }
+  finally { Math.random = realRandom; }
+  return state.assignments[3];
+}
+function huntingPlayer(options = {}, fill = 0) {
+  const p = player(options);
+  for (let i = 0; i < fill; i++) p.items.set(20000 + i, 1);
+  p.sounds = []; p.ground = [];
+  p.getPacketSender = () => ({ sendInterfaceRemoval: () => {}, sendSound: (id, loops, delay) => p.sounds.push([id, loops, delay]) });
+  p.getEquipment = () => ({ getItems: () => [] });
+  p.getLocation = () => ({ clone: () => "under the player" });
+  p.getPrivateArea = () => null;
+  C.H.core.Item = class { constructor(id, amount) { this.id = id; this.amount = amount; } };
+  C.H.core.ItemOnGroundManager = { registerLocation: (owner, item, at, area, options) => p.ground.push({ owner, item, at, area, options }) };
+  return p;
+}
+
+test("a found part is announced in green with its jingle and goes to the inventory", () => {
+  const p = huntingPlayer();
+  const assignment = catchPart(p);
+  assert.equal(sent.messages.at(-1), "<col=229628>You find a rare piece of the creature! You should take it back to the Hunter Guild.");
+  assert.deepEqual(p.sounds, [[2655, 1, 0]]);
+  assert.equal(p.items.get(ITEM.PART), 1);
+  assert.equal(assignment.found, true);
+  assert.deepEqual(p.ground, []);
+});
+
+test("with a full inventory the part drops under the player, for them only, with live's line", () => {
+  const p = huntingPlayer({}, 28);
+  const assignment = catchPart(p);
+  assert.equal(sent.messages.at(-1), "<col=229628>You find a rare piece of the creature! Though without space in your inventory, it drops to the ground.");
+  assert.deepEqual(p.sounds, [[2655, 1, 0]]);
+  assert.equal(p.items.get(ITEM.PART), undefined);
+  assert.equal(p.ground.length, 1);
+  assert.equal(p.ground[0].owner, p);
+  assert.deepEqual([p.ground[0].item.id, p.ground[0].item.amount, p.ground[0].at], [ITEM.PART, 1, "under the player"]);
+  assert.deepEqual(p.ground[0].options, { goesGlobal: false, despawnDelay: 200 });
+  assert.equal(assignment.found, true);
+});
+
+test("a pity part with a full inventory is not given and waits for the next catch", () => {
+  const p = huntingPlayer({}, 28);
+  const assignment = catchPart(p, { count: 99, random: 0.999 });
+  assert.deepEqual(p.ground, []);
+  assert.deepEqual(p.sounds, []);
+  assert.equal(assignment.found, false);
+  assert.equal(sent.messages.at(-1), "Free an inventory slot to receive the rare creature part on your next catch.");
+});
+
+test("a pity part with room is announced like any other", () => {
+  const p = huntingPlayer();
+  const assignment = catchPart(p, { count: 99, random: 0.999 });
+  assert.equal(sent.messages.at(-1), "<col=229628>You find a rare piece of the creature! You should take it back to the Hunter Guild.");
+  assert.deepEqual(p.sounds, [[2655, 1, 0]]);
+  assert.equal(assignment.found, true);
+});
+
+test("a catch that misses the roll sends nothing", () => {
+  const p = huntingPlayer();
+  const assignment = catchPart(p, { random: 0.999 });
+  assert.deepEqual([sent.messages, p.sounds, assignment.found], [[], [], false]);
+});
+
+function openSack(sack, { fits = true } = {}) {
+  const p = huntingPlayer({ held: [sack] });
+  const inventory = p.getInventory;
+  p.getInventory = () => ({ ...inventory(), getAmount: (id) => p.items.get(id) ?? 0 });
+  p.getEquipment = () => ({ getItems: () => [], getAmount: () => 0 });
+  C.H.core.Bank = { TOTAL_BANK_TABS: 0, BANK_SEARCH_TAB_INDEX: -1 };
+  const exchange = C.exchange, random = Math.random;
+  C.exchange = (player, remove) => { if (!fits) return false; for (const [id, n] of remove) player.items.set(id, player.items.get(id) - n); return true; };
+  C.H.core.ItemIdentifiers = new Proxy({}, { get: (t, k) => ({ HUNTERS_LOOT_SACK_BASIC_: ITEM.SACK_BASIC, HUNTERS_LOOT_SACK_ADEPT_: ITEM.SACK_ADEPT,
+    HUNTERS_LOOT_SACK_EXPERT_: ITEM.SACK_EXPERT, HUNTERS_LOOT_SACK_MASTER_: ITEM.SACK_MASTER })[k] ?? 7000 });
+  C.H.core.Skill.WOODCUTTING = "woodcutting";
+  Math.random = () => 0.5;
+  try { assert.equal(Rumours.open({ player: p, itemId: sack }), true); }
+  finally { C.exchange = exchange; Math.random = random; }
+  return p;
+}
+const quetzinRolls = () => events.filter(([name, e]) => name === "hunter:success" && e.method === "rumour-sack").map(([, e]) => e.petChance);
+
+test("every sack plays its opening sound as the loot arrives", () => {
+  for (const sack of [ITEM.SACK_BASIC, ITEM.SACK_ADEPT, ITEM.SACK_EXPERT, ITEM.SACK_MASTER]) {
+    const p = openSack(sack);
+    assert.deepEqual(p.sounds, [[59, 1, 0]]);
+    assert.equal(p.items.get(sack), 0);
+  }
+});
+
+test("a sack that does not fit stays shut and plays no sound", () => {
+  const p = openSack(ITEM.SACK_EXPERT, { fits: false });
+  assert.deepEqual(p.sounds, []);
+  assert.equal(p.items.get(ITEM.SACK_EXPERT), 1);
+  assert.deepEqual(quetzinRolls(), []);
+});
+
+test("the expert and master sacks roll Quetzin at 1 in 1,000; the basic and adept ones not at all", () => {
+  for (const sack of [ITEM.SACK_BASIC, ITEM.SACK_ADEPT]) openSack(sack);
+  assert.deepEqual(quetzinRolls(), []);
+  openSack(ITEM.SACK_EXPERT);
+  openSack(ITEM.SACK_MASTER);
+  assert.deepEqual(quetzinRolls(), [1000, 1000]);
+});

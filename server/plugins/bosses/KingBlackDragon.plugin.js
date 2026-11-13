@@ -6,7 +6,7 @@ const KBD_LAIR_LEVER_OBJECT_ID = 1817;
 const KING_BLACK_DRAGON_LAIR = [2271, 4680, 0];
 const KING_BLACK_DRAGON_LADDER = [3017, 3850, 0];
 
-const { DragonfireProtectionTier, getDragonfireProtectionTier } = require("../combat/DragonfireProtection");
+const { DragonfireProtectionTier, emitDragonfireBreath, getDragonfireProtectionTier, sendDragonfireMessages } = require("../combat/DragonfireProtection");
 
 const Breath = {
   DRAGON: 0,
@@ -110,7 +110,15 @@ let Location, Misc, PendingHit, Projectile, CombatEquipment;
 let PrayerHandler;
 let CombatFactory;
 
+/** Down to the lair; a league character carrying the echo orb is asked first ("echo-boss:entry"). */
 function climbDownToLair({ player }) {
+  const entry = { player, boss: "king-black-dragon", enter: () => climbDown(player), handled: false };
+  api.emitCustomEvent("echo-boss:entry", entry);
+  if (!entry.handled) entry.enter();
+  return true;
+}
+
+function climbDown(player) {
   const [x, y, z] = KING_BLACK_DRAGON_LAIR;
   api.emitCustomEvent("ladders:climbDown", {
     player,
@@ -118,7 +126,6 @@ function climbDownToLair({ player }) {
     // The easy Wilderness Diary's "Enter the King Black Dragon's lair.", once the climb has landed.
     onArrival: () => api.emitCustomEvent("diary:task", { player, diary: "wilderness", task: "enter-the-king-black-dragon-s-lair" }),
   });
-  return true;
 }
 
 function pullLairLever({ player }) {
@@ -210,6 +217,8 @@ function combatClass(pluginApi) {
       const damage = Misc.randomInclusive(0, breathMax(special, { shield, prayer, tier }));
       hit.setTotalDamage(damage);
       sendBreathMessages(player, { shield, prayer, tier });
+      // Wiki (Dragonfire shield): each adult dragon's dragonfire attack charges a worn shield.
+      sendDragonfireMessages(player, emitDragonfireBreath(character, player, []));
 
       // Wiki: a special breath has a 1/2 chance of its effect unprotected, 1/8 with a
       // shield and/or Protect from Magic, and only on a hit that dealt damage.

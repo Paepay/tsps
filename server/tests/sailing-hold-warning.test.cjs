@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict');
 const { test, before } = require('node:test');
 const { Server } = require('../dist/Server');
+const { Dialogue } = require("../dist/game/model/dialogues/entries/Dialogue");
 Server.installProductionPathResolver();
 
 const { CachePipeline } = require('../dist/game/cache/CachePipeline');
@@ -42,16 +43,19 @@ function player(vars = {}) {
     sendSubInterface() { return sender; },
     sendInterfaceRemoval() { return sender; },
     closeChatboxFor: () => true,
+    sendTypedMessage(_type, m) { log.messages.push(m); return sender; },
   };
-  return {
+  const self = {
     log, vars,
     getPacketSender: () => sender,
     getAttribute: (k) => attributes.get(k),
     setAttribute: (k, v) => attributes.set(k, v),
     sendMessage: (m) => log.messages.push(m),
-    getDialogueManager: () => ({ startDialogues: (chain) => log.dialogues.push([...chain.getDialogues().values()]) }),
+    // The box logs its own chat line as it opens, as the real one does.
+    getDialogueManager: () => ({ startDialogues: (chain) => { log.dialogues.push([...chain.getDialogues().values()]); Dialogue.sendBoxChatLine(self, chain.getDialogues().get(0)?.getText?.()); } }),
     getSkillManager: () => ({ getCurrentLevel: () => 99 }),
   };
+  return self;
 }
 
 /** A player aboard their own boat docked at Musa Point, with one crate for `task` taken. */
@@ -63,6 +67,8 @@ function aboard(t, p, hold) {
   t.mock.method(Sailing, 'instanceAboard', () => ({}));
   t.mock.method(Sailing, 'activeBoat', () => boat);
   t.mock.method(Sailing, 'lastPortOf', () => 'musa_point');
+  const near = { value: true };
+  t.mock.method(Sailing, 'boatNearDock', () => near.value);
   t.mock.method(Sailing, 'disembark', (_p, dock) => { left.push(dock); return null; });
   const submitted = [];
   t.mock.method(TaskManager, 'submit', (task) => submitted.push(task));
@@ -72,7 +78,7 @@ function aboard(t, p, hold) {
     settings.push([payload.settingId, payload.value]);
     payload.player.vars[HoldWarning.DONT_ASK_VARBIT] = payload.value;
   });
-  return { boat, left, submitted, settings };
+  return { boat, left, submitted, settings, near };
 }
 
 test('Disembark with a crate for this port in the hold asks with the captured title and options', (t) => {
@@ -89,6 +95,16 @@ test('Disembark with a crate for this port in the hold asks with the captured ti
   assert.equal(submitted.length, 0, '"Remain on the boat." stays aboard');
   options.execute(1);
   assert.equal(submitted.length, 1, '"Disembark anyway." leaves (the fade starts)');
+});
+
+test('a boat that sailed off while the question was open is too far at the answer', (t) => {
+  const p = player();
+  const { submitted, near } = aboard(t, p, [{ id: task.crate, amount: 1 }]);
+  disembark({ player: p, location: MUSA_GANGPLANK });
+  near.value = false;
+  p.log.dialogues[0][0].execute(1);
+  assert.equal(submitted.length, 0, 'no fade, still aboard');
+  assert.equal(p.log.messages.at(-1), "The boat isn't close enough for you to be able to disembark here.");
 });
 
 test("'don't ask again' saves the row (varbit 18144 = 1); later disembarks don't ask", (t) => {

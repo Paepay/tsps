@@ -68,6 +68,7 @@ function fakePlayer({ cape = I.DIZANAS_QUIVER, weapon = I.TWISTED_BOW, ammo = nu
         sendString: (text, uid) => { sentStrings.push([uid, text]); return sender; },
         sendItemOnInterfaces: (uid, itemId, amount) => { sentItems.push([uid, itemId, amount]); return sender; },
         sendItemOnInterface: (uid, itemId, slot, amount) => { sentItems.push([uid, itemId, amount]); return sender; },
+        sendTypedMessage: (type, message) => { messages.push(type === core.ChatType.SPAM ? `spam: ${message}` : message); return sender; },
       };
       return sender;
     },
@@ -130,7 +131,7 @@ test('Fill moves the worn arrows into the quiver; with none worn, the Wiki messa
 
   const empty = fakePlayer();
   click(empty, 2);
-  assert.equal(empty.messages.at(-1), 'You have nothing in your worn quiver to fill your Dizana\'s Quiver with.');
+  assert.equal(empty.messages.at(-1), '<col=ff3045>You have nothing in your worn quiver to fill your Dizana\'s Quiver with.', 'in red (rsprox 238/04144.txt:23998)');
 });
 
 test('Swap wears the stored ammo only at its Ranged level: no dragon arrows at 50 Ranged', () => {
@@ -168,6 +169,7 @@ test('Quiver-Remove puts the ammo in the inventory', () => {
   assert.equal(player.carried.get(I.DRAGON_ARROW), 40);
   assert.equal(Quiver.stored(player), null);
   assert.equal(player.varps.get(Quiver.VARP.ITEM), -1);
+  assert.equal(player.messages.at(-1), "spam: You remove the ammo from Dizana's Quiver.", 'rsprox 238/04144.txt:23330');
 });
 
 test('the bow fires the quiver when the ammo slot holds something it can\'t fire', () => {
@@ -218,6 +220,18 @@ test('without a quiver worn, its ammo is not fired', () => {
   player.worn[Equipment.CAPE_SLOT] = new Item(-1, 0);
   assert.equal(Quiver.firedAmmunition(player), null);
   assert.equal(PluginManager.checkRangedAmmo(player, 1, true), null);
+});
+
+// #4882 review: a dark bow fires two arrows, but from a quiver holding one it fires one, so it never pays or drops two.
+test('a dark bow firing from a quiver holding one arrow fires one, not two', () => {
+  const { RangedCombatMethod } = core;
+  const player = fakePlayer({ weapon: I.DARK_BOW });
+  player.getWeapon = () => core.WeaponInterfaces.DARK_BOW;
+  player.setAttribute('dizanas-quiver', { id: I.RUNE_ARROW, amount: 1 });
+  assert.equal(core.WeaponProfiles.ranged(player)?.ammoRequired, 2, 'the dark bow wants two');
+  assert.equal(RangedCombatMethod.arrowsPerShot(player), 1, 'one arrow stored, one fired');
+  player.setAttribute('dizanas-quiver', { id: I.RUNE_ARROW, amount: 5 });
+  assert.equal(RangedCombatMethod.arrowsPerShot(player), 2, 'enough stored: both arrows');
 });
 
 test('shots use up the quiver: 20% break, the rest drop, and it runs out', () => {
@@ -359,6 +373,16 @@ test('Open shows the stored ammo without moving or duplicating it', () => {
   assert.ok(player.sentStrings.some(([, text]) => /Dragon arrow x 100/.test(text)));
   assert.deepEqual(Quiver.stored(player), { id: I.DRAGON_ARROW, amount: 100 });
   assert.equal(player.carried.size, 0);
+});
+
+test("Open on a carried quiver with Dizana's max cape worn shows Sunfire as permanent, as the cape gives it", () => {
+  for (const cape of [I.DIZANAS_MAX_CAPE, I.DIZANAS_MAX_CAPE_L_]) {
+    const player = fakePlayer({ cape });
+    player.carried.set(I.DIZANAS_QUIVER_UNCHARGED_, 1);
+    assert.equal(Quiver._test.openQuiver({ player }), true);
+    assert.ok(player.sentStrings.some(([, text]) => text === "Dizana's Sunfire is permanent."), `item ${cape}`);
+    assert.ok(!player.sentStrings.some(([, text]) => /Dizana's Sunfire: \d/.test(text)));
+  }
 });
 
 test('blessing costs the remaining 150,000 splinters and makes Sunfire permanent', () => {
@@ -509,7 +533,7 @@ for (const outcome of ['break', 'drop']) {
         if (max === 99) { ammoRolls++; return outcome === 'break' ? 10 : 50; }
         return getRandom.call(this, max, ...args);
       };
-      try { method.start(player, target); } finally { Misc.getRandom = getRandom; }
+      try { method.start(player, target); method.finished(player, target); } finally { Misc.getRandom = getRandom; }
       assert.equal(ammoRolls, 1);
       const ammoTask = scheduled.find(x => x.key === Task.DEFAULT_KEY && x.getDelay() === flight);
       assert.ok(ammoTask?.isRunning(), 'real default-key deferred ammo task');
