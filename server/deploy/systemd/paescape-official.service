@@ -23,7 +23,9 @@ EnvironmentFile=/etc/paescape/official.env
 ExecStart=/usr/bin/node ../scripts/run-with-env.mjs - --max-old-space-size=8192 ./dist/Server.js
 Restart=always
 RestartSec=10
-SuccessExitStatus=0
+SuccessExitStatus=0 75
+# A Developer stop exits 75 after persistence. Do not let Restart=always undo it.
+RestartPreventExitStatus=75
 # Give Server.shutdown time to log out players and flush persistence.
 TimeoutStopSec=90
 KillSignal=SIGTERM

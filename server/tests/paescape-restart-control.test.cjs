@@ -6,6 +6,8 @@
 // reopens the world. These pin the control-route contract without a live platform.
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { test, beforeEach } = require("node:test");
 
 const { Server } = require("../dist/Server");
@@ -208,4 +210,97 @@ test("an unrelated control route still needs a token and a restart is not acknow
   const get = await _test.handleControl(request({ method: "GET", path: "/api/platform/restart", authorization: null }));
   assert.equal(get.status, 401);
   assert.equal(_test.restartState().active, false);
+});
+
+test("a correctly signed world:stop is accepted with a fixed five-minute exit-75 countdown", async () => {
+  const result = await _test.handleControl(request({
+    action: "world:stop",
+    path: "/api/platform/stop",
+    body: JSON.stringify({ seconds: 300, requestId: "stp_test0001" }),
+  }));
+  assert.equal(result.status, 202);
+  assert.deepEqual(result.body, { ok: true, accepted: true, seconds: 300, requestId: "stp_test0001" });
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].event.seconds, 300);
+  assert.equal(emitted[0].event.exitCode, 75);
+  assert.equal(emitted[0].event.exitCode, Server.EXIT_OPERATOR_STOP);
+  assert.equal(emitted[0].event.cancellable, false);
+  assert.equal(_test.restartState().state, "stopping");
+});
+
+test("stop tokens are action-bound and stop needs exactly 300 seconds and a stp request id", async () => {
+  const restartTokenOnStop = await _test.handleControl(request({
+    action: "world:restart",
+    path: "/api/platform/stop",
+    body: JSON.stringify({ seconds: 300, requestId: "stp_test0001" }),
+  }));
+  assert.equal(restartTokenOnStop.status, 401);
+  for (const seconds of [0, 299, 301, 600]) {
+    configure();
+    const result = await _test.handleControl(request({
+      action: "world:stop",
+      path: "/api/platform/stop",
+      body: JSON.stringify({ seconds, requestId: "stp_test0001" }),
+    }));
+    assert.equal(result.status, 400, `${seconds} seconds must be refused`);
+  }
+  for (const requestId of ["", "rst_test0001", "stp_", "stp_has space"]) {
+    configure();
+    const result = await _test.handleControl(request({
+      action: "world:stop",
+      path: "/api/platform/stop",
+      body: JSON.stringify({ seconds: 300, requestId }),
+    }));
+    assert.equal(result.status, 400, `request id ${JSON.stringify(requestId)} must be refused`);
+  }
+});
+
+test("a stopped world pauses logins with shutdown wording and logs out every player", async () => {
+  const messages = [];
+  const loggedOut = [];
+  players.push(
+    { sendMessage: (message) => messages.push(message), requestLogout: () => loggedOut.push("one") },
+    { sendMessage: () => {}, requestLogout: () => loggedOut.push("two") },
+  );
+  await _test.handleControl(request({
+    action: "world:stop",
+    path: "/api/platform/stop",
+    body: JSON.stringify({ seconds: 300, requestId: "stp_test0001" }),
+  }));
+  const rejected = [];
+  await _test.preAuthenticate({ typedName: "player", password: "x" }, {
+    reject: (code, reason) => rejected.push({ code, reason }),
+  });
+  assert.equal(rejected[0].code, 4);
+  assert.match(rejected[0].reason, /shutting down/i);
+  emitted[0].event.beforeShutdown();
+  assert.deepEqual(loggedOut, ["one", "two"]);
+  assert.ok(messages.some((message) => /server is stopping/i.test(message)));
+});
+
+test("a stop cannot be cancelled in game, but a failed shutdown reports cancellation", async () => {
+  await _test.handleControl(request({
+    action: "world:stop",
+    path: "/api/platform/stop",
+    body: JSON.stringify({ seconds: 300, requestId: "stp_test0001" }),
+  }));
+  emitted[0].event.onCancelled("persistence failed");
+  const state = _test.restartState();
+  assert.equal(state.active, false);
+  assert.equal(state.outcome, "cancelled");
+  assert.equal(state.requestId, "stp_test0001");
+});
+
+test("a replacement process does not adopt a stop directive as a restart", () => {
+  configure();
+  _test.applyRestartDirective({ ok: true, json: { restart: { active: true, action: "stop", requestId: "stp_replacement1" } } });
+  assert.deepEqual(_test.restartState(), { active: false, state: "ready", requestId: null, outcome: null });
+});
+
+test("the official systemd units prevent automatic restart after exit 75", () => {
+  for (const unit of ["paescape-official.service", "paescape-official.user.service"]) {
+    const text = fs.readFileSync(path.join(__dirname, "..", "deploy", "systemd", unit), "utf8");
+    assert.match(text, /^RestartPreventExitStatus=75$/m, unit);
+    assert.match(text, /^SuccessExitStatus=0 75$/m, unit);
+  }
 });

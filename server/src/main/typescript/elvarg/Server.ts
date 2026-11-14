@@ -73,6 +73,8 @@ export class Server {
   public static readonly EXIT_AUTH_FAILURE = 11;
   public static readonly EXIT_CONFIG_FAILURE = 12;
   public static readonly EXIT_FATAL = 13;
+  /** A Developer deliberately stopped the world; systemd must not restart it. */
+  public static readonly EXIT_OPERATOR_STOP = 75;
   /**
    * Set when a plugin asks for the server to stop so the host can install a newer
    * release. The shutdown path exits with EXIT_UPDATE_REQUIRED so the supervisor
