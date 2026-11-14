@@ -275,6 +275,17 @@ function isUltimateIronman(player) {
   return query.mode === "ultimate";
 }
 
+/** Shared storage moves items between raiders; wealth transfer off refuses it. */
+function sharedTransferAllowed(player) {
+  const transfer = { player, allow: true, message: null, reason: "sharedStorage" };
+  Shared.api().emitCustomEvent("wealth:can-transfer", transfer);
+  if (transfer.allow === false) {
+    player.sendMessage(transfer.message || "You can't use shared storage: wealth transfer is disabled on this world.");
+    return false;
+  }
+  return true;
+}
+
 function deposit(player, slot, amount) {
   const view = viewOf(player);
   if (!view || view.mount) {
@@ -285,6 +296,7 @@ function deposit(player, slot, amount) {
     player.sendMessage("You can't store items in the storage unit.");
     return;
   }
+  if (view.kind === "shared" && !sharedTransferAllowed(player)) return;
   const inventory = player.getInventory();
   const item = inventory.getItems()[slot];
   if (!item || item.getId() < 0) return;
@@ -336,6 +348,7 @@ function depositEach(inventory, store, size, slot, amount) {
 function withdraw(player, id, amount, first = null) {
   const view = viewOf(player);
   if (!view) return;
+  if (view.kind === "shared" && !sharedTransferAllowed(player)) return;
   const { Item } = Shared.core();
   const store = view.kind === "private" ? privateItems(player) : sharedStore(view.raid);
   const inventory = player.getInventory();
@@ -458,7 +471,10 @@ function dragPrivate(event) {
 function switchToShared({ player }) {
   const raid = Raid.raidOf(player);
   const view = viewOf(player);
-  if (raid && view?.kind === "private" && !view.mount && tierOf(raid) > 0) openShared(player, raid);
+  if (raid && view?.kind === "private" && !view.mount && tierOf(raid) > 0) {
+    if (!sharedTransferAllowed(player)) return true;
+    openShared(player, raid);
+  }
   return true;
 }
 

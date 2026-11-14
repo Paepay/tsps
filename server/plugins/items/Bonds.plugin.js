@@ -283,6 +283,13 @@ function donateBond(event) {
     player.sendMessage("You cannot donate an untradeable bond.");
     return;
   }
+  const transfer = { player, allow: true, message: null, reason: "bond" };
+  pluginApi.emitCustomEvent("wealth:can-transfer", transfer);
+  if (transfer.allow === false) {
+    player.sendMessage(transfer.message || "You can't give bonds: wealth transfer is disabled on this world.");
+    event.handled = true;
+    return;
+  }
   if (target.getInventory().getFreeSlots() < 1) {
     player.sendMessage(`${target.getDisplayName()} does not have enough inventory space.`);
     return;

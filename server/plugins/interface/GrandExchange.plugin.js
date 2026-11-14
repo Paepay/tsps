@@ -135,6 +135,7 @@ const TAX_EXEMPT_NAMES = new Set([
 // Dose and charge counts make these names vary, but the whole item is exempt.
 const TAX_EXEMPT_PREFIXES = ["Energy potion", "Watering can"];
 const MARKET_DATA_FILE = path.join(__dirname, "data", "grand-exchange.json");
+const Matching = require("./grandexchange/Matching.GrandExchange");
 // OSRS: members get all 8 offer slots, free-to-play worlds the first 3.
 const usableSlots = () => (pluginApi.core.WorldDefinition.isMembersWorld() ? 8 : 3);
 const offers = new WeakMap();
@@ -282,12 +283,16 @@ function recordLimit(player, itemId, amount, now = Date.now()) {
   else limits[key] = { start: now, amount };
 }
 
-/** An aborted buy bought nothing (offers fill whole), so its quantity no longer counts against the limit (Wiki). */
+/**
+ * An aborted buy that filled nothing returns its full quantity to the limit (Wiki). Player-matched
+ * partial fills only free the unfilled remainder.
+ */
 function releaseLimit(player, offer, now = Date.now()) {
   const entry = limitEntry(player, offer.itemId, now);
   // Only the window the offer was counted in; a later window never held it. Older saves have no placedAt.
   if (!entry || !(Number(offer.placedAt) >= entry.start)) return;
-  entry.amount = Math.max(0, entry.amount - offer.quantity);
+  const filled = Math.max(0, Math.min(offer.quantity, Number(offer.filled) || 0));
+  entry.amount = Math.max(0, entry.amount - Math.max(0, offer.quantity - filled));
 }
 
 let quotedPrices;
@@ -376,24 +381,36 @@ function scheduleCompletion(player, offer) {
 }
 
 function restoreCompletedOffers({ player }) {
+  Matching.syncPlayer(player);
   let historyUpdated = false;
   for (const offer of Object.values(completedOffers(player))) {
     if (offer.finished) historyUpdated = recordHistory(player, offer) || historyUpdated;
-    else scheduleCompletion(player, offer);
+    else if (offer.matching === Matching.MATCHING_PLAYER || offer.completesAt === null) {
+      // Player-matched offers wait on the book; no simulated timer.
+    } else scheduleCompletion(player, offer);
   }
   if (historyUpdated) saveOffers(player);
 }
 
+/** How much of an offer has filled: player matches track `filled`; simulated finishes are all-or-nothing. */
+function filledAmount(offer) {
+  if (!offer) return 0;
+  if (Number.isInteger(offer.filled)) return Math.max(0, Math.min(offer.quantity, offer.filled));
+  if (offer.aborted) return 0;
+  return offer.finished ? offer.quantity : 0;
+}
+
 function marketVarps(slot, offer) {
   const base = MARKET_BASE + slot * MARKET_STRIDE;
+  const filled = filledAmount(offer);
   return {
     [OFFER_ITEMS[slot]]: -1,
     [base + 6]: offer?.itemId ?? -1,
     [base]: offer ? offerPrice(offer) : 0,
     [base + 1]: offer?.quantity ?? 0,
-    // An aborted offer traded nothing (the client draws its bar red).
-    [base + 2]: offer?.finished && !offer.aborted ? offer.quantity : 0,
-    [base + 3]: offer?.finished && !offer.aborted ? Math.min(MAX, tradedTotal(offer)) : 0,
+    // Aborted offers with no fill draw an empty red bar; partial aborts still show what traded.
+    [base + 2]: filled,
+    [base + 3]: filled > 0 ? Math.min(MAX, tradedTotal(offer)) : 0,
     [base + 4]: offer?.sell ? 1 : 0,
     [base + 5]: offer ? (offer.finished ? FINISHED : 2) : 0,
     [OFFER_ITEMS[slot] + 1]: 0,
@@ -434,13 +451,28 @@ function tax(offer) {
 
 /**
  * What a finished offer hands over, as item stacks: the trade's result, or for an aborted offer
- * what was put in. A sale pays its total less the Grand Exchange tax. Coin totals over a full
- * stack are paid as platinum tokens plus the remaining coins.
+ * what was put in (plus any partial-fill proceeds). A sale pays its traded total less the Grand
+ * Exchange tax. Coin totals over a full stack are paid as platinum tokens plus the remaining coins.
  */
 function payout(offer) {
-  if (offer.aborted) return offer.sell ? [{ itemId: offer.itemId, amount: offer.quantity }] : coinStacks(offer.total);
+  const filled = filledAmount(offer);
+  if (offer.aborted) {
+    if (offer.sell) {
+      const coins = filled > 0 ? coinStacks(Math.max(0, tradedTotal(offer) - tax({ ...offer, aborted: false, quantity: filled, filled }))) : [];
+      const left = offer.quantity - filled;
+      return [...coins, ...(left > 0 ? [{ itemId: offer.itemId, amount: left }] : [])];
+    }
+    const refund = Math.max(0, offer.total - (filled > 0 ? tradedTotal(offer) : 0));
+    return [
+      ...(filled > 0 ? [{ itemId: offer.itemId, amount: filled }] : []),
+      ...coinStacks(refund),
+    ];
+  }
   // A bought item comes with the coins bid over the price it traded at.
-  if (!offer.sell) return [{ itemId: offer.itemId, amount: offer.quantity }, ...coinStacks(offer.total - tradedTotal(offer))];
+  if (!offer.sell) {
+    const quantity = filled > 0 ? filled : offer.quantity;
+    return [{ itemId: offer.itemId, amount: quantity }, ...coinStacks(offer.total - tradedTotal(offer))];
+  }
   const paid = coinStacks(Math.max(0, tradedTotal(offer) - tax(offer)));
   return paid.length ? paid : [{ itemId: COINS, amount: 0 }];
 }
@@ -748,6 +780,10 @@ function confirm(player, offer) {
     return;
   }
   if (fromBank && pluginApi.emitCanBank(player, "grand-exchange-buy") === false) return;
+  if (Matching.isPlayerMatching() && !Matching.available()) {
+    sender.sendMessage("The Grand Exchange is temporarily unavailable.");
+    return;
+  }
   // Plugins may veto an offer (e.g. an untradeable item that cannot be listed).
   const confirmation = { player, itemId: offer.itemId, sell: offer.sell, quantity: amount, accepted: true };
   pluginApi.emitCustomEvent("ge:offer-confirmed", confirmation);
@@ -806,16 +842,36 @@ function confirm(player, offer) {
   }
   inventory.setItems(result.getItems()).refreshItems();
   for (const [tab, bank] of fromBank?.banks ?? []) player.getBank(tab).setItems(bank.getItems());
-  const delay = fillDelayMs(offer);
   // One clock reading: releaseLimit matches placedAt against the window recordLimit opens here.
   const now = Date.now();
-  const finished = { ...offer, total, finished: false, placedAt: now, completesAt: delay === null ? null : now + delay };
+  const playerMatched = Matching.isPlayerMatching();
+  const delay = playerMatched ? null : fillDelayMs(offer);
+  const finished = {
+    ...offer,
+    total,
+    finished: false,
+    placedAt: now,
+    completesAt: delay === null ? null : now + delay,
+    matching: playerMatched ? Matching.MATCHING_PLAYER : Matching.MATCHING_SIMULATED,
+    filled: 0,
+    remaining: amount,
+    traded: 0,
+  };
   completedOffers(player)[offer.slot] = finished;
   if (!offer.sell) recordLimit(player, offer.itemId, amount, now);
-  saveOffers(player);
   offers.delete(player);
   viewing.set(player, offer.slot);
   player.getPacketSender().abortInputPrompt();
+  if (playerMatched) {
+    Matching.place(player, finished);
+    const placed = completedOffers(player)[offer.slot];
+    sender.sendInterfaceScript(786, [], { [SELECTED_ITEM]: -1, ...marketVarps(offer.slot, placed) },
+        { [SELECTED_SLOT]: offer.slot + 1, [TAX_RATE]: taxExempt(offer.itemId) ? 0 : 1000 / TAX_DIVISOR },
+        { [COLLECTIONS[offer.slot]]: collection(placed) })
+      .sendInterfaceScript(SET_DESCRIPTION_SCRIPT, [examine(offer.itemId), feeLabel(offer), DETAILS_DESC, DETAILS_FEE_INFO]);
+    return;
+  }
+  saveOffers(player);
   sender.sendInterfaceScript(786, [], { [SELECTED_ITEM]: -1, ...marketVarps(offer.slot, finished) },
       { [SELECTED_SLOT]: offer.slot + 1, [TAX_RATE]: taxExempt(offer.itemId) ? 0 : 1000 / TAX_DIVISOR },
       { [COLLECTIONS[offer.slot]]: collection(finished) })
@@ -920,6 +976,20 @@ function abort(player, slot = viewing.get(player)) {
   const offer = completedOffers(player)[slot];
   if (!offer || offer.finished) {
     player.sendMessage("That offer has already completed.");
+    return;
+  }
+  if (offer.matching === Matching.MATCHING_PLAYER || Matching.isPlayerMatching()) {
+    Matching.abort(player, offer);
+  }
+  // A player match may have finished the offer while we were aborting; collect that instead.
+  if (offer.finished && !offer.aborted) {
+    saveOffers(player);
+    const sender = player.getPacketSender();
+    sender.sendInterfaceScript(786, [], marketVarps(slot, offer), undefined,
+      { [COLLECTIONS[slot]]: collection(offer) });
+    refreshCollectionBox(player);
+    sender.sendVarbit(SELECTED_SLOT, 0).sendVarbit(SELECTED_SLOT, slot + 1);
+    sender.sendMessage("Abort request acknowledged. Please be aware that your offer may have already been completed.");
     return;
   }
   offer.finished = true;
@@ -1170,9 +1240,15 @@ module.exports = {
   name: "GrandExchange",
   description: "The Grand Exchange: offers, offer collection and the item-price resource it uses.",
   config: {
+    [Matching.SIMULATED_DATA_CONFIG]: {
+      type: "boolean",
+      label: "Simulated GE data",
+      default: true,
+      help: "When on, offers fill from OSRS price and volume data. When off, only buy and sell offers from players on this world match each other. Requires the Grand Exchange plugin. Wealth transfer off blocks the Grand Exchange entirely.",
+    },
     "GrandExchange:maxTradeDelay": {
       type: "number", label: "Longest offer wait (ms)", default: 3600000, integer: true, min: 5000, max: 2147483647,
-      help: "Upper limit, in milliseconds, on how long an offer takes to complete. Applies to newly placed offers.",
+      help: "Upper limit, in milliseconds, on how long a simulated offer takes to complete. Ignored when Simulated GE data is off. Applies to newly placed offers.",
     },
   },
   _test: {
@@ -1191,6 +1267,7 @@ module.exports = {
     recordLimit,
     fillUnitPrice,
     releaseLimit,
+    filledAmount,
     LIMITS_ATTRIBUTE,
     HISTORY_ATTRIBUTE,
     HISTORY_LIMIT,
@@ -1198,6 +1275,7 @@ module.exports = {
     recordHistory,
     LIMIT_WINDOW_MS,
     OFFERS_ATTRIBUTE,
+    Matching,
     setMarketData: (data) => {
       marketData = data;
     },
@@ -1205,6 +1283,29 @@ module.exports = {
   register(api) {
     pluginApi = api;
     require("./grandexchange/Sets.GrandExchange")(api);
+    Matching.configure({
+      api,
+      file: () => {
+        const profile = api.core.GameConstants.WORLD_PROFILE;
+        const name = !profile || profile === "main" ? "grand-exchange-book.json" : `grand-exchange-book.${profile}.json`;
+        return path.join(process.env.TSPS_GE_BOOK_DIR || path.join(process.cwd(), "data", "saves"), name);
+      },
+      completedOffers,
+      saveOffers,
+      recordHistory,
+      unNote: (itemId) => ItemDefinition.forId(itemId).unNote(),
+      itemName: (itemId) => ItemDefinition.forId(itemId).getName(),
+      refreshOffer: (player, offer) => {
+        if (!offer) return;
+        const sender = player.getPacketSender();
+        sender.sendInterfaceScript(786, [], marketVarps(offer.slot, offer), undefined,
+          { [COLLECTIONS[offer.slot]]: collection(offer) });
+        refreshCollectionBox(player);
+        if (player.getInterfaceId() === GE && viewing.get(player) === offer.slot && !offers.has(player)) {
+          sender.sendVarbit(SELECTED_SLOT, 0).sendVarbit(SELECTED_SLOT, offer.slot + 1);
+        }
+      },
+    });
     loadMarketData();
     api.persistAttribute(OFFERS_ATTRIBUTE, {});
     api.persistAttribute(LIMITS_ATTRIBUTE, {});
