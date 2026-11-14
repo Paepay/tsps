@@ -66,6 +66,12 @@ function canOpen(player) {
     player.sendMessage("As an Ironman, you stand alone.");
     return false;
   }
+  const transfer = { player, allow: true, message: null, reason: "partyRoom" };
+  api.emitCustomEvent("wealth:can-transfer", transfer);
+  if (transfer.allow === false) {
+    player.sendMessage(transfer.message || "Wealth transfer is disabled on this world.");
+    return false;
+  }
   // A save that is never written can't be the guard that keeps an offer from being lost or doubled.
   if (player.getAttribute?.("bot-skip-persistence") === true || !Store.available()) {
     player.sendMessage(NO_DONATIONS);

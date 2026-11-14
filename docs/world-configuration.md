@@ -255,7 +255,8 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `GrandExchange:maxTradeDelay` | number (integer, >= 5000, <= 2147483647) | `3600000` | **Longest offer wait (ms).** Upper limit, in milliseconds, on how long an offer takes to complete. Applies to newly placed offers. |
+| `GrandExchange:simulatedData` | boolean | `true` | **Simulated GE data.** When on, offers fill from OSRS price and volume data. When off, only buy and sell offers from players on this world match each other. Requires the Grand Exchange plugin. Wealth transfer off blocks the Grand Exchange entirely. |
+| `GrandExchange:maxTradeDelay` | number (integer, >= 5000, <= 2147483647) | `3600000` | **Longest offer wait (ms).** Upper limit, in milliseconds, on how long a simulated offer takes to complete. Ignored when Simulated GE data is off. Applies to newly placed offers. |
 | `SkillLevelUp:interruptActions` | boolean | `true` | **Level-ups interrupt actions.** Follows each player's pop-up preference. Turn off to keep skilling and fighting through level-ups: the blocking pop-ups are skipped, chat messages, sounds and graphics stay. |
 | `WelcomeScreen:messageOfTheWeek` | string | *Welcome to <world name>!* | **Message of the week.** Text on the scroll at the bottom of the welcome screen. Takes <col=rrggbb> and <br> tags. League worlds show their own message instead. |
 
@@ -275,6 +276,7 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
+| `WealthTransfer:enabled` | boolean | `true` | **Wealth transfer.** When off, players cannot gain items another player owned: no trades, drop trades, PvP loot, party room donations, shared raid storage, bond gifts, shop player-stock or Grand Exchange. Does not make accounts Ironmen or show the Ironman symbol. |
 | `league:end` | date | *Not set* | **League end date.** When the league ends, as YYYY-MM-DD. The welcome message then shows how many days remain. |
 | `league:start` | date | *Not set* | **League start date.** When the league began, as YYYY-MM-DD. Sets the client's league clock. |
 | `league:type` | enum: `0` (Not a league world), `1` (Leagues I - Twisted), `2` (Leagues II - Trailblazer), `3` (Leagues III - Shattered Relics), `4` (Leagues IV - Trailblazer Reloaded), `5` (Leagues V - Raging Echoes), `6` (Leagues VI - Demonic Pacts) | `0` | **League.** Runs this world as a league: every login is the account's league character, kept apart from its main save. Not a league world is a normal world. The list follows data/leagues.json. Also read by LeagueAreaUnlocks. Restart to change. |
@@ -324,6 +326,7 @@ Only plugins that have a description are listed here; the world config page's Pl
 | `SideJournalDefaults` | SideJournalDefaults | interface | yes | The side journal's tabs and the custom Character Summary, with buttons that follow each player's commands. |
 | `VengeanceTimer` | Vengeance Timer | interface | yes | Keeps the client's 30-second Vengeance cooldown overlay in sync with the player's cooldown. |
 | `VoiceChat` | VoiceChat | interface | no | Proximity voice chat: signalling between nearby players on the same plane and private area. Voice also needs client support and browser microphone permission. |
+| `WealthTransfer` | WealthTransfer | modes | yes | World setting for player-to-player item movement. Keep this plugin on; use its Wealth transfer option to allow or block trades, drops, PvP loot, shared storage and the Grand Exchange without making accounts Ironmen. |
 | `WorldAdmin` | WorldAdmin | tools | yes | Local web page for editing world.json settings and plugin switches. |
 <!-- world-config:generated:end -->
 
