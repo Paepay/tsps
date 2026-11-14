@@ -376,6 +376,7 @@ async function ensureSession() {
 function applyRestartDirective(result) {
   if (!result.ok || !result.json || !result.json.restart) return;
   const directive = result.json.restart;
+  if (directive.action === "stop") return;
   if (directive.active && directive.requestId) {
     const learned = !restartState.requestId;
     if (!restartState.active) {
@@ -570,6 +571,24 @@ function resetRestartState(outcome = null) {
   };
 }
 
+function maintenanceMessage() {
+  return restartState.state === "stopping"
+    ? "This world is shutting down. New logins are paused until a Developer starts it again."
+    : "This world is restarting. New logins are paused until it is back online.";
+}
+
+function logOutEveryPlayer(message) {
+  for (const player of api.core.World.getPlayers()) {
+    if (!player) continue;
+    try {
+      player.sendMessage(message);
+      player.requestLogout?.();
+    } catch (error) {
+      warn(`could not log out ${player.getUsername?.() ?? "a player"} during maintenance: ${error.message}`);
+    }
+  }
+}
+
 /**
  * Start a protected, five-minute restart through the shared GameUpdate timer.
  * The timer owns the live packets; this plugin owns the login gate, logout and
@@ -577,7 +596,7 @@ function resetRestartState(outcome = null) {
  */
 function beginWorldRestart(body) {
   if (restartState.active) {
-    return { status: 409, body: { ok: false, error: "A restart is already in progress for this world." } };
+    return { status: 409, body: { ok: false, error: "A start, stop or restart is already in progress for this world." } };
   }
   if (Number(body.seconds) !== 300) {
     return { status: 400, body: { ok: false, error: "A dashboard restart must run for exactly 300 seconds." } };
@@ -597,15 +616,7 @@ function beginWorldRestart(body) {
       // Queue every account for removal and close its gameplay session first.
       // Server.shutdown then persists the players and waits for the persistence
       // flush before the process exits, so no online account is left unsaved.
-      for (const player of api.core.World.getPlayers()) {
-        if (!player) continue;
-        try {
-          player.sendMessage("The server is restarting. Your progress is being saved and you are being logged out now.");
-          player.requestLogout?.();
-        } catch (error) {
-          warn(`could not log out ${player.getUsername?.() ?? "a player"} during restart: ${error.message}`);
-        }
-      }
+      logOutEveryPlayer("The server is restarting. Your progress is being saved and you are being logged out now.");
     },
     onCancelled: (reason) => {
       log(`restart ${requestId} was cancelled (${reason}); reopening logins`);
@@ -625,6 +636,52 @@ function beginWorldRestart(body) {
   }
   void heartbeat();
   log(`accepted five-minute restart ${requestId}; new logins are paused`);
+  return { status: 202, body: { ok: true, accepted: true, seconds: 300, requestId } };
+}
+
+/**
+ * A deliberate stop uses the same protected countdown and persistence path as a
+ * restart, but exits with EXIT_OPERATOR_STOP. The systemd units list that code
+ * in RestartPreventExitStatus, so a stopped world stays offline until started.
+ */
+function beginWorldStop(body) {
+  if (restartState.active) {
+    return { status: 409, body: { ok: false, error: "A start, stop or restart is already in progress for this world." } };
+  }
+  if (Number(body.seconds) !== 300) {
+    return { status: 400, body: { ok: false, error: "A dashboard stop must run for exactly 300 seconds." } };
+  }
+  const requestId = String(body.requestId ?? "").trim();
+  if (!/^stp_[A-Za-z0-9_-]{8,80}$/.test(requestId)) {
+    return { status: 400, body: { ok: false, error: "The stop request id is invalid." } };
+  }
+  restartState = { active: true, state: "stopping", requestId, outcome: null };
+  const event = {
+    seconds: 300,
+    id: requestId,
+    exitCode: 75,
+    cancellable: false,
+    beforeShutdown: () => {
+      logOutEveryPlayer("The server is stopping. Your progress is being saved and you are being logged out now.");
+    },
+    onCancelled: (reason) => {
+      log(`stop ${requestId} was cancelled (${reason}); reopening logins`);
+      resetRestartState("cancelled");
+      void heartbeat();
+    },
+  };
+  try {
+    api.emitCustomEvent("GameUpdate:start", event);
+  } catch (error) {
+    resetRestartState("failed");
+    return { status: 500, body: { ok: false, error: `The countdown could not be started: ${error.message}` } };
+  }
+  if (event.accepted !== true) {
+    resetRestartState("failed");
+    return { status: 409, body: { ok: false, error: event.error ?? "The countdown could not be started." } };
+  }
+  void heartbeat();
+  log(`accepted five-minute stop ${requestId}; new logins are paused`);
   return { status: 202, body: { ok: true, accepted: true, seconds: 300, requestId } };
 }
 
@@ -674,6 +731,10 @@ async function handleControl(request) {
     return beginWorldRestart(body);
   }
 
+  if (request.method === "POST" && segments.length === 1 && segments[0] === "stop") {
+    return beginWorldStop(body);
+  }
+
   // POST /api/platform/characters  -> create
   if (request.method === "POST" && segments.length === 1 && segments[0] === "characters") {
     const problem = validateName(body.name);
@@ -721,6 +782,7 @@ async function handleControl(request) {
 /** Map a control path to the action name the platform signs the token with. */
 function verifyAction(pathname, method) {
   if (pathname === `${CONTROL_PREFIX}restart` && method === "POST") return "world:restart";
+  if (pathname === `${CONTROL_PREFIX}stop` && method === "POST") return "world:stop";
   if (pathname === `${CONTROL_PREFIX}characters` && method === "POST") return "character:create";
   if (pathname.endsWith("/summary")) return "character:summary";
   if (method === "POST" && pathname.startsWith(`${CONTROL_PREFIX}characters/`)) return "character:delete";
@@ -739,7 +801,7 @@ function verifyAction(pathname, method) {
  */
 async function preAuthenticate({ typedName, password }, connection) {
   if (restartState.active) {
-    if (connection) connection.reject(4, "This world is restarting. New logins are paused until it is back online.");
+    if (connection) connection.reject(4, maintenanceMessage());
     return undefined;
   }
   // The website also refuses a full world before issuing a ticket; enforce it here too so
@@ -975,7 +1037,7 @@ function mapAbuseCategory(ruleId) {
 async function redeemLoginTicket(password, hosted, refused) {
   if (restartState.active) {
     refused.code = 4;
-    refused.reason = "This world is restarting. New logins are paused until it is back online.";
+    refused.reason = maintenanceMessage();
     return { ok: false };
   }
   if (!TICKET_PATTERN.test(password)) {
@@ -1735,6 +1797,7 @@ module.exports = {
     applyWorldConfig,
     applyRestartDirective,
     beginWorldRestart,
+    beginWorldStop,
     handleControl,
     preAuthenticate,
     redeemLoginTicket,
