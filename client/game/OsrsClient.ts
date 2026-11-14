@@ -1290,12 +1290,14 @@ export class OsrsClient {
             .map((icon) => `<img=${icon | 0}>`)
             .join("");
         const textPrefix = this.localChatNamePrefix || "";
-        if (iconPrefix.length === 0 && textPrefix.length === 0) {
-            return baseName;
-        }
         // Deduplicate leading icon tags when base name already carries crowns from appearance sync.
         const strippedBase = String(baseName).replace(/^(?:<img=\d+>)+/gi, "");
-        return `${iconPrefix}${textPrefix}${strippedBase}`;
+        const withPrefix =
+            iconPrefix.length === 0 && textPrefix.length === 0
+                ? baseName
+                : `${iconPrefix}${textPrefix}${strippedBase}`;
+        // Client plugins (e.g. Discord Names) may rewrite the chatbox input name.
+        return this.clientPlugins.formatChatPlayerName(withPrefix);
     }
 
     constructor(

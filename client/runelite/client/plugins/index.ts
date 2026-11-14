@@ -10,6 +10,7 @@ import { BoostsPlugin } from "../../../game/plugins/boosts/BoostsPlugin";
 import { ChatNotificationsPlugin } from "../../../game/plugins/chatnotifications/ChatNotificationsPlugin";
 import { ChatPastePlugin } from "../../../game/plugins/chatpaste/ChatPastePlugin";
 import { ChatFilterPlugin } from "../../../game/plugins/chatfilter/ChatFilterPlugin";
+import { DiscordNamesPlugin } from "../../../game/plugins/discordnames/DiscordNamesPlugin";
 import { MouseHighlightPlugin } from "../../../game/plugins/mousehighlight/MouseHighlightPlugin";
 import { RegenMeterPlugin } from "../../../game/plugins/regenmeter/RegenMeterPlugin";
 import { RunEnergyPlugin } from "../../../game/plugins/runenergy/RunEnergyPlugin";
@@ -117,6 +118,8 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     ChatPastePlugin,
     TimestampPlugin,
     ChatFilterPlugin,
+    // After Chat Filter: rewrites chat names via the same chatMessageBuilding callback.
+    DiscordNamesPlugin,
     // Rewrites drawn text only; after the chat plugins, whose chatbox callbacks it shares.
     OsrsTranslatePlugin,
     LevelUpLocksPlugin,

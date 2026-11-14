@@ -52,6 +52,7 @@ const { MAIN_PROFILE, LEAGUE_PROFILE } = require("../../src/main/typescript/elva
 const { SkillManager } = require("../../src/main/typescript/elvarg/game/content/skill/SkillManager");
 const bridge = require("./PaeScapeBridge.js");
 const PlatformUrl = require("./PlatformUrl.js");
+const DiscordNames = require("./DiscordNames.PaeScape.js");
 const worldData = require("../persistence/WorldData");
 const TemplateWorlds = require("../modes/TemplateWorlds.plugin.js");
 
@@ -837,6 +838,7 @@ async function preAuthenticate({ typedName, password }, connection) {
   }
 
   const characterName = attempt.characterName;
+  if (attempt.discordName) DiscordNames.rememberPending(characterName, attempt.discordName);
   // Hosted worlds enforce the platform's ban decisions and one-session rule
   // before any authoritative state is loaded. A ban is never inferred locally.
   if (hosted) {
@@ -1094,7 +1096,15 @@ async function redeemLoginTicket(password, hosted, refused) {
     refused.reason = "This login link has expired or is invalid. Please return to the PaeScape website.";
     return { ok: false };
   }
-  return { ok: true, characterName: String(redeemed.json.character.name) };
+  const discordName =
+    typeof redeemed.json.discordName === "string" ? redeemed.json.discordName
+      : typeof redeemed.json.discord_name === "string" ? redeemed.json.discord_name
+        : null;
+  return {
+    ok: true,
+    characterName: String(redeemed.json.character.name),
+    discordName: DiscordNames.sanitizeDiscordName(discordName),
+  };
 }
 
 /* ------------------------------------------------------------ ::link ------ */
@@ -1788,6 +1798,7 @@ module.exports = {
   register(pluginApi) {
     api = pluginApi;
     publishPlatformAccess();
+    DiscordNames.attach(pluginApi);
     pluginApi.registerLoginExtension((connection) => ({ preAuthenticate: (event) => preAuthenticate(event, connection) }));
     pluginApi.registerCommand("link", linkCommand, pluginApi.core.PlayerRights.NONE, "Link this character to your PaeScape account");
     pluginApi.onServerStartup(() => start());
