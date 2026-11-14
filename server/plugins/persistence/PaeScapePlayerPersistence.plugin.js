@@ -18,9 +18,11 @@
  *     request on a worker thread and blocks the caller with Atomics.wait. These
  *     run only during login (once per character), never on the game tick.
  *   - save/saveOffline use the asynchronous transport and a background queue, so
- *     a save never blocks the game loop. flush() awaits the queue and rethrows any
- *     failure, so a caller that reports success (logout, shutdown) knows the data
- *     reached the platform.
+ *     a save never blocks the game loop. A queued save is kept in
+ *     pendingSerializedSaves so load() (and the website character summary) sees it
+ *     immediately, matching JsonPlayerPersistence. flush() awaits the queue and
+ *     rethrows any failure, so a caller that reports success (logout, shutdown)
+ *     knows the data reached the platform.
  *
  * Serialization is deliberately the existing one: JsonPlayerPersistence's
  * replacer/reviver/hydratePlayerSave are reused so a platform-stored document is
@@ -116,6 +118,14 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     this.cache = new Map();
     /** storageKey -> platform character id (null = not registered), resolved once per process. */
     this.characterIds = new Map();
+    /**
+     * storageKey -> { sequence, serialized }. A queued save is visible to load()
+     * immediately (same pattern as JsonPlayerPersistence), so the website's
+     * character summary cannot keep serving the pre-logout cache while the
+     * platform PUT is still in flight.
+     */
+    this.pendingSerializedSaves = new Map();
+    this.nextWriteSequence = 0;
     /** The ordered background write chain; every save appends to it. */
     this.writeChain = Promise.resolve();
     /** Failures since the last flush, so flush() can rethrow them. */
@@ -196,6 +206,11 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
 
   load(username, profile = MAIN_PROFILE) {
     const storageKey = this.storageKey(username, profile);
+    const pendingWrite = this.pendingSerializedSaves.get(storageKey);
+    if (pendingWrite) {
+      const parsed = JSON.parse(pendingWrite.serialized, this.serializer.reviver.bind(this.serializer));
+      return this.serializer.hydratePlayerSave(parsed);
+    }
     const cached = this.cache.get(storageKey);
     // A save written by this session is not a load: keep `loaded` false so the
     // next load fetches the authoritative document instead of trusting a null
@@ -301,10 +316,12 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
    * writes sequentially rather than all racing the same base revision.
    */
   enqueue(storageKey, username, profile, serialized, envelope, reason) {
+    const sequence = ++this.nextWriteSequence;
+    this.pendingSerializedSaves.set(storageKey, { sequence, serialized });
     this.writesQueued++;
     this.writeChain = this.writeChain
       .catch(() => undefined)
-      .then(() => this.write(storageKey, username, profile, serialized, envelope, reason))
+      .then(() => this.write(storageKey, username, profile, serialized, envelope, reason, sequence))
       .then(() => {
         this.writesCompleted++;
       })
@@ -315,7 +332,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
       });
   }
 
-  async write(storageKey, username, profile, serialized, envelope, reason) {
+  async write(storageKey, username, profile, serialized, envelope, reason, sequence) {
     const entry = this.cache.get(storageKey);
     if (entry && entry.stale) {
       throw new PersistenceFailure("Refusing to save " + username + ": the platform state changed under this session. Log the character out.");
@@ -363,15 +380,26 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
         } else {
           this.cache.set(storageKey, { characterId, revision, save: null, loaded: false, stale: false });
         }
+        // Match JsonPlayerPersistence: only drop this sequence's pending snapshot.
+        // A newer queued save keeps its own pending entry for load()/summary.
+        const pendingWrite = this.pendingSerializedSaves.get(storageKey);
+        if (pendingWrite && pendingWrite.sequence === sequence) {
+          this.pendingSerializedSaves.delete(storageKey);
+        }
         return;
       }
       lastStatus = response.status;
       lastMessage = (response.json && response.json.error) || response.text || ("status " + response.status);
       if (response.status === 409) {
         // Another writer advanced the state. Do not clobber it; mark this session
-        // desynced so the character must be reloaded.
+        // desynced so the character must be reloaded. Drop our rejected snapshot
+        // so load() asks the platform instead of serving a write that lost.
         const current = this.cache.get(storageKey);
         if (current) current.stale = true;
+        const pendingWrite = this.pendingSerializedSaves.get(storageKey);
+        if (pendingWrite && pendingWrite.sequence === sequence) {
+          this.pendingSerializedSaves.delete(storageKey);
+        }
         throw new PersistenceFailure("Refusing to save " + username + ": the platform state changed (409).", 409);
       }
       if (!isRetryableStatus(response.status) || attempt === MAX_SAVE_ATTEMPTS) break;
@@ -548,6 +576,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
       throw new PersistenceFailure("The platform could not delete character state (status " + response.status + ").", response.status);
     }
     this.cache.delete(this.storageKey(username, profile));
+    this.pendingSerializedSaves.delete(this.storageKey(username, profile));
     this.characterIds.delete(this.storageKey(username, MAIN_PROFILE));
   }
 
@@ -560,6 +589,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
    */
   invalidate(username, profile = MAIN_PROFILE) {
     this.cache.delete(this.storageKey(username, profile));
+    this.pendingSerializedSaves.delete(this.storageKey(username, profile));
   }
 
   nextId() {
