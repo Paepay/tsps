@@ -7,7 +7,7 @@
  */
 
 /** Where the player's browser opens a prefilled issue. */
-export const BUG_REPORT_ISSUE_URL = "https://github.com/RSPSApp/tsps/issues/new";
+export const BUG_REPORT_ISSUE_URL = "https://github.com/Paepay/tsps/issues/new";
 
 /** The issue form the button fills; its field ids are `description` and `diagnostics`. */
 export const BUG_REPORT_TEMPLATE = "bug_report.yml";
