@@ -9,8 +9,21 @@ const plugins = [
 ];
 
 const definitions: Array<{ groupId: number; widgets: unknown[] }> = [buildPresetsInterfaceDefinition()];
+// Plugins pass api.core.PlayerRights.* into registerCommand at load time; the stub must
+// expose the enum or yarn build:paescape dies before any interface is collected.
 const api = new Proxy(
-  { registerCustomInterface: (definition: { groupId: number; widgets: unknown[] }) => definitions.push(definition) },
+  {
+    registerCustomInterface: (definition: { groupId: number; widgets: unknown[] }) => definitions.push(definition),
+    core: {
+      PlayerRights: {
+        NONE: "NONE",
+        MODERATOR: "MODERATOR",
+        ADMINISTRATOR: "ADMINISTRATOR",
+        OWNER: "OWNER",
+        DEVELOPER: "DEVELOPER",
+      },
+    },
+  },
   { get: (target, key) => target[key as keyof typeof target] ?? (() => {}) },
 );
 
