@@ -1,7 +1,7 @@
 /**
  * Shared by the LeagueCombatMasteries units: the data (league-combat-masteries.json), whether a
- * character is a Raging Echoes one (LeagueMode's `league:profile`), its masteries, its points
- * and the lookups the other units need.
+ * character is a Raging Echoes or Level-Up one, its masteries, its points and the lookups
+ * every unit needs.
  */
 const fs = require("fs");
 const path = require("path");
@@ -44,9 +44,19 @@ function isEchoes(player) {
   return isLevelUp(player);
 }
 
+/** The challenges every league carries: Raging Echoes' cache list, without Level-Up's additions. */
+function baseChallenges() {
+  return data.challenges.list.filter((challenge) => !challenge.levelUpOnly);
+}
+
 /** Level-Up's challenge list without entries this cache cannot support. */
 function levelUpChallenges() {
   return data.challenges.list.filter((challenge) => !challenge._missing);
+}
+
+/** The challenges this character can complete, in the order its screens list them. */
+function challengesFor(player) {
+  return isLevelUp(player) ? levelUpChallenges() : baseChallenges();
 }
 
 function emptyMasteries() {
@@ -123,15 +133,19 @@ function pointsEarned(player) {
 
 function earned(player) {
   const done = pointsEarned(player);
-  if (!isLevelUp(player)) return Object.keys(done).length;
-  const hidden = new Set(data.challenges.list.filter((challenge) => challenge._missing).map((challenge) => challenge.key));
+  // Level-Up keeps its uncapped point balance, but neither mode counts the other mode's
+  // challenge keys. Level-Up additionally ignores the cache's unreachable Echo challenges.
+  const excluded = isLevelUp(player)
+    ? data.challenges.list.filter((challenge) => challenge._missing)
+    : data.challenges.list.filter((challenge) => challenge.levelUpOnly);
+  const hidden = new Set(excluded.map((challenge) => challenge.key));
   return Object.keys(done).filter((key) => !hidden.has(key)).length;
 }
 
 /** The challenge ids actually completed, separately from an uncapped mastery point balance. */
 function completedChallengeKeys(player) {
   const done = pointsEarned(player);
-  const challenges = isLevelUp(player) ? levelUpChallenges() : data.challenges.list;
+  const challenges = challengesFor(player);
   return challenges.filter((challenge) => done[challenge.key]).map((challenge) => challenge.key);
 }
 
@@ -175,7 +189,7 @@ function message(key, values = {}) {
 }
 
 module.exports = {
-  init, isLevelUp, isEchoes, levelUpChallenges, emptyMasteries, masteries, style, styleOfCombatType, mastery, required, tier, has, effect,
+  init, isLevelUp, isEchoes, baseChallenges, levelUpChallenges, challengesFor, emptyMasteries, masteries, style, styleOfCombatType, mastery, required, tier, has, effect,
   passiveTier, passive, passiveEffect, pointsEarned, earned, completedChallengeKeys, completedChallenges, spent, available, progress, maxHit, uid, message,
   MASTERIES_ATTRIBUTE, POINTS_ATTRIBUTE, PROGRESS_ATTRIBUTE, STYLE_KEYS,
   get data() { return data; },

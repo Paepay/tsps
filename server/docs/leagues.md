@@ -1321,6 +1321,19 @@ progress in `league:mastery-progress`.
   **No Echo boss is fought here** (the orbs and their entrance prompt are, see Echo orbs below,
   but Yes is a placeholder), so those three points come only from `::mastery point`; the data
   marks them `_missing`.
+- **Level-Up's five additions.** Only a Level-Up character gets five more point challenges,
+  after the seven working cache challenges: `combat-50` (combat level 50, checked on level-up
+  and login), `equip-70-attack-weapon` (a successful weapon-slot equip whose item metadata has
+  an exact 70 Attack requirement; failed equips never emit the equipment event),
+  `protect-from-melee` (`prayer:activated` for Protect from Melee, not mere selection),
+  `deal-50-in-one-hit` (one applied hitsplat of 50+, never a sum across hits and never
+  overkill), and `combat-skill-99` (base level 99 in Attack, Strength, Defence, Hitpoints,
+  Prayer, Ranged or Magic, checked on level-up and login). They carry `levelUpOnly` in the
+  data, so Raging Echoes neither lists nor awards them. The cache has no structs for them, so
+  the task enum uses virtual structs 207800-207804 (Level-Up's task type 7 has virtual base
+  207000, so these occupy offset 800-804 between the relic band 0-199 and the rank band
+  900-901) and the same payload sends their param 2028 text; their task ids are the stable ids
+  the platform mirrors.
 - **The interface, as captured.** The league side panel's mastery button (656:32) opens
   `league_combat_mastery` (311) as the main modal with `if_setevents` on its clickzones (311:36,
   0-18), menu frame (311:78, 10-18) and style tabs (311:73, 0-26), then runs 3186 on the panel's

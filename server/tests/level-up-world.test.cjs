@@ -48,10 +48,15 @@ function createRuntime() {
     getName: () => name,
   }));
   const byName = (name) => runtimeSkills.find((skill) => skill.getName() === name);
+  const skill = Object.fromEntries(runtimeSkills.map((entry) => [entry.getName().toUpperCase(), entry]));
+  const itemDefinitions = new Map();
   const events = [];
   const api = {
     core: {
-      Skill: { values: () => runtimeSkills, HITPOINTS: byName("Hitpoints") },
+      Skill: { values: () => runtimeSkills, ...skill },
+      Equipment: { WEAPON_SLOT: 3 },
+      PrayerHandler: { PROTECT_FROM_MELEE: 18 },
+      ItemDefinition: { forId: (id) => itemDefinitions.get(Number(id)) ?? null },
       Location: class {
         constructor(x, y, z) {
           Object.assign(this, { x, y, z });
@@ -66,6 +71,9 @@ function createRuntime() {
     setExperienceRate: (rate) => { api.rate = rate; },
     onCustomEvent: (name, handler) => { (handlers[name] ??= []).push(handler); },
     onPlayerLogin: (handler) => { (handlers.login ??= []).push(handler); },
+    onPlayerLevelUp: (handler) => { (handlers.levelUp ??= []).push(handler); },
+    onNpcDeath: (handler) => { (handlers.npcDeath ??= []).push(handler); },
+    onCombatHitResolved: (handler) => { (handlers.hitResolved ??= []).push(handler); },
     onCanGainExperience: (handler) => { handlers.xp = [handler]; },
     registerCommand: (name, handler) => { handlers[`command:${name}`] = [handler]; },
     emitCustomEvent: (name, payload) => {
@@ -83,7 +91,7 @@ function createRuntime() {
   const manager = {
     getMaxLevel: (skill) => baseLevels[skill.getIndex()],
     getCurrentLevel: (skill) => currentLevels[skill.getIndex()],
-    getCombatLevel: () => 3,
+    getCombatLevel: () => manager.combatLevel,
     setSkillLocked(skill, value) {
       if (value) locked.add(skill.getIndex());
       else locked.delete(skill.getIndex());
@@ -112,7 +120,8 @@ function createRuntime() {
     moveTo: (location) => { player.location = location; },
     sendMessage: (message) => { (player.messages ??= []).push(message); },
   };
-  return { api, handlers, runtimeSkills, byName, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets };
+  manager.combatLevel = 3;
+  return { api, handlers, runtimeSkills, byName, skill, itemDefinitions, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets };
 }
 
 function summaryFor(fake, unlocked, levels = {}, extra = {}) {
@@ -147,11 +156,13 @@ test("Level-Up lists and awards only the combat mastery challenges this cache su
   fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
   Common.init(fake.api);
 
-  assert.equal(Common.data.challenges.list.length, 10, "other modes still see the full challenge data");
+  assert.equal(Common.data.challenges.list.length, 15, "the data carries the cache's ten and five Level-Up additions");
   assert.deepEqual(Points.challenges(fake.player).map(({ key }) => key), [
     "giant", "high-level-kills", "scurrius-solo", "slayer-55", "jad", "combat-100", "zuk",
+    "combat-50", "equip-70-attack-weapon", "protect-from-melee", "deal-50-in-one-hit", "combat-skill-99",
   ]);
-  assert.deepEqual(Points.challenges().map(({ key }) => key), Common.data.challenges.list.map(({ key }) => key));
+  assert.deepEqual(Points.challenges().map(({ key }) => key), Common.data.challenges.list
+    .filter(({ levelUpOnly }) => !levelUpOnly).map(({ key }) => key), "other modes keep the cache's ten");
   assert.equal(Points.award(fake.player, "echo-boss"), false, "a hidden challenge cannot pay a point");
 
   fake.player.setAttribute(Common.POINTS_ATTRIBUTE, { giant: 1, "echo-boss": 1, "echo-bosses-2": 1 });
@@ -206,11 +217,14 @@ test("Level-Up lists only working mastery challenges and never caps the point ba
     assert.equal(row.enumId, 5695);
     assert.deepEqual(row.entries, [
       [1, 1177], [2, 1178], [3, 1179], [4, 1180], [5, 1181], [6, 1182], [7, 1186],
-    ], "the three Echo challenges are gone; TzKal-Zuk moves into the seventh row");
+      [8, 207800], [9, 207801], [10, 207802], [11, 207803], [12, 207804],
+    ], "the three Echo challenges are gone; the five Level-Up additions follow the seven working cache tasks");
 
     const query = { player: fake.player, league: Interface._test.TASK_TYPE, structs: [], enums: [], dbRows: [] };
     fake.api.emitCustomEvent("league:content-rows", query);
     assert.deepEqual(query.enums, [row], "Level-Up replaces the cache's ten-entry enum, other modes do not");
+    assert.deepEqual(query.structs, Interface._test.challengeStructs(), "the five new challenge descriptions are overrides");
+    assert.equal(query.structs.length, 5);
 
     fake.player.setAttribute(Common.POINTS_ATTRIBUTE, { zuk: 1 });
     fake.packets.varbits.length = 0;
@@ -232,6 +246,147 @@ test("Level-Up lists only working mastery challenges and never caps the point ba
     plugin._test.configure("", null);
   }
 });
+
+test("the five Level-Up additions use authoritative events, thresholds and one-time persistence", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  Common.init(fake.api);
+  Points(fake.api);
+
+  const done = (key) => Common.pointsEarned(fake.player)[key] === 1;
+  const event = (name, payload) => fake.api.emitCustomEvent(name, payload);
+
+  fake.manager.combatLevel = 49;
+  event("league:login", { player: fake.player });
+  assert.equal(done("combat-50"), false, "combat 49 is below the new threshold");
+  fake.manager.combatLevel = 50;
+  event("league:login", { player: fake.player });
+  assert.equal(done("combat-50"), true);
+
+  const weak = { getRequirements: () => [69] };
+  const qualifying = { getRequirements: () => [70] };
+  fake.itemDefinitions.set(1001, weak);
+  fake.itemDefinitions.set(1002, qualifying);
+  event("equipment:changed", { player: fake.player, equipped: false, itemId: 1002, slot: 3 });
+  event("equipment:changed", { player: fake.player, equipped: true, itemId: 1002, slot: 4 });
+  event("equipment:changed", { player: fake.player, equipped: true, itemId: 1001, slot: 3 });
+  assert.equal(done("equip-70-attack-weapon"), false, "only a successful weapon equip with an exact 70 Attack requirement counts");
+  event("equipment:changed", { player: fake.player, equipped: true, itemId: 1002, slot: 3 });
+  assert.equal(done("equip-70-attack-weapon"), true);
+
+  event("prayer:activated", { player: fake.player, prayerId: 17 });
+  assert.equal(done("protect-from-melee"), false, "another protection prayer is not Protect from Melee");
+  event("prayer:activated", { player: fake.player, prayerId: 18 });
+  assert.equal(done("protect-from-melee"), true);
+
+  const part = () => {
+    const observers = [];
+    return {
+      onApplied(observer) { observers.push(observer); return this; },
+      isReflected: () => false,
+      getOrigin: () => null,
+      apply(damage) { for (const observer of observers) observer(damage); },
+    };
+  };
+  const first = part();
+  const second = part();
+  fake.handlers.hitResolved[0]({ attacker: fake.player, target: {}, hit: { getHits: () => [first, second] } });
+  first.apply(30);
+  second.apply(30);
+  assert.equal(done("deal-50-in-one-hit"), false, "two hitsplats of 30 are not one hit of 60");
+  const third = part();
+  fake.handlers.hitResolved[0]({ attacker: fake.player, target: {}, hit: { getHits: () => [third] } });
+  third.apply(49);
+  assert.equal(done("deal-50-in-one-hit"), false, "the applied damage, not the roll, is what counts");
+  const fourth = part();
+  fake.handlers.hitResolved[0]({ attacker: fake.player, target: {}, hit: { getHits: () => [fourth] } });
+  fourth.apply(50);
+  assert.equal(done("deal-50-in-one-hit"), true);
+  assert.equal(Common.completedChallengeKeys(fake.player).filter((key) => key === "deal-50-in-one-hit").length, 1);
+
+  fake.manager.setMaxLevels(fake.skill.COOKING, 99);
+  fake.handlers.levelUp[0]({ player: fake.player, skill: fake.skill.COOKING, oldLevel: 98, newLevel: 99 });
+  assert.equal(done("combat-skill-99"), false, "an unrelated 99 does not count");
+  fake.manager.setMaxLevels(fake.skill.PRAYER, 99);
+  fake.handlers.levelUp[0]({ player: fake.player, skill: fake.skill.PRAYER, oldLevel: 98, newLevel: 99 });
+  assert.equal(done("combat-skill-99"), true);
+
+  const points = { ...Common.pointsEarned(fake.player) };
+  const awards = fake.events.filter(({ name }) => name === "league:mastery-point").length;
+  for (const key of ["combat-50", "equip-70-attack-weapon", "protect-from-melee", "deal-50-in-one-hit", "combat-skill-99"]) {
+    assert.equal(points[key], 1);
+    assert.equal(Points.award(fake.player, key), false, `${key} awards once`);
+  }
+  assert.equal(fake.events.filter(({ name }) => name === "league:mastery-point").length, awards,
+    "repeat attempts emit no further point event");
+});
+
+test("the Level-Up additions persist through reconnect and check 99s at login", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  Common.init(fake.api);
+  Points(fake.api);
+
+  const done = (runtime, key) => Common.pointsEarned(runtime.player)[key] === 1;
+  const awards = (runtime) => runtime.events.filter(({ name }) => name === "league:mastery-point").length;
+
+  fake.manager.combatLevel = 50;
+  fake.manager.setMaxLevels(fake.skill.COOKING, 99);
+  fake.manager.setMaxLevels(fake.skill.ATTACK, 98);
+  fake.api.emitCustomEvent("league:login", { player: fake.player });
+  assert.equal(done(fake, "combat-50"), true, "an existing Level-Up character qualifies at login");
+  assert.equal(done(fake, "combat-skill-99"), false, "an unrelated 99 does not qualify at login");
+
+  fake.manager.setMaxLevels(fake.skill.ATTACK, 99);
+  fake.api.emitCustomEvent("league:login", { player: fake.player });
+  assert.equal(done(fake, "combat-skill-99"), true, "a combat 99 qualifies at login");
+
+  const saved = Object.fromEntries(fake.attributes);
+  const savedAwards = awards(fake);
+  fake.api.emitCustomEvent("league:login", { player: fake.player });
+  assert.equal(awards(fake), savedAwards, "relogging does not pay the same challenge twice");
+  assert.deepEqual(Object.fromEntries(fake.attributes), saved, "relogging leaves persisted progress unchanged");
+
+  const restarted = createRuntime();
+  restarted.player.isPlayer = () => true;
+  restarted.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  for (const [key, value] of Object.entries(saved)) restarted.attributes.set(key, value);
+  Common.init(restarted.api);
+  Points(restarted.api);
+  restarted.manager.combatLevel = 50;
+  restarted.manager.setMaxLevels(restarted.skill.ATTACK, 99);
+  restarted.api.emitCustomEvent("league:login", { player: restarted.player });
+  assert.equal(done(restarted, "combat-50"), true, "the combat-level award survives a restart");
+  assert.equal(done(restarted, "combat-skill-99"), true, "the 99 award survives a restart");
+  assert.equal(awards(restarted), 0, "a restarted server does not award persisted challenges again");
+});
+
+test("the five additions are neither listed nor awardable outside Level-Up", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("league:profile", (query) => { query.league = 5; });
+  Common.init(fake.api);
+
+  assert.deepEqual(Points.challenges(fake.player).map(({ key }) => key), [
+    "giant", "high-level-kills", "scurrius-solo", "slayer-55", "jad", "combat-100",
+    "echo-boss", "echo-bosses-2", "echo-bosses-3", "zuk",
+  ]);
+  assert.equal(Points.award(fake.player, "combat-50"), false);
+  assert.equal(Points.award(fake.player, "equip-70-attack-weapon"), false);
+  assert.equal(Points.award(fake.player, "protect-from-melee"), false);
+  assert.equal(Points.award(fake.player, "deal-50-in-one-hit"), false);
+  assert.equal(Points.award(fake.player, "combat-skill-99"), false);
+  assert.deepEqual(Common.completedChallengeKeys(fake.player), []);
+});
+
 test("the canonical catalogue is the platform's 24-skill schema", () => {
   assert.deepEqual(Rules.SKILLS.map(({ name }) => name), [
     "Attack", "Strength", "Defence", "Ranged", "Prayer", "Magic", "Runecraft",

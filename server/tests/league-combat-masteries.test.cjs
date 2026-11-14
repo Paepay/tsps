@@ -296,7 +296,7 @@ test("an unlock needs a point and the previous tier, once; the first tier reache
   command("magic", "6");
   assert.equal(player.sent.messages.at(-1), "You need to unlock Magic V first.");
   command("melee", "7");
-  assert.equal(player.sent.messages.at(-1), "Use ::mastery, ::mastery <melee|ranged|magic> <tier 1-6> or ::mastery point <1-10>.");
+  assert.equal(player.sent.messages.at(-1), "Use ::mastery, ::mastery <melee|ranged|magic> <tier 1-6> or ::mastery point <number>.");
   player.sent.sounds.length = 0;
   command("melee", "1");
   assert.deepEqual(player.getAttribute("league:masteries"), { melee: 1, ranged: 0, magic: 0 });
