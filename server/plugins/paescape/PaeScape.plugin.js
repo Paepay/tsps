@@ -53,6 +53,7 @@ const { SkillManager } = require("../../src/main/typescript/elvarg/game/content/
 const bridge = require("./PaeScapeBridge.js");
 const PlatformUrl = require("./PlatformUrl.js");
 const DiscordNames = require("./DiscordNames.PaeScape.js");
+const { StaffController } = require("./Staff.PaeScape.js");
 const worldData = require("../persistence/WorldData");
 const TemplateWorlds = require("../modes/TemplateWorlds.plugin.js");
 
@@ -94,6 +95,8 @@ let userAccountPath = "";
 let controlHandlerRegistered = false;
 /** platform userId -> the game account key (primary character name) it owns on this world. */
 let userAccounts = {};
+/** Hosted staff rank/command controller (issue #80). */
+let staffController = null;
 /** username (lower-case) -> { token, characterId, expiresAt, timer } for hosted gameplay sessions. */
 const characterSessions = new Map();
 
@@ -779,6 +782,22 @@ async function handleControl(request) {
     }
   }
 
+  // Issue #80: signed staff-console routes. The browser never calls these; the
+  // platform signs a short-lived token after resolving the actor's rank.
+  if (request.method === "GET" && segments.length === 2 && segments[0] === "staff" && segments[1] === "lookup") {
+    if (!staffController) return { status: 503, body: { ok: false, error: "Staff controls are not ready on this world." } };
+    const query = new URL(request.path, "http://world.local").searchParams.get("q") ?? "";
+    return staffController.lookup(query);
+  }
+  if (request.method === "POST" && segments.length === 2 && segments[0] === "staff" && segments[1] === "command") {
+    if (!staffController) return { status: 503, body: { ok: false, error: "Staff controls are not ready on this world." } };
+    return staffController.command(body);
+  }
+  if (request.method === "POST" && segments.length === 2 && segments[0] === "staff" && segments[1] === "rank") {
+    if (!staffController) return { status: 503, body: { ok: false, error: "Staff controls are not ready on this world." } };
+    return staffController.syncRank(body);
+  }
+
   // POST /api/platform/restart -> protected five-minute graceful restart
   if (request.method === "POST" && segments.length === 1 && segments[0] === "restart") {
     return beginWorldRestart(body);
@@ -834,6 +853,9 @@ async function handleControl(request) {
 
 /** Map a control path to the action name the platform signs the token with. */
 function verifyAction(pathname, method) {
+  if (pathname === `${CONTROL_PREFIX}staff/lookup` && method === "GET") return "world:staff-lookup";
+  if (pathname === `${CONTROL_PREFIX}staff/command` && method === "POST") return "world:staff-command";
+  if (pathname === `${CONTROL_PREFIX}staff/rank` && method === "POST") return "world:staff-sync";
   if (pathname === `${CONTROL_PREFIX}restart` && method === "POST") return "world:restart";
   if (pathname === `${CONTROL_PREFIX}stop` && method === "POST") return "world:stop";
   if (pathname === `${CONTROL_PREFIX}characters` && method === "POST") return "character:create";
@@ -874,6 +896,7 @@ async function preAuthenticate({ typedName, password }, connection) {
 
   const characterName = attempt.characterName;
   if (attempt.discordName) DiscordNames.rememberPending(characterName, attempt.discordName);
+  if (hosted && staffController) staffController.remember(characterName, attempt.userId, attempt.staffRole);
   // Hosted worlds enforce the platform's ban decisions and one-session rule
   // before any authoritative state is loaded. A ban is never inferred locally.
   if (hosted) {
@@ -945,6 +968,36 @@ async function moderationFor(characterName) {
   } catch (error) {
     warn(`moderation lookup failed for ${characterName}: ${error.message}`);
     return "The PaeScape platform is unavailable; please try again shortly.";
+  }
+}
+
+/**
+ * Ask the platform whether this actor may target this character with this
+ * in-game command. Returns { allowed, reason }. A transport failure or a
+ * non-2xx response is a refusal, never an implicit allow.
+ */
+async function authorizeInGameStaffCommand(actorName, targetName, action) {
+  try {
+    const { token, path } = await worldEndpoint("/staff/authorize");
+    if (!token) return { allowed: false, reason: "This world is not authorised with the PaeScape platform." };
+    const result = await platformFetch(path, {
+      method: "POST",
+      token,
+      body: { actorName, targetName, action },
+    });
+    if (!result.ok) {
+      return {
+        allowed: false,
+        reason: result.json?.error ?? result.json?.reason ?? "The PaeScape platform refused the rank check.",
+      };
+    }
+    if (!result.json || result.json.allowed !== true) {
+      return { allowed: false, reason: result.json?.reason ?? "You cannot target that player." };
+    }
+    return { allowed: true, reason: null };
+  } catch (error) {
+    warn(`staff authorization failed: ${error.message}`);
+    return { allowed: false, reason: "The PaeScape platform is unavailable; the command was refused." };
   }
 }
 
@@ -1135,10 +1188,19 @@ async function redeemLoginTicket(password, hosted, refused) {
     typeof redeemed.json.discordName === "string" ? redeemed.json.discordName
       : typeof redeemed.json.discord_name === "string" ? redeemed.json.discord_name
         : null;
+  const userId = typeof redeemed.json.userId === "string" ? redeemed.json.userId : null;
+  const staffRole = typeof redeemed.json.staffRole === "string" ? redeemed.json.staffRole : "player";
+  const characterName = String(redeemed.json.character.name);
+  if (userId) {
+    userAccounts[userId] = Accounts.accountOf(characterName) ?? Accounts.key(characterName);
+    saveUserAccounts();
+  }
   return {
     ok: true,
-    characterName: String(redeemed.json.character.name),
+    characterName,
     discordName: DiscordNames.sanitizeDiscordName(discordName),
+    userId,
+    staffRole,
   };
 }
 
@@ -1714,6 +1776,7 @@ function publishPlatformAccess() {
     platformOrigin: () => platform.url,
     leaseToken: () => (lease ? lease.token : null),
     readConfig,
+    authorizeStaffCommand: authorizeInGameStaffCommand,
   });
 }
 
@@ -1833,6 +1896,15 @@ module.exports = {
   enabled: false,
   register(pluginApi) {
     api = pluginApi;
+    staffController = new StaffController({
+      api,
+      getHosted: () => Boolean(platform.url) && !platform.worldSecret,
+      getUserAccounts: () => userAccounts,
+      bindUserAccount: (userId, name) => {
+        userAccounts[userId] = Accounts.key(name);
+        saveUserAccounts();
+      },
+    });
     publishPlatformAccess();
     DiscordNames.attach(pluginApi);
     pluginApi.registerLoginExtension((connection) => ({ preAuthenticate: (event) => preAuthenticate(event, connection) }));
@@ -1843,6 +1915,14 @@ module.exports = {
     // leaves a stale lease the 60-second reclaim window recovers.
     pluginApi.onPlayerLogout((event) => void closeCharacterSession(event.username));
     pluginApi.onPlayerDisconnect((event) => void closeCharacterSession(event.username));
+    // Apply the platform's authoritative ticket rank after the player object exists.
+    pluginApi.onPlayerLogin((event) => {
+      try {
+        staffController.onLogin(event.player);
+      } catch (error) {
+        warn(`could not apply platform staff rank to ${event?.username ?? "a player"}: ${error.message}`);
+      }
+    });
     // Forward administrative actions to the platform audit trail. Hosts keep
     // full control; this only records what a host already did.
     pluginApi.onCustomEvent("persistence:admin-action", (event) => void recordAdministrativeAudit(event));
@@ -1875,13 +1955,30 @@ module.exports = {
       if (input.worldId !== undefined) platform = { ...platform, worldId: input.worldId };
       if (input.worldSecret !== undefined) platform = { ...platform, worldSecret: String(input.worldSecret) };
       if (input.api !== undefined) api = input.api;
+      if (input.api !== undefined && staffController) staffController.setApi(input.api);
       if (input.restartState !== undefined) restartState = { ...input.restartState };
       lifecycleReporter = input.lifecycleReporter ?? null;
       if (input.publicKeyFetcher !== undefined) publicKeyFetcher = input.publicKeyFetcher;
     },
+    configureStaffForTests: (input = {}) => {
+      if (input.api !== undefined) api = input.api;
+      if (input.userAccounts !== undefined) userAccounts = input.userAccounts;
+      staffController = new StaffController({
+        api,
+        getHosted: () => input.hosted !== false,
+        getUserAccounts: () => userAccounts,
+        bindUserAccount: (userId, name) => {
+          userAccounts[userId] = Accounts.key(name);
+        },
+        getPunishment: input.getPunishment,
+        getPersistence: input.getPersistence,
+      });
+      return staffController;
+    },
     ensurePublicKey,
     hasPublicKey: () => Boolean(publicKey),
     setConfiguredMaxPlayers: (value) => { configuredMaxPlayers = Number.isInteger(value) && value > 0 ? value : null; },
+    staffController: () => staffController,
     state: () => ({ worldConfig, worldConfigRevision, configuredMaxPlayers }),
     reset: () => { worldConfig = null; worldConfigRevision = 0; configuredMaxPlayers = null; appliedPluginSignature = null; },
   },

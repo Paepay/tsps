@@ -2151,6 +2151,18 @@ export class PluginManager {
       (PluginManager.commandRightsOverrides.has(base)
         ? PluginManager.commandRightsOverrides.get(base)
         : PluginManager.commandRights.get(base));
+    // Hosted-world staff receive an explicit platform-resolved command set.
+    // Their in-game PlayerRights are only a badge for the client; they must not
+    // unlock unrelated commands that happen to default to Moderator.
+    const hostedStaff = player && (player as any).paeScapeStaff;
+    if (hostedStaff && typeof hostedStaff === "object") {
+      if (hostedStaff.role === "developer") return true;
+      // Open-floor commands stay available, but a command with no registered
+      // floor must be named explicitly by the platform rather than inheriting
+      // the historical Moderator default.
+      if (required === PlayerRights.NONE.getId()) return true;
+      return hostedStaff.commands instanceof Set ? hostedStaff.commands.has(base) : false;
+    }
     if (required === null || required === undefined) {
       return true;
     }
