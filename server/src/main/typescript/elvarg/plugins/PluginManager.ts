@@ -2265,6 +2265,11 @@ export class PluginManager {
     return PluginManager.parsePluginSwitches(readWorldConfig(scopedSettings));
   }
 
+  /** The world's explicit switch for a plugin, or undefined when the world leaves it at its default. */
+  public static getPluginSwitch(name: string): boolean | undefined {
+    return PluginManager.loadPluginSwitches().switches.get(normalizePluginName(name));
+  }
+
   /** Reads the plugin switches out of an already merged world config. Throws when they are malformed. */
   public static parsePluginSwitches(
     worldConfig: unknown

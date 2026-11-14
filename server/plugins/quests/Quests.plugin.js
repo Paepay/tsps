@@ -133,7 +133,7 @@ function questsForWorld({ WorldDefinition }) {
 
 module.exports = {
   name: "Quests",
-  description: "Registers every implemented quest from the quests folder, members and free-to-play, plus their shared widgets and ground items.",
+  description: "Registers every implemented quest from the quests folder, members and free-to-play, plus their shared widgets and ground items. Turning it off marks every implemented quest complete, with its varps and quest points.",
   config: {
     "quests:equipment-requirements": {
       type: "boolean", label: "Quest equipment and spellbook requirements", default: true,
@@ -141,6 +141,7 @@ module.exports = {
     },
   },
   QUESTS,
+  questsForWorld,
   register(api) {
     registerWatchtowerGroundItems(api);
     require("./Equipment.Quests")(api);

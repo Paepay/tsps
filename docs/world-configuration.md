@@ -753,6 +753,7 @@ This table lists bundled plugins that have a description. The world config page 
 | `Ironman` | Ironman | modes | yes | Adds Ironman, Ultimate and Hardcore Ironman accounts, chosen at the Ironman tutor, downgraded with Adam, or set by the ::ironman command. |
 | `LeagueMode` | LeagueMode | modes | yes | Leagues characters, progression, tasks, relics, region unlocks, combat masteries, Demonic Pacts and rewards. (members only) |
 | `PvpMode` | PvpMode | modes | yes | Adds the ::presets and ::kits commands, opens presets after a PvP death, and lets accounts that may use presets have their prayers without the unlock quests. |
+| `TemplateWorlds` | TemplateWorlds | modes | yes | Authoritative runtime rules selected by the PaeScape platform world-template contract. |
 | `AggressionToggle` | AggressionToggle | npcs | yes | Adds the ::aggro command, an administrator cheat that keeps monsters aggressive after the ten-minute tolerance, usable by all if commands allow. |
 | `Apothecary` | Apothecary | npcs | yes | Gives the Varrock Apothecary's strength-potion service: 5 coins, a limpwurt root and red spiders' eggs per potion, feeding the Varrock diary. |
 | `Asyff` | Asyff | npcs | yes | Adds Asyff's Custom Fur Clothing in Varrock: two dashing kebbit furs and 800 coins at 66 Hunter make a spottier cape. (members only) |
@@ -839,9 +840,10 @@ This table lists bundled plugins that have a description. The world config page 
 | `SaveEvents` | SaveEvents | persistence | yes | Requests an immediate player save after important events: quest completions, reward-shop purchases, valuable discards and valuable drops. |
 | `SqlitePlayerPersistence` | SqlitePlayerPersistence | persistence | yes | Saves players to a SQLite database (data/saves/players.sqlite) and can import older JSON character saves. |
 | `QuestHelper` | OfflineQuestHelper | quests | yes | Runs the offline Quest Helper, answering the client's quest-helper plugin messages from the player's varps and the cache. |
+| `QuestAutoComplete` | QuestAutoComplete | quests | yes | Completes every implemented quest when the Quests plugin is switched off. |
 | `QuestCape` | QuestCape | quests | yes | Sells the Quest point cape and hood for 99,000 coins from the Wise Old Man once the player has finished every quest that counts. (members only) |
 | `QuestCommand` | QuestCommand | quests | yes | Adds the admin ::quest command to show, set, complete or reset a player's quest stage, for testing quest-gated content. |
-| `Quests` | Quests | quests | yes | Registers every implemented quest from the quests folder, members and free-to-play, plus their shared widgets and ground items. |
+| `Quests` | Quests | quests | yes | Registers every implemented quest from the quests folder, members and free-to-play, plus their shared widgets and ground items. Turning it off marks every implemented quest complete, with its varps and quest points. |
 | `Agility` | Agility | skills | yes | The Agility skill: rooftop and other obstacle courses, lap counting, marks of grace and Grace's lap-counter toggle. (members only) |
 | `AgilityDispenser` | AgilityDispenser | skills | yes | The Wilderness Agility Course dispenser: lap tickets, the 150,000 coin fee and reward streak, and tag, pay and redeem for loot or XP. (members only) |
 | `BarbarianPyres` | BarbarianPyres | skills | yes | Barbarian funeral pyres by Otto's Grotto: carve a pyre ship, load bones, light it, with the elite clue and ferocious barbarian spirit. (members only) |
