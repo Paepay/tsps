@@ -4,8 +4,8 @@
  * Level-Up's server-driven screens. It reuses the Demonic Pacts/Leagues interfaces
  * (journal 629, side panel 656, tasks 657, areas 512, relics 655, combat masteries
  * 311) without becoming a seasonal league character: regions and relics advance on
- * the skill milestones in issue #7, and the task list is the ten combat mastery
- * challenges rather than seasonal tasks.
+ * the skill milestones in issue #7, and the task list is the working combat mastery
+ * challenges (twelve in Level-Up) rather than seasonal tasks.
  */
 
 const Rules = require("./Rules.LevelUpWorld");
@@ -212,10 +212,18 @@ function challengeEnumRow() {
   };
 }
 
+/** The five Level-Up-only challenges have no cache struct, so their text rides in overrides. */
+function challengeStructs() {
+  return mastery().levelUpChallenges()
+    .filter((challenge) => challenge.levelUpOnly)
+    .map((challenge) => ({ structId: challenge.struct, params: { 2028: challenge.text } }));
+}
+
 /** LeagueMode content rows: Level-Up answers with the filtered challenge enum. */
 function content(query) {
   if (!active() || !query || Number(query.league) !== TASK_TYPE) return;
   query.enums.push(challengeEnumRow());
+  query.structs.push(...challengeStructs());
 }
 function sendAreaOverrides(player) {
   const state = progress(player);
@@ -654,6 +662,7 @@ function login({ player }) {
   const Unlock = require("../leaguemasteries/Unlock.LeagueCombatMasteries");
   Points.sendPoints(player);
   Points.checkCombatLevel(player);
+  Points.checkCombatSkillLevel(player);
   Unlock.sendProgress(player);
   api.emitCustomEvent("league:points-changed", { player });
   TemplateWorlds.sendLockState(player);
@@ -722,5 +731,5 @@ function attach(pluginApi) {
 module.exports = {
   attach,
   refreshPanel,
-  _test: { STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, openJournal, openAreas, openRelics },
+  _test: { STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas, openRelics },
 };

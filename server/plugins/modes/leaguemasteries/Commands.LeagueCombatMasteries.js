@@ -1,8 +1,8 @@
 /**
  * Developer commands: `::mastery` shows the character's tiers, points and challenges;
  * `::mastery <melee|ranged|magic> <tier 1-6>` unlocks through the usual checks;
- * `::mastery point <1-10>` awards a challenge's point through the real path (the only way to the
- * echo boss challenges, whose bosses this cache lacks).
+ * `::mastery point <number>` awards a challenge's point through the real path (the only way to the
+ * echo boss challenges, whose bosses this cache lacks; Level-Up's list has twelve entries).
  */
 const Common = require("./Common.LeagueCombatMasteries");
 const Points = require("./Points.LeagueCombatMasteries");
@@ -49,5 +49,5 @@ function masteryCommand({ player, parts }) {
 
 module.exports = function attach(api) {
   api.registerCommand("mastery", masteryCommand, api.core.PlayerRights.DEVELOPER,
-    "Your combat masteries; unlock one: ::mastery <melee|ranged|magic> <tier 1-6>; earn a point: ::mastery point <1-10>");
+    "Your combat masteries; unlock one: ::mastery <melee|ranged|magic> <tier 1-6>; earn a point: ::mastery point <number>");
 };

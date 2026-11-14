@@ -11,7 +11,7 @@ const Common = require("./Common.LeagueCombatMasteries");
 
 /** The challenges this character can complete: Level-Up omits entries the cache cannot support. */
 function challenges(player) {
-  return player && Common.isLevelUp(player) ? Common.levelUpChallenges() : Common.data.challenges.list;
+  return player ? Common.challengesFor(player) : Common.baseChallenges();
 }
 
 function challenge(key, player) {
@@ -31,7 +31,10 @@ function sendPoints(player) {
   // varbit belongs to that row's position. Level-Up drops the unsupported Echo
   // challenges, which moves TzKal-Zuk's highlight up with it.
   const visible = challenges(player);
-  visible.forEach((entry, index) => sender.sendVarbit(varbits.pointUnlocks[index], done[entry.key] ? 1 : 0));
+  visible.forEach((entry, index) => {
+    const varbit = varbits.pointUnlocks[index];
+    if (varbit !== undefined) sender.sendVarbit(varbit, done[entry.key] ? 1 : 0);
+  });
   for (let index = visible.length; index < varbits.pointUnlocks.length; index++) {
     sender.sendVarbit(varbits.pointUnlocks[index], 0);
   }
@@ -98,14 +101,85 @@ function checkCombatLevel(player) {
   }
 }
 
+function skillByName(name) {
+  return (Common.core?.Skill?.values?.() ?? []).find(
+    (skill) => String(skill?.getName?.() ?? "").toLowerCase() === String(name).toLowerCase(),
+  ) ?? null;
+}
+
+/** Level-Up's 99 task is checked on every level-up and at login, like the combat-level one. */
+function checkCombatSkillLevel(player) {
+  if (!Common.isLevelUp(player)) return;
+  const skills = player.getSkillManager();
+  for (const entry of challenges(player)) {
+    const rule = entry.rule?.combatSkillLevel;
+    if (!rule) continue;
+    const reached = (rule.skills ?? []).some((name) => {
+      const skill = skillByName(name);
+      return skill !== null && skills.getMaxLevel(skill) >= rule.level;
+    });
+    if (reached) award(player, entry.key);
+  }
+}
+
+function weaponSlot() {
+  return Common.core?.Equipment?.WEAPON_SLOT ?? 3;
+}
+
+/** A successful equip is the only equip event with `equipped` and the item's slot. */
+function equipmentChanged(event) {
+  const { player, equipped, itemId, slot } = event ?? {};
+  if (!Common.isLevelUp(player) || equipped !== true || Number(slot) !== weaponSlot()) return;
+  const entry = challenge("equip-70-attack-weapon", player);
+  const required = entry?.rule?.equipment?.attackRequirement;
+  if (!entry || !Number.isInteger(required)) return;
+  const definition = Common.core?.ItemDefinition?.forId?.(Number(itemId));
+  const requirements = definition?.getRequirements?.();
+  const attack = Common.core?.Skill?.ATTACK?.getIndex?.() ?? 0;
+  if (Number(requirements?.[attack] ?? 0) === required) award(player, entry.key);
+}
+
+function prayerId(name) {
+  return Common.core?.PrayerHandler?.[name] ?? (name === "PROTECT_FROM_MELEE" ? 18 : null);
+}
+
+/** The prayer hook fires only after a successful activation, never for selection alone. */
+function prayerActivated({ player, prayerId: activated } = {}) {
+  if (!Common.isLevelUp(player)) return;
+  for (const entry of challenges(player)) {
+    const wanted = entry.rule?.prayer;
+    if (wanted && prayerId(wanted) !== null && Number(activated) === prayerId(wanted)) award(player, entry.key);
+  }
+}
+
+/**
+ * One hitsplat has to reach the threshold on its own. Multi-hit attacks are deliberately not
+ * summed: the task asks for one attack/hit, and the applied amount excludes overkill.
+ */
+function hitResolved({ attacker, target, hit } = {}) {
+  if (!Common.isLevelUp(attacker) || !target) return;
+  const entry = challenge("deal-50-in-one-hit", attacker);
+  const threshold = entry?.rule?.singleHitDamage;
+  if (!entry || !Number.isFinite(threshold) || Common.pointsEarned(attacker)[entry.key]) return;
+  for (const part of hit?.getHits?.() ?? []) {
+    if (!part || part.isReflected?.() === true || part.getOrigin?.() != null) continue;
+    if (typeof part.onApplied !== "function") continue;
+    part.onApplied((damageTaken) => {
+      if (Number(damageTaken) >= threshold) award(attacker, entry.key);
+    });
+  }
+}
+
 function levelUp({ player }) {
   checkCombatLevel(player);
+  checkCombatSkillLevel(player);
 }
 
 function login({ player }) {
   if (!Common.isEchoes(player)) return;
   sendPoints(player);
   checkCombatLevel(player);
+  checkCombatSkillLevel(player);
 }
 
 module.exports = function attach(api) {
@@ -114,6 +188,9 @@ module.exports = function attach(api) {
   api.onNpcDeath(npcDeath);
   api.onPlayerLevelUp(levelUp);
   api.onCustomEvent("league:login", login);
+  api.onCustomEvent("equipment:changed", equipmentChanged);
+  api.onCustomEvent("prayer:activated", prayerActivated);
+  if (typeof api.onCombatHitResolved === "function") api.onCombatHitResolved(hitResolved);
 };
 
 module.exports.award = award;
@@ -121,3 +198,7 @@ module.exports.challenge = challenge;
 module.exports.challenges = challenges;
 module.exports.sendPoints = sendPoints;
 module.exports.checkCombatLevel = checkCombatLevel;
+module.exports.checkCombatSkillLevel = checkCombatSkillLevel;
+module.exports.equipmentChanged = equipmentChanged;
+module.exports.prayerActivated = prayerActivated;
+module.exports.hitResolved = hitResolved;
