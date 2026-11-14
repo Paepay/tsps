@@ -20,6 +20,7 @@ const { Sounds } = require("../../src/main/typescript/elvarg/game/Sounds");
 const { Animation } = require("../../src/main/typescript/elvarg/game/model/Animation");
 const { Graphic } = require("../../src/main/typescript/elvarg/game/model/Graphic");
 const { Task } = require("../../src/main/typescript/elvarg/game/task/Task");
+const { getPlatformAccess } = require("../paescape/PaeScapeBridge");
 const { PlayerSave } = require("../../src/main/typescript/elvarg/game/entity/impl/player/persistence/PlayerSave");
 const { DamageFormulas } = require("../../src/main/typescript/elvarg/game/content/combat/formula/DamageFormulas");
 const { ServerLogger } = require("../../src/main/typescript/elvarg/util/ServerLogger");
@@ -868,11 +869,41 @@ function moderationTarget(raw, parts) {
   return { name: account, target: World.getPlayerByName(account) };
 }
 
-function accountPunishmentCommand({ player, raw, parts }) {
+/**
+ * Hosted staff commands are re-checked against the platform on every attempt.
+ * The local PlayerRights badge is never enough on a hosted world; a standalone
+ * world keeps its existing behaviour and local rights floor.
+ */
+async function authorizeStaffTarget(player, targetName, action) {
+  if (!player?.paeScapeStaff) return { allowed: true, reason: null };
+  const access = getPlatformAccess();
+  const check = access && typeof access.authorizeStaffCommand === "function" ? access.authorizeStaffCommand : null;
+  if (!check) {
+    return { allowed: false, reason: "The PaeScape platform authorization check is unavailable; the command was refused." };
+  }
+  return check(player.getUsername(), targetName, action);
+}
+
+async function accountPunishmentCommand({ player, raw, parts }) {
   const command = parts[0].toLowerCase();
   const { name, target } = moderationTarget(raw, parts);
   if (!name) {
     player.sendMessage(`Usage: ::${command} player`);
+    return true;
+  }
+  if (player?.paeScapeStaff) {
+    const authorized = await authorizeStaffTarget(player, name, command);
+    if (!authorized.allowed) {
+      player.sendMessage(authorized.reason ?? "You cannot target that player.");
+      return true;
+    }
+  }
+  if (target === player) {
+    player.sendMessage("You cannot target yourself.");
+    return true;
+  }
+  if (target && target.getRights().getId() >= player.getRights().getId()) {
+    player.sendMessage("You cannot target a player of equal or higher rank.");
     return true;
   }
   const removing = command.startsWith("un");
@@ -894,7 +925,7 @@ function accountPunishmentCommand({ player, raw, parts }) {
   return true;
 }
 
-function ipPunishmentCommand({ player, raw, parts }) {
+async function ipPunishmentCommand({ player, raw, parts }) {
   const command = parts[0].toLowerCase();
   const removing = command.startsWith("un");
   const mute = command.endsWith("mute");
@@ -904,6 +935,13 @@ function ipPunishmentCommand({ player, raw, parts }) {
     return true;
   }
   const { target } = moderationTarget(raw, parts);
+  if (player?.paeScapeStaff) {
+    const authorized = await authorizeStaffTarget(player, input, command);
+    if (!authorized.allowed) {
+      player.sendMessage(authorized.reason ?? "You cannot use that IP command.");
+      return true;
+    }
+  }
   const address = target?.getHostAddress() || (removing && isIP(input) ? input : "");
   if (!isIP(address)) {
     player.sendMessage(target ? "This player has no IP address." : `Player ${input} is not online.${removing ? " Use their IP address instead." : ""}`);
@@ -936,11 +974,29 @@ function ipPunishmentCommand({ player, raw, parts }) {
   return true;
 }
 
-function kickCommand({ player, raw, parts }) {
+async function kickCommand({ player, raw, parts }) {
   const { name, target } = moderationTarget(raw, parts);
   if (!name) player.sendMessage("Usage: ::kick player");
-  else if (!target) player.sendMessage(`Player ${name} is not online.`);
   else {
+    if (player?.paeScapeStaff) {
+      const authorized = await authorizeStaffTarget(player, name, "kick");
+      if (!authorized.allowed) {
+        player.sendMessage(authorized.reason ?? "You cannot target that player.");
+        return true;
+      }
+    }
+    if (target === player) {
+      player.sendMessage("You cannot target yourself.");
+      return true;
+    }
+    if (target && target.getRights().getId() >= player.getRights().getId()) {
+      player.sendMessage("You cannot target a player of equal or higher rank.");
+      return true;
+    }
+    if (!target) {
+      player.sendMessage(`Player ${name} is not online.`);
+      return true;
+    }
     target.requestLogout();
     player.sendMessage(`Disconnected player ${name}.`);
   }
@@ -1109,7 +1165,7 @@ module.exports = {
       return true;
     }, PlayerRights.ADMINISTRATOR, "Teleport a player to you");
 
-    api.registerCommand("kick", kickCommand, PlayerRights.OWNER, "Disconnect player");
+    api.registerCommand("kick", kickCommand, PlayerRights.MODERATOR, "Disconnect player");
 
     api.registerCommand("exit", ({ player, raw, parts }) => {
       const targetName = commandTail(raw, parts);
@@ -1818,10 +1874,10 @@ module.exports = {
       return true;
     }, PlayerRights.OWNER, "Reload item definitions");
 
-    api.registerCommand("mute", accountPunishmentCommand, PlayerRights.OWNER, "Mute player");
-    api.registerCommand("unmute", accountPunishmentCommand, PlayerRights.OWNER, "Unmute player");
-    api.registerCommand("ban", accountPunishmentCommand, PlayerRights.OWNER, "Ban player");
-    api.registerCommand("unban", accountPunishmentCommand, PlayerRights.OWNER, "Unban player");
+    api.registerCommand("mute", accountPunishmentCommand, PlayerRights.MODERATOR, "Mute player");
+    api.registerCommand("unmute", accountPunishmentCommand, PlayerRights.MODERATOR, "Unmute player");
+    api.registerCommand("ban", accountPunishmentCommand, PlayerRights.ADMINISTRATOR, "Ban player");
+    api.registerCommand("unban", accountPunishmentCommand, PlayerRights.ADMINISTRATOR, "Unban player");
     api.registerCommand("ipmute", ipPunishmentCommand, PlayerRights.OWNER, "IP mute online player");
     api.registerCommand("unipmute", ipPunishmentCommand, PlayerRights.OWNER, "Remove IP mute (player or IP address)");
     api.registerCommand("ipban", ipPunishmentCommand, PlayerRights.OWNER, "IP ban online player");
