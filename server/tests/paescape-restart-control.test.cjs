@@ -42,7 +42,7 @@ function request({ action = "world:restart", authorization, body, method = "POST
 let players;
 let emitted;
 
-function configure({ accept = true, worldSecret = "", lifecycleReporter } = {}) {
+function configure({ accept = true, worldSecret = "", lifecycleReporter, publicKeyFetcher = null } = {}) {
   players = [];
   emitted = [];
   _test.configureControlForTests({
@@ -50,6 +50,7 @@ function configure({ accept = true, worldSecret = "", lifecycleReporter } = {}) 
     worldId: WORLD_ID,
     worldSecret,
     lifecycleReporter,
+    publicKeyFetcher,
     restartState: { active: false, state: "ready", requestId: null, outcome: null },
     api: {
       core: { World: { getPlayers: () => players } },
@@ -85,6 +86,39 @@ test("a replacement process acknowledges the adopted request on its lifecycle ch
   assert.equal(reports, 0);
   await new Promise((resolve) => setTimeout(resolve, 900));
   assert.equal(reports, 1, "the follow-up ready report must use the hosted lease channel");
+});
+
+test("without a cached public key the control API refuses with 503 and does not begin a restart", async () => {
+  configure();
+  _test.configureControlForTests({
+    publicKey: null,
+    publicKeyFetcher: async () => false,
+  });
+  const result = await _test.handleControl(request({}));
+  assert.equal(result.status, 503);
+  assert.match(result.body.error, /public key/i);
+  assert.equal(_test.restartState().active, false);
+  assert.equal(emitted.length, 0);
+  const health = await _test.handleControl({ method: "GET", path: "/api/platform/health", headers: {}, body: "" });
+  assert.equal(health.body.controlKeyLoaded, false);
+});
+
+test("a missing public key is fetched before control auth so a dashboard restart can recover", async () => {
+  configure();
+  let fetches = 0;
+  _test.configureControlForTests({
+    publicKey: null,
+    publicKeyFetcher: async () => {
+      fetches += 1;
+      _test.configureControlForTests({ publicKey });
+      return true;
+    },
+  });
+  const result = await _test.handleControl(request({}));
+  assert.equal(fetches, 1);
+  assert.equal(result.status, 202);
+  assert.equal(_test.hasPublicKey(), true);
+  assert.equal(_test.restartState().active, true);
 });
 
 test("a correctly signed world:restart token is accepted and pauses logins", async () => {
