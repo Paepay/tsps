@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# PaeScape Official world operator CLI.
+#
+# Installed on the VPS as /usr/local/bin/paescape-official and reached through
+# `paescape official ...` or scripts/paescape-official.ps1 from Windows.
+#
+# The graceful `restart` path never signals the process directly. It asks the
+# platform to enter maintenance and the running world to count down for five
+# minutes, log every account out and save; systemd then starts the replacement.
+#
+# `update` uses that same graceful path before it stops the service, takes a
+# backup, deploys a validated build and reopens it. Player data is never
+# overwritten by a deploy.
+set -euo pipefail
+
+SERVICE="${PAESCAPE_OFFICIAL_SERVICE:-paescape-official}"
+ENV_FILE="${PAESCAPE_OFFICIAL_ENV_FILE:-/etc/paescape/official.env}"
+USER_ENV_FILE="${PAESCAPE_OFFICIAL_USER_ENV_FILE:-$HOME/apps/paescape-official/official.env}"
+OPERATOR_ENV_FILE="${PAESCAPE_OFFICIAL_OPERATOR_ENV_FILE:-$HOME/apps/paescape-official/operator.env}"
+DATA_DIR="${PAESCAPE_OFFICIAL_DATA_DIR:-/home/user/apps/paescape-official/data}"
+BACKUP_DIR="${PAESCAPE_OFFICIAL_BACKUP_DIR:-/home/user/apps/paescape-official/backups}"
+REPO_DIR="${PAESCAPE_OFFICIAL_REPO_DIR:-/home/user/apps/tsps}"
+PLATFORM_LOCAL_URL="${PAESCAPE_PLATFORM_LOCAL_URL:-http://127.0.0.1:5176}"
+WORLD_ID="${PAESCAPE_OFFICIAL_WORLD_ID:-wld_official_paescape}"
+HEALTH_URL="${PAESCAPE_OFFICIAL_HEALTH_URL:-http://127.0.0.1:43595/api/platform/health}"
+REF="${PAESCAPE_OFFICIAL_REF:-origin/prod}"
+SCOPE="${PAESCAPE_OFFICIAL_SYSTEMD_SCOPE:-auto}"
+
+log() { printf '[paescape-official] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+
+detect_scope() {
+  if [[ "$SCOPE" != "auto" ]]; then return; fi
+  if [[ "${EUID:-0}" -eq 0 ]] || [[ -f "/etc/systemd/system/${SERVICE}.service" ]]; then
+    SCOPE=system
+  else
+    SCOPE=user
+  fi
+}
+
+systemctl_service() {
+  detect_scope
+  if [[ "$SCOPE" == "user" ]]; then
+    systemctl --user "$@"
+  else
+    systemctl "$@"
+  fi
+}
+
+systemctl_run() {
+  detect_scope
+  if [[ "$SCOPE" == "user" ]]; then
+    systemctl --user "$@"
+  elif [[ "${EUID:-0}" -eq 0 ]]; then
+    systemctl "$@"
+  else
+    sudo systemctl "$@"
+  fi
+}
+
+load_env() {
+  local file="$1"
+  [[ -f "$file" ]] || die "environment file not found: $file"
+  set -a
+  # shellcheck disable=SC1090
+  . "$file"
+  set +a
+}
+
+load_runtime_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    load_env "$ENV_FILE"
+  elif [[ -f "$USER_ENV_FILE" ]]; then
+    load_env "$USER_ENV_FILE"
+  else
+    die "no official environment file (looked for $ENV_FILE and $USER_ENV_FILE)"
+  fi
+}
+
+load_operator_env() {
+  if [[ -f "$OPERATOR_ENV_FILE" ]]; then
+    load_env "$OPERATOR_ENV_FILE"
+  else
+    load_runtime_env
+  fi
+}
+
+main_pid() {
+  systemctl_service show -p MainPID --value "$SERVICE" 2>/dev/null || echo 0
+}
+
+health() {
+  curl -fsS --max-time 10 "$HEALTH_URL"
+}
+
+health_ok() {
+  health >/dev/null 2>&1
+}
+
+wait_health() {
+  local timeout="${1:-120}" elapsed=0
+  while (( elapsed < timeout )); do
+    if health_ok; then
+      log "health endpoint is ready after ${elapsed}s"
+      health
+      return 0
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  return 1
+}
+
+operator_restart() {
+  load_operator_env
+  [[ -n "${PLATFORM_OPERATOR_TOKEN:-}" ]] || die "PLATFORM_OPERATOR_TOKEN is not set in the official environment file"
+  local response
+  response="$(curl -fsS --max-time 20 -X POST \
+    -H "authorization: Bearer ${PLATFORM_OPERATOR_TOKEN}" \
+    -H "content-type: application/json" \
+    --data "{\"worldId\":\"${WORLD_ID}\"}" \
+    "${PLATFORM_LOCAL_URL}/api/official/restart")" || die "the platform did not accept the graceful restart request"
+  printf '%s\n' "$response"
+  log "five-minute countdown started; players are warned, logged out and saved before the process exits"
+}
+
+wait_for_replacement() {
+  local before timeout elapsed=0 pid
+  before="$(main_pid)"
+  timeout="${1:-420}"
+  if [[ "$before" == "0" ]]; then
+    log "the service is not running; skipping the countdown wait"
+    return 0
+  fi
+  log "waiting for the replacement process (old pid $before, timeout ${timeout}s)"
+  while (( elapsed < timeout )); do
+    sleep 2
+    elapsed=$((elapsed + 2))
+    pid="$(main_pid)"
+    if [[ "$pid" != "0" && "$pid" != "$before" ]]; then
+      log "replacement process started (pid $pid)"
+      return 0
+    fi
+  done
+  die "the replacement did not start within ${timeout}s; inspect: journalctl -u ${SERVICE} -n 100"
+}
+
+backup() {
+  load_runtime_env
+  local stamp staging archive db
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  staging="$(mktemp -d)"
+  mkdir -p "$BACKUP_DIR"
+  db="${PLAYER_SAVE_DATABASE_PATH:-$DATA_DIR/saves/players.sqlite}"
+  command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required for a consistent backup (apt install sqlite3)"
+  [[ -f "$db" ]] || die "player database not found: $db"
+  mkdir -p "$staging/data/saves"
+  log "backing up $db with SQLite's online backup API"
+  sqlite3 "$db" ".backup '$staging/data/saves/players.sqlite'"
+  for file in "${TSPS_ACCOUNTS_FILE:-$DATA_DIR/accounts.json}" "${TSPS_DISPLAY_NAMES_FILE:-$DATA_DIR/display-names.json}" "${PAESCAPE_INSTALLATION_FILE:-$DATA_DIR/paescape-installation.json}"; do
+    [[ -f "$file" ]] && cp -p "$file" "$staging/data/" || true
+  done
+  archive="${BACKUP_DIR}/official-${stamp}.tar.gz"
+  tar -czf "$archive" -C "$staging" data
+  chmod 600 "$archive"
+  rm -rf "$staging"
+  log "backup written: $archive"
+  printf '%s\n' "$archive"
+}
+
+service_start() { systemctl_run start "$SERVICE"; }
+service_stop() { systemctl_run stop "$SERVICE"; }
+
+cmd_status() {
+  systemctl_service status --no-pager "$SERVICE" || true
+  echo
+  if health_ok; then health; else log "health endpoint is not answering: $HEALTH_URL"; fi
+}
+
+cmd_logs() {
+  local lines="${1:-200}" follow="${2:-}"
+  detect_scope
+  if [[ "$SCOPE" == "user" ]]; then
+    if [[ "$follow" == "--follow" ]]; then journalctl --user -u "$SERVICE" -n "$lines" -f; else journalctl --user -u "$SERVICE" -n "$lines" --no-pager; fi
+  else
+    if [[ "$follow" == "--follow" ]]; then journalctl -u "$SERVICE" -n "$lines" -f; else journalctl -u "$SERVICE" -n "$lines" --no-pager; fi
+  fi
+}
+
+cmd_restart() {
+  local mode="${1:-graceful}"
+  if [[ "$mode" == "--immediate" ]]; then
+    log "WARNING: immediate restart has no countdown; online accounts rely on SIGTERM shutdown saving"
+    systemctl_run restart "$SERVICE"
+    wait_health 120 || die "the world did not become healthy after the immediate restart"
+    return
+  fi
+  operator_restart
+  if [[ "${2:-}" == "--wait" ]]; then
+    wait_for_replacement 420
+    wait_health 120 || die "the replacement did not become healthy"
+  fi
+}
+
+cmd_update() {
+  local target_ref="$REF" do_install=0 skip_graceful=0
+  while (($#)); do
+    case "$1" in
+      --ref) target_ref="${2:?--ref needs a value}"; shift 2 ;;
+      --install) do_install=1; shift ;;
+      --skip-graceful) skip_graceful=1; shift ;;
+      *) die "unknown update option: $1" ;;
+    esac
+  done
+  [[ -d "$REPO_DIR/.git" ]] || die "not a git checkout: $REPO_DIR"
+  if [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]]; then
+    die "the deployment checkout has local changes; commit or discard them before an update"
+  fi
+  local previous current
+  previous="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  log "current deployed commit: $previous"
+
+  if [[ "$skip_graceful" == "0" ]]; then
+    operator_restart
+    wait_for_replacement 420
+    log "stopping the replacement so the deploy has a clean, non-restarting process"
+    service_stop
+  else
+    log "WARNING: --skip-graceful stops the service without a five-minute in-game warning"
+    service_stop
+  fi
+
+  backup >/dev/null
+
+  log "fetching and checking out $target_ref"
+  git -C "$REPO_DIR" fetch --prune origin
+  if [[ "$target_ref" == origin/* ]]; then
+    git -C "$REPO_DIR" checkout --detach "$target_ref"
+  else
+    git -C "$REPO_DIR" checkout --detach "$target_ref"
+  fi
+  current="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  log "deploying commit: $current"
+
+  if [[ "$do_install" == "1" ]]; then
+    if command -v yarn >/dev/null 2>&1; then
+      (cd "$REPO_DIR" && yarn --cwd server install --immutable)
+    else
+      (cd "$REPO_DIR/server" && npm ci)
+    fi
+  fi
+
+  log "building the server"
+  if command -v yarn >/dev/null 2>&1; then
+    (cd "$REPO_DIR" && yarn --cwd server build)
+  else
+    (cd "$REPO_DIR/server" && npm run build)
+  fi
+
+  service_start
+  if wait_health 150; then
+    log "update complete at $current"
+    return 0
+  fi
+
+  log "health check failed; rolling back to $previous (player data was not touched)"
+  service_stop || true
+  git -C "$REPO_DIR" checkout --detach "$previous"
+  if command -v yarn >/dev/null 2>&1; then
+    (cd "$REPO_DIR" && yarn --cwd server build)
+  else
+    (cd "$REPO_DIR/server" && npm run build)
+  fi
+  service_start || true
+  die "update failed and was rolled back to $previous; inspect journalctl -u $SERVICE"
+}
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: paescape-official <command> [options]
+
+  start                         start the systemd service
+  stop                          stop it without an automatic restart
+  restart [--wait]              five-minute counted restart through the platform
+  restart --immediate           emergency restart with no countdown
+  status                        unit state plus health JSON
+  logs [N] [--follow]           journal lines for the service
+  health                        health JSON only
+  backup                        consistent database + account/identity backup
+  update [--ref REF] [--install] [--skip-graceful]
+                                warn, save, stop, back up, deploy, verify
+USAGE
+}
+
+command="${1:-}"
+shift || true
+case "$command" in
+  start) service_start ;;
+  stop) service_stop ;;
+  restart) cmd_restart "$@" ;;
+  status) cmd_status ;;
+  logs) cmd_logs "$@" ;;
+  health) health ;;
+  backup) backup ;;
+  update) cmd_update "$@" ;;
+  *) usage; exit 2 ;;
+esac

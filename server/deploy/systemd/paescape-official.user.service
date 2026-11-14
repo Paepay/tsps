@@ -1,0 +1,24 @@
+[Unit]
+Description=PaeScape Official world server (user-level fallback)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/user/apps/tsps/server
+EnvironmentFile=%h/apps/paescape-official/official.env
+ExecStart=/usr/bin/node ../scripts/run-with-env.mjs - --max-old-space-size=8192 ./dist/Server.js
+Restart=always
+RestartSec=10
+SuccessExitStatus=0
+TimeoutStopSec=90
+KillSignal=SIGTERM
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=paescape-official
+
+[Install]
+WantedBy=default.target

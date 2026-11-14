@@ -16,9 +16,10 @@ function loadPlugin() {
   const tasks = [];
   const pushes = [];
   const shutdowns = [];
+  const messages = [];
   const hooks = {};
   const players = [{
-    sendMessage() {},
+    sendMessage(message) { messages.push(message); },
     getPacketSender: () => ({ sendSystemUpdate: (v) => pushes.push(v) }),
   }];
   class Task {
@@ -43,7 +44,7 @@ function loadPlugin() {
     onCustomEvent: (name, handler) => events.set(name, handler),
   });
   const emit = (name, payload) => { events.get(name)(payload); return payload; };
-  return { emit, tasks, pushes, shutdowns, hooks, players };
+  return { emit, tasks, pushes, shutdowns, messages, hooks, players };
 }
 
 test("GameUpdate:start shuts down with the stored hook only once the countdown reaches zero", () => {
@@ -79,6 +80,46 @@ test("GameUpdate:cancel stops the countdown and never runs afterPersist", () => 
   assert.equal(emit("GameUpdate:cancel", {}).cancelled, false);
   assert.equal(ran, false);
   assert.deepEqual(shutdowns, []);
+});
+
+test("a protected restart cannot be cancelled in game", () => {
+  const { emit, tasks, pushes, shutdowns } = loadPlugin();
+  const started = emit("GameUpdate:start", { seconds: 300, id: "rst_test12345", cancellable: false });
+  assert.equal(started.accepted, true);
+  const cancelled = emit("GameUpdate:cancel", {});
+  assert.equal(cancelled.cancelled, false);
+  assert.match(cancelled.error, /cannot be cancelled/);
+  assert.equal(tasks[0].stopped, false);
+  assert.notDeepEqual(pushes.at(-1), 0);
+  assert.equal(emit("GameUpdate:status", {}).scheduled, true);
+  assert.deepEqual(shutdowns, []);
+});
+
+test("a five-minute restart announces the 5-minute and 1-minute milestones exactly once", () => {
+  const { emit, tasks, messages } = loadPlugin();
+  emit("GameUpdate:start", { seconds: 300, cancellable: false });
+  const restartNotices = () => messages.filter((message) => message.startsWith("The server will restart in"));
+  assert.deepEqual(restartNotices(), [
+    "The server will restart in 5 minutes. Please finish what you are doing; progress will be saved.",
+  ]);
+  const realNow = Date.now;
+  try {
+    // Still within the five-minute mark: no repeat of the 5-minute notice.
+    Date.now = () => realNow() + 30_000;
+    tasks[0].execute();
+    assert.equal(restartNotices().length, 1);
+    // Pass the one-minute mark: exactly one 1-minute notice.
+    Date.now = () => realNow() + 245_000;
+    tasks[0].execute();
+    tasks[0].execute();
+    assert.deepEqual(restartNotices().slice(1), [
+      "The server will restart in 1 minute. Please finish what you are doing; progress will be saved.",
+    ]);
+    // A 300-second countdown never warns about ten minutes.
+    assert.equal(restartNotices().some((message) => message.includes("10 minutes")), false);
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("GameUpdate:start while scheduled or with a bad duration sets payload.error", () => {
