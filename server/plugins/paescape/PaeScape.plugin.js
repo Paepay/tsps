@@ -84,6 +84,7 @@ const BOOT_AT = new Date().toISOString();
  */
 let restartState = { active: false, state: "starting", requestId: null, outcome: null };
 let session = null; // { token, expiresAt }
+let lifecycleReporter = null; // test-only override for reportWorldState
 let heartbeatTimer = null;
 let sessionTimer = null;
 let userAccountPath = "";
@@ -384,7 +385,7 @@ function applyRestartDirective(result) {
       restartState.state = "ready";
     }
     if (learned) {
-      const timer = setTimeout(() => void heartbeat(), 750);
+      const timer = setTimeout(() => void reportWorldState(), 750);
       timer.unref?.();
     }
     return;
@@ -394,6 +395,22 @@ function applyRestartDirective(result) {
     // id/outcome so later heartbeats cannot report stale restart evidence.
     restartState = { active: false, state: "ready", requestId: null, outcome: null };
   }
+}
+
+/**
+ * Report a lifecycle change (restart accepted/cancelled/acknowledged) through
+ * this process's own liveness channel. A hosted installation is authorised by
+ * its lease and has no world secret, so the legacy credential heartbeat cannot
+ * report anything for it. Configured/manual worlds keep the credential path.
+ */
+function reportWorldState() {
+  if (lifecycleReporter) return lifecycleReporter();
+  return platform.worldSecret ? heartbeat() : renewLease();
+}
+
+/** The liveness channel this process is using, for tests and diagnostics. */
+function lifecycleHeartbeatChannel() {
+  return platform.worldSecret ? "credential" : "lease";
 }
 
 /** Report build, config revision and player count; refresh the session if it expired. */
@@ -621,7 +638,7 @@ function beginWorldRestart(body) {
     onCancelled: (reason) => {
       log(`restart ${requestId} was cancelled (${reason}); reopening logins`);
       resetRestartState("cancelled");
-      void heartbeat();
+      void reportWorldState();
     },
   };
   try {
@@ -634,7 +651,7 @@ function beginWorldRestart(body) {
     resetRestartState("failed");
     return { status: 409, body: { ok: false, error: event.error ?? "The countdown could not be started." } };
   }
-  void heartbeat();
+  void reportWorldState();
   log(`accepted five-minute restart ${requestId}; new logins are paused`);
   return { status: 202, body: { ok: true, accepted: true, seconds: 300, requestId } };
 }
@@ -667,7 +684,7 @@ function beginWorldStop(body) {
     onCancelled: (reason) => {
       log(`stop ${requestId} was cancelled (${reason}); reopening logins`);
       resetRestartState("cancelled");
-      void heartbeat();
+      void reportWorldState();
     },
   };
   try {
@@ -680,7 +697,7 @@ function beginWorldStop(body) {
     resetRestartState("failed");
     return { status: 409, body: { ok: false, error: event.error ?? "The countdown could not be started." } };
   }
-  void heartbeat();
+  void reportWorldState();
   log(`accepted five-minute stop ${requestId}; new logins are paused`);
   return { status: 202, body: { ok: true, accepted: true, seconds: 300, requestId } };
 }
@@ -1803,13 +1820,16 @@ module.exports = {
     redeemLoginTicket,
     bootAt: () => BOOT_AT,
     restartState: () => ({ ...restartState }),
+    lifecycleHeartbeatChannel,
     maxPlayers,
     worldIsFull,
     configureControlForTests: (input) => {
       if (input.publicKey !== undefined) publicKey = input.publicKey;
       if (input.worldId !== undefined) platform = { ...platform, worldId: input.worldId };
+      if (input.worldSecret !== undefined) platform = { ...platform, worldSecret: String(input.worldSecret) };
       if (input.api !== undefined) api = input.api;
       if (input.restartState !== undefined) restartState = { ...input.restartState };
+      lifecycleReporter = input.lifecycleReporter ?? null;
     },
     setConfiguredMaxPlayers: (value) => { configuredMaxPlayers = Number.isInteger(value) && value > 0 ? value : null; },
     state: () => ({ worldConfig, worldConfigRevision, configuredMaxPlayers }),
