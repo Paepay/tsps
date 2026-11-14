@@ -2,10 +2,11 @@
  * The relic interface (league_relics, 655), as captured: the side panel's View Relics opens it as
  * the main modal with the click events on its tier slots; a slot click records the relic viewed
  * (varbit league_relic_last_viewed = the clicked slot) and runs the client's redraw scripts;
- * the confirm button unlocks the viewed relic. Client script 3189 numbers the clickzones with one
- * running counter over the tiers' relics, so a slot is the relics of the tiers before it plus its
- * place in its own tier: Demonic Pacts' tier 7 holds two, so its tier 8 is slots 20-22 (rec 1135:
- * slot 19 views Reloaded, struct 1127; slot 22 Flask of Fervour, struct 6454).
+ * the confirm button unlocks the viewed relic; the close button (655:3) leaves without unlocking.
+ * Client script 3189 numbers the clickzones with one running counter over the tiers' relics, so a
+ * slot is the relics of the tiers before it plus its place in its own tier: Demonic Pacts' tier 7
+ * holds two, so its tier 8 is slots 20-22 (rec 1135: slot 19 views Reloaded, struct 1127; slot 22
+ * Flask of Fervour, struct 6454).
  */
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
@@ -123,13 +124,28 @@ function confirm({ player }) {
   return true;
 }
 
+/** The top-right cross: leave without unlocking (league tutorial's "cross in the top right corner"). */
+function close({ player }) {
+  if (Common.levelUpOwns(player) || !viewing.has(player)) return false;
+  viewing.delete(player);
+  player.getPacketSender().sendInterfaceRemoval();
+  return true;
+}
+
+/** The modal closed another way (Escape, walking away): later clicks need View Relics again. */
+function closed({ player, interfaceId }) {
+  if (interfaceId === ui().group) viewing.delete(player);
+}
+
 module.exports = function attach(api) {
-  const { group, openButton, clickzones, confirm: confirmChild } = ui();
+  const { group, openButton, clickzones, confirm: confirmChild, close: closeChild } = ui();
   // A locked player (mid-teleport, on an obstacle) is told to finish first, and nothing opens.
   api.refuseWhileBusy(Unlock.uid(openButton[0], openButton[1]));
   api.onInterfaceActionButton(Unlock.uid(openButton[0], openButton[1]), open);
   api.onInterfaceActionButton(Unlock.uid(group, clickzones), view);
   api.onInterfaceActionButton(Unlock.uid(group, confirmChild), confirm);
+  api.onInterfaceActionButton(Unlock.uid(group, closeChild), close);
+  api.onCustomEvent("interface:closed", closed);
 };
 
 module.exports.slotToRelic = slotToRelic;

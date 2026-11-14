@@ -7,7 +7,6 @@ import { markWidgetInteractionDirty } from "../../../widgets/WidgetInteraction";
 import type { WidgetOverlay, WidgetOverlayDrawContext } from "../ClientPluginManager";
 
 const SKILLS_TAB = 320;
-const SKILL_UIDS = Array.from({ length: 24 }, (_, index) => (SKILLS_TAB << 16) | (index + 1));
 const LEAGUE_PANEL = 656;
 const MASTERIES_BUTTON = (LEAGUE_PANEL << 16) | 32;
 const GREY: [number, number, number, number] = [0.12, 0.12, 0.12, 0.72];
@@ -17,12 +16,16 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 /** Grey out the Skills tab entries the Level-Up server reports as locked. */
 export class LevelUpLocksOverlay implements WidgetOverlay {
-    /** Draw after each skill cell, before its tooltip, so hover XP stays above the grey. */
-    readonly drawAfterWidget = SKILL_UIDS;
+    /**
+     * Draw after the whole Skills tab finishes. Per-cell `drawAfterWidget` lost the greys:
+     * later siblings inside 320 (icons/text layers) redrew on top of early cells.
+     */
+    readonly drawAfterInterface = SKILLS_TAB;
 
     constructor(private readonly plugin: LevelUpLocksPlugin) {}
 
-    private rects(triggerWidgetUid?: number): Rect[] {
+    private rects(): Rect[] {
+        if (!this.plugin.isStarted()) return [];
         const client = this.plugin.getClient();
         const locked = client.levelUpLockedSkills;
         if (!Array.isArray(locked) || locked.length === 0) return [];
@@ -31,13 +34,10 @@ export class LevelUpLocksOverlay implements WidgetOverlay {
         const result: Rect[] = [];
         for (const child of locked) {
             const uid = (SKILLS_TAB << 16) | child;
-            if (triggerWidgetUid !== undefined && triggerWidgetUid !== uid) continue;
             const widget: any = manager.getWidgetByUid(uid);
             if (!widget || manager.isEffectivelyHidden?.(widget.uid)) continue;
-            const x = Number(widget._absX), y = Number(widget._absY);
-            const w = Number(widget._absWidth), h = Number(widget._absHeight);
-            if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
-            result.push({ x, y, w, h });
+            const rect = widgetRect(widget) ?? childrenBounds(manager, widget);
+            if (rect) result.push(rect);
         }
         return result;
     }
@@ -46,8 +46,13 @@ export class LevelUpLocksOverlay implements WidgetOverlay {
         return this.rects().map((r) => `${r.x}:${r.y}:${r.w}:${r.h}`).join("|");
     }
 
+    coverage(): Rect[] | undefined {
+        const rects = this.rects();
+        return rects.length ? rects : undefined;
+    }
+
     draw(context: WidgetOverlayDrawContext): Rect[] {
-        const rects = this.rects(context.triggerWidgetUid);
+        const rects = this.rects();
         const renderer: any = context.renderer;
         for (const r of rects) {
             renderer.drawRect(r.x, r.y, r.w, r.h, GREY);
@@ -58,6 +63,31 @@ export class LevelUpLocksOverlay implements WidgetOverlay {
         }
         return rects;
     }
+}
+
+function widgetRect(widget: any): Rect | undefined {
+    const x = Number(widget._absX), y = Number(widget._absY);
+    const w = Number(widget._absWidth), h = Number(widget._absHeight);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return undefined;
+    return { x, y, w, h };
+}
+
+/** Some stats cells are zero-size parents; the icon/text children still have the clickable bounds. */
+function childrenBounds(manager: any, parent: any): Rect | undefined {
+    const children: any[] = typeof manager.getStaticChildrenByParentUid === "function"
+        ? manager.getStaticChildrenByParentUid(parent.uid) ?? []
+        : [];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const child of children) {
+        const rect = widgetRect(child);
+        if (!rect) continue;
+        minX = Math.min(minX, rect.x);
+        minY = Math.min(minY, rect.y);
+        maxX = Math.max(maxX, rect.x + rect.w);
+        maxY = Math.max(maxY, rect.y + rect.h);
+    }
+    if (![minX, minY, maxX, maxY].every(Number.isFinite) || maxX <= minX || maxY <= minY) return undefined;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 /** Level-Up's locked Skills tab overlay; inert on every other world (the list is empty). */

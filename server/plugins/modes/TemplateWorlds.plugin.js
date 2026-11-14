@@ -57,14 +57,31 @@ function deactivate(message) {
 function applyConfiguration(id, rules) {
   const nextId = typeof id === "string" ? id.trim() : "";
   const nextRules = parseJsonObject(rules);
+  const wasActive = active();
   if (nextId === "level_up" && !validLevelUpContract(nextRules)) {
     deactivate("refusing an invalid Level-Up template contract");
+    if (wasActive) refreshOnlineLockState();
     return false;
   }
   templateId = nextId || null;
   contract = nextRules;
-  if (active()) api?.setExperienceRate(1);
+  const nowActive = active();
+  if (nowActive) api?.setExperienceRate(1);
+  // A hosted world can receive its Level-Up contract after players are already online
+  // (or after a first login saw the inactive empty lock list). Resend so the Skills tab
+  // greys catch up without requiring a relog.
+  if (wasActive || nowActive) refreshOnlineLockState();
   return true;
+}
+
+function refreshOnlineLockState() {
+  const players = api?.core?.World?.getPlayers?.();
+  if (!players) return;
+  for (const player of players) {
+    if (!player?.getPacketSender) continue;
+    if (active()) enforceSkillLevels(player);
+    sendLockState(player);
+  }
 }
 
 function configurePackaged(template, rules) {

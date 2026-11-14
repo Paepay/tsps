@@ -187,6 +187,12 @@ export interface WidgetOverlay {
      */
     drawAfterWidget?: readonly number[];
     /**
+     * Draw immediately after this interface group finishes (its root and every child), so
+     * later siblings inside the same tab cannot cover the overlay. Tooltips that are part of
+     * the same group sit under it; gameframe tooltips drawn afterwards still win.
+     */
+    drawAfterInterface?: number;
+    /**
      * Draw over the scene but under every widget (RuneLite's ABOVE_SCENE), e.g. NPC highlights
      * that interfaces should cover.
      */
@@ -300,6 +306,11 @@ export interface ClientPlugin {
     onHitsplat?(event: HitsplatEventPayload): void;
     /** A health bar update arrived from the server. */
     onHealthBar?(event: HealthBarEvent): void;
+    /**
+     * Rewrite the local player's chatbox name (CHAT_PLAYERNAME / the "Name: " input line).
+     * Return the name to show, or undefined to leave it.
+     */
+    formatChatPlayerName?(name: string): string | undefined;
     /**
      * Text is about to show over a player's head, their public chat or forced chat (RuneLite's
      * OverheadTextChanged): return the text to show instead, or undefined to leave it. The chat
@@ -553,6 +564,15 @@ export class ClientPluginManager {
 
     onMenuOptionClicked(action: MenuActionData): boolean {
         return this.implementing("onMenuOptionClicked").some((plugin) => plugin.onMenuOptionClicked!(action) === true);
+    }
+
+    /** The local chatbox name after every plugin has had its say. */
+    formatChatPlayerName(name: string): string {
+        for (const plugin of this.implementing("formatChatPlayerName")) {
+            if ((plugin as { isStarted?(): boolean }).isStarted?.() === false) continue;
+            name = plugin.formatChatPlayerName!(name) ?? name;
+        }
+        return name;
     }
 
     /** The overhead text after every plugin has had its say, each seeing the last one's text. */

@@ -49,6 +49,7 @@ const RELIC_CLICKZONE_SLOTS = [0, 23];
 const RELIC_MENU_FRAME = 6;
 const RELIC_MENU_SLOTS = [10, 20];
 const RELIC_CONFIRM = 51;
+const RELIC_CLOSE = 3;
 const RELIC_TOGGLES = 38;
 
 const FLAGS_OP1 = 1 << 1;
@@ -570,6 +571,18 @@ function presentRelic(player) {
   for (const [sound, delay] of RelicData.interface.unlockSounds) player.getPacketSender().sendSound(sound, 1, delay);
 }
 
+/** The top-right cross on league_relics (655:3): leave without unlocking. */
+function relicClose(event) {
+  if (!active() || !relicViewing.has(event.player)) return false;
+  relicViewing.delete(event.player);
+  event.player.getPacketSender().sendInterfaceRemoval();
+  return true;
+}
+
+function relicClosed({ player, interfaceId }) {
+  if (interfaceId === RELIC_GROUP) relicViewing.delete(player);
+}
+
 function relicConfirm(event) {
   if (!active() || !relicViewing.has(event.player)) return false;
   const { player } = event;
@@ -702,6 +715,8 @@ function attach(pluginApi) {
   api.onInterfaceActionButton(uid(AREA_GROUP, AREA_TELEPORT), areaTeleport);
   api.onInterfaceActionButton(uid(RELIC_GROUP, RELIC_CLICKZONES), relicClicked);
   api.onInterfaceActionButton(uid(RELIC_GROUP, RELIC_CONFIRM), relicConfirm);
+  api.onInterfaceActionButton(uid(RELIC_GROUP, RELIC_CLOSE), relicClose);
+  api.onCustomEvent("interface:closed", relicClosed);
 }
 
 module.exports = {

@@ -1069,7 +1069,7 @@ export function encodeServerPacket(opcode: ServerPacketId, payload: Buffer): Buf
 
 export function encodeContentData(
   source: string,
-  datasets: Array<{ key: string; rows: unknown[] }>
+  datasets: Array<{ key: string; rows: unknown[]; active?: boolean }>
 ): Buffer {
   const json = Buffer.from(JSON.stringify({ gamemodeId: source, datasets }));
   const compressed = deflateSync(json);

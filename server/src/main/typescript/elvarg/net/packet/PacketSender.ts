@@ -1662,7 +1662,7 @@ export class PacketSender {
     return this.closeSubInterface(WORLD_MAP_TARGET_UID);
   }
 
-  sendContentData(source: string, datasets: Array<{ key: string; rows: unknown[] }>): this {
+  sendContentData(source: string, datasets: Array<{ key: string; rows: unknown[]; active?: boolean }>): this {
     this.player.getSession().sendClientPacket(encodeContentData(source, datasets));
     return this;
   }

@@ -429,6 +429,7 @@ export class WidgetsOverlay implements Overlay {
             widgetOverlayAnchors: WIDGET_OVERLAY_ANCHORS,
             widgetOverlayAnchorDrawn: () => this.drawWidgetOverlaysAtAnchor(),
             afterWidgetDrawn: (uid) => this.drawWidgetOverlaysAfterWidget(uid),
+            afterInterfaceDrawn: (group) => this.drawWidgetOverlaysAfterInterface(group),
             rootOffsetX:
                 typeof (root as any).__widgetRenderOffsetX === "number"
                     ? Math.round(Number((root as any).__widgetRenderOffsetX) * this.overlayScaleX)
@@ -1242,6 +1243,14 @@ export class WidgetsOverlay implements Overlay {
         if (overlays.length === 0) return;
         for (const overlay of overlays) this.drawnOverlaysThisPass.add(overlay);
         this.drawWidgetOverlaysForPass(overlays, uid);
+    }
+
+    /** Draws overlays that wait for a whole mounted interface (e.g. the Skills tab) to finish. */
+    private drawWidgetOverlaysAfterInterface(group: number): void {
+        const overlays = this.undrawnWidgetOverlays(this.currentWidgetOverlays ?? []).filter(
+            (overlay) => overlay.drawAfterInterface === group,
+        );
+        this.drawWidgetOverlaysForPass(overlays);
     }
 
     private undrawnWidgetOverlays(overlays: readonly WidgetOverlay[]): WidgetOverlay[] {

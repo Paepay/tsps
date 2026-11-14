@@ -372,6 +372,7 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(fake.manager.getCurrentLevel(fake.byName("Hitpoints")), 10);
   assert.equal(fake.manager.getExperience(fake.byName("Hitpoints")), 1000);
   assert.equal(fake.manager.getMaxLevel(fake.byName("Attack")), 1, "locked skills keep level one");
+  assert.equal(fake.contentData.at(-1)?.datasets?.[0]?.active, true, "Level-Up marks the Skills-tab overlay active");
   assert.ok(fake.contentData.at(-1)?.datasets?.[0]?.rows?.includes(Rules.statChild(0)), "locked Attack has an overlay");
   assert.equal(fake.contentData.at(-1)?.datasets?.[0]?.rows?.includes(Rules.statChild(7)), false, "unlocked Hitpoints has no overlay");
   assert.equal(fake.player.location.x, 3222);
