@@ -148,7 +148,7 @@ module.exports = {
   },
   register(api) {
     pluginApi = api;
-    api.registerCommand("displayname", displayNameCommand, undefined, "Change the name other players see");
+    api.registerCommand("displayname", displayNameCommand, api.core.PlayerRights.NONE, "Change the name other players see");
     NameChanger.attach(api);
     api.onInterfaceActionButton(NAME_CHANGER_BUTTON, NameChanger.openNameChanger);
     api.onInterfaceActionButton(NameChanger.BONDS_UID, NameChanger.redeemBonds);

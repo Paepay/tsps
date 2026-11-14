@@ -206,7 +206,10 @@ type ObjectInteractionHook = PluginHook<PluginObjectInteractionEvent> & { order:
 /** PlayerRights names world.json "commands:permissions" accepts, mapped to their rights ids. */
 const COMMAND_PERMISSION_RIGHTS: Record<string, number> = {
   NONE: PlayerRights.NONE.getId(),
+  // Website Commands tab labels (toUpperCase of Player / Admin) and server enum names.
+  PLAYER: PlayerRights.NONE.getId(),
   MODERATOR: PlayerRights.MODERATOR.getId(),
+  ADMIN: PlayerRights.ADMINISTRATOR.getId(),
   ADMINISTRATOR: PlayerRights.ADMINISTRATOR.getId(),
   OWNER: PlayerRights.OWNER.getId(),
   DEVELOPER: PlayerRights.DEVELOPER.getId(),
@@ -2127,12 +2130,15 @@ export class PluginManager {
     return event.handled === true;
   }
 
-  /** Null means "no restriction"; otherwise the lowest rights id that may run the command. */
+  /**
+   * Lowest rights id that may run the command. Omitted/`undefined` means Moderator
+   * (staff floor); pass `PlayerRights.NONE` to open a command to every player.
+   */
   private static normalizeCommandRights(
     minimumRights: PluginCommandRights | undefined
-  ): number | null {
+  ): number {
     const id = (minimumRights as any)?.getId?.();
-    return Number.isInteger(id) ? id : null;
+    return Number.isInteger(id) ? id : PlayerRights.MODERATOR.getId();
   }
 
   /**

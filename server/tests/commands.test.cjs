@@ -29,14 +29,15 @@ test("the live catalog includes aliases and legacy registrations, filtered by ex
   let executed = false;
   api.registerCommand(" tele ", () => { executed = true; }, PlayerRights.OWNER, " Teleport to coordinates ");
   api.registerCommand("legacy", () => {});
-  api.registerCommand("online", () => {}, undefined, "List online players");
-  api.registerCommand("players", () => {}, undefined, "List online players");
+  api.registerCommand("online", () => {}, PlayerRights.NONE, "List online players");
+  api.registerCommand("players", () => {}, PlayerRights.NONE, "List online players");
 
+  // Omitted rights floor at Moderator, so a NONE player only sees explicit NONE commands.
   assert.deepEqual(api.getRegisteredCommands(player()), [
-    { command: "legacy", description: "" },
     { command: "online", description: "List online players" },
     { command: "players", description: "List online players" },
   ]);
+  assert.ok(api.getRegisteredCommands(player(PlayerRights.MODERATOR)).some(({ command }) => command === "legacy"));
   assert.equal(api.getRegisteredCommands(player(PlayerRights.OWNER)).at(-1).description, "Teleport to coordinates");
   api.setCommandRights("tele", PlayerRights.NONE);
   assert.ok(api.getRegisteredCommands(player()).some(({ command }) => command === "tele"));
@@ -50,7 +51,7 @@ test("commands sends its live permitted rows and optional prefill over the game 
   const api = PluginManager.createApi("CommandsTest");
   Commands.register(api);
   for (let index = 0; index < 180; index++) {
-    api.registerCommand(`extra${index}`, () => {}, undefined, "Plugin command");
+    api.registerCommand(`extra${index}`, () => {}, PlayerRights.NONE, "Plugin command");
   }
   api.registerCommand("secret", () => {}, PlayerRights.DEVELOPER, "Restricted command");
   const p = player();
@@ -63,7 +64,7 @@ test("commands sends its live permitted rows and optional prefill over the game 
   assert.ok(!rows.some(({ name }) => name.includes("secret")));
   assert.equal(p.texts.get(uid(COMPONENT.SEARCH_INPUT)), "plugin command");
 
-  api.registerCommand("later", () => {}, undefined, "Registered after the interface");
+  api.registerCommand("later", () => {}, PlayerRights.NONE, "Registered after the interface");
   run(["commands"]);
   assert.equal(p.texts.get(uid(COMPONENT.SEARCH_INPUT)), "");
   assert.ok(JSON.parse(p.texts.get(uid(COMPONENT.DATA))).some(({ name }) => name.startsWith("::later - ")));

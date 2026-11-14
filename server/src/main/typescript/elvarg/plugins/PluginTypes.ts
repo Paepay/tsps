@@ -1288,7 +1288,8 @@ export interface PluginApi {
   /**
    * Registers a command handler. `minimumRights` is the lowest rank that may run it -
    * the core denies everyone below before the handler is called, so handlers never
-   * check rights themselves. Omitted means any player may run it.
+   * check rights themselves. Omitted defaults to Moderator; pass `PlayerRights.NONE`
+   * to open a command to every player.
    * `description` is shown and searched in the Commands interface.
    */
   registerCommand(

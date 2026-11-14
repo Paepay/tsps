@@ -224,11 +224,12 @@ members items) must export `members: true`. When world.json enables `plugins.Fre
 Commands are rights-checked by the core, never by the handler. Pass the lowest rank that
 may run the command as the third argument to `registerCommand`; rights ids are ordered
 (none < moderator < administrator < owner < developer) so everyone above it passes too.
-Omit it and any player may run it.
+Omit it and Moderator is the floor; pass `PlayerRights.NONE` for every player.
 
 ```js
 api.registerCommand("npc", spawnNpc, PlayerRights.OWNER); // owner and developer
-api.registerCommand("players", listPlayers);              // anyone
+api.registerCommand("players", listPlayers);                 // moderator and up
+api.registerCommand("home", goHome, PlayerRights.NONE);      // anyone
 ```
 
 Give commands a description as the fourth argument. The Commands interface reads the live

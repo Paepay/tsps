@@ -248,7 +248,7 @@ module.exports = {
           return true;
         }
         return openMakeoverInterface(player);
-      }, undefined, "Change your appearance");
+      }, api.core.PlayerRights.NONE, "Change your appearance");
     }
 
     api.onNpcInteraction("Makeover Mage", {
