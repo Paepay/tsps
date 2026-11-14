@@ -20,7 +20,8 @@ against live OSRS, never against another private server.
 7. **Area-scoped content is an `Area`**, registered with `api.registerArea`, not global
    `onPlayerProcess` / `onCanAttack` / `onCanTeleport` hooks that run for every player.
 8. **Commands declare their rank:** `api.registerCommand("npc", spawnNpc, PlayerRights.OWNER)`.
-   Handlers never check rights themselves.
+   Omitted rights default to Moderator; use `PlayerRights.NONE` only when every player
+   should run it. Handlers never check rights themselves.
 9. **Ids come from the cache** (`yarn dump:widget`, `dump:cs2`, `dump:enum` ...), never from
    guesswork or old RSPS constants.
 10. **Behaviour comes from the OSRS Wiki**; the cache wins on ids. Never cite another RSPS as

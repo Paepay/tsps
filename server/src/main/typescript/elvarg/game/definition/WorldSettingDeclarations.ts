@@ -191,6 +191,6 @@ export const WORLD_SETTING_DECLARATIONS: Record<string, ConfigOptionDeclaration>
 export const CORE_CONFIG_DECLARATIONS: Record<string, ConfigOptionDeclaration> = {
     "commands:permissions": {
         type: "json", label: "Command permissions", default: {},
-        help: "Lowest rank that may run each command, e.g. { \"items\": \"NONE\", \"teleports\": \"OWNER\" }. Ranks: NONE, MODERATOR, ADMINISTRATOR, OWNER, DEVELOPER.",
+        help: "Lowest rank that may run each command, e.g. { \"items\": \"NONE\", \"teleports\": \"OWNER\" }. Ranks: NONE (or PLAYER), MODERATOR, ADMINISTRATOR (or ADMIN), OWNER, DEVELOPER. Registered commands default to MODERATOR when no rank is declared.",
     },
 };

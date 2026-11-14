@@ -500,7 +500,7 @@ module.exports = {
   register(api) {
     initialize(api);
     api.persistAttribute(STREAK_ATTRIBUTE, 0);
-    api.registerCommand("kdr", sayKillDeathRatio, undefined, "Say your kill/death ratio");
+    api.registerCommand("kdr", sayKillDeathRatio, api.core.PlayerRights.NONE, "Say your kill/death ratio");
     api.onPlayerLogin(login);
     api.onPlayerDefeated(playerDefeated);
   },

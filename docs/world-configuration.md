@@ -262,7 +262,7 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `commands:permissions` | json | `{}` | **Command permissions.** Lowest rank that may run each command, e.g. { "items": "NONE", "teleports": "OWNER" }. Ranks: NONE, MODERATOR, ADMINISTRATOR, OWNER, DEVELOPER. |
+| `commands:permissions` | json | `{}` | **Command permissions.** Lowest rank that may run each command, e.g. { "items": "NONE", "teleports": "OWNER" }. Ranks: NONE (or PLAYER), MODERATOR, ADMINISTRATOR (or ADMIN), OWNER, DEVELOPER. Registered commands default to MODERATOR when no rank is declared. |
 
 #### Plugin area `accounts` (`pluginConfig`)
 
