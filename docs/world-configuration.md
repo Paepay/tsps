@@ -216,7 +216,7 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 | --- | --- | --- | --- |
 | `CrossFloor:combat` | boolean | *Off unless CROSS_FLOOR_COMBAT is set* | **Cross-floor combat.** Ranged and magic attacks work between floors. Needs cross-floor visibility. |
 | `CrossFloor:visibility` | boolean | *Off unless CROSS_FLOOR_VISIBILITY is set* | **Cross-floor visibility.** Players see others on other floors of the same area. |
-| `commands:permissions` | json | `{}` | **Command permissions.** Lowest rank that may run each command, e.g. { "items": "NONE", "teleports": "OWNER" }. Ranks: NONE, MODERATOR, ADMINISTRATOR, OWNER, DEVELOPER. |
+| `commands:permissions` | json | `{}` | **Command permissions.** Lowest rank that may run each command, e.g. { "items": "NONE", "teleports": "OWNER" }. Ranks: NONE (or PLAYER), MODERATOR, ADMINISTRATOR (or ADMIN), OWNER, DEVELOPER. Registered commands default to MODERATOR when no rank is declared. |
 
 #### Plugin area `accounts` (`pluginConfig`)
 

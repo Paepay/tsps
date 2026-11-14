@@ -206,7 +206,7 @@ module.exports = {
     INTERFACE_DEFINITION = buildInterface();
     api.registerCustomInterface(INTERFACE_DEFINITION);
     for (const command of ["maxhits", "maxhit", "mh", "maxrangehit", "mrh", "maxmagehit", "mmh"]) {
-      api.registerCommand(command, ({ player }) => (open(player), true), undefined, "Show live combat max hits");
+      api.registerCommand(command, ({ player }) => (open(player), true), api.core.PlayerRights.NONE, "Show live combat max hits");
     }
     api.onPlayerProcess(({ player }) => {
       if (player.getAttribute(CLOSE_ON_INTERFACE_CLOSE_ATTRIBUTE) === GROUP_ID) {

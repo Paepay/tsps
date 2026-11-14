@@ -1221,8 +1221,8 @@ module.exports = {
       completionTimers.delete(player);
     });
     api.registerContentEndpoint("item-prices", itemPricesResource);
-    api.registerCommand("ge", openGrandExchange, undefined, "Open the Grand Exchange");
-    api.registerCommand("gecollect", openCollectionBox, undefined, "Open the Grand Exchange collection box");
+    api.registerCommand("ge", openGrandExchange, api.core.PlayerRights.NONE, "Open the Grand Exchange");
+    api.registerCommand("gecollect", openCollectionBox, api.core.PlayerRights.NONE, "Open the Grand Exchange collection box");
 
     api.onNpcInteraction("Grand Exchange Clerk", { "Exchange": openGrandExchange });
     api.onNpcsInteraction(["Banker", "Ashuelot Reis", "Fadli"], { "Collect": openCollectionBox });

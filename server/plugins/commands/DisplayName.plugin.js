@@ -133,7 +133,7 @@ module.exports = {
   },
   register(api) {
     pluginApi = api;
-    api.registerCommand("displayname", displayNameCommand, undefined, "Change the name other players see");
+    api.registerCommand("displayname", displayNameCommand, api.core.PlayerRights.NONE, "Change the name other players see");
     api.onInterfaceActionButton(NAME_CHANGER_BUTTON, openNameChanger);
   },
 };

@@ -203,7 +203,7 @@ module.exports = {
     api.onServerStartup(initialize.bind(null, api));
     api.persistAttribute(BUY_NOTED_ATTRIBUTE, false);
     api.registerCustomInterface(INTERFACE_DEFINITION);
-    api.registerCommand("shops", openShops, undefined, "Browse custom shops");
+    api.registerCommand("shops", openShops, api.core.PlayerRights.NONE, "Browse custom shops");
     api.onInterfaceActionButton(LEFT_ROW_UIDS, selectShopButton);
     api.onInterfaceActionButton(uid(COMPONENT.NOTED_TOGGLE), toggleNoted);
     api.onCustomEvent("shop:delivery", deliverNoted);

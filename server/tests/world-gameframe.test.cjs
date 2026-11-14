@@ -192,12 +192,16 @@ test('pluginConfig commands:permissions sets the rank a command needs, either wa
   try {
     console.warn = () => {};
     PluginManager.commandRights.set('items', 2);
-    PluginManager.pluginConfigCache = { 'commands:permissions': { '::Teleports': 'OWNER', items: 'none', bad: 'KING' } };
+    PluginManager.pluginConfigCache = { 'commands:permissions': { '::Teleports': 'OWNER', items: 'none', bad: 'KING', glow: 'Moderator', bank: 'Admin' } };
     PluginManager.commandPermissionsCache = null;
     assert.equal(PluginManager.playerHasCommandRights(player(2), 'teleports'), false, 'raised to owner');
     assert.equal(PluginManager.playerHasCommandRights(player(3), 'teleports'), true);
     assert.equal(PluginManager.playerHasCommandRights(player(0), 'items'), true, 'lowered below its registered administrator rank');
     assert.equal(PluginManager.playerHasCommandRights(player(0), 'bad'), true, 'unknown rights names are ignored');
+    assert.equal(PluginManager.playerHasCommandRights(player(0), 'glow'), false, 'website Moderator label');
+    assert.equal(PluginManager.playerHasCommandRights(player(1), 'glow'), true);
+    assert.equal(PluginManager.playerHasCommandRights(player(1), 'bank'), false, 'website Admin label');
+    assert.equal(PluginManager.playerHasCommandRights(player(2), 'bank'), true);
 
     PluginManager.pluginConfigCache = { 'commands:permissions': {} };
     PluginManager.commandPermissionsCache = null;
@@ -209,6 +213,31 @@ test('pluginConfig commands:permissions sets the rank a command needs, either wa
     PluginManager.commandPermissionsCache = permissions;
     if (registered === undefined) PluginManager.commandRights.delete('items');
     else PluginManager.commandRights.set('items', registered);
+  }
+});
+
+test('omitted command rights floor at Moderator; NONE stays open to every player', () => {
+  const { PluginManager } = require('../dist/plugins/PluginManager');
+  const { PlayerRights } = require('../dist/game/model/rights/PlayerRights');
+  const player = (rights) => ({ getRights: () => ({ getId: () => rights }) });
+  const previousDefault = PluginManager.commandRights.get('rightsdefaulttest');
+  const previousNone = PluginManager.commandRights.get('rightsnonetest');
+  const previousPerm = PluginManager.commandPermissionsCache;
+  try {
+    // Empty world overrides so the registered ranks decide.
+    PluginManager.commandPermissionsCache = new Map();
+    // What registerCommand writes when the third argument is omitted / NONE.
+    PluginManager.commandRights.set('rightsdefaulttest', PlayerRights.MODERATOR.getId());
+    PluginManager.commandRights.set('rightsnonetest', PlayerRights.NONE.getId());
+    assert.equal(PluginManager.playerHasCommandRights(player(0), 'rightsdefaulttest'), false);
+    assert.equal(PluginManager.playerHasCommandRights(player(1), 'rightsdefaulttest'), true);
+    assert.equal(PluginManager.playerHasCommandRights(player(0), 'rightsnonetest'), true);
+  } finally {
+    PluginManager.commandPermissionsCache = previousPerm;
+    if (previousDefault === undefined) PluginManager.commandRights.delete('rightsdefaulttest');
+    else PluginManager.commandRights.set('rightsdefaulttest', previousDefault);
+    if (previousNone === undefined) PluginManager.commandRights.delete('rightsnonetest');
+    else PluginManager.commandRights.set('rightsnonetest', previousNone);
   }
 });
 

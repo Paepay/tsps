@@ -60,8 +60,8 @@ module.exports = {
   register(api) {
     TaskManager = api.getTaskManager();
     Presets.register(api);
-    api.registerCommand("presets", openPresets, undefined, "Open the presets interface");
-    api.registerCommand("kits", openPresets, undefined, "Open the presets interface");
+    api.registerCommand("presets", openPresets, api.core.PlayerRights.NONE, "Open the presets interface");
+    api.registerCommand("kits", openPresets, api.core.PlayerRights.NONE, "Open the presets interface");
     api.onPlayerDefeated(openPresetsAfterDeath);
     api.onCustomEvent("presets:open", openPresets);
     api.onCustomEvent("prayer:unlocks-bypass", bypassPrayerUnlocks);

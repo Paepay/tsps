@@ -921,8 +921,8 @@ module.exports = {
       player.getPacketSender().sendVarbit(MOUSEOVER_TEXT_DISABLED_VARBIT, 0);
     });
 
-    api.registerCommand("keybinds", ({ player }) => openKeybindings(player), undefined, "Open keybindings");
-    api.registerCommand("settings", ({ player }) => openAllSettings(player), undefined, "Open settings");
+    api.registerCommand("keybinds", ({ player }) => openKeybindings(player), api.core.PlayerRights.NONE, "Open keybindings");
+    api.registerCommand("settings", ({ player }) => openAllSettings(player), api.core.PlayerRights.NONE, "Open settings");
 
     api.log("registered");
   },
