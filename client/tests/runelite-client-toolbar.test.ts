@@ -112,7 +112,7 @@ async function main(): Promise<void> {
     const hub = renderToStaticMarkup(
         createElement(PluginListPanel, { pluginManager, configManager }),
     );
-    assert.ok(hub.indexOf("RSPS.app") < hub.indexOf("Ground Items"), "client settings row first");
+    assert.ok(hub.indexOf("PaeScape.Online") < hub.indexOf("Ground Items"), "client settings row first");
     assert.ok(!hub.includes(">Configuration<"), "the hidden Configuration plugin isn't listed");
     assert.ok(hub.includes('aria-label="Ground Items settings"'), "a cog where there are settings");
     assert.ok(!hub.includes('aria-label="Menu Entry Swapper settings"'), "no cog without settings");
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     assert.ok(!hub.includes("rl-plugin-item-desc"), "no inline description");
     assert.ok(hub.includes('title="Ground Items:\n'), "the description is in the name's tooltip");
     assert.ok(hub.includes('aria-label="Pin Ground Items"'), "every plugin row has a pin star");
-    assert.ok(!hub.includes('aria-label="Pin RSPS.app"'), "the client row isn't pinnable");
+    assert.ok(!hub.includes('aria-label="Pin PaeScape.Online"'), "the client row isn't pinnable");
     assert.ok(hub.includes("/runelite/switcher_on.png") && hub.includes("/runelite/search.png"));
 
     // Pins: saved in runelite.pinnedPlugins, pinned plugins listed first.

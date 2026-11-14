@@ -130,6 +130,11 @@ function testOpenIssueTab(): void {
 }
 
 function testFormUrl(): void {
+    assert.equal(
+        BUG_REPORT_ISSUE_URL,
+        "https://github.com/Paepay/tsps/issues/new",
+        "files the issue in Paepay/tsps",
+    );
     const url = buildIssueUrl("door won't open", "The door won't open", "---\nWorld: w");
     assert.ok(
         url.startsWith(`${BUG_REPORT_ISSUE_URL}?template=bug_report.yml`),
