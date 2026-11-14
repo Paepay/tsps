@@ -85,6 +85,7 @@ const BOOT_AT = new Date().toISOString();
 let restartState = { active: false, state: "starting", requestId: null, outcome: null };
 let session = null; // { token, expiresAt }
 let lifecycleReporter = null; // test-only override for reportWorldState
+let publicKeyFetcher = null; // test-only override for ensurePublicKey
 let heartbeatTimer = null;
 let sessionTimer = null;
 let userAccountPath = "";
@@ -416,6 +417,9 @@ function lifecycleHeartbeatChannel() {
 /** Report build, config revision and player count; refresh the session if it expired. */
 async function heartbeat() {
   try {
+    // A boot that timed out fetching the control key must recover here; without
+    // it every signed dashboard restart/stop is refused for the life of the process.
+    if (!publicKey) await ensurePublicKey();
     const token = await ensureSession();
     const result = await platformFetch("/api/world/heartbeat", {
       method: "POST",
@@ -445,15 +449,22 @@ async function heartbeat() {
   }
 }
 
-/** Fetch and cache the platform's Ed25519 public key (base64 DER, SPKI). */
-async function fetchPublicKey() {
-  stage(4, `connecting to the PaeScape platform at ${platform.url}`);
+/**
+ * Fetch and cache the platform's Ed25519 public key (base64 DER, SPKI).
+ * Pass `{ quiet: true }` on background retries so lease/heartbeat logs stay calm.
+ */
+async function fetchPublicKey({ quiet = false } = {}) {
+  if (!quiet) stage(4, `connecting to the PaeScape platform at ${platform.url}`);
   let result;
   try {
     result = await platformFetch("/api/platform/public-key");
   } catch (error) {
     warn(`could not reach the PaeScape platform at ${platform.url}: ${error && error.message ? error.message : error}`);
-    warn("check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website (https://paescape.online unless you are on a custom deployment); the launcher will retry");
+    warn(
+      quiet
+        ? "control public key still missing; lease renewal and the next dashboard control call will retry"
+        : "check the server's internet connection and that PAESCAPE_PLATFORM_URL points at the PaeScape website (https://paescape.online unless you are on a custom deployment); lease renewal will keep retrying until the key is cached",
+    );
     return false;
   }
   if (result.ok && result.json?.publicKey) {
@@ -462,12 +473,23 @@ async function fetchPublicKey() {
       format: "der",
       type: "spki",
     });
-    log("stage 4/7: connected to the platform and cached its control public key");
+    log(quiet ? "cached the platform control public key" : "stage 4/7: connected to the platform and cached its control public key");
     return true;
   }
-  warn(`the platform did not return a control public key (${result.status}); control requests will be refused`);
-  warn("this usually means PAESCAPE_PLATFORM_URL is wrong or the platform is unavailable; check the URL and try the launcher again");
+  warn(`the platform did not return a control public key (${result.status}); control requests will be refused until it does`);
+  warn("this usually means PAESCAPE_PLATFORM_URL is wrong or the platform is unavailable; lease renewal will keep retrying");
   return false;
+}
+
+/**
+ * Ensure the control public key is cached. A hosted world that timed out on the
+ * first fetch used to stay unable to verify dashboard restarts for the whole
+ * process life; callers retry through lease renewal, heartbeat and control.
+ */
+async function ensurePublicKey() {
+  if (publicKey) return true;
+  if (typeof publicKeyFetcher === "function") return Boolean(await publicKeyFetcher());
+  return fetchPublicKey({ quiet: true });
 }
 
 /**
@@ -725,6 +747,19 @@ async function handleControl(request) {
         maintenance: restartState.active,
         restartState: restartState.state,
         restartRequestId: restartState.requestId,
+        controlKeyLoaded: Boolean(publicKey),
+      },
+    };
+  }
+  // A boot that timed out on /api/platform/public-key must not leave every
+  // signed control call failing until the process is bounced: try once here.
+  if (!publicKey) await ensurePublicKey();
+  if (!publicKey) {
+    return {
+      status: 503,
+      body: {
+        ok: false,
+        error: "This world has not loaded the platform's control public key yet. Retry in a moment.",
       },
     };
   }
@@ -1354,6 +1389,7 @@ async function handshake() {
 async function renewLease() {
   if (!lease) return false;
   try {
+    if (!publicKey) await ensurePublicKey();
     const result = await platformFetch("/api/server/lease/renew", {
       method: "POST",
       token: lease.token,
@@ -1830,7 +1866,10 @@ module.exports = {
       if (input.api !== undefined) api = input.api;
       if (input.restartState !== undefined) restartState = { ...input.restartState };
       lifecycleReporter = input.lifecycleReporter ?? null;
+      if (input.publicKeyFetcher !== undefined) publicKeyFetcher = input.publicKeyFetcher;
     },
+    ensurePublicKey,
+    hasPublicKey: () => Boolean(publicKey),
     setConfiguredMaxPlayers: (value) => { configuredMaxPlayers = Number.isInteger(value) && value > 0 ? value : null; },
     state: () => ({ worldConfig, worldConfigRevision, configuredMaxPlayers }),
     reset: () => { worldConfig = null; worldConfigRevision = 0; configuredMaxPlayers = null; appliedPluginSignature = null; },
