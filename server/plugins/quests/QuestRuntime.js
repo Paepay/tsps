@@ -88,6 +88,8 @@ const EXPERIENCE_WITHHELD_ATTRIBUTE = "quest.experience-withheld";
 // Client quest list statuses.
 const { metadata, questMetadata, nativeQuestIndex, questRowById } = require("./QuestList.QuestRuntime");
 const quests = [];
+let capturingQuestDefinitions = false;
+const capturedQuestDefinitions = new Set();
 const sentQuestEvents = new WeakMap();
 const openBooks = new WeakMap();
 const BOOK_GROUP = 392;
@@ -771,7 +773,8 @@ function sendQuestVarps({ player }) {
  */
 function registerQuest(api, def) {
   if (!def || !def.key || !def.name) throw new Error("registerQuest requires a key and name");
-  registerQuestWidgets(api);
+  if (capturingQuestDefinitions) coreApi = api.core;
+  else registerQuestWidgets(api);
   api.persistAttribute(stageAttribute(def.key), 0);
   api.persistAttribute(QUEST_POINTS_ATTRIBUTE, 0);
   api.persistAttribute(EXPERIENCE_WITHHELD_ATTRIBUTE, []);
@@ -847,6 +850,62 @@ function registerQuest(api, def) {
   };
   quests.push(quest);
   return quest;
+}
+
+/**
+ * Loads each quest module only to register its definition and persisted stage. Quest modules
+ * receive `api`, whose hook registrations must be no-ops; the caller owns that proxy. Used when
+ * the Quests plugin is off, so the server still knows every varp/varbit and completion value.
+ */
+function registerQuestDefinitions(api, names) {
+  coreApi = api.core;
+  capturingQuestDefinitions = true;
+  try {
+    for (const name of names) {
+      if (capturedQuestDefinitions.has(name)) continue;
+      try {
+        require(`./quests/${name}.Quest`)(api);
+        capturedQuestDefinitions.add(name);
+      } catch (error) {
+        api.log?.(`QuestAutoComplete: ${name} failed to register its definition: ${error?.message ?? error}`);
+      }
+    }
+  } finally {
+    capturingQuestDefinitions = false;
+  }
+  return quests.slice();
+}
+
+/** The cache's end state is complete; later stages stay as saved. */
+function completeAllQuests(player) {
+  if (!player || player.isPlayerBot?.()) return;
+  for (const quest of quests) {
+    const completedAt = Number(quest.completionValue ?? 2);
+    const current = quest.getStage(player);
+    if (current < completedAt) player.setAttribute(stageAttribute(quest.key), completedAt);
+  }
+  sendQuestVarps({ player });
+  const totalPoints = quests.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
+  const savedPoints = Number(player.getAttribute(QUEST_POINTS_ATTRIBUTE)) || 0;
+  if (totalPoints > savedPoints) player.setAttribute(QUEST_POINTS_ATTRIBUTE, totalPoints);
+  sendQuestHeaderStats(player);
+}
+
+/** Login and query hooks for a world that has quest gameplay disabled but all quests complete. */
+function registerQuestCompletion(api) {
+  coreApi = api.core;
+  api.onCustomEvent('quest:is-complete', answerIsComplete);
+  api.onCustomEvent('quest:is-started', answerIsStarted);
+  api.onCustomEvent('quest:get-stage', answerGetStage);
+  api.onCustomEvent('quest:list-refresh', ({ player }) => refreshQuestList(player, true));
+  api.onCustomEvent('npc-dialogue:shop', pickQuestShopVersion);
+  api.onPlayerLogin(({ player }) => completeAllQuests(player));
+  // The login bootstrap sends shared varps after the login hooks, so restore them afterwards.
+  api.onCustomEvent('player:bootstrap-complete', ({ player }) => {
+    if (!player || player.isPlayerBot?.()) return;
+    completeAllQuests(player);
+    sendQuestList(player, true);
+  });
 }
 
 // ============================================================================
@@ -991,6 +1050,9 @@ module.exports = {
   QUEST_COMPLETE_JINGLE,
   registerQuestWidgets,
   registerQuest,
+  registerQuestDefinitions,
+  registerQuestCompletion,
+  completeAllQuests,
   giveReward,
   getRegisteredQuests: () => quests.slice(),
   questNamed,
