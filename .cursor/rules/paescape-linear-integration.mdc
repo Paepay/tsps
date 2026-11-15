@@ -13,3 +13,5 @@ alwaysApply: true
   previous pin so earlier client fixes remain.
 - Read `.agents/skills/paescape-linear-integration/SKILL.md` before PaeScape
   PRs or lock changes.
+- Agents may write GitHub issues in both `Paepay/tsps` and
+  `Paepay/PaeScape_Realms` for cross-repo follow-ups; link sibling issues.

@@ -37,6 +37,20 @@ if it were production is not.
    field (for example ticket `discordName`), finish and merge the matching
    Realms change on `main` instead of leaving it on an open parallel PR.
 
+## Cross-repo issues
+
+Agents may **create and comment on GitHub issues in both** `Paepay/tsps` and
+`Paepay/PaeScape_Realms` to communicate work that crosses the boundary.
+
+- File (or link) an issue in **each** repo that must change. Do not leave the
+  other side as chat-only context.
+- State which repo owns which acceptance criteria, link the sibling issue URLs,
+  and use `Refs #N` across repos until both sides are merged.
+- Prefer an issue when a tsps change needs a Realms platform/website/lock
+  follow-up (or the reverse), even if you are only implementing one side now.
+- Follow each repo's issue forms and `AGENTS.md`; never put secrets, tokens,
+  or private player data in issue bodies.
+
 ## Before you pin or merge
 
 ```bash
