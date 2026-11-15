@@ -924,6 +924,9 @@ function registerQuestCompletion(api) {
     if (!player || player.isPlayerBot?.()) return;
     completeAndSaveAllQuests(api, player);
     sendQuestList(player, true);
+    // The native list (399) builds its rows once, when it mounts, and has no var-transmit
+    // hook: a list that mounted before these varps arrived still reads the old stages.
+    api.emitCustomEvent?.('quest:list-remount', { player });
   });
 }
 

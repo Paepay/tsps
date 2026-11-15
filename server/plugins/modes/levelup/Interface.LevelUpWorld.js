@@ -51,7 +51,7 @@ const RELIC_CLICKZONE_SLOTS = [0, 23];
 const RELIC_MENU_FRAME = 6;
 const RELIC_MENU_SLOTS = [10, 20];
 const RELIC_CONFIRM = 51;
-const RELIC_CLOSE = 3;
+const RELIC_CLOSE = 4;
 const RELIC_TOGGLES = 38;
 
 const FLAGS_OP1 = 1 << 1;
@@ -587,7 +587,7 @@ function presentRelic(player) {
   for (const [sound, delay] of RelicData.interface.unlockSounds) player.getPacketSender().sendSound(sound, 1, delay);
 }
 
-/** The top-right cross on league_relics (655:3): leave without unlocking. */
+/** The top-right cross on league_relics (655:4, league_relics:close_button): leave without unlocking. */
 function relicClose(event) {
   if (!active() || !relicViewing.has(event.player)) return false;
   relicViewing.delete(event.player);
@@ -739,5 +739,5 @@ function attach(pluginApi) {
 module.exports = {
   attach,
   refreshPanel,
-  _test: { STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas, openRelics },
+  _test: { STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas, openRelics, RELIC_CLOSE },
 };

@@ -231,6 +231,23 @@ test("View Relics opens the interface with its click events; a slot click record
   assert.equal(forger.getAttribute("league:relics"), undefined);
 });
 
+test("the modal's top-right close is league_relics:close_button (655:4) and leaves without unlocking", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const LevelUp = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const close = core.CacheDefinitions.getComponentId("league_relics:close_button");
+  assert.equal(close, uid(RELICS, 4), "league_relics:close_button is 655:4");
+  assert.equal(Common.data.interface.close, close & 0xffff);
+  assert.equal(LevelUp._test.RELIC_CLOSE, close & 0xffff);
+
+  const league = character("closer");
+  assert.equal(hooks[`button:${uid(SIDE_PANEL, 44)}`]({ player: league }), true);
+  assert.equal(league.getInterfaceId(), RELICS);
+  assert.equal(hooks[`button:${uid(RELICS, 3)}`], undefined, "655:3 content_outer has no close action");
+  assert.equal(hooks[`button:${close}`]({ player: league }), true);
+  assert.equal(league.sent.removals, 1, "the modal closes");
+  assert.equal(league.getAttribute("league:relics"), undefined, "with nothing unlocked");
+});
+
 test("the relic view's state: 1 for the character's own relic (its toggles unlocked), 4 for another of a chosen tier, 2 to choose, 0 out of reach", () => {
   const league = character("states");
   givePoints(league, 500);

@@ -112,6 +112,17 @@ function restoreSelectedJournal({ player }) {
   if (groupId !== undefined) mountSideJournalContent(player, groupId, tabIndex);
 }
 
+/**
+ * Quest completion (a Quests-off world's bootstrap) changes the stages after the journal may
+ * already have mounted 399. The cache builds its rows only on mount, so remount the visible
+ * quest tab now that the new varps are on the wire; another tab mounts fresh when clicked.
+ */
+function remountQuestList({ player }) {
+  if (!player || player.isPlayerBot?.()) return;
+  if (player.getPacketSender().getVarbit(VARBIT_SIDE_JOURNAL_SELECTED_TAB) !== SIDE_JOURNAL_QUEST_TAB) return;
+  mountSideJournalContent(player, INTERFACE_QUEST_LIST_ID, SIDE_JOURNAL_QUEST_TAB);
+}
+
 function gameframeTabMounted({ player, group }) {
   if (group === SIDE_JOURNAL_GROUP_ID) restoreSelectedJournal({ player });
 }
@@ -235,6 +246,7 @@ module.exports = {
     api.onCustomEvent("gameframe:ready", restoreSelectedJournal);
     api.onCustomEvent("gameframe:tab-mounted", gameframeTabMounted);
     api.onCustomEvent("player:bootstrap-complete", restoreSelectedJournal);
+    api.onCustomEvent("quest:list-remount", remountQuestList);
     api.onCustomEvent("account:play-time", queryPlayTime);
     api.persistAttribute(PLAY_TIME_ATTRIBUTE, 0);
     api.persistAttribute(PLAY_TIME_DISPLAY_ATTRIBUTE, false);

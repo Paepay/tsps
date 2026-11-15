@@ -31,13 +31,14 @@ const TIME_PLAYED_ROW = 7;
 
 function createPlayer(saved = {}) {
   const attributes = new Map(Object.entries(saved));
-  const sent = { varbits: {}, times: [], order: [] };
+  const sent = { varbits: {}, times: [], order: [], subInterfaces: [], tab: 0 };
   let dialogue = null;
   const sender = new Proxy({}, {
     get: (_target, name) => (...args) => {
       if (name === "sendVarbit") sent.varbits[args[0]] = args[1];
       if (name === "sendInterfaceScript" && args[0] === 3970) { sent.times.push(args[1][2]); sent.order.push("time"); }
-      if (name === "sendSubInterface") sent.order.push("open");
+      if (name === "getVarbit") return sent.tab;
+      if (name === "sendSubInterface") { sent.order.push("open"); sent.subInterfaces.push(args.slice(0, 2)); }
       return sender;
     },
   });
@@ -103,6 +104,18 @@ test("opening the summary sends the time first, as captured", () => {
   const event = { player, groupId: SUMMARY, tabIndex: 0 };
   hooks["side-journal:mount"](event);
   assert.deepEqual(player.sent.order.slice(0, 2), ["time", "open"]);
+});
+
+test("a quest-list remount rebuilds 399 only while the quest tab is selected", () => {
+  const player = createPlayer();
+  player.sent.tab = 1;
+  hooks["quest:list-remount"]({ player });
+  assert.deepEqual(player.sent.subInterfaces.at(-1), [(629 << 16) | 43, 399]);
+
+  player.sent.tab = 2;
+  player.sent.subInterfaces.length = 0;
+  hooks["quest:list-remount"]({ player });
+  assert.equal(player.sent.subInterfaces.length, 0, "another tab mounts the list fresh when clicked");
 });
 
 test("showing the row asks first with the captured options; hiding doesn't", () => {

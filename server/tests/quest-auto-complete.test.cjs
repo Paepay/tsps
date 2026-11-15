@@ -34,14 +34,16 @@ function coreWithQuestSwitch(enabled, saves) {
 
 function recordingApi(core) {
   const hooks = { login: [], custom: new Map() };
+  const emitted = [];
   const api = {
     core,
     log: () => {},
     persistAttribute: (key, value) => PlayerSave.persistAttribute(key, value),
     onPlayerLogin: (handler) => hooks.login.push(handler),
     onCustomEvent: (name, handler) => hooks.custom.set(name, [...(hooks.custom.get(name) ?? []), handler]),
+    emitCustomEvent: (name, event) => emitted.push({ name, event }),
   };
-  return { api, hooks };
+  return { api, hooks, emitted };
 }
 
 function fakePlayer(bot = false) {
@@ -87,7 +89,7 @@ test('getPluginSwitch normalizes names and leaves an unset switch undefined', ()
 
 test('a Quests-off world registers every definition and completes it at login', () => {
   const saves = [];
-  const { api, hooks } = recordingApi(coreWithQuestSwitch(false, saves));
+  const { api, hooks, emitted } = recordingApi(coreWithQuestSwitch(false, saves));
   QuestAutoComplete.register(api);
 
   const registered = QuestRuntime.getRegisteredQuests();
@@ -112,6 +114,8 @@ test('a Quests-off world registers every definition and completes it at login', 
     'the completed stages are saved immediately');
   for (const handler of hooks.custom.get('player:bootstrap-complete') ?? []) handler({ player });
   assert.equal(saves.length, 1, 'the bootstrap does not save an already migrated account again');
+  assert.ok(emitted.some(({ name, event }) => name === 'quest:list-remount' && event.player === player),
+    'the bootstrap rebuilds a quest list that mounted before the completed varps');
 
   for (const quest of registered) {
     assert.ok(quest.isComplete(player), quest.key + ' is complete');
