@@ -26,8 +26,10 @@ Follow root/server AGENTS.md. This skill owns bugfix work; PR review stays separ
 2. Verify the claim; fetch exact current main. For PaeScape / `Paepay/tsps`
    production work, base on current `origin/prod` and follow
    `paescape-linear-integration` so client and platform changes stack on one
-   timeline instead of parallel live branches. Give each worker its own
-   `scripts/wt new` checkout/ports and unique absolute result path.
+   timeline instead of parallel live branches. When work also needs
+   `Paepay/PaeScape_Realms`, open or link issues in both repos so the other
+   side is not chat-only. Give each worker its own `scripts/wt new`
+   checkout/ports and unique absolute result path.
 3. Workers implement and verify; coordinator does a quick once-over and checks hashes.
    Dedicated reviewers own substantive review and integration.
 4. Use available suitable workers on any contributor's machine. On resource or quota

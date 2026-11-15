@@ -16,6 +16,9 @@ one timeline each. Do not ship parallel live histories.
   `prod` line so earlier client fixes stack instead of being replaced.
 - Read [.agents/skills/paescape-linear-integration/SKILL.md](.agents/skills/paescape-linear-integration/SKILL.md)
   before opening a PaeScape PR or changing a client pin.
+- Agents may write GitHub issues in both `Paepay/tsps` and
+  `Paepay/PaeScape_Realms` to communicate cross-repo follow-ups; link sibling
+  issues instead of leaving the other side chat-only.
 
 ## Generated data
 
