@@ -23,7 +23,10 @@ Follow root/server AGENTS.md. This skill owns bugfix work; PR review stays separ
 
 1. Prioritize the quickest **complete** fixes, nearly finished work and blockers.
    Recheck comments, assignees, linked PRs and manual ownership immediately before claiming.
-2. Verify the claim; fetch exact current main. Give each worker its own
+2. Verify the claim; fetch exact current main. For PaeScape / `Paepay/tsps`
+   production work, base on current `origin/prod` and follow
+   `paescape-linear-integration` so client and platform changes stack on one
+   timeline instead of parallel live branches. Give each worker its own
    `scripts/wt new` checkout/ports and unique absolute result path.
 3. Workers implement and verify; coordinator does a quick once-over and checks hashes.
    Dedicated reviewers own substantive review and integration.

@@ -2,6 +2,21 @@
 
 Server rules and plugin conventions are in [server/AGENTS.md](server/AGENTS.md).
 
+## Linear integration (PaeScape)
+
+`Paepay/tsps` `prod` and `Paepay/PaeScape_Realms` `main` must grow with time on
+one timeline each. Do not ship parallel live histories.
+
+- Base production PRs on current `origin/prod`. Feature branches are fine;
+  long-lived side integration branches are not.
+- Land browser-client and hosted-world fixes on `prod` before the website pins
+  them. Never pin `PaeScape_Realms/game-client.lock.json` to a non-`prod`
+  branch (including `codex/task31-playable-client`).
+- Each new lock commit must be a descendant of the previous lock on the same
+  `prod` line so earlier client fixes stack instead of being replaced.
+- Read [.agents/skills/paescape-linear-integration/SKILL.md](.agents/skills/paescape-linear-integration/SKILL.md)
+  before opening a PaeScape PR or changing a client pin.
+
 ## Generated data
 
 Manual modifications to `npc-dialogues.json` or **any generated JSON dumped from
