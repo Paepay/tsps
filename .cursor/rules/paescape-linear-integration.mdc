@@ -1,0 +1,15 @@
+---
+description: PaeScape prod/main must grow as one timeline; no parallel live client pins
+alwaysApply: true
+---
+
+# PaeScape linear integration
+
+- Production work for PaeScape lands on `Paepay/tsps` `prod` and
+  `Paepay/PaeScape_Realms` `main` — one growing line each.
+- Do not merge or pin browser-client changes via parallel branches such as
+  `codex/task31-playable-client`.
+- `game-client.lock.json` may only advance to a `prod` descendant of the
+  previous pin so earlier client fixes remain.
+- Read `.agents/skills/paescape-linear-integration/SKILL.md` before PaeScape
+  PRs or lock changes.
