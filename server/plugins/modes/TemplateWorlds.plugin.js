@@ -161,7 +161,7 @@ function relicsFromChosen(chosen, maxTiers = 8) {
     const tier = Number(rawTier);
     const slot = Number(rawSlot);
     if (!Number.isInteger(tier) || tier < 0 || tier >= maxTiers || !Number.isInteger(slot) || slot < 1 || slot > 3) continue;
-    const relic = Common.relic(4, tier, slot);
+    const relic = Common.relic(Rules.LEAGUE_STYLE_TYPE, tier, slot);
     if (!relic) continue;
     const id = Rules.slug(relic.name);
     if (REGION_ID.test(id) && !result.some((entry) => entry.id === id)) result.push({ id, name: String(relic.name) });
@@ -367,7 +367,7 @@ function unlockRelic(player, text) {
   if (!Number.isInteger(slot) || slot < 1 || slot > 3) return player.sendMessage("Choose relic slot 1, 2 or 3."), true;
   const tier = integers(player.getAttribute(ATTR.relicClaims)).length;
   const Common = require("./leaguerelics/Common.LeagueRelics");
-  const relic = Common.relic(4, tier, slot);
+  const relic = Common.relic(Rules.LEAGUE_STYLE_TYPE, tier, slot);
   if (!relic) return player.sendMessage("That relic choice is unavailable."), true;
   const id = Rules.slug(relic.name);
   if (!REGION_ID.test(id)) return player.sendMessage("That relic has no platform-safe id."), true;
@@ -383,7 +383,7 @@ function unlockRelic(player, text) {
     // The effect is still active; a full bank/inventory must not discard the platform reward.
   }
   player.sendMessage(`${relic.name} unlocked for the ${milestone}-skill milestone.`);
-  api.emitCustomEvent("league:relic-unlocked", { player, league: 4, tier, slot, relic: relic.key, levelUp: true });
+  api.emitCustomEvent("league:relic-unlocked", { player, league: Rules.LEAGUE_STYLE_TYPE, tier, slot, relic: relic.key, levelUp: true });
   return true;
 }
 
@@ -462,7 +462,7 @@ function answerAreaProfile(query) {
 
 function answerRelicProfile(query) {
   if (!query?.player || (templateId !== "level_up" && templateId !== "paescape")) return;
-  query.league = 4;
+  query.league = Rules.LEAGUE_STYLE_TYPE;
   if (templateId === "level_up") query.active = true;
 }
 
@@ -473,14 +473,14 @@ function grantPaescapeRelic(request) {
   const slot = Number(request.slot);
   if (!Number.isInteger(tier) || tier < 0 || tier >= 8 || !Number.isInteger(slot) || slot < 1 || slot > 3) return;
   const Common = require("./leaguerelics/Common.LeagueRelics");
-  const relic = Common.relic(4, tier, slot);
+  const relic = Common.relic(Rules.LEAGUE_STYLE_TYPE, tier, slot);
   if (!relic) return;
   const chosen = request.player.getAttribute(ATTR.leagueRelics);
   const current = chosen && typeof chosen === "object" && !Array.isArray(chosen) ? chosen : {};
   if (current[tier] !== undefined) return;
   request.player.setAttribute(ATTR.leagueRelics, { ...current, [tier]: slot });
   request.granted = true;
-  api.emitCustomEvent("league:relic-unlocked", { player: request.player, league: 4, tier, slot, relic: relic.key, paescape: true });
+  api.emitCustomEvent("league:relic-unlocked", { player: request.player, league: Rules.LEAGUE_STYLE_TYPE, tier, slot, relic: relic.key, paescape: true });
 }
 
 /** A Level-Up world has the Leagues Tutor at Lumbridge, as a league world does. */
@@ -498,7 +498,7 @@ module.exports = {
     api = pluginApi;
     // These are created by initialise() on the character's first login, not defaults:
     // pre-seeding [Hitpoints] makes a new character look like one with saved progress.
-    for (const key of [ATTR.skills, ATTR.regions, ATTR.relics, ATTR.regionClaims, ATTR.relicClaims]) {
+    for (const key of [ATTR.skills, ATTR.regions, ATTR.relics, ATTR.regionClaims, ATTR.relicClaims, ATTR.leagueRelics]) {
       api.persistAttribute(key);
     }
     configurePackaged(api.getPluginConfig("template:id", ""), api.getPluginConfig("template:contract", null));

@@ -2,6 +2,8 @@
 
 const TOTAL_SKILLS = 24;
 const HITPOINTS_INDEX = 7;
+/** Relic, area and unlock graphic catalog Level-Up reuses (Trailblazer Reloaded). */
+const LEAGUE_STYLE_TYPE = 4;
 const REGION_MILESTONES = Object.freeze([3, 6, 9, 12, 15, 18, 21, 24]);
 const RELIC_MILESTONES = Object.freeze([2, 5, 8, 11, 14, 17, 20, 23]);
 const XP_TIERS = Object.freeze([
@@ -107,6 +109,27 @@ function xpMultiplier(unlockedCount) {
   return XP_TIERS.find((tier) => count >= tier.minUnlocked && count <= tier.maxUnlocked).multiplier;
 }
 
+/**
+ * Relic tier passive text without league/combat XP modifiers. Level-Up's XP rate is the
+ * unlocked-skill table above; those relic lines must not appear or stack on top of it.
+ */
+function stripXpPassiveLines(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return "There are no passive unlocks for this tier.";
+  const kept = raw
+    .split(/<br\s*\/?\s*>/i)
+    .map((part) => part.trim())
+    .filter((part) => {
+      if (!part) return false;
+      const line = part.replace(/^-\s*/, "");
+      if (/^league\s+xp\s+multiplier\b/i.test(line)) return false;
+      if (/^combat\s+skills\b/i.test(line) && /multiplier/i.test(line)) return false;
+      return true;
+    });
+  if (kept.length === 0) return "There are no passive unlocks for this tier.";
+  return kept.join("<br><br>");
+}
+
 function eligible(unlocked, levels) {
   const skills = normaliseSkills(unlocked);
   if (skills.length >= TOTAL_SKILLS) return false;
@@ -169,6 +192,7 @@ function slug(name) {
 module.exports = {
   TOTAL_SKILLS,
   HITPOINTS_INDEX,
+  LEAGUE_STYLE_TYPE,
   SKILLS,
   REGIONS,
   REGION_MILESTONES,
@@ -180,6 +204,7 @@ module.exports = {
   normaliseSkills,
   requirement,
   xpMultiplier,
+  stripXpPassiveLines,
   eligible,
   rewardAt,
   nextMilestone,

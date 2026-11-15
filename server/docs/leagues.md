@@ -711,7 +711,8 @@ A quest the character had started keeps its quest items when a pack completes it
 ## Relics
 
 `Relics.LeagueMode.js`, data `plugins/modes/data/league-relics.json`: eight tiers a league,
-each with a point cost, a passive and three relics (Wiki); a tier's pick is permanent. A
+each with a point cost, a passive and the relics the Wiki lists (three a tier, except
+Trailblazer Reloaded's tiers 2 and 3, which have two); a tier's pick is permanent. A
 character's picks live in `league:relics` (tier index -> slot 1-3).
 
 On this cache (rev 241, as the Leagues VI recordings 237/01098, 01102, 01104 show) the unlock is
@@ -776,20 +777,20 @@ tooltip is 655:53.
   its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
   greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
-  Trailblazer Reloaded's tools and crystal of memories are still absent from this cache and are
-  not granted; the data says so. Level-Up worlds use the Trailblazer Reloaded catalog, so they
-  get the same relic items, tier passives (not boosted drops or the seasonal XP rate) and a
-  Leagues Tutor at Lumbridge for Collect-items.
+  Trailblazer Reloaded's tools are still absent from this cache and are not granted; the data
+  says so. The crystal of memories is tier 3's passive, not a relic. Level-Up worlds use the
+  Trailblazer Reloaded catalog, so they get the same relic items, tier passives (including
+  boosted drops, but not the seasonal XP rate) and a Leagues Tutor at Lumbridge for Collect-items.
 - **Effects** are other plugins' business: they ask `league:has-relic { player, relic }`, true
   only when the character's league has that relic and chose it. The tier passives are
   LeagueMode's (`league:highest-tier`), under Tier passives below. The relics this
   plugin implements itself are units `leaguerelics/<Relic>.LeagueRelics.js`, gated by
   `Common.effectActive(player, effect)`: the effect's `league` (a type, or several for a relic
-  both leagues have) and its `key` (or an alias: the catalog's `last-stand-preview` and
-  `treasure-seeker-preview` stand in for relics the Wiki lists once; #1324 pads those tiers).
-- **The catalog's padding.** The Wiki gives Trailblazer Reloaded's tiers 2 and 3 and Raging
-  Echoes' tier 6 two relics each; the catalog fills the third slot (`crystal-of-memories`,
-  `treasure-seeker-preview`, `last-stand-preview`). The previews get the real relic's effect.
+  both leagues have) and its `key` (or an alias: the catalog's `last-stand-preview` stands
+  in for a relic the Wiki lists once; #1324 pads that tier).
+- **The catalog's padding.** The Wiki gives Raging Echoes' tier 6 two relics, so the catalog
+  fills the third slot (`last-stand-preview`), which gets the real relic's effect. Trailblazer
+  Reloaded's tiers 2 and 3 are not padded: they have only the Wiki's two relics each.
 
 ### Demonic Pacts' relics
 
@@ -1107,7 +1108,7 @@ Animal Wrangler's Hunter and cooking ones) do not.
 
 ### The clue and Slayer relics
 
-- **Treasure Seeker** (Trailblazer Reloaded tier 5, and the catalog's tier 3 preview of it) and
+- **Treasure Seeker** (Trailblazer Reloaded tier 5) and
   **Treasure Arbiter** (Raging Echoes tier 5) share their clue perks: each clue scroll an NPC
   drops comes at least 1 time in 15 (the Wiki's "a 1/15 chance to drop one", read per clue:
   ours), and an impling jar's too; clue nests (trees, birdhouses), geodes and bottles (drift nets,
@@ -1243,8 +1244,9 @@ Each tier's passive text is the Wiki's (`league-relics.json`); the effects are
 picks the highest tier reached), applied by `league/Passives.LeagueMode.js` and
 `league/BoostedDrops.LeagueMode.js` to a league character of that league, and by
 `league/Passives.LeagueMode.js` to a Level-Up world's
-relic holder (the catalog is Trailblazer Reloaded's); boosted drops and the seasonal XP rate
-remain seasonal-only. Tier 1 counts once the character chose its first relic.
+relic holder (the catalog is Trailblazer Reloaded's); the seasonal XP rate remains
+seasonal-only, and the relic screens strip its lines from Level-Up's passive text because
+Level-Up uses its own skill-unlock XP tiers. Tier 1 counts once the character chose its first relic.
 
 - **XP rate** (5x; Raging Echoes 8x from tier 2, 12x from tier 5, 16x from tier 7; Demonic Pacts
   8x, 12x and 16x from tiers 2, 4 and 6, as its tier structs' passive text says): the

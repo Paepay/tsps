@@ -99,3 +99,4 @@ module.exports = function attach(api) {
 
 module.exports.passive = passive;
 module.exports.tierValue = tierValue;
+module.exports.leagueType = leagueOf;

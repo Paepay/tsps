@@ -27,7 +27,8 @@ function leagueOf(player) {
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
   // Level-Up worlds reuse relic effects and catalogs without becoming a full
-  // seasonal league profile (tasks, league saves and passives stay disabled).
+  // seasonal league profile (tasks and league saves stay disabled; tier passives
+  // are applied by Passives.LeagueMode when level-up:relic-profile sets active).
   if (query.league === null) api.emitCustomEvent("level-up:relic-profile", query);
   const type = query.league;
   return type !== null && data.leagues[type] && leagues[type] ? Number(type) : null;
@@ -38,7 +39,7 @@ function leagueOf(player) {
  * catalog and the same 655 widgets, so the seasonal interface must not also act on them.
  */
 function levelUpOwns(player) {
-  if (!player) return false;
+  if (!player || !api) return false;
   const query = { player, active: false };
   api.emitCustomEvent("level-up:relic-profile", query);
   return query.active === true;

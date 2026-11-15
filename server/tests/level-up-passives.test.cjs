@@ -5,6 +5,7 @@ const { test } = require("node:test");
 const LeagueCommon = require("../plugins/modes/league/Common.LeagueMode");
 const RelicsCommon = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
 const Passives = require("../plugins/modes/league/Passives.LeagueMode");
+const BoostedDrops = require("../plugins/modes/league/BoostedDrops.LeagueMode");
 
 test("a Level-Up relic tier grants its passives, starting with no run-energy drain", () => {
   const attributes = new Map([["league:relics", { 0: 3 }]]);
@@ -37,4 +38,5 @@ test("a Level-Up relic tier grants its passives, starting with no run-energy dra
 
   assert.ok(Passives.passive(player, "runEnergy"), "tier 1's run-energy passive is active");
   assert.equal(drainModifier(player, 200), 0, "a running step drains no energy");
+  assert.equal(BoostedDrops.rule(player, "Abyssal demon")?.multiplier, 2, "tier 1 also boosts eligible drops");
 });

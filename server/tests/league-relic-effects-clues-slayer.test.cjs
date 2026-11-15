@@ -1,5 +1,5 @@
 // Run after `yarn build`: node --test tests/league-relic-effects-clues-slayer.test.cjs
-// The clue and Slayer relics (docs/leagues.md): Treasure Seeker (and its tier 3 preview) and
+// The clue and Slayer relics (docs/leagues.md): Treasure Seeker and
 // Bloodthirsty (Trailblazer Reloaded), Treasure Arbiter and Slayer Master (Raging Echoes). Each
 // works for a character of its league who chose it, and for nobody else: not a character of that
 // league without it, not the other league's character with the same slots, not a main character.
@@ -147,7 +147,6 @@ function others(who) {
 }
 
 const TREASURE_SEEKER = { 4: 1 };
-const TREASURE_SEEKER_PREVIEW = { 2: 3 };
 const BLOODTHIRSTY = { 4: 2 };
 const TREASURE_ARBITER = { 4: 1 };
 const SLAYER_MASTER = { 4: 3 };
@@ -237,12 +236,6 @@ test("Treasure Seeker: 1 in 15 clues, 10 times the vessels, the fewest steps and
   assert.equal(waived, false, "the item requirements are Treasure Arbiter's");
 });
 
-test("Treasure Seeker's tier 3 preview in the catalog has the same effects", () => {
-  const preview = character("preview", "league", TREASURE_SEEKER_PREVIEW, 4);
-  Math.random = () => 0.05;
-  assert.equal(rollClue(preview), 1);
-  assert.equal(emit("treasure-trails:casket-rolls", { player: preview, tier: "easy", rolls: 2, minimum: 2, maximum: 4 }).rolls, 4);
-});
 
 test("Treasure Arbiter: the shared clue perks, and emote, Falo and Charlie steps need no items; no bonus casket", () => {
   const who = clueCases(TREASURE_ARBITER, 5);

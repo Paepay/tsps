@@ -10,7 +10,6 @@
  */
 const fs = require("fs");
 const path = require("path");
-const Common = require("./Common.LeagueMode");
 const Passives = require("./Passives.LeagueMode");
 
 let data = null;
@@ -51,7 +50,7 @@ function patternsFor(type, source) {
 
 /** The one rule for this roll, or null: the league's rate at the tier reached, on the source's boosted items. */
 function rule(player, source) {
-  const type = Common.leagueOf(player);
+  const type = Passives.leagueType(player);
   if (type === null) return null;
   const multiplier = Passives.tierValue(player, "dropRate");
   if (!multiplier || multiplier <= 1) return null;

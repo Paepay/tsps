@@ -1,6 +1,6 @@
 /**
  * Treasure Seeker (https://oldschool.runescape.wiki/w/Treasure_Seeker), Trailblazer Reloaded's
- * tier 5 relic (and the catalog's tier 3 preview of it): the shared clue perks (1 in 15 clue
+ * tier 5 relic: the shared clue perks (1 in 15 clue
  * scrolls, 10 times the clue vessels, the fewest steps, the most casket rolls), and an opened
  * reward casket may bring another of its tier, which may be a tier higher. The Wiki gives no
  * chances for the last: ours, 1 in 5 for a beginner casket down to 1 in 20 for a master one, and 1

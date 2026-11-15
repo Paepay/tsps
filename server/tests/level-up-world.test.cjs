@@ -411,6 +411,33 @@ test("Level-Up XP tiers cover all 24 counts with every contract boundary", () =>
   assert.equal(Rules.xpMultiplier(24), 24);
 });
 
+test("Level-Up unlocks relics from Trailblazer Reloaded's catalog", () => {
+  const leagues = require("../plugins/modes/data/league-relics.json").leagues;
+  assert.equal(Rules.LEAGUE_STYLE_TYPE, 4, "League type 4 is Leagues IV - Trailblazer Reloaded");
+  const tiers = leagues[Rules.LEAGUE_STYLE_TYPE].tiers;
+  assert.deepEqual(tiers[1].relics.map((relic) => relic.name),
+    ["Fairy's Flight", "Globetrotter"], "tier 2 has the Wiki's two relics");
+  assert.deepEqual(tiers[2].relics.map((relic) => relic.name),
+    ["Banker's Note", "Fire Sale"], "tier 3 has the Wiki's two relics");
+});
+
+test("Level-Up relic passive text drops league and combat XP modifier lines", () => {
+  assert.equal(
+    Rules.stripXpPassiveLines("- League XP multiplier is 5x.<br><br>- Run energy is never drained whilst running."),
+    "- Run energy is never drained whilst running.",
+  );
+  assert.equal(
+    Rules.stripXpPassiveLines("- League XP multiplier increased from 5x to 8x."),
+    "There are no passive unlocks for this tier.",
+  );
+  assert.equal(
+    Rules.stripXpPassiveLines(
+      "- Combat skills (Including Hitpoints & Prayer) have a 2x Multiplier (Multiplicative with other modifiers).<br>- Slayer points are x5 from tasks.",
+    ),
+    "- Slayer points are x5 from tasks.",
+  );
+});
+
 test("skill eligibility uses every unlocked skill, the 4xN gate, and 99 at full unlock", () => {
   assert.equal(Rules.eligible([7], { 7: 10 }), true, "HP 10 may immediately unlock skill two");
   assert.equal(Rules.eligible([0, 7], { 0: 8, 7: 8 }), true);

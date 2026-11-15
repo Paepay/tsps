@@ -1,7 +1,8 @@
 /**
  * League relics (https://oldschool.runescape.wiki/w/Trailblazer_Reloaded_League/Relics,
  * https://oldschool.runescape.wiki/w/Raging_Echoes_League/Relics): eight tiers unlocked with
- * League Points, three relics a tier, chosen for good, through the cache's relic interface. The
+ * League Points, up to three relics a tier (Trailblazer Reloaded's tiers 2 and 3 have two),
+ * chosen for good, through the cache's relic interface. The
  * catalog (data/league-relics.json) reaches the client as structs and enums through LeagueMode's
  * `league:content-rows`, since the cache only carries the current league's (Demonic Pacts, which is
  * read from it instead, https://oldschool.runescape.wiki/w/Demonic_Pacts_League/Relics). Other plugins ask `league:has-relic` { player, relic } and

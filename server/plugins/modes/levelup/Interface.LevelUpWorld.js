@@ -3,9 +3,11 @@
 /**
  * Level-Up's server-driven screens. It reuses the Demonic Pacts/Leagues interfaces
  * (journal 629, side panel 656, tasks 657, areas 512, relics 655, combat masteries
- * 311) without becoming a seasonal league character: regions and relics advance on
- * the skill milestones in issue #7, and the task list is the working combat mastery
- * challenges (twelve in Level-Up) rather than seasonal tasks.
+ * 311) with the Trailblazer Reloaded relic catalog, without becoming a seasonal league
+ * character: regions and relics advance on the skill milestones in issue #7, each relic
+ * tier grants that tier's passives (except XP modifiers: Level-Up uses its own skill-unlock
+ * XP tiers), and the task list is the working combat mastery challenges (twelve in Level-Up)
+ * rather than seasonal tasks.
  */
 
 const Rules = require("./Rules.LevelUpWorld");
@@ -54,7 +56,7 @@ const RELIC_TOGGLES = 38;
 
 const FLAGS_OP1 = 1 << 1;
 const FLAG_SCRIPT_TRIGGER = -1;
-const LEAGUE_STYLE_TYPE = 4;
+const LEAGUE_STYLE_TYPE = Rules.LEAGUE_STYLE_TYPE;
 const CLAIMED_POINTS_VARP = 2615;
 
 /** The task list's runtime components (the cache builds 657's rows from its scripts). */
@@ -471,6 +473,12 @@ function sendRelicContent(player) {
   const datasets = RelicCatalog.datasets(LEAGUE_STYLE_TYPE);
   const structs = datasets.find((dataset) => dataset.key === "structOverrides");
   if (structs) {
+    const passiveParam = RelicData.params.passiveText;
+    for (const row of structs.rows) {
+      if (row.params?.[passiveParam] !== undefined) {
+        row.params[passiveParam] = Rules.stripXpPassiveLines(row.params[passiveParam]);
+      }
+    }
     const rows = new Map(structs.rows.map((row) => [row.structId, row]));
     for (const override of relicCostOverrides(player)) {
       const row = rows.get(override.structId);
@@ -546,7 +554,7 @@ function showRelic(player, index) {
   const relic = Common.relic(LEAGUE_STYLE_TYPE, tier, slot);
   const structs = Common.structIds(LEAGUE_STYLE_TYPE, tier, slot);
   const state = relicState(player, tier, slot);
-  const passive = Common.catalog(LEAGUE_STYLE_TYPE).tiers[tier]?.passive ?? "";
+  const passive = Rules.stripXpPassiveLines(Common.catalog(LEAGUE_STYLE_TYPE).tiers[tier]?.passive ?? "");
   relicViewing.set(player, index);
   const sender = player.getPacketSender();
   sender.sendVarbit(RelicData.lastViewedVarbit, index);

@@ -156,9 +156,20 @@ test("login sends the selection varbits and the league's catalog as structs and 
   assert.equal(tiers.entries.length, 8);
   const costs = tiers.entries.map(([, structId]) => byId.get(structId)[877]);
   assert.deepEqual(costs, [0, 500, 1200, 2000, 4000, 7500, 15000, 24000], "Wiki: Trailblazer Reloaded's tier points");
+  const expected = [
+    ["Endless Harvest", "Production Prodigy", "Trickster"],
+    ["Fairy's Flight", "Globetrotter"],
+    ["Banker's Note", "Fire Sale"],
+    ["Archer's Embrace", "Brawler's Resolve", "Superior Sorcerer"],
+    ["Treasure Seeker", "Bloodthirsty", "Infernal Gathering"],
+    ["Equilibrium", "Farmer's Fortune", "Ruinous Powers"],
+    ["Berserker", "Soul Stealer", "Weapon Master"],
+    ["Executioner", "Undying Retribution", "Guardian"],
+  ];
   for (const [tier, tierStruct] of tiers.entries) {
     const relics = enums.find((row) => row.enumId === byId.get(tierStruct)[878]);
-    assert.deepEqual(relics.entries.map(([key]) => key), [1, 2, 3], `tier ${tier + 1} has three relics keyed 1-3`);
+    assert.deepEqual(relics.entries.map(([key]) => key), expected[tier].map((_name, index) => index + 1), `tier ${tier + 1}'s slots`);
+    assert.deepEqual(relics.entries.map(([, structId]) => byId.get(structId)[879]), expected[tier], `tier ${tier + 1}'s relics`);
     assert.equal(typeof byId.get(byId.get(tierStruct)[2045])[1020], "string", "a passive text struct");
   }
   const sorcerer = byId.get(204000 + 100 + 3 * 3 + 2);
@@ -166,6 +177,16 @@ test("login sends the selection varbits and the league's catalog as structs and 
   assert.equal(sorcerer[885], 3);
   assert.equal(sorcerer[1855], 1, "it hands out items");
   assert.ok(Number.isInteger(sorcerer[881]) && Number.isInteger(sorcerer[1853]), "icons borrowed from the cache's own relic in that slot");
+});
+
+test("Trailblazer Reloaded's tiers 2 and 3 have the Wiki's two relics, not a third", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const catalog = Common.catalog(4);
+  assert.deepEqual(catalog.tiers[1].relics.map((relic) => relic.name), ["Fairy's Flight", "Globetrotter"]);
+  assert.deepEqual(catalog.tiers[2].relics.map((relic) => relic.name), ["Banker's Note", "Fire Sale"]);
+  assert.equal(Common.relic(4, 1, 3), null, "no Crystal of Memories relic: it is the tier's passive");
+  assert.equal(Common.relic(4, 2, 3), null, "no Treasure Seeker preview: it is tier 5's relic");
+  assert.ok(catalog.tiers.every((tier) => tier.relics.length >= 2 && tier.relics.length <= 3));
 });
 
 test("Raging Echoes gets its own costs and relics", () => {
@@ -184,8 +205,8 @@ test("View Relics opens the interface with its click events; a slot click record
   assert.equal(hooks[`button:${uid(SIDE_PANEL, 44)}`]({ player: league }), true);
   assert.deepEqual(league.sent.subs.at(-1)[1], RELICS, "opened as the main modal");
   assert.deepEqual(league.sent.flags.slice(-3), [[uid(RELICS, 22), 0, 23, 2], [uid(RELICS, 6), 10, 20, 2], [uid(RELICS, 38), -1, -1, 1 << 23]], "if_setevents as captured (rev 237: the toggles take IF_SCRIPT_TRIGGER)");
-  assert.equal(hooks[`button:${uid(RELICS, 22)}`]({ player: league, slot: 9 }), true);
-  assert.equal(league.sent.varbits.get(10048), 9, "tier 4, slot 1");
+  assert.equal(hooks[`button:${uid(RELICS, 22)}`]({ player: league, slot: 7 }), true);
+  assert.equal(league.sent.varbits.get(10048), 7, "tier 4, slot 1");
   const [script, args] = league.sent.scripts.at(-2);
   assert.equal(script, 3193);
   assert.equal(args.length, 23, "rev 237's signature: 18 components, the state, two structs, two texts");
@@ -221,7 +242,7 @@ test("the relic view's state: 1 for the character's own relic (its toggles unloc
   };
   assert.equal(state(1), 1, "tier 1 slot 2: the character's own (live: 1, 237/01104)");
   assert.equal(state(0), 4, "another relic of that tier");
-  assert.equal(state(3), 2, "tier 2, affordable and open");
+  assert.equal(state(3), 2, "tier 2 slot 1, affordable and open");
   assert.equal(state(21), 0, "tier 8, out of reach");
 });
 
@@ -231,7 +252,7 @@ test("a pick needs the tier's points, an empty tier and (for an item) a bank; th
   const confirm = () => hooks[`button:${uid(RELICS, 51)}`]({ player: league });
   hooks[`button:${uid(SIDE_PANEL, 44)}`]({ player: league });
 
-  view(11); // tier 4, slot 3: Superior Sorcerer
+  view(9); // tier 4, slot 3: Superior Sorcerer
   confirm();
   assert.equal(league.sent.messages.at(-1), "You don't have enough League Points to unlock that tier yet.");
   assert.equal(league.getAttribute("league:relics"), undefined, "nothing written");
@@ -246,7 +267,7 @@ test("a pick needs the tier's points, an empty tier and (for an item) a bank; th
   hooks[`button:${uid(SIDE_PANEL, 44)}`]({ player: league });
   assert.equal(league.getInterfaceId(), RELICS, "the relic modal replaced the bank");
   assert.equal(core.Bank.isOpen(league), false, "so the bank no longer reads as open");
-  view(11);
+  view(9);
   emitted.length = 0;
   league.sent.sounds.length = 0;
   confirm();
@@ -564,7 +585,8 @@ test("Demonic Pacts' slots count each tier's relics, as client script 3189 does:
     { tier: 6, slot: 1 }, { tier: 6, slot: 2 }, { tier: 7, slot: 1 }, { tier: 7, slot: 2 }, { tier: 7, slot: 3 },
   ]);
   assert.equal(slotToRelic(catalog, 23), null, "23 relics: no slot 23");
-  assert.deepEqual(slotToRelic(Common.catalog(4), 23), { tier: 7, slot: 3 }, "three a tier: the old tier x 3 + slot");
+  assert.deepEqual(slotToRelic(Common.catalog(4), 21), { tier: 7, slot: 3 }, "Trailblazer Reloaded's 22 relics: its last slot");
+  assert.equal(slotToRelic(Common.catalog(4), 22), null, "TBLR's tiers 2 and 3 have two relics, so there is no slot 22");
   hooks[`button:${uid(SIDE_PANEL, 44)}`]({ player: pacts });
   const struct = (sub) => {
     assert.equal(hooks[`button:${uid(RELICS, 22)}`]({ player: pacts, slot: sub }), true);
