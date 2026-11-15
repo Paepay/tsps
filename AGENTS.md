@@ -2,6 +2,18 @@
 
 Server rules and plugin conventions are in [server/AGENTS.md](server/AGENTS.md).
 
+## Branch → local → prod (PaeScape)
+
+On `Paepay/tsps`, land work through `local` before `prod`:
+
+1. **Feature branches** for the change (off `origin/local` when it exists).
+2. **Review, merge and push to `local`** — that is the user’s test branch.
+3. The user verifies on `local` (their own server/client).
+4. **Only when they say the batch is ready:** merge/push/deploy to `prod`.
+
+If they say only “merge and push”, target **`local`**, not `prod`. Promote to
+`prod` only when they explicitly ask to ship, deploy, or promote.
+
 ## Generated data
 
 Manual modifications to `npc-dialogues.json` or **any generated JSON dumped from
