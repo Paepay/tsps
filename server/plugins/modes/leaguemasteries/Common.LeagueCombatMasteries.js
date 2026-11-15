@@ -15,6 +15,14 @@ const PROGRESS_ATTRIBUTE = "league:mastery-progress";
 
 const STYLE_KEYS = ["melee", "ranged", "magic"];
 
+/**
+ * The client's cached feature flags (FEATURE_FLAGS_CACHED). Its mastery scripts ask whether
+ * league content is enabled (feature_flag 1, proc 8216) before they print "Unlocked",
+ * "Locked" or "Select", so a league world must send the bit even before the interface opens.
+ */
+const FEATURE_FLAGS_VARP = 4920;
+const FEATURE_FLAG_LEAGUES = 1 << 1;
+
 let api = null;
 let core = null;
 let data = null;
@@ -184,14 +192,20 @@ function uid(group, child) {
   return (group << 16) | child;
 }
 
+/** Sets the league feature flag, preserving every other cached flag. */
+function sendFeatureFlags(player) {
+  const sender = player.getPacketSender();
+  sender.sendConfig(FEATURE_FLAGS_VARP, sender.getVarp(FEATURE_FLAGS_VARP) | FEATURE_FLAG_LEAGUES);
+}
+
 function message(key, values = {}) {
   return data.messages[key].text.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
 }
 
 module.exports = {
   init, isLevelUp, isEchoes, baseChallenges, levelUpChallenges, challengesFor, emptyMasteries, masteries, style, styleOfCombatType, mastery, required, tier, has, effect,
-  passiveTier, passive, passiveEffect, pointsEarned, earned, completedChallengeKeys, completedChallenges, spent, available, progress, maxHit, uid, message,
-  MASTERIES_ATTRIBUTE, POINTS_ATTRIBUTE, PROGRESS_ATTRIBUTE, STYLE_KEYS,
+  passiveTier, passive, passiveEffect, pointsEarned, earned, completedChallengeKeys, completedChallenges, spent, available, progress, maxHit, uid, sendFeatureFlags, message,
+  MASTERIES_ATTRIBUTE, POINTS_ATTRIBUTE, PROGRESS_ATTRIBUTE, STYLE_KEYS, FEATURE_FLAGS_VARP, FEATURE_FLAG_LEAGUES,
   get data() { return data; },
   get api() { return api; },
   get core() { return core; },
