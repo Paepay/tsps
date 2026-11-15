@@ -773,10 +773,13 @@ tooltip is 655:53.
   stack and needs no slot, a new bank stack takes one slot of the player's bank space, which
   every tab shares, and a slot one item takes is not counted for the next), and each item
   goes where that check placed it: the inventory if it fits, else the bank tab holding it, else
-  its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's greaves
-  and guardian horn are custom items: they are granted and can be reclaimed from the Leagues
-  Tutor's Collect-items. Trailblazer Reloaded's Sage's greaves, tools and crystal of memories are
-  still absent from this cache and are not granted; the data says so.
+  its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
+  greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
+  they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
+  Trailblazer Reloaded's tools and crystal of memories are still absent from this cache and are
+  not granted; the data says so. Level-Up worlds use the Trailblazer Reloaded catalog, so they
+  get the same relic items, tier passives (not boosted drops or the seasonal XP rate) and a
+  Leagues Tutor at Lumbridge for Collect-items.
 - **Effects** are other plugins' business: they ask `league:has-relic { player, relic }`, true
   only when the character's league has that relic and chose it. The tier passives are
   LeagueMode's (`league:highest-tier`), under Tier passives below. The relics this
@@ -822,12 +825,11 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 
 ### Not in this cache
 
-No unit, and the data says so: the **Guardian** effects of both leagues (Raging Echoes now grants
-its custom guardian horn, but a thrall with its own combat would be a feature of its own),
-**Infernal Gathering** (no Trailblazer tools), the **Crystal of Memories** entry (no item),
-**Ruinous Powers** beyond the book it grants (the server has no Ruinous Powers prayer book), and
-Trailblazer Reloaded's **Trickster** greaves (that item is still absent; Raging Echoes' Corner
-Cutter grants its custom pair, whose run-XP effect is not here).
+No unit, and the data says so: the **Guardian** effects of both leagues (both grant their horns,
+but a thrall with its own combat would be a feature of its own), **Infernal Gathering** (no
+Trailblazer tools), the **Crystal of Memories** entry (no item), **Ruinous Powers** beyond the
+book it grants (the server has no Ruinous Powers prayer book), and the greaves' run-XP effect
+(Trickster and Corner Cutter grant the custom item; the effect is not here).
 
 ### Trailblazer Reloaded's combat relics
 
@@ -954,8 +956,8 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   double loot and XP (`hunter:rewards`) and look for prey every 2 ticks instead of 3
   (`hunter:lure-interval`: the Wiki says "faster" and no more, so the number is ours), impling
   jars never break (`hunter:jar-kept`), and up to nine logs burn in one action
-  (`firemaking:logs-per-action`, one fire, XP for each). Not here: the Sage's greaves (not in
-  Trailblazer Reloaded's cache) and the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
+  (`firemaking:logs-per-action`, one fire, XP for each). Not here: the greaves' run-XP effect
+  and the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
   Hunter, Thieving and Firemaking plugins roll themselves: the Werewolf course, the Brimhaven
   arena, the Hallowed Sepulchre and the Chambers of Xeric tightrope roll on their own and still
   can fail.
@@ -1239,8 +1241,10 @@ it is a plain XP drop.
 Each tier's passive text is the Wiki's (`league-relics.json`); the effects are
 `leagues.json` `passives`, per league, each from the 1-based tier its `fromTier` names (a map
 picks the highest tier reached), applied by `league/Passives.LeagueMode.js` and
-`league/BoostedDrops.LeagueMode.js` to a league character of that league and to nobody else.
-Tier 1 counts once the character chose its first relic.
+`league/BoostedDrops.LeagueMode.js` to a league character of that league, and by
+`league/Passives.LeagueMode.js` to a Level-Up world's
+relic holder (the catalog is Trailblazer Reloaded's); boosted drops and the seasonal XP rate
+remain seasonal-only. Tier 1 counts once the character chose its first relic.
 
 - **XP rate** (5x; Raging Echoes 8x from tier 2, 12x from tier 5, 16x from tier 7; Demonic Pacts
   8x, 12x and 16x from tiers 2, 4 and 6, as its tier structs' passive text says): the

@@ -483,6 +483,14 @@ function grantPaescapeRelic(request) {
   api.emitCustomEvent("league:relic-unlocked", { player: request.player, league: 4, tier, slot, relic: relic.key, paescape: true });
 }
 
+/** A Level-Up world has the Leagues Tutor at Lumbridge, as a league world does. */
+function spawnLeaguesTutor() {
+  if (!active()) return;
+  const id = api.core.CacheDefinitions?.getNpcId?.("league_tutor_league");
+  if (!Number.isInteger(id)) return;
+  if ([...api.core.World.getNpcs()].some((npc) => npc.getId?.() === id)) return;
+  api.spawnNpc({ id, x: 3226, y: 3215, z: 0, wanderRadius: 0 });
+}
 module.exports = {
   name: "TemplateWorlds",
   description: "Authoritative runtime rules selected by the PaeScape platform world-template contract.",
@@ -500,6 +508,7 @@ module.exports = {
     api.onCustomEvent("level-up:relic-profile", answerRelicProfile);
     api.onCustomEvent("paescape:grant-relic", grantPaescapeRelic);
     api.onPlayerLogin(initialise);
+    api.onServerStartup?.(spawnLeaguesTutor);
     api.onCanGainExperience(canGainExperience);
     api.onCustomEvent("combat:developer-protection", developerProtection);
     api.registerCommand("levelup", command, api.core.PlayerRights.NONE, "View Level-Up progression or choose a skill, region or relic");
@@ -520,6 +529,7 @@ module.exports = {
     summaryFromSave,
     pendingMilestone,
     enforceSkillLevels,
+    spawnLeaguesTutor,
     ATTR,
   },
 };

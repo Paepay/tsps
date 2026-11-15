@@ -495,6 +495,15 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(plugin._test.active(), false, "a contract with a Demonic Pacts season is refused");
   assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true, "packaged JSON is parsed");
   assert.equal(plugin._test.active(), true);
+  const spawned = [];
+  fake.api.core.CacheDefinitions = { getNpcId: (name) => (name === "league_tutor_league" ? 315 : null) };
+  fake.api.core.World = { getNpcs: () => [] };
+  fake.api.spawnNpc = (spec) => (spawned.push(spec), spec);
+  plugin._test.spawnLeaguesTutor();
+  assert.deepEqual(spawned, [{ id: 315, x: 3226, y: 3215, z: 0, wanderRadius: 0 }], "Level-Up has the league tutor at Lumbridge");
+  fake.api.core.World = { getNpcs: () => [{ getId: () => 315 }] };
+  plugin._test.spawnLeaguesTutor();
+  assert.equal(spawned.length, 1, "the tutor is not duplicated");
   const levelUpProtection = { player: fake.player, protected: true };
   fake.api.emitCustomEvent("combat:developer-protection", levelUpProtection);
   assert.equal(levelUpProtection.protected, false, "Level-Up characters take real damage");

@@ -11,10 +11,18 @@
  * BoostedDrops.LeagueMode.js.
  */
 const Common = require("./Common.LeagueMode");
+const Relics = require("../leaguerelics/Common.LeagueRelics");
+
+/** A seasonal league character, or a Level-Up world's Trailblazer Reloaded relic catalog. */
+function leagueOf(player) {
+  const type = Common.leagueOf(player);
+  if (type !== null) return type;
+  return Relics.levelUpOwns(player) ? Relics.leagueOf(player) : null;
+}
 
 /** The passive `key` of the player's league if its gate tier (`fromTier`, a number) is reached, else null. */
 function passive(player, key) {
-  const type = Common.leagueOf(player);
+  const type = leagueOf(player);
   if (type === null) return null;
   const entry = Common.passives(type)[key];
   if (!entry || typeof entry.fromTier !== "number") return null;
@@ -23,7 +31,7 @@ function passive(player, key) {
 
 /** The value of the passive `key` for the highest tier reached (`fromTier` a map of tier -> value), or null below its first tier. */
 function tierValue(player, key) {
-  const type = Common.leagueOf(player);
+  const type = leagueOf(player);
   if (type === null) return null;
   const entry = Common.passives(type)[key];
   if (!entry || typeof entry.fromTier !== "object") return null;
@@ -51,7 +59,7 @@ function combatExperience(event) {
 /** `minigame:points` { player, minigame, points }: the points a minigame the passive lists is about to award, multiplied. */
 function minigamePoints(request) {
   if (!request?.player || !(request.points > 0)) return;
-  const type = Common.leagueOf(request.player);
+  const type = leagueOf(request.player);
   if (type === null || !Common.passives(type).minigamePoints?.minigames?.includes(request.minigame)) return;
   const multiplier = tierValue(request.player, "minigamePoints");
   if (multiplier) request.points = Math.floor(request.points * multiplier);

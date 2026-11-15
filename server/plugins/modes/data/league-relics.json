@@ -438,7 +438,7 @@
           "relics": [
             { "key": "endless-harvest", "name": "Endless Harvest", "description": "- Fishing, Woodcutting and Mining resources are doubled, with bonus XP.<br><br>- Gathered resources go to your bank, or your inventory when the bank is full.", "grants": [] },
             { "key": "production-prodigy", "name": "Production Prodigy", "description": "- Crafting, Smithing, Herblore, Fletching and Cooking are boosted by +12.<br><br>- Processing actions handle all items at once with full XP.<br><br>- 25% chance of an extra product, sent to your bank.", "grants": [] },
-            { "key": "trickster", "name": "Trickster", "description": "- Thieving, Agility, Hunter and Firemaking always succeed.<br><br>- Your coin pouch holds three times as much and you pickpocket again automatically, for doubled, noted loot.<br><br>- Box traps lure faster with double loot and XP, impling jars never break, and you can burn up to nine logs at once.<br><br>- Grants Sage's greaves, which give Agility XP while you run.", "grants": [], "_missing": "Sage's greaves are not in this cache." }
+            { "key": "trickster", "name": "Trickster", "description": "- Thieving, Agility, Hunter and Firemaking always succeed.<br><br>- Your coin pouch holds three times as much and you pickpocket again automatically, for doubled, noted loot.<br><br>- Box traps lure faster with double loot and XP, impling jars never break, and you can burn up to nine logs at once.<br><br>- Grants Sage's greaves, which give Agility XP while you run.", "grants": ["SAGES_GREAVES"], "requiresBank": true }
           ]
         },
         {
