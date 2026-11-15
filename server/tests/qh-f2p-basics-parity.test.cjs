@@ -58,16 +58,8 @@ function player(items = [], attrs = [], skillLevel = 99) {
   return p;
 }
 
-function questHarness(name) {
-  const hooks = {};
-  const tasks = [];
-  // Submitted tasks run when the test calls tick(), one game tick per call.
-  const tick = (count = 1) => {
-    for (let i = 0; i < count; i++) {
-      for (const task of tasks.splice(0)) if (task.tick()) tasks.push(task);
-    }
-  };
-  const api = new Proxy({
+function makeHookApi(hooks, tasks) {
+  return new Proxy({
     core: { ...core, TaskManager: { submit: task => { task.setRunning(true); tasks.push(task); }, cancelTasks: noop } },
     persistAttribute: noop,
     onCustomEvent: (key, fn) => (hooks[key] ??= []).push(fn),
@@ -77,15 +69,54 @@ function questHarness(name) {
       return true;
     },
   }, { get: (target, key) => target[key] ?? ((...args) => {
-    if (key === 'onObjectInteraction') {
-      (hooks[key] ??= []).push(args[1]);
+    if (key === 'onObjectInteraction' || key === 'onNpcInteraction') {
+      // Named form: onNpcInteraction("Sheep", { Shear: fn }) — keep the action map.
+      if (typeof args[0] === 'string' && args[1] && typeof args[1] === 'object') {
+        (hooks[key] ??= []).push(args[1]);
+        return;
+      }
+      (hooks[key] ??= []).push(args.find(arg => typeof arg === 'function') ?? args[1]);
       return;
     }
     (hooks[key] ??= []).push(args.find(arg => typeof arg === 'function'));
   }) });
+}
+
+function questHarness(name) {
+  const hooks = {};
+  const tasks = [];
+  // Submitted tasks run when the test calls tick(), one game tick per call.
+  const tick = (count = 1) => {
+    for (let i = 0; i < count; i++) {
+      for (const task of tasks.splice(0)) if (task.tick()) tasks.push(task);
+    }
+  };
+  const api = makeHookApi(hooks, tasks);
   require(root + '/plugins/quests/quests/' + name + '.Quest')(api);
   const { getRegisteredQuests } = require(root + '/plugins/quests/QuestRuntime');
   return { api, hooks, tick, quest: getRegisteredQuests().at(-1) };
+}
+
+/** Ordinary sheep/alpaca shearing (plugins/npcs/SheepShearing.plugin.js). */
+function shearingHarness() {
+  const hooks = {};
+  const tasks = [];
+  const tick = (count = 1) => {
+    for (let i = 0; i < count; i++) {
+      for (const task of tasks.splice(0)) if (task.tick()) tasks.push(task);
+    }
+  };
+  require(root + '/plugins/npcs/SheepShearing.plugin.js').register(makeHookApi(hooks, tasks));
+  const shear = (event) => {
+    for (const actions of hooks.onNpcInteraction ?? []) {
+      const fn = actions.Shear;
+      if (!fn) continue;
+      const result = fn(event);
+      if (result !== false) event.handled = true;
+      if (event.handled) return;
+    }
+  };
+  return { hooks, tick, shear };
 }
 
 function dialoguePlayer(items, attrs) {
@@ -166,8 +197,7 @@ test('shearing changes each sheep into the same-colour sheared gameval npc', () 
     ['SHEEPUNSHEERED3W', 'SHEEPSHEERED3W'], ['SHEEPUNSHEEREDSHAGGY', 'SHEEPSHEEREDSHAGGY'],
     ['SHEEPUNSHEEREDSHAGGY2', 'SHEEPSHEEREDSHAGGY2']];
 
-  const { hooks, tick } = questHarness('SheepShearer');
-  const shear = hooks.onNpcInteraction[0];
+  const { shear, tick } = shearingHarness();
   const I = core.ItemIdentifiers;
   for (const [unshearedName, shearedName] of pairs) {
     const unshearedId = ids.get(unshearedName), shearedId = ids.get(shearedName);
@@ -208,14 +238,14 @@ function shearsOn(npc, npcId = npc.id) {
 }
 
 test('shearing gives the wool two ticks after the animation and the wool regrows after 50 ticks', () => {
-  const { hooks, tick } = questHarness('SheepShearer');
+  const { shear, hooks, tick } = shearingHarness();
   const I = core.ItemIdentifiers, N = core.NpcIdentifiers;
   const p = player([[I.SHEARS, 1]]);
   const animations = [];
   p.performAnimation = animation => animations.push(animation.getId());
   const npc = sheep(N.SHEEP_18);
 
-  hooks.onNpcInteraction[0]({ player: p, ...shearOption(npc) });
+  shear({ player: p, ...shearOption(npc) });
   assert.deepEqual(animations, [893]);
   tick();
   assert.equal(p.items.get(I.WOOL), undefined, 'no wool on the next tick');
@@ -234,13 +264,13 @@ test('shearing gives the wool two ticks after the animation and the wool regrows
   assert.deepEqual(npc.transforms, [N.SHEEP_2], 'still shorn after 49 ticks');
   tick();
   assert.deepEqual(npc.transforms, [N.SHEEP_2, -1], 'wool back after 50 ticks');
-  hooks.onNpcInteraction[0]({ player: p, ...shearOption(npc) });
+  shear({ player: p, ...shearOption(npc) });
   tick(2);
   assert.equal(p.items.get(I.WOOL), 2);
 });
 
 test('shears used on a sheared sheep say it has already been shorn', () => {
-  const { hooks } = questHarness('SheepShearer');
+  const { hooks } = shearingHarness();
   const I = core.ItemIdentifiers, N = core.NpcIdentifiers;
   for (const shearedId of [N.SHEEP_2, N.SHEEP_14, N.SHEEP_27]) {
     const p = player([[I.SHEARS, 1]]);
@@ -255,7 +285,7 @@ test('shears used on a sheared sheep say it has already been shorn', () => {
 });
 
 test('Zanaris sheep take shears, fail a quarter of the time and regrow after 100 ticks', (t) => {
-  const { hooks, tick } = questHarness('SheepShearer');
+  const { hooks, tick } = shearingHarness();
   const I = core.ItemIdentifiers, N = core.NpcIdentifiers;
   const roll = { value: 0 };
   t.mock.method(Math, 'random', () => roll.value);
@@ -292,7 +322,9 @@ test('The Thing rears up a tick after the shear and gets away on the third', () 
   quest.setStage(p, 1);
   const thing = sheep(core.NpcIdentifiers.SHEEP);
   const event = { player: p, ...shearOption(thing) };
-  hooks.onNpcInteraction[0](event);
+  const shear = hooks.onNpcInteraction[0].Shear;
+  const result = shear(event);
+  if (result !== false) event.handled = true;
   assert.equal(event.handled, true);
   assert.deepEqual(p.messages, []);
   tick();

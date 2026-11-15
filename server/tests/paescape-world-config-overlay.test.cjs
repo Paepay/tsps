@@ -65,8 +65,17 @@ test("a global-PvP world becomes one whole-map pvp zone, buildings-safe when ask
 });
 
 test("F2P is carried as the FreeToPlay plugin switch the runtime derives members from", () => {
-  assert.deepEqual(toWorldOverlay(platformBlob({ f2pWorld: true })).overlay.plugins, { FreeToPlay: true });
-  assert.deepEqual(toWorldOverlay(platformBlob({ f2pWorld: false })).overlay.plugins, { FreeToPlay: false });
+  assert.deepEqual(toWorldOverlay(platformBlob({ f2pWorld: true })).overlay.plugins, { FreeToPlay: true, PaeScape: true });
+  assert.deepEqual(toWorldOverlay(platformBlob({ f2pWorld: false })).overlay.plugins, { FreeToPlay: false, PaeScape: true });
+});
+
+test("every platform overlay enables the PaeScape connector", () => {
+  // The connector's own default is off, and switches only list website toggles. If the
+  // overlay omits it, the next restart disables ticket login and platform control.
+  assert.equal(toWorldOverlay(platformBlob({})).overlay.plugins.PaeScape, true);
+  const withSwitches = toWorldOverlay(platformBlob({ quests: false, playerBots: true }));
+  assert.equal(withSwitches.overlay.plugins.PaeScape, true);
+  assert.equal(withSwitches.overlay.plugins.Quests, false);
 });
 
 test("a non-positive XP rate is rejected with a note", () => {

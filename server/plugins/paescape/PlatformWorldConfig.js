@@ -165,6 +165,11 @@ function pluginSwitches(settings, notes) {
   if (typeof settings.crossFloorVisibility === "boolean" || typeof settings.crossFloorCombat === "boolean") {
     plugins.CrossFloor = settings.crossFloorVisibility === true || settings.crossFloorCombat === true;
   }
+  // The platform connector is infrastructure, not a player-facing toggle. Every
+  // platform-managed world needs it to register the control handler, ticket login,
+  // staff ranks and platform persistence after a restart. Its exported default stays
+  // off so a manually exported world.json never tries to enrol on its own.
+  plugins.PaeScape = true;
   return plugins;
 }
 

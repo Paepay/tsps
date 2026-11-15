@@ -169,6 +169,73 @@ function relicsFromChosen(chosen, maxTiers = 8) {
   return result;
 }
 
+/** A stored `league:relics` slot that still resolves in the Level-Up catalog. */
+function chosenRelic(chosen, tier) {
+  const slot = Number(chosen?.[tier]);
+  if (!Number.isInteger(slot) || slot < 1 || slot > 3) return null;
+  try {
+    return require("./leaguerelics/Common.LeagueRelics").relic(Rules.LEAGUE_STYLE_TYPE, tier, slot);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Drop catalog slots that no longer exist (Crystal of Memories, the old Treasure Seeker
+ * preview, …) so the earned tier can be chosen again. Claims stay: the skill milestone was
+ * already spent; only the missing pick is reopened.
+ */
+function sanitizeRemovedRelics(player) {
+  if (!active()) return [];
+  const claims = integers(player.getAttribute(ATTR.relicClaims));
+  const current = player.getAttribute(ATTR.leagueRelics);
+  const chosen = current && typeof current === "object" && !Array.isArray(current) ? { ...current } : {};
+  const removed = [];
+  for (const [rawTier, rawSlot] of Object.entries(chosen)) {
+    const tier = Number(rawTier);
+    const slot = Number(rawSlot);
+    if (!Number.isInteger(tier) || tier < 0) {
+      delete chosen[rawTier];
+      continue;
+    }
+    if (chosenRelic(chosen, tier)) continue;
+    delete chosen[tier];
+    delete chosen[String(tier)];
+    removed.push({ tier, slot });
+  }
+  if (removed.length === 0 && claims.length === 0) return [];
+  player.setAttribute(ATTR.leagueRelics, chosen);
+  player.setAttribute(ATTR.relics, relicsFromChosen(chosen, Math.max(claims.length, 8)));
+  return removed;
+}
+
+/**
+ * Next relic pick from saved attributes: a claimed tier whose catalog slot disappeared, else
+ * the next unclaimed skill milestone. Tier index matches `league:relics` / Trailblazer.
+ * A missing `league:relics` map (offline summaries) is not treated as open holes.
+ */
+function pendingRelicSelectionFrom(attributes, unlockedCount) {
+  const claims = integers(attributes?.[ATTR.relicClaims]);
+  const chosen = attributes?.[ATTR.leagueRelics];
+  if (chosen && typeof chosen === "object" && !Array.isArray(chosen)) {
+    for (let tier = 0; tier < claims.length; tier++) {
+      if (!chosenRelic(chosen, tier)) {
+        return { milestone: claims[tier], tier, reclaim: true };
+      }
+    }
+  }
+  const milestone = pendingMilestoneFrom({ [ATTR.relicClaims]: claims }, unlockedCount, "relic");
+  if (milestone === null) return null;
+  return { milestone, tier: claims.length, reclaim: false };
+}
+
+function pendingRelicSelection(player) {
+  return pendingRelicSelectionFrom({
+    [ATTR.relicClaims]: player.getAttribute(ATTR.relicClaims),
+    [ATTR.leagueRelics]: player.getAttribute(ATTR.leagueRelics),
+  }, skills(player).length);
+}
+
 /** Region choices are earned one milestone at a time; stale seasonal data is not progress. */
 function claimedRegions(attributes) {
   const regions = Rules.normaliseRegions(attributes?.[ATTR.regions]);
@@ -238,10 +305,24 @@ function initialise({ player, isNewAccount }) {
   } else {
     player.setAttribute(ATTR.skills, skills(player));
     player.setAttribute(ATTR.regions, regions(player).map((region) => region.id));
-    player.setAttribute(ATTR.relics, relics(player));
     if (!Array.isArray(player.getAttribute(ATTR.regionClaims))) player.setAttribute(ATTR.regionClaims, []);
     if (!Array.isArray(player.getAttribute(ATTR.relicClaims))) player.setAttribute(ATTR.relicClaims, []);
-    if (integers(player.getAttribute(ATTR.relicClaims)).length === 0) player.setAttribute(ATTR.leagueRelics, {});
+    const leagueRelics = player.getAttribute(ATTR.leagueRelics);
+    if (integers(player.getAttribute(ATTR.relicClaims)).length === 0) {
+      player.setAttribute(ATTR.leagueRelics, {});
+    } else if (!leagueRelics || typeof leagueRelics !== "object" || Array.isArray(leagueRelics)) {
+      player.setAttribute(ATTR.leagueRelics, {});
+    }
+    const removed = sanitizeRemovedRelics(player);
+    player.setAttribute(ATTR.relics, relics(player));
+    if (removed.length > 0) {
+      const tiers = [...new Set(removed.map((entry) => entry.tier + 1))].sort((left, right) => left - right);
+      player.sendMessage(
+        tiers.length === 1
+          ? `A tier ${tiers[0]} relic you had chosen is no longer available. Open Relics to pick another.`
+          : `Some relics you had chosen are no longer available (tiers ${tiers.join(", ")}). Open Relics to pick replacements.`,
+      );
+    }
   }
   enforceSkillLevels(player);
   sendLockState(player);
@@ -290,6 +371,7 @@ function pendingMilestoneFrom(attributes, count, kind) {
 }
 
 function pendingMilestone(player, kind) {
+  if (kind === "relic") return pendingRelicSelection(player)?.milestone ?? null;
   const attributes = {
     [ATTR.regionClaims]: player.getAttribute(ATTR.regionClaims),
     [ATTR.relicClaims]: player.getAttribute(ATTR.relicClaims),
@@ -361,29 +443,46 @@ function unlockRegion(player, text) {
 }
 
 function unlockRelic(player, text) {
-  const milestone = pendingMilestone(player, "relic");
-  if (milestone === null) return player.sendMessage("You do not have an unclaimed relic milestone."), true;
+  sanitizeRemovedRelics(player);
+  const selection = pendingRelicSelection(player);
+  if (selection === null) return player.sendMessage("You do not have an unclaimed relic milestone."), true;
   const slot = Number(text);
   if (!Number.isInteger(slot) || slot < 1 || slot > 3) return player.sendMessage("Choose relic slot 1, 2 or 3."), true;
-  const tier = integers(player.getAttribute(ATTR.relicClaims)).length;
+  const { milestone, tier, reclaim } = selection;
   const Common = require("./leaguerelics/Common.LeagueRelics");
   const relic = Common.relic(Rules.LEAGUE_STYLE_TYPE, tier, slot);
   if (!relic) return player.sendMessage("That relic choice is unavailable."), true;
   const id = Rules.slug(relic.name);
   if (!REGION_ID.test(id)) return player.sendMessage("That relic has no platform-safe id."), true;
-  const currentRelics = relics(player);
-  if (currentRelics.some((entry) => entry.id === id)) return player.sendMessage(`${relic.name} is already unlocked.`), true;
-  const chosen = { ...(player.getAttribute(ATTR.leagueRelics) ?? {}), [tier]: slot };
+  const current = player.getAttribute(ATTR.leagueRelics);
+  const chosen = { ...(current && typeof current === "object" && !Array.isArray(current) ? current : {}) };
+  for (const [rawTier, rawSlot] of Object.entries(chosen)) {
+    if (Number(rawTier) === tier) continue;
+    const other = Common.relic(Rules.LEAGUE_STYLE_TYPE, Number(rawTier), Number(rawSlot));
+    if (other && Rules.slug(other.name) === id) {
+      return player.sendMessage(`${relic.name} is already unlocked.`), true;
+    }
+  }
+  chosen[tier] = slot;
   player.setAttribute(ATTR.leagueRelics, chosen);
-  player.setAttribute(ATTR.relics, [...currentRelics, { id, name: String(relic.name) }]);
-  markClaimed(player, "relic", milestone);
+  player.setAttribute(
+    ATTR.relics,
+    relicsFromChosen(chosen, Math.max(integers(player.getAttribute(ATTR.relicClaims)).length, tier + 1, 8)),
+  );
+  if (!reclaim) markClaimed(player, "relic", milestone);
   try {
     require("./leaguerelics/Unlock.LeagueRelics").grant?.(player, relic);
   } catch {
     // The effect is still active; a full bank/inventory must not discard the platform reward.
   }
-  player.sendMessage(`${relic.name} unlocked for the ${milestone}-skill milestone.`);
-  api.emitCustomEvent("league:relic-unlocked", { player, league: Rules.LEAGUE_STYLE_TYPE, tier, slot, relic: relic.key, levelUp: true });
+  player.sendMessage(
+    reclaim
+      ? `${relic.name} unlocked (replacement for the removed tier ${tier + 1} relic).`
+      : `${relic.name} unlocked for the ${milestone}-skill milestone.`,
+  );
+  api.emitCustomEvent("league:relic-unlocked", {
+    player, league: Rules.LEAGUE_STYLE_TYPE, tier, slot, relic: relic.key, levelUp: true, reclaim: reclaim === true,
+  });
   return true;
 }
 
@@ -392,6 +491,7 @@ function progressFrom(attributes, unlockedValue, currentLevels, relicValue) {
   const required = Rules.requirement(unlocked.length);
   const levelByIndex = Object.fromEntries(Rules.SKILLS.map(({ index }) => [index, Number(currentLevels[index]) || 0]));
   const regionList = claimedRegions(attributes);
+  const pendingRelic = pendingRelicSelectionFrom(attributes, unlocked.length);
   return {
     schemaVersion: 1,
     unlockedSkills: unlocked.map((index) => ({
@@ -407,17 +507,20 @@ function progressFrom(attributes, unlockedValue, currentLevels, relicValue) {
     nextRegionMilestone: Rules.nextRegionMilestone(unlocked.length),
     nextRelicMilestone: Rules.nextRelicMilestone(unlocked.length),
     pendingRegionMilestone: pendingMilestoneFrom(attributes, unlocked.length, "region"),
-    pendingRelicMilestone: pendingMilestoneFrom(attributes, unlocked.length, "relic"),
+    pendingRelicMilestone: pendingRelic?.milestone ?? null,
+    pendingRelicTier: pendingRelic?.tier ?? null,
     regions: regionList.map(({ id, name }) => ({ id, name })),
     relics: claimedRelics({ ...attributes, [ATTR.relics]: relicValue }),
   };
 }
 
 function progress(player) {
+  sanitizeRemovedRelics(player);
   return progressFrom({
     [ATTR.regions]: player.getAttribute(ATTR.regions),
     [ATTR.regionClaims]: player.getAttribute(ATTR.regionClaims),
     [ATTR.relicClaims]: player.getAttribute(ATTR.relicClaims),
+    [ATTR.leagueRelics]: player.getAttribute(ATTR.leagueRelics),
   }, skills(player), levels(player), relics(player));
 }
 
@@ -521,6 +624,8 @@ module.exports = {
   isActive: active,
   sendLockState,
   summaryFromSave,
+  sanitizeRemovedRelics,
+  pendingRelicSelection,
   _test: {
     configure: configurePackaged,
     configureHosted,
@@ -528,6 +633,8 @@ module.exports = {
     progress,
     summaryFromSave,
     pendingMilestone,
+    pendingRelicSelection,
+    sanitizeRemovedRelics,
     enforceSkillLevels,
     spawnLeaguesTutor,
     ATTR,
