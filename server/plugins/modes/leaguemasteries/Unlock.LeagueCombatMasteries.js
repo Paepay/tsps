@@ -11,6 +11,9 @@ const Common = require("./Common.LeagueCombatMasteries");
 function sendProgress(player) {
   const { varbits, tutorialValue } = Common.data;
   const sender = player.getPacketSender();
+  // The client's node scripts gate their Unlocked/Locked/Select texts on the cached league
+  // feature flag, so it must arrive with the progress values even before the interface opens.
+  Common.sendFeatureFlags(player);
   const tiers = Common.masteries(player);
   for (const key of Common.STYLE_KEYS) sender.sendVarbit(Common.style(key).progressVarbit, tiers[key]);
   sender.sendVarbit(varbits.tutorial, tutorialValue);

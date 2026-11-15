@@ -135,11 +135,13 @@ function character(name, { profile = "league", league = RAGING_ECHOES, masteries
   player.setUsername(name);
   player.setProfile(profile);
   player.setLocation(new Location(3200, 3200, 0));
-  const sent = { messages: [], varbits: new Map(), scripts: [], subs: [], flags: [], sounds: [], removals: 0 };
+  const sent = { messages: [], varbits: new Map(), configs: new Map(), scripts: [], subs: [], flags: [], sounds: [], removals: 0 };
   const sender = new Proxy({}, {
     get: (target, key) => {
       switch (key) {
         case "sendVarbit": return (id, value) => (sent.varbits.set(id, value), sender);
+        case "getVarp": return (id) => sent.configs.get(id) ?? 0;
+        case "sendConfig": return (id, value) => (sent.configs.set(id, value | 0), sender);
         case "sendInterfaceScript": return (id, args) => (sent.scripts.push([id, args]), sender);
         case "sendInterface": return (group) => (sent.subs.push(["main", group]), sender);
         case "sendInterfaceFlagsRange": return (...args) => (sent.flags.push(args), sender);
@@ -189,6 +191,7 @@ const TZKAL_ZUK = 7706;
 
 test("login sends the mastery varbits to a Raging Echoes character only", () => {
   const echoes = character("echoes-login", { levels: 1, masteries: { melee: 2, ranged: 0, magic: 1 }, points: { giant: 1, jad: 1, zuk: 1 } });
+  assert.equal(echoes.sent.configs.get(4920), 2, "the cached league feature flag makes the client's node scripts unlockable");
   assert.equal(echoes.sent.varbits.get(11580), 2, "melee progress");
   assert.equal(echoes.sent.varbits.get(11581), 0, "ranged progress");
   assert.equal(echoes.sent.varbits.get(11582), 1, "magic progress");
@@ -202,9 +205,11 @@ test("login sends the mastery varbits to a Raging Echoes character only", () => 
   assert.equal(echoes.sent.varbits.get(11595), 0);
   assert.equal(echoes.sent.varbits.get(11596), 0);
   const trailblazer = character("trailblazer-login", { league: TRAILBLAZER, masteries: { melee: 2, ranged: 0, magic: 1 } });
+  assert.equal(trailblazer.sent.configs.has(4920), false, "a Trailblazer Reloaded character sends no league feature flag");
   assert.equal(trailblazer.sent.varbits.has(17553), false, "a Trailblazer Reloaded character has no masteries");
   assert.equal(trailblazer.sent.varbits.has(11580), false);
   const main = character("main-login", { profile: "main" });
+  assert.equal(main.sent.configs.has(4920), false, "a main character sends no league feature flag");
   assert.equal(main.sent.varbits.has(17553), false, "a main character neither");
   assert.deepEqual(masteries(main), { player: main, league: null, masteries: { melee: 0, ranged: 0, magic: 0 }, passiveTier: 0, points: { earned: 0, spent: 0, available: 0 }, challenges: [] });
 });
@@ -324,10 +329,18 @@ test("an unlock needs a point and the previous tier, once; the first tier reache
 });
 
 test("the interface as captured: the panel's button opens it, a tab and a node are recorded, confirm unlocks the viewed node", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const flagCarrier = character("flag-carrier", { points: { giant: 1 } });
+  flagCarrier.sent.configs.set(Common.FEATURE_FLAGS_VARP, 0x5);
+  Common.sendFeatureFlags(flagCarrier);
+  assert.equal(flagCarrier.sent.configs.get(Common.FEATURE_FLAGS_VARP), 0x5 | Common.FEATURE_FLAG_LEAGUES,
+    "the league bit is added without dropping the client's other cached feature flags");
   const player = character("viewer", { points: { giant: 1 } });
   const click = (group, child, slot) => hooks[`button:${uid(group, child)}`]({ player, slot });
   assert.equal(click(311, 36, 7), false, "a node click before the button opened it");
   assert.equal(click(656, 32), true);
+  assert.equal(player.sent.configs.get(Common.FEATURE_FLAGS_VARP), Common.FEATURE_FLAG_LEAGUES,
+    "opening the interface resends the league bit for a reloaded client");
   assert.deepEqual(player.sent.subs, [["main", 311]]);
   assert.deepEqual(player.sent.flags, [[uid(311, 36), 0, 18, 2], [uid(311, 78), 10, 18, 2], [uid(311, 73), 0, 26, 2]]);
   assert.deepEqual(player.sent.scripts, [[3186, [uid(656, 31)]]]);

@@ -113,6 +113,7 @@ function createRuntime() {
           return (source, datasets) => contentData.push({ source, datasets });
         }
         if (name === "sendVarbit") return (id, value) => packets.varbits.push({ id, value });
+        if (name === "getVarp") return () => 0;
         if (name === "sendConfig") return (id, value) => packets.configs.push({ id, value });
         return () => {};
       },
@@ -555,6 +556,7 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10032 && value === 4), "league style varbit");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037), "completed tutorial varbit");
   assert.ok(fake.packets.configs.some(({ id, value }) => id === 3717 && (value & (1 << 30)) !== 0), "league world map flag");
+  assert.ok(fake.packets.configs.some(({ id, value }) => id === 4920 && (value & (1 << 1)) !== 0), "the client's cached league feature flag");
 
   assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [7]);
   assert.deepEqual(fake.attributes.get("level-up:regions"), ["misthalin"]);
