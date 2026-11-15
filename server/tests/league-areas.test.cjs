@@ -251,6 +251,20 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
   assert.equal(areaAt(3000, 3000, { league: 99 }), null, "no league, no areas");
 });
 
+test("tile overrides: Harry's Fishing Shop is Kandarin; the Lumbridge-Varrock path west of Al Kharid mine is Misthalin", () => {
+  // Eastern Catherby sits in map square 44,53 (Asgarnia's White Wolf Mountain). Wiki leagueRegion
+  // for Harry's Fishing Shop, Hickton and the fruit tree is Kandarin.
+  assert.equal(areaAt(2834, 3445), KANDARIN, "Harry's Fishing Shop");
+  assert.equal(areaAt(2822, 3442), KANDARIN, "Hickton's Archery Emporium");
+  assert.equal(areaAt(2861, 3432), KANDARIN, "Catherby's fruit tree");
+  assert.equal(areaAt(2870, 3438), ASGARNIA, "White Wolf Mountain stays Asgarnia");
+  // Road through map square 51,51: Misthalin west of the mine, desert on the mine itself.
+  assert.equal(areaAt(3280, 3300), MISTHALIN, "path NE of Lumbridge toward Varrock");
+  assert.equal(areaAt(3284, 3320), MISTHALIN, "road south of Varrock before the mine");
+  assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan) stays desert");
+  assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine stay desert");
+});
+
 test("the Citharede Abbey's square (53,49) is the desert; the Abandoned Mine in the square below stays Morytania", () => {
   // Wiki (Citharede Abbey, leagueRegion = Desert): the abbey and the Giants' Plateau east of Al
   // Kharid, map square 53,49, tiles 3392-3455 by 3136-3199. That square's cabbage field is the
