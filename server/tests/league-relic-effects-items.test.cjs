@@ -1,10 +1,10 @@
 // Run after `yarn build`: node --test tests/league-relic-effects-items.test.cjs
 // The item and teleport relics (docs/leagues.md): Fairy's Flight and Banker's Note (both leagues),
 // Globetrotter (Trailblazer Reloaded), Clue Compass, Total Recall, Grimoire and Reloaded (Raging
-// Echoes). Each works for a character of its league who chose it, and for nobody else: not a
-// character of that league without it, not the other league's character with the same slots, not
-// a main character. The destinations come from their owners (fairy rings, spirit trees, the
-// jewellery box, the spellbooks, STASH units, the trail's last-read clue); the teleport is recorded.
+// Echoes), plus Trailblazer Reloaded's tier 3 Crystal of memories passive (also Level-Up). Each
+// works for a character of its league who chose it (or reached the passive's tier), and for nobody
+// else. The destinations come from their owners (fairy rings, spirit trees, the jewellery box, the
+// spellbooks, STASH units, the trail's last-read clue); the teleport is recorded.
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test, before, beforeEach, afterEach } = require("node:test");
@@ -65,7 +65,20 @@ before(async () => {
     registerWeaponProfile() {},
     registerRangedAmmoHandler() {},
     onItemAction: (name, actions) => {
-      if (typeof name === "string") itemActions.set(name, { ...(itemActions.get(name) ?? {}), ...actions });
+      // Chain like PluginManager: a handler returning false passes the click to the next.
+      if (typeof name !== "string") return;
+      const merged = { ...(itemActions.get(name) ?? {}) };
+      for (const [option, handler] of Object.entries(actions)) {
+        const previous = merged[option];
+        merged[option] = previous
+          ? (event) => {
+              const first = previous(event);
+              if (first !== false || event.handled) return first;
+              return handler(event);
+            }
+          : handler;
+      }
+      itemActions.set(name, merged);
     },
     sendMultiChatboxPrompt: (player, title, ...pairs) => {
       const options = [];
@@ -305,9 +318,11 @@ test("Banker's Note (both leagues): an item used on it is noted or unnoted; Acti
     assert.equal(inventory.getAmount(notedLogs), 2, "two at a time");
   }
 
-  // Noting a full inventory: 27 logs and the note, no noted logs yet; the logs' slots make room.
+  // Noting a full inventory: logs and the note, no noted logs yet; the logs' slots make room.
+  // Tier 3's Crystal of memories is already granted on login; remove it so this case is only the note.
   const gatherer = character("notegather", "league", BANKERS_NOTE_TR, 4);
   const pack = gatherer.getInventory();
+  pack.delete(I.CRYSTAL_OF_ECHOES, pack.getAmount(I.CRYSTAL_OF_ECHOES));
   pack.add(new Item(I.BANKERS_NOTE, 1), false);
   while (pack.getFreeSlots() > 0) pack.add(new Item(I.LOGS, 1), false);
   assert.equal(pack.getAmount(I.LOGS), 27);
@@ -376,6 +391,74 @@ test("Clue Compass: STASH units and Falo, the last-read clue's step; it is the i
   assert.equal(falo(who.relic, I.CLUE_COMPASS), true);
   assert.equal(falo(who.relic, I.LOGS), false, "not any item (that is Treasure Arbiter)");
   for (const player of others(who)) assert.equal(falo(player, I.CLUE_COMPASS), false, player.getUsername());
+});
+
+test("Crystal of memories (Trailblazer Reloaded tier 3 passive): granted on login, Teleport-back to last teleport, cooldown by total level", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const TIER3 = { 0: 1, 1: 1, 2: 1 };
+  const who = cases(TIER3, 4);
+  assert.equal(who.relic.getInventory().getAmount(I.CRYSTAL_OF_ECHOES), 1, "tier 3 unlock grants the crystal at login");
+  assert.equal(who.without.getInventory().getAmount(I.CRYSTAL_OF_ECHOES), 0, "below tier 3: none");
+  assert.equal(Crystal.cooldownMinutes(who.relic), 6, "starting total level: 6 minute cooldown");
+
+  const went = [];
+  const previousTeleport = core.TeleportHandler.teleport;
+  core.TeleportHandler.teleport = (player, location, type, warning, onArrival) => {
+    went.push([location.getX(), location.getY(), location.getZ()]);
+    onArrival?.();
+  };
+  try {
+    for (const handler of custom["teleport:landed"] ?? []) {
+      handler({ player: who.relic, from: new Location(3165, 3485, 0), fromInstance: false });
+      handler({ player: who.relic, from: new Location(2400, 4400, 0), fromInstance: true });
+      handler({ player: who.relic, from: new Location(2900, 4830, 0), fromInstance: false });
+    }
+    click("Crystal of Echoes", "Teleport-back", who.relic);
+    assert.deepEqual(went, [[3165, 3485, 0]], "Grand Exchange, not the instance or essence mine");
+    click("Crystal of Echoes", "Teleport-back", who.relic);
+    assert.equal(went.length, 1, "cooldown blocks a second Teleport-back");
+    assert.match(who.relic.messages.at(-1), /seconds/);
+    click("Crystal of Echoes", "Save-memory", who.relic);
+    assert.match(who.relic.messages.at(-1), /on its own/);
+    who.relic.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
+    who.relic.getInventory().delete(I.CRYSTAL_OF_ECHOES, 1);
+    assert.ok(Collect.owed(who.relic, 4).includes(I.CRYSTAL_OF_ECHOES), "Collect-items reclaims the tier 3 passive crystal");
+  } finally {
+    core.TeleportHandler.teleport = previousTeleport;
+  }
+
+  for (const player of others(who)) {
+    const before = player.messages.length;
+    click("Crystal of Echoes", "Teleport-back", player);
+    assert.equal(player.messages.length, before, `${player.getUsername()}'s crystal does nothing`);
+  }
+});
+
+test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memories passive", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = character("levelupcrystal", "main");
+  const answer = (query) => {
+    if (query.player !== player) return;
+    query.league = 4;
+    query.active = true;
+  };
+  custom["level-up:relic-profile"] = [answer, ...(custom["level-up:relic-profile"] ?? [])];
+  try {
+    player.setAttribute("league:relics", { 0: 1, 1: 1 });
+    assert.equal(Crystal.unlocked(player), false, "tier 2 only");
+    player.setAttribute("league:relics", { 0: 1, 1: 1, 2: 1 });
+    assert.equal(Crystal.unlocked(player), true, "tier 3: Level-Up uses the Trailblazer Reloaded catalog");
+    player.getInventory().delete(I.CRYSTAL_OF_ECHOES, player.getInventory().getAmount(I.CRYSTAL_OF_ECHOES));
+    assert.equal(Crystal.grantCrystal(player), true);
+    assert.equal(player.getInventory().getAmount(I.CRYSTAL_OF_ECHOES), 1);
+    for (const handler of custom["league:relic-unlocked"] ?? []) {
+      handler({ player, league: 4, tier: 2, slot: 1, relic: "bankers-note", levelUp: true });
+    }
+    assert.equal(player.getInventory().getAmount(I.CRYSTAL_OF_ECHOES), 1, "already held: unlock does not duplicate");
+  } finally {
+    custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+  }
 });
 
 test("Total Recall: Save-memory keeps the place, Hitpoints (up to 127), Prayer and special; Teleport-back sets them back; not in an instance", () => {

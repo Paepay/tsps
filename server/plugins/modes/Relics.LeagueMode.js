@@ -56,6 +56,7 @@ module.exports = {
     require("./leaguerelics/BankersNote.LeagueRelics")(api);
     require("./leaguerelics/ClueCompass.LeagueRelics")(api);
     require("./leaguerelics/TotalRecall.LeagueRelics")(api);
+    require("./leaguerelics/CrystalOfMemories.LeagueRelics")(api);
     require("./leaguerelics/Grimoire.LeagueRelics")(api);
     require("./leaguerelics/BankHeist.LeagueRelics")(api);
     require("./leaguerelics/ArcaneGrimoire.LeagueRelics")(api);
