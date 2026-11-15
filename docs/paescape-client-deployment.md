@@ -22,6 +22,12 @@ client install/build, validates the source-commit marker and installs the
 artifact at `dist/client`. No generated client file is committed or copied by
 hand.
 
+Client pins must stack on `prod`: each new website lock commit should be a
+descendant of the previous one on `Paepay/tsps` `prod`. Do not pin a parallel
+branch (for example `codex/task31-playable-client`) and then jump back to an
+unrelated `prod` tip — that replaces earlier client fixes instead of keeping
+them. Land client changes on `prod` first, then advance the lock to that tip.
+
 The cache stays on the PaeScape origin: `/cache/caches.json` and byte-range
 requests below `/cache/<revision>/` are served read-only by the website cache
 service. Gameplay WebSockets are not proxied; the selected client still
