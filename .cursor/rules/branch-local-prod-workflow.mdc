@@ -1,0 +1,24 @@
+---
+description: Feature branches land on local for user testing; prod only when asked to deploy
+alwaysApply: true
+---
+
+# Branch → local → prod
+
+PaeScape (`Paepay/tsps`) uses a staged integration path. Do not treat `prod` as the
+default merge target.
+
+1. **Feature branches.** Do work on a focused branch off the current integration tip
+   (usually `origin/local`, or `origin/prod` only if `local` does not exist yet).
+2. **Review, then land on `local`.** After review, merge and push to the `local`
+   branch. That is where the user plays and verifies changes. Prefer a PR into
+   `local`, or merge locally and `git push origin local`, when asked to merge/push
+   without naming `prod`.
+3. **User tests on `local`.** Do not assume gameplay sign-off from agent checks alone.
+   The user runs their own server/client against `local`.
+4. **Promote to `prod` only when asked.** Merge/push/deploy to `prod` only after the
+   user says the `local` batch is good to go (or explicitly asks to ship/deploy to
+   prod). Never default “merge and push” to `prod`.
+
+When the user says only “merge and push”, target **`local`**. When they say ship,
+deploy, or promote to prod, target **`prod`**.

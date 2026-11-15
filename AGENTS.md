@@ -2,13 +2,25 @@
 
 Server rules and plugin conventions are in [server/AGENTS.md](server/AGENTS.md).
 
+## Branch → local → prod (PaeScape)
+
+On `Paepay/tsps`, land work through `local` before `prod`:
+
+1. **Feature branches** for the change (off `origin/local` when it exists).
+2. **Review, merge and push to `local`** — that is the user’s test branch.
+3. The user verifies on `local` (their own server/client).
+4. **Only when they say the batch is ready:** merge/push/deploy to `prod`.
+
+If they say only “merge and push”, target **`local`**, not `prod`. Promote to
+`prod` only when they explicitly ask to ship, deploy, or promote.
+
 ## Linear integration (PaeScape)
 
 `Paepay/tsps` `prod` and `Paepay/PaeScape_Realms` `main` must grow with time on
 one timeline each. Do not ship parallel live histories.
 
-- Base production PRs on current `origin/prod`. Feature branches are fine;
-  long-lived side integration branches are not.
+- Integrate feature work onto `local` for testing first; promote the verified
+  batch to `prod` as the single production timeline.
 - Land browser-client and hosted-world fixes on `prod` before the website pins
   them. Never pin `PaeScape_Realms/game-client.lock.json` to a non-`prod`
   branch (including `codex/task31-playable-client`).
