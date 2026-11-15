@@ -9,7 +9,7 @@ import { CombatType } from "../../../content/combat/CombatType";
 import { PendingHit } from "../../../content/combat/hit/PendingHit";
 import { CombatMethod } from "../../../content/combat/method/CombatMethod";
 import { NpcDefinition } from "../../../definition/NpcDefinition";
-import { CoordinateState, NPCMovementCoordinator } from "./NPCMovementCoordinator";
+import { NPCMovementCoordinator } from "./NPCMovementCoordinator";
 import type { Player } from "../player/Player";
 import { FacingDirection } from "../../../model/FacingDirection";
 import { Direction } from "../../../model/Direction";
@@ -378,8 +378,11 @@ export class NPC extends Mobile {
             AreaManager.process(this);
             // "combat:no-regen": a boss whose fight has phases it can't be hit in (Vet'ion's hounds)
             // keeps its damage.
-            if (this.hitpoints > 0 && !this.hitpointsLocked && !this.hasFlag("combat:no-regen") && (this.getCombat().getLastAttack().hasElapsed(20000)
-                || this.movementCoordinator.getCoordinateState() == CoordinateState.RETREATING)) {
+            // Idle regen only: leash / low-HP walk-home must not heal mid-fight (10%/tick while
+            // RETREATING made ranged Fire giants and similar look immortal). Mole uses
+            // combat:no-regen for its own resurface case.
+            if (this.hitpoints > 0 && !this.hitpointsLocked && !this.hasFlag("combat:no-regen")
+                && this.getCombat().getLastAttack().hasElapsed(20000)) {
                 const max = this.getMaxHitpoints();
                 if (max > this.hitpoints) {
                     // OSRS hitpoints are integers. Floor the 10% step and the stored value so

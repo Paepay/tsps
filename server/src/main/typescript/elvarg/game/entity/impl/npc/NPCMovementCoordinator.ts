@@ -86,35 +86,43 @@ export class NPCMovementCoordinator {
         PathFinder.calculateWalkRoute(this.npc, spawn.getX(), spawn.getY());
     }
 
+    /** Chebyshev distance from the NPC's current tile to its spawn (same axes as wander). */
+    private spawnChebyshev(): { deltaX: number; deltaY: number } {
+        const spawn = this.npc.getSpawnPosition();
+        const at = this.npc.getLocation();
+        return {
+            deltaX: Math.abs(spawn.getX() - at.getX()),
+            deltaY: Math.abs(spawn.getY() - at.getY()),
+        };
+    }
+
+    private withinWanderRadius(): boolean {
+        if (this.radius === 0) {
+            return this.npc.getLocation().equals(this.npc.getSpawnPosition());
+        }
+        const { deltaX, deltaY } = this.spawnChebyshev();
+        return deltaX <= this.radius && deltaY <= this.radius;
+    }
+
     public updateCoordinator() {
         if (CombatFactory.inCombat(this.npc)) {
             if (this.coordinateState == CoordinateState.AWAY) {
                 this.coordinateState = CoordinateState.RETREATING;
             }
             if (this.coordinateState == CoordinateState.RETREATING) {
-                if (this.npc.getLocation().equals(this.npc.getSpawnPosition())) {
+                // Exact spawn for rooted NPCs; for wanderers, inside the radius is enough so a
+                // size-2 corridor stop or continued player hits cannot pin RETREATING forever.
+                if (this.withinWanderRadius()) {
                     this.coordinateState = CoordinateState.HOME;
+                    this.nextRetreatRepathCycle = 0;
+                } else {
+                    this.npc.getCombat().reset();
                 }
-                this.npc.getCombat().reset();
             }
             return;
         }
 
-        let deltaX;
-        let deltaY;
-
-        if (this.npc.getSpawnPosition().getX() > this.npc.getLocation().getX()) {
-            deltaX = this.npc.getSpawnPosition().getX() - this.npc.getLocation().getX();
-        } else {
-            deltaX = this.npc.getLocation().getX() - this.npc.getSpawnPosition().getX();
-        }
-
-        if (this.npc.getSpawnPosition().getY() > this.npc.getLocation().getY()) {
-            deltaY = this.npc.getSpawnPosition().getY() - this.npc.getLocation().getY();
-        } else {
-            deltaY = this.npc.getLocation().getY() - this.npc.getSpawnPosition().getY();
-        }
-
+        const { deltaX, deltaY } = this.spawnChebyshev();
         if ((deltaX > this.radius) || (deltaY > this.radius)) {
             this.coordinateState = CoordinateState.AWAY;
         } else {

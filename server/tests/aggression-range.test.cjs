@@ -502,6 +502,39 @@ test("rooted NPCs finish retreat only when already home", t => {
   }
 });
 
+test("RETREATING does not regenerate hitpoints while recently attacked", t => {
+  // Fire giants (and any leashed NPC) used to heal floor(max*0.1) every tick while walking
+  // home, which outpaced ranged DPS and looked like infinite health.
+  const s = scene(t);
+  s.npc.getMovementCoordinator().setRadius(5);
+  s.npc.setLocation(s.spawn.transform(8, 0));
+  s.npc.getMovementCoordinator().setCoordinateState(CoordinateState.RETREATING);
+  s.npc.setMaxHitpoints(111);
+  s.npc.setHitpoints(50);
+  s.npc.getCombat().getLastAttack().reset();
+  s.npc.getCombat().setUnderAttack(s.player);
+  s.tick();
+  assert.equal(s.npc.getHitpoints(), 50, "leash retreat must not heal mid-fight");
+  assert.equal(s.npc.getMovementCoordinator().getCoordinateState(), CoordinateState.RETREATING,
+    "still outside the wander radius");
+});
+
+test("RETREATING clears to HOME inside the wander radius even while under attack", t => {
+  const s = scene(t);
+  s.npc.getMovementCoordinator().setRadius(5);
+  s.npc.setLocation(s.spawn.transform(2, 0));
+  s.npc.getMovementCoordinator().setCoordinateState(CoordinateState.RETREATING);
+  s.npc.setMaxHitpoints(111);
+  s.npc.setHitpoints(50);
+  s.npc.getCombat().getLastAttack().reset();
+  s.npc.getCombat().setUnderAttack(s.player);
+  s.tick();
+  assert.equal(s.npc.getMovementCoordinator().getCoordinateState(), CoordinateState.HOME,
+    "inside the radius is home without an exact spawn tile");
+  assert.equal(s.npc.getCombat().getAttacker(), s.player,
+    "clearing home does not drop a fight that can resume");
+  assert.equal(s.npc.getHitpoints(), 50, "and still no retreat heal");
+});
 
 test("player retaliation uses viewer morph attackability, including a change before its queued turn", t => {
   const s = scene(t);
