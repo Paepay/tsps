@@ -429,6 +429,33 @@ test("every Raging Echoes item relic hands out its item and the Leagues Tutor re
   }
 });
 
+test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tutor reclaims them", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I } = core;
+  const relic = Common.relic(4, 0, 3);
+  assert.deepEqual(Unlock.grantedItems(relic), [I.SAGES_GREAVES]);
+  assert.equal(relic.requiresBank, true, "Trailblazer Reloaded's item relics unlock in a bank");
+
+  const denied = relicCharacter("trickster-denied", 4);
+  givePoints(denied, 500);
+  assert.equal(Unlock.refusal(denied, 4, 0, 3, false), "needsBank");
+  assert.equal(Unlock.unlock(denied, 0, 3), false);
+  assert.equal(denied.getInventory().contains(I.SAGES_GREAVES), false);
+
+  const player = relicCharacter("trickster-grant", 4);
+  givePoints(player, 500);
+  assert.equal(Unlock.unlock(player, 0, 3, { bankOpen: true }), true);
+  assert.equal(player.getInventory().contains(I.SAGES_GREAVES), true);
+  player.getInventory().delete(I.SAGES_GREAVES, 1);
+  assert.deepEqual(Collect.owed(player, 4), [I.SAGES_GREAVES]);
+
+  const { action, chains } = collect(player, 315);
+  action.send(player);
+  assert.equal(player.getInventory().contains(I.SAGES_GREAVES), true, "the tutor hands the greaves back");
+  assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Leagues Tutor.");
+});
 test("Collect-items counts carried, worn and banked relic items, and returns only what is missing", () => {
   const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
   const { ItemIdentifiers: I, Item, Equipment } = core;
