@@ -36,5 +36,54 @@
       "1000000": "dragonic-katana/drop.dat",
       "1000001": "dragonic-katana/equip.dat"
     }
+  },
+  {
+    "id": 50001,
+    "baseItemId": 28771,
+    "objType": {
+      "name": "Sage's greaves",
+      "examine": "Greaves that give you blazing speed.",
+      "inventoryActions": ["Wear", null, null, null, "Destroy"],
+      "isTradable": false,
+      "price": 1,
+      "weight": 0,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": {
+      "equipmentType": "BOOTS",
+      "tradeable": false,
+      "dropable": false,
+      "sellable": false,
+      "value": 1
+    }
+  },
+  {
+    "id": 50002,
+    "baseItemId": 28769,
+    "objType": {
+      "name": "Guardian horn",
+      "examine": "A horn to call your loyal guardian.",
+      "inventoryActions": [null, null, null, null, "Destroy"],
+      "isTradable": false,
+      "price": 1,
+      "weight": 200,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": {
+      "tradeable": false,
+      "dropable": false,
+      "sellable": false,
+      "value": 1
+    }
   }
 ]

@@ -28,6 +28,9 @@ const { PlayerStatus } = require("../dist/game/model/PlayerStatus");
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
   core = PluginManager.getCoreApi();
+  require("../plugins/items/ItemDefinitionLoader.plugin").register({
+    log() {}, onPlayerLogin() {}, registerContentEndpoint() {},
+  });
   GameConstants.setWorldProfile("league"); // a league world
   const lists = {};
   const on = (name) => (handler) => {
@@ -47,7 +50,12 @@ before(async () => {
     getPluginConfig: (key, fallback) => (key === "league:type" ? worldLeague : fallback),
     setWorldProfile: (profile) => GameConstants.setWorldProfile(profile),
     getSkillManager: () => require("../dist/game/content/skill/SkillManager").SkillManager,
+    log() {},
     registerCommand: (name, handler) => (hooks[`command:${name}`] = handler),
+    onNpcInteraction: (nameOrHandler, actions) => {
+      if (typeof nameOrHandler === "function") return on("onNpcInteraction")(nameOrHandler);
+      for (const [action, handler] of Object.entries(actions ?? {})) on(`npc:${nameOrHandler}:${action}`)(handler);
+    },
     onInterfaceActionButton: (ids, handler) => {
       for (const id of [].concat(ids)) on(`button:${id}`)(handler);
     },
@@ -87,6 +95,26 @@ function character(name, profile = "league", { login = true } = {}) {
   player.sendMessage = (text) => sent.messages.push(text);
   if (login) hooks.onPlayerLogin({ player, username: name, isNewAccount: true, profile });
   return Object.assign(player, { sent });
+}
+
+/** A league character with its own type and relic picks, whichever league the test world runs. */
+function relicCharacter(name, type, picks = {}) {
+  const previous = worldLeague;
+  worldLeague = type;
+  const player = character(name);
+  worldLeague = previous;
+  player.setAttribute("league:type", type);
+  player.setAttribute("league:relics", picks);
+  return player;
+}
+
+/** Opens the tutor's Collect-items, returning the first chain and its entries. */
+function collect(player, npcId = 315) {
+  const chains = [];
+  player.getDialogueManager = () => ({ startDialogues: (chain) => chains.push(chain) });
+  const handled = hooks["npc:Leagues Tutor:Collect-items"]({ player, npcId, handled: false });
+  const entries = [...chains[0].getDialogues().values()];
+  return { handled, chains, entries, action: entries[1] };
 }
 
 /** The bank as the game opens it: the banking status with bankmain as the main interface. */
@@ -336,6 +364,121 @@ test("a Raging Echoes tier-1 tool is handed out without a bank, as the Leagues V
   hooks["command:relic"]({ player: echoes, parts: ["relic", "1", "3"] }); // Animal Wrangler (osrs-captures 227/00196)
   assert.deepEqual(echoes.getAttribute("league:relics"), { 0: 3 });
   assert.equal(echoes.getInventory().contains(ItemIdentifiers.ECHO_HARPOON), true, "the Echo harpoon lands in the inventory");
+});
+
+test("Raging Echoes' catalog grants every Wiki item, including the custom Sage's greaves and Guardian horn", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const { ItemIdentifiers: I, ItemDefinition, Equipment } = core;
+  const expected = [
+    [[I.ECHO_PICKAXE], [I.ECHO_AXE], [I.ECHO_HARPOON]],
+    [[I.SAGES_GREAVES], [I.FORAGERS_POUCH], []],
+    [[I.CLUE_COMPASS], [I.BANKERS_BRIEFCASE], [I.FAIRY_MUSHROOM]],
+    [[], [], []],
+    [[], [], []],
+    [[I.CRYSTAL_OF_ECHOES], [I.BANKERS_NOTE], []],
+    [[I.POCKET_KINGDOM], [I.ARCANE_GRIMOIRE], [I.LEPRECHAUNS_VAULT]],
+    [[], [I.GUARDIAN_HORN], []],
+  ];
+  const tiers = Common.catalog(5).tiers;
+  assert.deepEqual(tiers.map((tier) => tier.relics.map((relic) => Unlock.grantedItems(relic))), expected);
+  assert.deepEqual(tiers.map((tier) => tier.relics.map((relic) => relic.requiresBank === true)), [
+    [false, false, false], [false, false, false], [true, true, true], [false, false, false],
+    [false, false, false], [false, false, false], [false, false, false], [false, false, false],
+  ]);
+  assert.equal(tiers.flatMap((tier) => tier.relics).some((relic) => relic._missing), false);
+
+  const greaves = ItemDefinition.forId(I.SAGES_GREAVES);
+  assert.deepEqual([greaves.getName(), greaves.getExamine(), greaves.isTradeable(), greaves.isDropable()], [
+    "Sage's greaves", "Greaves that give you blazing speed.", false, false,
+  ]);
+  assert.equal(greaves.getEquipmentType().getSlot(), Equipment.FEET_SLOT, "Sage's greaves are boots");
+  const horn = ItemDefinition.forId(I.GUARDIAN_HORN);
+  assert.deepEqual([horn.getName(), horn.getExamine(), horn.isTradeable(), horn.isDropable()], [
+    "Guardian horn", "A horn to call your loyal guardian.", false, false,
+  ]);
+  assert.equal(horn.getEquipmentType().getSlot(), -1, "the horn is carried, not worn");
+});
+
+test("every Raging Echoes item relic hands out its item and the Leagues Tutor reclaims it after loss", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const itemRelics = [
+    [0, 1], [0, 2], [0, 3], [1, 1], [1, 2], [2, 1], [2, 2], [2, 3],
+    [5, 1], [5, 2], [6, 1], [6, 2], [6, 3], [7, 2],
+  ];
+  for (const [tier, slot] of itemRelics) {
+    const relic = Common.relic(5, tier, slot);
+    const ids = Unlock.grantedItems(relic);
+    assert.ok(ids.length > 0, `${relic.name} grants an item`);
+    const player = relicCharacter(`grant-${tier}-${slot}`, 5);
+    givePoints(player, 30000);
+    assert.equal(Unlock.unlock(player, tier, slot, { bankOpen: true }), true, relic.name);
+    for (const id of ids) assert.equal(player.getInventory().contains(id), true, `${relic.name} hands out ${id}`);
+    assert.deepEqual(Collect.owed(player, 5), [], "the freshly granted items are owned");
+    for (const id of ids) player.getInventory().delete(id, 1);
+    assert.deepEqual(Collect.owed(player, 5), ids, `${relic.name}'s lost item is owed once`);
+
+    const { entries, action, chains } = collect(player, 315);
+    assert.equal(entries[0].getText(), "Do I have any League items to collect?");
+    action.send(player);
+    const box = [...chains[1].getDialogues().values()][0];
+    assert.equal(box.getText(), "You receive some items from the Leagues Tutor.");
+    for (const id of ids) assert.equal(player.getInventory().contains(id), true, `${relic.name} is reclaimed`);
+  }
+});
+
+test("Collect-items counts carried, worn and banked relic items, and returns only what is missing", () => {
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I, Item, Equipment } = core;
+  const player = relicCharacter("ownership", 5, { 0: 1, 1: 1, 7: 2 });
+  player.getEquipment().set(Equipment.WEAPON_SLOT, new Item(I.ECHO_PICKAXE, 1));
+  player.getInventory().adds(I.SAGES_GREAVES, 1);
+  player.getBank(0).add(new Item(I.GUARDIAN_HORN, 1), true);
+  assert.deepEqual(Collect.owed(player, 5), []);
+
+  player.getEquipment().set(Equipment.WEAPON_SLOT, new Item(-1, 0));
+  assert.deepEqual(Collect.owed(player, 5), [I.ECHO_PICKAXE], "an unequipped pickaxe is owed again");
+  player.getInventory().delete(I.SAGES_GREAVES, 1);
+  assert.deepEqual(Collect.owed(player, 5), [I.ECHO_PICKAXE, I.SAGES_GREAVES], "the Guardian horn stays owned in the bank");
+});
+
+test("Collect-items hands over what fits, refuses a full inventory, and speaks as the actual tutor", () => {
+  const { ItemIdentifiers: I, Item, NpcDialogue, StatementDialogue, ItemStatementDialogue } = core;
+  const partial = relicCharacter("partial", 5, { 1: 1, 7: 2 });
+  for (let slot = 0; slot < 27; slot++) partial.getInventory().add(new Item(1965, 1), false);
+  assert.equal(partial.getInventory().getFreeSlots(), 1);
+  let opened = collect(partial, 315);
+  opened.action.send(partial);
+  assert.equal(partial.getInventory().contains(I.SAGES_GREAVES), true);
+  assert.equal(partial.getInventory().contains(I.GUARDIAN_HORN), false);
+  assert.equal(partial.sent.messages.at(-1), "You don't have enough inventory space for the rest of your League items.");
+
+  const full = relicCharacter("full", 5, { 1: 1, 7: 2 });
+  for (let slot = 0; slot < 28; slot++) full.getInventory().add(new Item(1965, 1), false);
+  assert.equal(full.getInventory().getFreeSlots(), 0);
+  opened = collect(full, 315);
+  opened.action.send(full);
+  assert.ok([...opened.chains[1].getDialogues().values()][0] instanceof StatementDialogue);
+  assert.equal(full.getInventory().contains(I.SAGES_GREAVES), false);
+  assert.equal(full.getInventory().contains(I.GUARDIAN_HORN), false);
+
+  const owned = relicCharacter("owned", 5, { 0: 1 });
+  owned.getInventory().adds(I.ECHO_PICKAXE, 1);
+  opened = collect(owned, 315);
+  opened.action.send(owned);
+  const line = [...opened.chains[1].getDialogues().values()][0];
+  assert.ok(line instanceof NpcDialogue);
+  assert.equal(line.getNpcId(), 315, "the Raging Echoes tutor, not Demonic Pacts' 15609");
+  assert.equal(line.getText(), "You have no League items to collect.");
+
+  const pacts = relicCharacter("pacts", 6, { 0: 2 });
+  const pactsCollect = collect(pacts, 15609);
+  pactsCollect.action.send(pacts);
+  const pactsLine = [...pactsCollect.chains[1].getDialogues().values()][0];
+  assert.ok(pactsLine instanceof ItemStatementDialogue);
+  assert.equal(pactsLine.getText(), "You receive some items from the Tutor.", "Demonic Pacts keeps its recorded wording");
 });
 
 test("points crossing a tier's cost show the captured popup, once, for tiers still open", () => {

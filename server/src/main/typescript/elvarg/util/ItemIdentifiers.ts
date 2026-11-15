@@ -32286,4 +32286,8 @@ export class ItemIdentifiers {
     public static AMULET_OF_SIGHT = 34762; // Amulet of sight
     public static AMULET_OF_SIGHT_2 = 34763; // Amulet of sight
     public static AMULET_OF_SIGHT_3 = 34764; // Amulet of sight
+    // League relic items whose original cache ids were reused. The custom rows copy the cache
+    // models of Searing boots and the Minion whistle respectively.
+    public static SAGES_GREAVES = 50001; // Sage's greaves
+    public static GUARDIAN_HORN = 50002; // Guardian horn
 }

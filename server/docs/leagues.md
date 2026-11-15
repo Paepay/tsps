@@ -773,8 +773,10 @@ tooltip is 655:53.
   stack and needs no slot, a new bank stack takes one slot of the player's bank space, which
   every tab shares, and a slot one item takes is not counted for the next), and each item
   goes where that check placed it: the inventory if it fits, else the bank tab holding it, else
-  its tab or any tab with room. Refusals are game messages of ours. Items no longer in this cache (Sage's greaves, the Trailblazer tools, the crystal of
-  memories, the guardian horn) are not granted; the data says so.
+  its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's greaves
+  and guardian horn are custom items: they are granted and can be reclaimed from the Leagues
+  Tutor's Collect-items. Trailblazer Reloaded's Sage's greaves, tools and crystal of memories are
+  still absent from this cache and are not granted; the data says so.
 - **Effects** are other plugins' business: they ask `league:has-relic { player, relic }`, true
   only when the character's league has that relic and chose it. The tier passives are
   LeagueMode's (`league:highest-tier`), under Tier passives below. The relics this
@@ -820,11 +822,12 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 
 ### Not in this cache
 
-No unit, and the data says so: the **Guardian** of both leagues (no guardian horn, and a thrall
-with its own combat would be a feature of its own), **Infernal Gathering** (no Trailblazer tools),
-the **Crystal of Memories** entry (no item), **Ruinous Powers** beyond the book it grants (the
-server has no Ruinous Powers prayer book), and the Sage's greaves of **Trickster** and **Corner
-Cutter** (the rest of those relics is another PR's).
+No unit, and the data says so: the **Guardian** effects of both leagues (Raging Echoes now grants
+its custom guardian horn, but a thrall with its own combat would be a feature of its own),
+**Infernal Gathering** (no Trailblazer tools), the **Crystal of Memories** entry (no item),
+**Ruinous Powers** beyond the book it grants (the server has no Ruinous Powers prayer book), and
+Trailblazer Reloaded's **Trickster** greaves (that item is still absent; Raging Echoes' Corner
+Cutter grants its custom pair, whose run-XP effect is not here).
 
 ### Trailblazer Reloaded's combat relics
 
@@ -952,7 +955,7 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   (`hunter:lure-interval`: the Wiki says "faster" and no more, so the number is ours), impling
   jars never break (`hunter:jar-kept`), and up to nine logs burn in one action
   (`firemaking:logs-per-action`, one fire, XP for each). Not here: the Sage's greaves (not in
-  this cache) and the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
+  Trailblazer Reloaded's cache) and the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
   Hunter, Thieving and Firemaking plugins roll themselves: the Werewolf course, the Brimhaven
   arena, the Hallowed Sepulchre and the Chambers of Xeric tightrope roll on their own and still
   can fail.
@@ -991,8 +994,9 @@ Animal Wrangler's Hunter and cooking ones) do not.
 - **Corner Cutter** (tier 2): Agility rolls always succeed (`agility:roll`), a lap counts twice
   and its completion bonus pays 25% more (`agility:lap-reward`; the obstacles' own XP is not
   raised: ours), and a mark of grace spawns with 10,000 coins
-  (`agility:mark`). Not here: the Sage's greaves, and the doubled pyramid tops, hallowed marks,
-  Brimhaven vouchers and crystal shards (their plugins hand them out without a seam).
+  (`agility:mark`). Sage's greaves are granted, but their run-XP effect is not here. Also not
+  here: the doubled pyramid tops, hallowed marks, Brimhaven vouchers and crystal shards (their
+  plugins hand them out without a seam).
 - **Dodgy Deals** (tier 2): every pickpocket lands (`alwaysSucceeds` on
   `thieving:pickpocket-target`) and the pouch limit is tripled, the loot is noted and multiplied
   by the NPCs of the same name alive within 5 tiles of the player (the Wiki's 11x11; coins a pouch
