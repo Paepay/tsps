@@ -5,11 +5,15 @@ name: Deploy prod
 # Do not remove those guards or point this workflow at the upstream repo.
 #
 # Behaviour:
-#   - push to prod → update checkout + yarn install/build (no restart; live process
-#     keeps running the previous build until the next restart)
+#   - push to prod → update the shared checkout + yarn install/build only (no restart;
+#     live processes keep the previous build until the next weekly/manual restart)
 #   - Wednesdays 03:00 America/New_York → pull latest origin/prod, build, restart
-#     user-systemd units via systemctl --user
+#     every configured / active PaeScape world unit via systemctl --user
 #   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run)
+#
+# Worlds (tsps, paescape-level-up, paescape-official, …) must share WorkingDirectory
+# `$VPS_PATH/server` with their own EnvironmentFile. One build updates every world;
+# push never restarts them.
 #
 # Required Actions secrets (Settings → Secrets and variables → Actions):
 #   VPS_HOST     Hostname or IP of the VPS
@@ -19,7 +23,8 @@ name: Deploy prod
 #   VPS_SSH_KEY      Fallback: raw private key PEM (avoid if possible)
 #   VPS_PATH         Absolute checkout path, e.g. /home/user/apps/tsps
 #   VPS_SERVICE      user-systemd unit name(s), space-separated, e.g. tsps
-#                    (restarted via systemctl --user; no sudo)
+#                    (restarted via systemctl --user on weekly/manual restart only;
+#                    enabled/active paescape-*.service units are included automatically)
 #
 # One-time VPS setup:
 #   1. Generate a keypair for Actions; add the public key to ~/.ssh/authorized_keys
@@ -206,18 +211,38 @@ jobs:
                       else
                           git reset --hard origin/prod
                       fi
+                      # One shared server tree: every world unit's WorkingDirectory is $VPS_PATH/server.
                       (cd server && corepack enable && yarn install --immutable && yarn build)
-                      echo "Updated to $(git rev-parse --short HEAD)"
+                      echo "Updated shared checkout to $(git rev-parse --short HEAD) ($VPS_PATH/server)"
                   fi
 
                   if [ "$DO_RESTART" = true ]; then
+                      # VPS_SERVICE plus every enabled/active hosted world unit.
+                      services=""
                       for service in $VPS_SERVICE; do
+                          case " $services " in
+                              *" $service "*) ;;
+                              *) services="$services $service" ;;
+                          esac
+                      done
+                      for unit in "$HOME"/.config/systemd/user/paescape-*.service; do
+                          [ -f "$unit" ] || continue
+                          name=$(basename "$unit" .service)
+                          if systemctl --user is-enabled "$name" >/dev/null 2>&1 \
+                              || systemctl --user is-active "$name" >/dev/null 2>&1; then
+                              case " $services " in
+                                  *" $name "*) ;;
+                                  *) services="$services $name" ;;
+                              esac
+                          fi
+                      done
+                      for service in $services; do
                           systemctl --user restart "$service"
                           active=$(systemctl --user is-active "$service")
                           echo "Restarted $service; status=$active"
                           test "$active" = active
                       done
                   else
-                      echo "Skipped restart (code will load on the next weekly/manual restart)"
+                      echo "Skipped restart (shared build is on disk; live processes load it on the next weekly/manual restart)"
                   fi
                   REMOTE
