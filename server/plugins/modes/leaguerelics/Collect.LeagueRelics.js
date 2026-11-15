@@ -1,10 +1,9 @@
 /**
- * The Leagues Tutor's Collect-items (a cache-read league with a `tutor`, Demonic Pacts), as recorded
- * (237/01098, 1107): the player asks "Do I have any League items to collect?" (chatquiz1); on
- * Continue the item box "You receive some items from the Tutor." and the items into the inventory.
- * What is owed: each item the character's relics hand out (the Reloaded pick's too) that it owns
- * none of, carried, worn or banked; as many as the inventory takes. Ours (unrecorded): the lines
- * when nothing is owed and when the inventory is too full for the rest.
+ * The Leagues Tutor's Collect-items for every league: the player asks "Do I have any League items
+ * to collect?" (chatquiz1); on Continue the item box names the Tutor and the items go into the
+ * inventory. What is owed: each item the character's relics hand out (the Reloaded pick's too)
+ * that it owns none of, carried, worn or banked; as many as the inventory takes. Ours
+ * (unrecorded): the lines when nothing is owed and when the inventory is too full for the rest.
  */
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
@@ -29,15 +28,23 @@ function owed(player, type) {
   return [...new Set(ids)].filter((id) => !owns(player, id));
 }
 
+/** The tutor speaking: the interaction's NPC, else the one the player is still facing, else the league's cache entry. */
+function tutorNpcId(player, type, npcId) {
+  if (Number.isInteger(npcId) && npcId > 0) return npcId;
+  const contentId = player.getInteractingMobile?.()?.getContentId?.(player);
+  if (Number.isInteger(contentId) && contentId > 0) return contentId;
+  const { CacheDefinitions } = Common.core;
+  const cacheName = Common.cacheLeague(type)?.tutor?.npc ?? "league_tutor_league";
+  return CacheDefinitions.getNpcId(cacheName) ?? CacheDefinitions.getNpcId("league_tutor_league") ?? 0;
+}
+
 /** Hands over what fits, then the recorded item box, or ours when nothing is owed. */
-function handOver(player, type) {
+function handOver(player, type, npcId) {
   const items = owed(player, type);
-  const { DialogueChainBuilder, NpcDialogue, StatementDialogue, ItemStatementDialogue, CacheDefinitions } = Common.core;
+  const { DialogueChainBuilder, NpcDialogue, StatementDialogue, ItemStatementDialogue } = Common.core;
   const manager = player.getDialogueManager();
   if (items.length === 0) {
-    const tutor = player.getInteractingMobile?.();
-    const npcId = tutor?.getId?.() ?? CacheDefinitions.getNpcId("league_6_tutor");
-    manager.startDialogues(new DialogueChainBuilder().add(new NpcDialogue(0, npcId, Common.message("collectNothing", {}, type))));
+    manager.startDialogues(new DialogueChainBuilder().add(new NpcDialogue(0, tutorNpcId(player, type, npcId), Common.message("collectNothing", {}, type))));
     return;
   }
   const inventory = player.getInventory();
@@ -56,14 +63,14 @@ function handOver(player, type) {
 }
 
 /** Collect-items: the recorded question, then the items on Continue. */
-function collectItems({ player }) {
+function collectItems({ player, npcId }) {
   const type = Common.leagueOf(player);
-  if (type === null || !Common.cacheLeague(type)?.tutor) return false;
+  if (type === null) return false;
   const { DialogueChainBuilder, PlayerDialogue, ActionDialogue, CacheDefinitions } = Common.core;
   const chathead = CacheDefinitions.getSeqId("chatquiz1") ?? undefined;
   player.getDialogueManager().startDialogues(new DialogueChainBuilder()
     .add(new PlayerDialogue(0, Common.message("collectAsk", {}, type), chathead))
-    .add(new ActionDialogue(1, { execute: () => handOver(player, type) })));
+    .add(new ActionDialogue(1, { execute: () => handOver(player, type, npcId) })));
   return true;
 }
 

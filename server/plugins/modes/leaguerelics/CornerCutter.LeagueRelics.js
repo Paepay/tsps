@@ -1,9 +1,9 @@
 /**
  * Corner Cutter (https://oldschool.runescape.wiki/w/Corner_Cutter_(Raging_Echoes_League)), Raging
  * Echoes' tier 2 relic: Agility actions always succeed, a lap counts twice and pays 25% more, and
- * a mark of grace spawns with 10,000 coins. Not here: the Sage's greaves (not in this cache) and
- * the doubled pyramid tops, hallowed marks, vouchers and shards (their plugins hand them out
- * without a seam).
+ * a mark of grace spawns with 10,000 coins. Its Sage's greaves are granted by the unlock; their
+ * run-XP effect is not here. Not here either: the doubled pyramid tops, hallowed marks, vouchers
+ * and shards (their plugins hand them out without a seam).
  */
 const Common = require("./Common.LeagueRelics");
 
