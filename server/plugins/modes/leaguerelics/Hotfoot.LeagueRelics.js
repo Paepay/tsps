@@ -22,8 +22,8 @@
  * Running in the boots pays Agility XP (Wiki, Searing boots): 10 + floor(Agility level x 2/3) for
  * every 10 ticks in which the player moved 2 tiles (a run step; a diagonal pair around an object
  * nets less and doesn't count), before the league's rates; the base level, and the count kept
- * across stops, are ours ("roughly every 10 ticks"). A tick task per owner, from login or the
- * unlock, watches the tile.
+ * across stops, are ours ("roughly every 10 ticks"). Common.watchRunXp watches the tile with one
+ * tick task per owner, from login, the unlock, or wearing the boots.
  */
 const Common = require("./Common.LeagueRelics");
 
@@ -116,39 +116,9 @@ function minigamePoints(request) {
   if (multiplier && active(request.player)) request.points *= multiplier;
 }
 
-/** Owners whose run is being watched: their last tile and the run ticks counted. */
-const runners = new WeakMap();
-
-/** One tick of an owner's run: a 2-tile move in the boots counts; every 10th pays. */
-function runTick(player) {
-  const watch = runners.get(player);
-  const here = player.getLocation();
-  const moved = watch.last && watch.last.getZ() === here.getZ()
-    && Math.max(Math.abs(here.getX() - watch.last.getX()), Math.abs(here.getY() - watch.last.getY())) === effect.runStepTiles;
-  watch.last = here.clone();
-  if (!moved || !wearsBoots(player)) return;
-  if (++watch.ticks < effect.runXpTicks) return;
-  watch.ticks = 0;
-  const level = player.getSkillManager().getMaxLevel(core.Skill.AGILITY);
-  player.getSkillManager().addExperiences(core.Skill.AGILITY, effect.runXpBase + Math.floor((level * effect.runXpLevelFraction[0]) / effect.runXpLevelFraction[1]));
-}
-
-function watchRuns(player) {
-  if (runners.has(player) || !active(player)) return;
-  runners.set(player, { last: null, ticks: 0 });
-  const next = () => core.TaskManager.submit(new core.CountdownTask(player, 1, () => {
-    if (!player.isRegistered?.() || !active(player)) {
-      runners.delete(player);
-      return;
-    }
-    runTick(player);
-    next();
-  }));
-  next();
-}
-
+/** The boots' run XP: started at login, the unlock, or wearing them; stopped when they come off. */
 function watchFromEvent({ player }) {
-  watchRuns(player);
+  Common.watchRunXp(player, effect);
 }
 
 module.exports = function attach(pluginApi) {
@@ -166,11 +136,9 @@ module.exports = function attach(pluginApi) {
   api.onCustomEvent("minigame:points", minigamePoints);
   api.onCustomEvent("league:login", watchFromEvent);
   api.onCustomEvent("league:relic-unlocked", watchFromEvent);
+  api.onCustomEvent("equipment:changed", watchFromEvent);
+  api.onCustomEvent("player:bootstrap-complete", watchFromEvent);
 };
-
-module.exports.runTick = runTick;
-module.exports.watchRuns = watchRuns;
-module.exports.runners = runners;
 
 /** The last `storage:gather` listener: attached after every other gathering relic. */
 module.exports.late = function attachLate(pluginApi) {

@@ -2289,17 +2289,17 @@ test("Hotfoot: the Brimhaven Agility Arena's tickets and vouchers come twofold (
 });
 
 test("Hotfoot: running in the searing boots pays 10 + floor(Agility x 2/3) XP every 10 run ticks; walking or no boots pays nothing", () => {
-  const Hotfoot = require("../plugins/modes/leaguerelics/Hotfoot.LeagueRelics");
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const effect = Common.data.effects.hotfoot;
   const who = cases(HOTFOOT);
   const player = who.relic;
   player.getSkillManager().setMaxLevels(Skill.AGILITY, 99, false);
   player.getEquipment().set(core.Equipment.FEET_SLOT, new core.Item(I.SEARING_BOOTS, 1));
-  Hotfoot.runners.set(player, { last: null, ticks: 0 });
   let x = 3200;
   const step = (tiles, dy = 0) => {
     x += tiles;
     player.setLocation(new Location(x, 3200 + dy, 0));
-    Hotfoot.runTick(player);
+    Common.runXpTick(player, effect);
   };
   step(0);
   const before = xp(player, Skill.AGILITY);
@@ -2314,8 +2314,7 @@ test("Hotfoot: running in the searing boots pays 10 + floor(Agility x 2/3) XP ev
   assert.equal(xp(player, Skill.AGILITY), unshod, "no boots, no XP");
   for (const other of [who.without, who.main]) {
     other.getEquipment().set(core.Equipment.FEET_SLOT, new core.Item(I.SEARING_BOOTS, 1));
-    Hotfoot.watchRuns(other);
-    assert.equal(Hotfoot.runners.has(other), false, "nothing watches a character without the relic");
+    assert.equal(Common.watchRunXp(other, effect), false, "nothing watches a character without the relic");
   }
 });
 

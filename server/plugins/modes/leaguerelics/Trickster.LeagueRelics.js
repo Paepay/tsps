@@ -3,8 +3,9 @@
  * Thieving, Agility, Hunter and Firemaking actions always succeed, the coin pouch limit is
  * tripled, a pickpocket repeats itself and its loot is doubled and noted, box traps lure faster
  * (ours: the trap's look for prey every 2 ticks instead of 5) with double loot and XP, impling
- * jars never break, and up to nine logs burn in one action. The Sage's greaves are not in this
- * cache.
+ * jars never break, and up to nine logs burn in one action. It grants Sage's greaves (the custom
+ * item); wearing them pays Agility XP while the player runs (Common.watchRunXp, the Wiki's
+ * 10 + floor(Agility level x 2/3) every 10 run ticks).
  */
 const Common = require("./Common.LeagueRelics");
 
@@ -57,6 +58,11 @@ function logsPerAction(request) {
   if (active(request.player)) request.amount = effect.logsPerAction;
 }
 
+/** The greaves' run XP: started at login and on wear or unlock, stopped when they come off. */
+function watchFromEvent({ player }) {
+  Common.watchRunXp(player, effect);
+}
+
 module.exports = function attach(api) {
   effect = Common.data.effects.trickster;
   api.onCustomEvent("thieving:pickpocket-target", pickpocketTarget);
@@ -69,4 +75,8 @@ module.exports = function attach(api) {
   api.onCustomEvent("hunter:jar-kept", jarKept);
   api.onCustomEvent("firemaking:light-roll", succeeds);
   api.onCustomEvent("firemaking:logs-per-action", logsPerAction);
+  api.onCustomEvent("league:login", watchFromEvent);
+  api.onCustomEvent("league:relic-unlocked", watchFromEvent);
+  api.onCustomEvent("equipment:changed", watchFromEvent);
+  api.onCustomEvent("player:bootstrap-complete", watchFromEvent);
 };

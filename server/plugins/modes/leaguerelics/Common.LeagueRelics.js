@@ -281,6 +281,63 @@ function batchActions(effect, request) {
   return effect.capped?.[request.kind] ?? effect.maxActions;
 }
 
+/** Owners whose run is being watched: their last tile and the run ticks counted, one watch each. */
+const runWatchers = new WeakMap();
+
+/** The owner's watch for the effect, kept across stops so the tick count survives taking the item off. */
+function runWatch(player, effect) {
+  let watch = runWatchers.get(player);
+  if (!watch || watch.effect !== effect) {
+    watch = { effect, itemId: core.ItemIdentifiers[effect.tool], last: null, ticks: 0, looping: false };
+    runWatchers.set(player, watch);
+  }
+  return watch;
+}
+
+function wearsRunXpItem(player, watch) {
+  return Number.isInteger(watch.itemId) && player.getEquipment()?.contains(watch.itemId) === true;
+}
+
+/**
+ * One tick of a run-XP item's effect (Sage's greaves, Searing boots): a tick in which the player
+ * moved `runStepTiles` tiles on one floor while wearing the item counts, and every `runXpTicks`th
+ * pays `runXpBase + floor(Agility level x fraction)` Agility XP, before the league's rates. The
+ * base level and the count kept across stops are ours ("roughly every 10 ticks").
+ */
+function runXpTick(player, effect) {
+  const watch = runWatch(player, effect);
+  const here = player.getLocation();
+  const moved = watch.last && watch.last.getZ() === here.getZ()
+    && Math.max(Math.abs(here.getX() - watch.last.getX()), Math.abs(here.getY() - watch.last.getY())) === effect.runStepTiles;
+  watch.last = here.clone();
+  if (!moved || !effectActive(player, effect) || !wearsRunXpItem(player, watch)) return false;
+  if (++watch.ticks < effect.runXpTicks) return false;
+  watch.ticks = 0;
+  const level = player.getSkillManager().getMaxLevel(core.Skill.AGILITY);
+  player.getSkillManager().addExperiences(core.Skill.AGILITY,
+    effect.runXpBase + Math.floor((level * effect.runXpLevelFraction[0]) / effect.runXpLevelFraction[1]));
+  return true;
+}
+
+/** Starts a tick task for the wearer (once) and stops it once the relic or the item no longer applies. */
+function watchRunXp(player, effect) {
+  if (player?.isPlayer?.() !== true || !effectActive(player, effect)) return false;
+  const watch = runWatch(player, effect);
+  if (watch.looping || !wearsRunXpItem(player, watch)) return false;
+  watch.looping = true;
+  const next = () => core.TaskManager.submit(new core.CountdownTask(player, 1, () => {
+    if (!player.isRegistered?.() || !effectActive(player, effect) || !wearsRunXpItem(player, watch)) {
+      watch.looping = false;
+      watch.last = null;
+      return;
+    }
+    runXpTick(player, effect);
+    next();
+  }));
+  next();
+  return true;
+}
+
 /** Restores special attack energy and redraws the bar. */
 function restoreSpecial(player, percent) {
   player.incrementSpecialPercentage(percent);
@@ -296,7 +353,7 @@ function message(key, values = {}, type = null) {
 module.exports = {
   init, leagueOf, levelUpOwns, catalog, league, relic, chosen, points, highestTier, hasRelic, effectActive, reloadedPick,
   RELOADED_ATTRIBUTE, reloadedTiers, cacheLeague, slug, ids, message, maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
-  multipliedLoot, isPotion, hasStackableSecondary, batchActions, derivedHit, isBuildingDerivedHit,
+  multipliedLoot, isPotion, hasStackableSecondary, batchActions, watchRunXp, runXpTick, derivedHit, isBuildingDerivedHit,
   RELICS_ATTRIBUTE, structIds,
   get data() { return data; },
   get api() { return api; },

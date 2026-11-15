@@ -829,8 +829,7 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 No unit, and the data says so: the **Guardian** effects of both leagues (both grant their horns,
 but a thrall with its own combat would be a feature of its own), **Infernal Gathering** (no
 Trailblazer tools), the **Crystal of Memories** entry (no item), **Ruinous Powers** beyond the
-book it grants (the server has no Ruinous Powers prayer book), and the greaves' run-XP effect
-(Trickster and Corner Cutter grant the custom item; the effect is not here).
+book it grants (the server has no Ruinous Powers prayer book).
 
 ### Trailblazer Reloaded's combat relics
 
@@ -957,8 +956,8 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   double loot and XP (`hunter:rewards`) and look for prey every 2 ticks instead of 3
   (`hunter:lure-interval`: the Wiki says "faster" and no more, so the number is ours), impling
   jars never break (`hunter:jar-kept`), and up to nine logs burn in one action
-  (`firemaking:logs-per-action`, one fire, XP for each). Not here: the greaves' run-XP effect
-  and the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
+  (`firemaking:logs-per-action`, one fire, XP for each). The greaves it grants pay XP.
+  Not here: the barbarian firemaking hotfix. "Always succeed" covers what the Agility,
   Hunter, Thieving and Firemaking plugins roll themselves: the Werewolf course, the Brimhaven
   arena, the Hallowed Sepulchre and the Chambers of Xeric tightrope roll on their own and still
   can fail.
@@ -997,7 +996,7 @@ Animal Wrangler's Hunter and cooking ones) do not.
 - **Corner Cutter** (tier 2): Agility rolls always succeed (`agility:roll`), a lap counts twice
   and its completion bonus pays 25% more (`agility:lap-reward`; the obstacles' own XP is not
   raised: ours), and a mark of grace spawns with 10,000 coins
-  (`agility:mark`). Sage's greaves are granted, but their run-XP effect is not here. Also not
+  (`agility:mark`). Its Sage's greaves pay Agility XP while the player runs. Also not
   here: the doubled pyramid tops, hallowed marks, Brimhaven vouchers and crystal shards (their
   plugins hand them out without a seam).
 - **Dodgy Deals** (tier 2): every pickpocket lands (`alwaysSucceeds` on

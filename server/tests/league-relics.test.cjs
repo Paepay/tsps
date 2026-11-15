@@ -23,6 +23,7 @@ const hooks = {};
 const custom = {};
 const emitted = [];
 let worldLeague = 4; // the world's pluginConfig league:type (Trailblazer Reloaded)
+let api;
 const { PlayerStatus } = require("../dist/game/model/PlayerStatus");
 
 before(async () => {
@@ -44,7 +45,7 @@ before(async () => {
       return result;
     };
   };
-  const api = new Proxy({
+  api = new Proxy({
     core,
     persistAttribute() {},
     getPluginConfig: (key, fallback) => (key === "league:type" ? worldLeague : fallback),
@@ -493,6 +494,65 @@ test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tut
   action.send(player);
   assert.equal(player.getInventory().contains(I.SAGES_GREAVES), true, "the tutor hands the greaves back");
   assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Leagues Tutor.");
+});
+
+test("Sage's greaves pay 10 + floor(Agility level x 2/3) every 10 run ticks while worn", (t) => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const { ItemIdentifiers: I, Item, Equipment, TaskManager } = core;
+  const { Location } = require("../dist/game/model/Location");
+
+  const picks = (type, key) => {
+    const tiers = Common.catalog(type).tiers;
+    const tier = tiers.findIndex((row) => row.relics.some((relic) => relic.key === key));
+    return { [tier]: tiers[tier].relics.findIndex((relic) => relic.key === key) + 1 };
+  };
+  const runner = (name, type, key, level) => {
+    const player = relicCharacter(name, type, picks(type, key));
+    player.getSkillManager().setMaxLevels(Skill.AGILITY, level, false);
+    player.isRegistered = () => true;
+    player.moveTo(new Location(3200, 3200, 0));
+    return player;
+  };
+  const tasks = [];
+  t.mock.method(TaskManager, "submit", (task) => tasks.push(task));
+  const own = (player) => tasks.filter((task) => task.key === player);
+  const step = (player, dx, dy) => {
+    const here = player.getLocation();
+    player.moveTo(new Location(here.getX() + dx, here.getY() + dy, here.getZ()));
+    own(player).pop().execute();
+  };
+  const xp = (player) => player.getSkillManager().getExperience(Skill.AGILITY);
+
+  const trickster = runner("greaves-trickster", 4, "trickster", 60);
+  api.emitCustomEvent("player:bootstrap-complete", { player: trickster });
+  assert.equal(own(trickster).length, 0, "nothing to watch before they are worn");
+  trickster.getEquipment().set(Equipment.FEET_SLOT, new Item(I.SAGES_GREAVES, 1));
+  api.emitCustomEvent("equipment:changed", { player: trickster });
+  assert.equal(own(trickster).length, 1, "wearing them starts one run watcher");
+  own(trickster).pop().execute();
+
+  const before = xp(trickster);
+  for (let tick = 0; tick < 9; tick++) step(trickster, 2, 0);
+  assert.equal(xp(trickster), before, "nine run ticks pay nothing yet");
+  step(trickster, 2, 0);
+  assert.equal(xp(trickster) - before, 50, "the tenth pays 10 + floor(60 x 2/3)");
+  const afterTen = xp(trickster);
+  step(trickster, 1, 1);
+  for (let tick = 0; tick < 9; tick++) step(trickster, 2, 0);
+  assert.equal(xp(trickster), afterTen, "a diagonal 1,1 step around an object does not count as a run step");
+
+  const cutter = runner("greaves-cutter", 5, "corner-cutter", 99);
+  cutter.getEquipment().set(Equipment.FEET_SLOT, new Item(I.SAGES_GREAVES, 1));
+  api.emitCustomEvent("player:bootstrap-complete", { player: cutter });
+  assert.equal(own(cutter).length, 1);
+  own(cutter).pop().execute();
+  for (let tick = 0; tick < 10; tick++) step(cutter, 2, 0);
+  assert.equal(xp(cutter), 76, "Raging Echoes' Corner Cutter: 10 + floor(99 x 2/3)");
+
+  const other = runner("greaves-other", 4, "endless-harvest", 60);
+  other.getEquipment().set(Equipment.FEET_SLOT, new Item(I.SAGES_GREAVES, 1));
+  api.emitCustomEvent("equipment:changed", { player: other });
+  assert.equal(own(other).length, 0, "the greaves need the relic that grants them");
 });
 test("Collect-items counts carried, worn and banked relic items, and returns only what is missing", () => {
   const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
