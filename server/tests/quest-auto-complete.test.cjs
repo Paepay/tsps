@@ -8,6 +8,8 @@ const { before, test } = require('node:test');
 const { Server } = require('../dist/Server');
 Server.installProductionPathResolver();
 const { PluginManager } = require('../dist/plugins/PluginManager');
+const { Player } = require('../dist/game/entity/impl/player/Player');
+const { PlayerSave } = require('../dist/game/entity/impl/player/persistence/PlayerSave');
 const QuestRuntime = require('../plugins/quests/QuestRuntime');
 const Quests = require('../plugins/quests/Quests.plugin.js');
 const QuestAutoComplete = require('../plugins/quests/QuestAutoComplete.plugin.js');
@@ -16,12 +18,17 @@ before(async () => {
   await require('../dist/game/cache/CachePipeline').CachePipeline.initialize(path.resolve(__dirname, '..'));
 });
 
-function coreWithQuestSwitch(enabled) {
+function coreWithQuestSwitch(enabled, saves) {
   const core = PluginManager.getCoreApi();
   const overridden = Object.create(core);
   Object.defineProperty(overridden, 'PluginManager', {
     value: { getPluginSwitch: (name) => name === 'Quests' ? enabled : undefined },
   });
+  if (saves) {
+    Object.defineProperty(overridden, 'GameConstants', {
+      value: { PLAYER_PERSISTENCE: { requestSave: (player, reason) => saves.push({ player, reason }) } },
+    });
+  }
   return overridden;
 }
 
@@ -30,7 +37,7 @@ function recordingApi(core) {
   const api = {
     core,
     log: () => {},
-    persistAttribute: () => {},
+    persistAttribute: (key, value) => PlayerSave.persistAttribute(key, value),
     onPlayerLogin: (handler) => hooks.login.push(handler),
     onCustomEvent: (name, handler) => hooks.custom.set(name, [...(hooks.custom.get(name) ?? []), handler]),
   };
@@ -79,7 +86,8 @@ test('getPluginSwitch normalizes names and leaves an unset switch undefined', ()
 });
 
 test('a Quests-off world registers every definition and completes it at login', () => {
-  const { api, hooks } = recordingApi(coreWithQuestSwitch(false));
+  const saves = [];
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false, saves));
   QuestAutoComplete.register(api);
 
   const registered = QuestRuntime.getRegisteredQuests();
@@ -100,7 +108,10 @@ test('a Quests-off world registers every definition and completes it at login', 
   player.setAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE, 400);
 
   for (const handler of hooks.login) handler({ player });
+  assert.deepEqual(saves.map(({ player: saved, reason }) => [saved, reason]), [[player, 'quest-auto-complete']],
+    'the completed stages are saved immediately');
   for (const handler of hooks.custom.get('player:bootstrap-complete') ?? []) handler({ player });
+  assert.equal(saves.length, 1, 'the bootstrap does not save an already migrated account again');
 
   for (const quest of registered) {
     assert.ok(quest.isComplete(player), quest.key + ' is complete');
@@ -117,6 +128,39 @@ test('a Quests-off world registers every definition and completes it at login', 
 
   const expectedPoints = registered.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
   assert.equal(expectedPoints, 335, 'the implemented quest catalogue is worth 335 quest points');
+});
+
+test('an older saved character is migrated and stays complete after a save and reload', () => {
+  const saves = [];
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false, saves));
+  QuestAutoComplete.register(api);
+
+  const makePlayer = (username) => {
+    const player = new Player(null);
+    player.setUsername(username);
+    player.getSession = () => ({ sendClientPacket: () => true, write() {} });
+    return player;
+  };
+
+  const before = makePlayer('quest-autocomplete-old');
+  before.setAttribute('quest.cooks_assistant.stage', 0);
+  before.setAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE, 0);
+  const oldSave = PlayerSave.fromPlayer(before);
+  const loggedIn = makePlayer('quest-autocomplete-old');
+  oldSave.applyToPlayer(loggedIn);
+
+  for (const handler of hooks.login) handler({ player: loggedIn });
+  assert.equal(saves.length, 1, 'logging in with an old save requests a migration save');
+  assert.equal(loggedIn.getAttribute('quest.cooks_assistant.stage'), 2, 'an incomplete saved stage is raised');
+
+  const migrated = PlayerSave.fromPlayer(loggedIn);
+  const reloaded = makePlayer('quest-autocomplete-old');
+  migrated.applyToPlayer(reloaded);
+  const registered = QuestRuntime.getRegisteredQuests();
+  assert.equal(registered.filter((quest) => quest.isComplete(reloaded)).length, registered.length,
+    'the migrated save reloads with every quest complete');
+  assert.equal(reloaded.getAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE), 335,
+    'the migrated save keeps the full quest point total');
 });
 
 test('the completion hook skips player bots', () => {

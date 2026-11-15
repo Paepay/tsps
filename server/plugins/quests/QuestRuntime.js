@@ -876,19 +876,38 @@ function registerQuestDefinitions(api, names) {
   return quests.slice();
 }
 
-/** The cache's end state is complete; later stages stay as saved. */
+/**
+ * The cache's end state is complete; later stages stay as saved. Returns whether this login
+ * changed a saved stage or the quest points, so a world that switched Quests off can write an
+ * older character's migrated progress back immediately instead of waiting for its next autosave.
+ */
 function completeAllQuests(player) {
-  if (!player || player.isPlayerBot?.()) return;
+  if (!player || player.isPlayerBot?.()) return false;
+  let changed = false;
   for (const quest of quests) {
     const completedAt = Number(quest.completionValue ?? 2);
     const current = quest.getStage(player);
-    if (current < completedAt) player.setAttribute(stageAttribute(quest.key), completedAt);
+    if (current < completedAt) {
+      player.setAttribute(stageAttribute(quest.key), completedAt);
+      changed = true;
+    }
   }
   sendQuestVarps({ player });
   const totalPoints = quests.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
   const savedPoints = Number(player.getAttribute(QUEST_POINTS_ATTRIBUTE)) || 0;
-  if (totalPoints > savedPoints) player.setAttribute(QUEST_POINTS_ATTRIBUTE, totalPoints);
+  if (totalPoints > savedPoints) {
+    player.setAttribute(QUEST_POINTS_ATTRIBUTE, totalPoints);
+    changed = true;
+  }
   sendQuestHeaderStats(player);
+  return changed;
+}
+
+/** Completes the player and persists a migrated account now, before its next autosave. */
+function completeAndSaveAllQuests(api, player) {
+  if (!completeAllQuests(player)) return false;
+  api.core.GameConstants?.PLAYER_PERSISTENCE?.requestSave?.(player, 'quest-auto-complete');
+  return true;
 }
 
 /** Login and query hooks for a world that has quest gameplay disabled but all quests complete. */
@@ -899,11 +918,11 @@ function registerQuestCompletion(api) {
   api.onCustomEvent('quest:get-stage', answerGetStage);
   api.onCustomEvent('quest:list-refresh', ({ player }) => refreshQuestList(player, true));
   api.onCustomEvent('npc-dialogue:shop', pickQuestShopVersion);
-  api.onPlayerLogin(({ player }) => completeAllQuests(player));
+  api.onPlayerLogin(({ player }) => completeAndSaveAllQuests(api, player));
   // The login bootstrap sends shared varps after the login hooks, so restore them afterwards.
   api.onCustomEvent('player:bootstrap-complete', ({ player }) => {
     if (!player || player.isPlayerBot?.()) return;
-    completeAllQuests(player);
+    completeAndSaveAllQuests(api, player);
     sendQuestList(player, true);
   });
 }
@@ -1053,6 +1072,7 @@ module.exports = {
   registerQuestDefinitions,
   registerQuestCompletion,
   completeAllQuests,
+  completeAndSaveAllQuests,
   giveReward,
   getRegisteredQuests: () => quests.slice(),
   questNamed,
