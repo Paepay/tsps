@@ -149,7 +149,19 @@
       }
     }
   },
-  "regionRules": "A map square belongs to the lowest-numbered area that names it in `squares` or `rects`, then a league's `overrides` reassign squares. An underground square (map y >= 100) named by no area takes its surface square's area (y - 100): the Wiki's 'underground areas with an entrance in X'. A square named by no area is open to everyone: instances, Death's Office, the POH, random events, the essence mine, Tutorial Island, the sea. An area the league does not offer (Varlamore on a Trailblazer Reloaded world) is locked for good. Known approximations of the 64-tile grid: the four-tile strip between Lumbridge and the Al Kharid gate and the Catherby beach east of x 2816 fall with Al Kharid / Asgarnia; the River Salve's east bank at Paterdomus with Misthalin; the Citharede Abbey and the Giants' Plateau east of Al Kharid (map square 53,49, whose Cabbage field the abbey's task wants) with the desert while the Abandoned Mine below it stays Morytania; Tutorial Island's easternmost tiles with the desert.",
+  "regionRules": "A map square belongs to the lowest-numbered area that names it in `squares` or `rects`, then a league's `overrides` reassign squares. `tileOverrides` (world-tile rects) win over the square for area-at. An underground square (map y >= 100) named by no area takes its surface square's area (y - 100): the Wiki's 'underground areas with an entrance in X'. A square named by no area is open to everyone: instances, Death's Office, the POH, random events, the essence mine, Tutorial Island, the sea. An area the league does not offer (Varlamore on a Trailblazer Reloaded world) is locked for good. Known approximations of the 64-tile grid: the four-tile strip between Lumbridge and the Al Kharid gate falls with Al Kharid; the River Salve's east bank at Paterdomus with Misthalin; the Citharede Abbey and the Giants' Plateau east of Al Kharid (map square 53,49, whose Cabbage field the abbey's task wants) with the desert while the Abandoned Mine below it stays Morytania; Tutorial Island's easternmost tiles with the desert. Enforcement stays at map-square granularity.",
+  "tileOverrides": [
+    {
+      "_comment": "Eastern Catherby (Harry's Fishing Shop at 2834,3445, Hickton, the beach and fruit tree; Wiki leagueRegion = Kandarin). Map square 44,53 is otherwise Asgarnia's White Wolf Mountain.",
+      "area": 4,
+      "rects": [[2816, 3420, 2840, 3455], [2841, 3420, 2863, 3440]]
+    },
+    {
+      "_comment": "Road northeast of Lumbridge / south of Varrock west of the Al Kharid mine (Wiki: Misthalin; desert barriers begin at Al Kharid). Map square 51,51 is otherwise the desert mine (Avan, scorpions from x 3292).",
+      "area": 1,
+      "rects": [[3264, 3264, 3291, 3327]]
+    }
+  ],
   "open": {
     "_comment": "Open from everywhere (Wiki); listed for the record and the tests, since squares named by no area are open anyway.",
     "deathsOffice": [49, 89],

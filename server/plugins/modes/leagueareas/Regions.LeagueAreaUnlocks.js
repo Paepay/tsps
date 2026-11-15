@@ -3,7 +3,8 @@
  * league from the data's rectangles and squares over the cache's own map list
  * (CacheMaps.getRegionIds). The rules (data `regionRules`): the lowest-numbered area that names a
  * square owns it, a league's overrides reassign squares, an unnamed underground square (map y >=
- * 100) follows its surface square, and a square nobody names is open to everyone.
+ * 100) follows its surface square, and a square nobody names is open to everyone. Tile overrides
+ * (`tileOverrides`, world-tile rects) win over the square for `areaAt`.
  */
 const Common = require("./Common.LeagueAreaUnlocks");
 
@@ -11,6 +12,8 @@ const UNDERGROUND_ROWS = 100;
 
 /** league type -> map square id -> area id. */
 const byLeague = new Map();
+/** Flattened tile overrides: { minX, minY, maxX, maxY, area }[]. */
+let tileOverrides = null;
 
 function squareId(mapX, mapY) {
   return ((mapX & 0xff) << 8) | (mapY & 0xff);
@@ -29,6 +32,29 @@ function claimRect(index, [minX, minY, maxX, maxY], area, cacheSquares) {
   for (let mapX = minX; mapX <= maxX; mapX++) {
     for (let mapY = minY; mapY <= maxY; mapY++) claim(index, mapX, mapY, area, cacheSquares);
   }
+}
+
+function loadTileOverrides() {
+  const list = [];
+  for (const entry of Common.data.tileOverrides ?? []) {
+    for (const rect of entry.rects ?? (entry.rect ? [entry.rect] : [])) {
+      const [minX, minY, maxX, maxY] = rect;
+      list.push({ minX, minY, maxX, maxY, area: entry.area });
+    }
+  }
+  tileOverrides = list;
+  return list;
+}
+
+function tileOverridesList() {
+  return tileOverrides ?? loadTileOverrides();
+}
+
+function tileOverrideAt(x, y) {
+  for (const entry of tileOverridesList()) {
+    if (x >= entry.minX && x <= entry.maxX && y >= entry.minY && y <= entry.maxY) return entry.area;
+  }
+  return undefined;
 }
 
 function build(type) {
@@ -63,6 +89,8 @@ function indexFor(type) {
 
 /** The area id owning the tile, or null when it is open to everyone. */
 function areaAt(type, x, y) {
+  const tile = tileOverrideAt(x, y);
+  if (tile !== undefined) return tile;
   return indexFor(type).get(squareOf(x, y)) ?? null;
 }
 

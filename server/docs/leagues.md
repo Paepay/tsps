@@ -778,9 +778,12 @@ tooltip is 655:53.
   greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
   Trailblazer Reloaded's tools are still absent from this cache and are not granted; the data
-  says so. The crystal of memories is tier 3's passive, not a relic. Level-Up worlds use the
-  Trailblazer Reloaded catalog, so they get the same relic items, tier passives (including
-  boosted drops, but not the seasonal XP rate) and a Leagues Tutor at Lumbridge for Collect-items.
+  says so. The crystal of memories is Trailblazer Reloaded tier 3's passive (not a relic slot):
+  `CrystalOfMemories.LeagueRelics.js` grants the Crystal of Echoes (this cache's name for it) on
+  that unlock and at login, reclaimable from the Leagues Tutor's Collect-items; Level-Up gets the
+  same grant from the Trailblazer Reloaded catalog. Level-Up worlds also get the same relic items,
+  other tier passives (including boosted drops, but not the seasonal XP rate) and a Leagues Tutor
+  at Lumbridge for Collect-items.
 - **Effects** are other plugins' business: they ask `league:has-relic { player, relic }`, true
   only when the character's league has that relic and chose it. The tier passives are
   LeagueMode's (`league:highest-tier`), under Tier passives below. The relics this
@@ -828,8 +831,10 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 
 No unit, and the data says so: the **Guardian** effects of both leagues (both grant their horns,
 but a thrall with its own combat would be a feature of its own), **Infernal Gathering** (no
-Trailblazer tools), the **Crystal of Memories** entry (no item), **Ruinous Powers** beyond the
-book it grants (the server has no Ruinous Powers prayer book).
+Trailblazer tools), and **Ruinous Powers** beyond the book it grants (the server has no Ruinous
+Powers prayer book). The tier 3 **Crystal of Memories** passive is implemented
+(`CrystalOfMemories.LeagueRelics.js`: the Crystal of Echoes item, Last Recall with the Wiki's
+total-level cooldown).
 
 ### Trailblazer Reloaded's combat relics
 
@@ -1302,6 +1307,12 @@ Level-Up uses its own skill-unlock XP tiers. Tier 1 counts once the character ch
 - **Scroll boxes** (tier 1): ClueCapacity asks `treasure-trails:scroll-boxes { player, unlocked,
   capacity }` and the league answers unlocked with no limit, so every clue drops as a stackable
   box (the Wiki says stackable; live Leagues had no cap) before X Marks the Spot.
+- **Crystal of memories** (Trailblazer Reloaded tier 3): `CrystalOfMemories.LeagueRelics.js`
+  grants the Crystal of Echoes (this cache's name) on unlocking that tier and at login when the
+  character holds none; Collect-items reclaims it. Teleport-back returns to where the last
+  teleport began (`teleport:landed`), skipping instances and the Wiki exclusions this server has
+  (`noRecall` in the effect data); cooldown six minutes, cut by one per 300 total levels, none at
+  1,800. Level-Up characters unlocking the Trailblazer Reloaded catalog receive the same grant.
 
 Demonic Pacts' passives are Raging Echoes' but for the combat XP, from the tier structs' text in
 this cache (struct 6436's tier enum, param 1020). Its boosted drops rest on the drop tables this
@@ -1310,9 +1321,8 @@ on the pieces each boss already drops here, not a new drop.
 
 Left out, with why: Raging Echoes' and Demonic Pacts' clue-step progress saved between clues (the trail runtime has
 no per-step save to carry across scrolls); their one-minute farming ticks (Farming's
-growth model has no tick-length seam, and Farming is under active work elsewhere); the
-crystal of memories (not in this cache). The ironman restriction is under "The league character"
-above: every league character is a standard Ironman.
+growth model has no tick-length seam, and Farming is under active work elsewhere). The ironman
+restriction is under "The league character" above: every league character is a standard Ironman.
 
 ## Combat masteries (Raging Echoes)
 
@@ -1756,11 +1766,12 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
   Dungeon is Asgarnia's, the Underground Pass Tirannwn's by explicit squares), and a square nobody
   names is open to everyone: instances, Death's Office, the POH, random events, the essence mine,
   Tutorial Island (the Wiki's accommodations). Known approximations of the grid: the four tiles
-  between Lumbridge and the Al Kharid gate and Catherby's beach east of x 2816 fall with Al Kharid
-  / Asgarnia, the River Salve's east bank at Paterdomus with Misthalin, the Citharede Abbey and the
-  Giants' Plateau east of Al Kharid (the map square holding the abbey's own cabbage field) with the
-  desert while the Abandoned Mine in the square below stays Morytania, Tutorial Island's eastern
-  tip with the desert. `league:area-at { x, y }` answers for any tile.
+  between Lumbridge and the Al Kharid gate fall with Al Kharid, the River Salve's east bank at
+  Paterdomus with Misthalin, the Citharede Abbey and the Giants' Plateau east of Al Kharid (the map
+  square holding the abbey's own cabbage field) with the desert while the Abandoned Mine in the
+  square below stays Morytania, Tutorial Island's eastern tip with the desert. Tile overrides cover
+  eastern Catherby (Kandarin) and the Misthalin road west of the Al Kharid mine. `league:area-at
+  { x, y }` answers for any tile.
 - **Enforcement** (a main character is never asked): a map-square change into a locked square
   (`onPlayerMapSquareChange`, once per square crossed, by a step or by a teleport, ladder, boat or
   dialogue) goes back to where it started when that is open (the Wiki's magical barriers, at
