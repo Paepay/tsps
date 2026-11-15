@@ -38,6 +38,9 @@ function open({ player }) {
   Common.api.emitCustomEvent("league:send-content", { player });
   const { group, clickzones, clickzoneSlots, menuFrame, menuFrameSlots, tabs, tabSlots, highlight, highlightScript } = ui();
   const sender = player.getPacketSender();
+  // A login normally sends it with the progress values; a reopened interface after a client
+  // reload still needs the league bit before its node scripts render an unlocked node.
+  Common.sendFeatureFlags(player);
   sender.sendInterface(group);
   sender.sendInterfaceFlagsRange(Common.uid(group, clickzones), clickzoneSlots[0], clickzoneSlots[1], FLAGS_OP1);
   sender.sendInterfaceFlagsRange(Common.uid(group, menuFrame), menuFrameSlots[0], menuFrameSlots[1], FLAGS_OP1);
