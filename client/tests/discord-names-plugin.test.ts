@@ -41,8 +41,8 @@ assert.equal(
 );
 assert.equal(
     formatDiscordChatName("Zezima", "Zezima", { brackets: true }),
-    undefined,
-    "identical Discord and in-game names stay plain",
+    "[Zezima] Zezima",
+    "identical Discord and in-game names still show the Discord label",
 );
 assert.equal(
     formatDiscordChatName("Zezima", "Patrick", { brackets: true, colour: 0xff0000 }),

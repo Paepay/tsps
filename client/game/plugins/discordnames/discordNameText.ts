@@ -25,7 +25,9 @@ export function wrapWithColorTag(text: string, color: number): string {
 
 /**
  * Build the chat name shown when Discord Names is on: icons, then Discord label,
- * then the in-game name. Returns undefined when there is nothing to add.
+ * then the in-game name. Returns undefined when there is nothing to add. Always
+ * prefixes when a Discord name is known — including when it matches the in-game
+ * name — so every player's Discord label shows, not only those with a different nick.
  */
 export function formatDiscordChatName(
     name: string,
@@ -40,7 +42,6 @@ export function formatDiscordChatName(
     const icons = leadingChatIcons(name);
     const bare = stripChatIcons(name);
     if (!bare) return undefined;
-    if (normalizePlayerName(bare) === normalizePlayerName(cleanDiscord)) return undefined;
     let label = options.brackets ? `[${cleanDiscord}]` : cleanDiscord;
     if (typeof options.colour === "number") label = wrapWithColorTag(label, options.colour);
     return `${icons}${label} ${bare}`;
