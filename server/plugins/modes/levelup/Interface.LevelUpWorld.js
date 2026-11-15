@@ -462,7 +462,8 @@ function relicCostOverrides(player) {
   const catalog = relicCommon().catalog(LEAGUE_STYLE_TYPE);
   if (!catalog) return [];
   const ids = relicCommon().ids(LEAGUE_STYLE_TYPE);
-  const pending = progress(player).pendingRelicMilestone === null ? -1 : pendingRelicTier(player);
+  const state = progress(player);
+  const pending = state.pendingRelicMilestone === null ? -1 : state.pendingRelicTier;
   return catalog.tiers.map((tier, index) => ({
     structId: ids.tierStruct(index),
     params: { [RelicData.params.tierCost]: index === pending ? 0 : 1 },
@@ -531,16 +532,16 @@ function slotToRelic(catalog, sub) {
   return null;
 }
 
-function pendingRelicTier(player) {
-  return Number(player.getAttribute("level-up:claimed-relic-milestones")?.length ?? 0);
-}
-
 function relicState(player, tier, slot) {
   const Common = relicCommon();
-  const picked = Common.chosen(player)[tier];
-  if (picked === slot) return RelicData.interface.viewStates.unlocked;
-  if (picked !== undefined) return RelicData.interface.viewStates.tierTaken;
-  if (progress(player).pendingRelicMilestone !== null && tier === pendingRelicTier(player)) {
+  const pickedSlot = Number(Common.chosen(player)[tier]);
+  const picked = Number.isInteger(pickedSlot) && pickedSlot >= 1
+    ? Common.relic(LEAGUE_STYLE_TYPE, tier, pickedSlot)
+    : null;
+  if (picked && pickedSlot === slot) return RelicData.interface.viewStates.unlocked;
+  if (picked) return RelicData.interface.viewStates.tierTaken;
+  const state = progress(player);
+  if (state.pendingRelicMilestone !== null && tier === state.pendingRelicTier) {
     return RelicData.interface.viewStates.available;
   }
   return RelicData.interface.viewStates.locked;
@@ -609,11 +610,12 @@ function relicConfirm(event) {
     player.sendMessage("Select a relic first.");
     return true;
   }
-  if (progress(player).pendingRelicMilestone === null) {
+  const state = progress(player);
+  if (state.pendingRelicMilestone === null) {
     player.sendMessage("You do not have an unclaimed relic milestone.");
     return true;
   }
-  if (at.tier !== pendingRelicTier(player)) {
+  if (at.tier !== state.pendingRelicTier) {
     player.sendMessage("Choose a relic from the tier you have earned.");
     return true;
   }

@@ -422,6 +422,55 @@ test("Level-Up unlocks relics from Trailblazer Reloaded's catalog", () => {
     ["Banker's Note", "Fire Sale"], "tier 3 has the Wiki's two relics");
 });
 
+test("removed catalog relics reopen their earned Level-Up tiers for a replacement pick", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  Common.init(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    // Tier 2 slot 3 was Crystal of Memories; tier 3 slot 3 was the Treasure Seeker preview.
+    assert.equal(Common.relic(Rules.LEAGUE_STYLE_TYPE, 1, 3), null);
+    assert.equal(Common.relic(Rules.LEAGUE_STYLE_TYPE, 2, 3), null);
+    assert.ok(Common.relic(Rules.LEAGUE_STYLE_TYPE, 1, 1));
+    assert.ok(Common.relic(Rules.LEAGUE_STYLE_TYPE, 2, 1));
+
+    fake.attributes.set("level-up:unlocked-skills", [7, 0, 1, 2, 3, 4, 5, 8]);
+    fake.attributes.set("level-up:claimed-relic-milestones", [2, 5, 8]);
+    fake.attributes.set("league:relics", { 0: 1, 1: 3, 2: 3 });
+    fake.attributes.set("level-up:relics", [
+      { id: "endless-harvest", name: "Endless Harvest" },
+      { id: "crystal-of-memories", name: "Crystal of Memories" },
+      { id: "treasure-seeker", name: "Treasure Seeker" },
+    ]);
+
+    login(fake, { player: fake.player, isNewAccount: false });
+    assert.deepEqual(fake.attributes.get("league:relics"), { 0: 1 }, "only still-valid slots remain");
+    assert.deepEqual(fake.attributes.get("level-up:claimed-relic-milestones"), [2, 5, 8], "earned milestones stay claimed");
+    const pending = plugin._test.pendingRelicSelection(fake.player);
+    assert.deepEqual(pending, { milestone: 5, tier: 1, reclaim: true });
+    assert.equal(plugin.progress(fake.player).pendingRelicMilestone, 5);
+    assert.equal(plugin.progress(fake.player).pendingRelicTier, 1);
+    assert.match(fake.player.messages.join("\n"), /tiers 2, 3|no longer available/i);
+
+    assert.equal(plugin.unlockRelic(fake.player, "2"), true, "tier 2 may be replaced with Globetrotter");
+    assert.deepEqual(fake.attributes.get("league:relics"), { 0: 1, 1: 2 });
+    assert.deepEqual(fake.attributes.get("level-up:claimed-relic-milestones"), [2, 5, 8]);
+    assert.equal(plugin.progress(fake.player).pendingRelicTier, 2, "tier 3 is still waiting for a replacement");
+    assert.equal(plugin.unlockRelic(fake.player, "1"), true, "tier 3 may be replaced with Banker's Note");
+    assert.deepEqual(fake.attributes.get("league:relics"), { 0: 1, 1: 2, 2: 1 });
+    assert.equal(plugin.progress(fake.player).pendingRelicMilestone, null);
+    assert.deepEqual(
+      fake.attributes.get("level-up:relics").map(({ id }) => id),
+      ["endless-harvest", "globetrotter", "banker-s-note"],
+    );
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
 test("Level-Up relic passive text drops league and combat XP modifier lines", () => {
   assert.equal(
     Rules.stripXpPassiveLines("- League XP multiplier is 5x.<br><br>- Run energy is never drained whilst running."),
