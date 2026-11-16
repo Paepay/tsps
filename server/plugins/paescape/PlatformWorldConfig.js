@@ -47,10 +47,51 @@ function relicToggle(value) {
   return null;
 }
 
+/** A website relic id (`league-4:key`) as the runtime's source-qualified id (`4:key`). */
+function runtimeRelicId(value) {
+  if (typeof value !== "string") return value;
+  const match = /^league-([456]):(.+)$/.exec(value);
+  return match ? `${match[1]}:${match[2]}` : value;
+}
+
+/** One tier row from either an array of ids or the editor's { tier, relics/passives } object. */
+function tierIds(row, kind) {
+  const field = kind === "relic" ? "relics" : "passives";
+  const values = Array.isArray(row)
+    ? row
+    : isObject(row) && Array.isArray(row[field]) ? row[field]
+        : row;
+  if (!Array.isArray(values)) return values;
+  return values
+    .filter((id) => typeof id === "string" && id)
+    .map((id) => (kind === "relic" ? runtimeRelicId(id) : id));
+}
+
+/** The active rows of an editor config, clipped to its enabled tier count. */
+function editorRows(value, kind) {
+  const rows = value.tiers;
+  const count = Number.isInteger(value.tierCount) ? Math.max(1, Math.min(value.tierCount, rows.length)) : rows.length;
+  return rows.slice(0, count).map((row) => tierIds(row, kind));
+}
+
 /** A relic tier list from an array, an editor object ({ tiers }), or its JSON string, else null. */
 function relicTiers(value) {
-  if (Array.isArray(value)) return value.length ? value : null;
-  if (isObject(value) && Array.isArray(value.tiers)) return value.tiers.length ? value.tiers : null;
+  if (Array.isArray(value)) return value.length ? value.map((row) => tierIds(row, "relic")) : null;
+  if (isObject(value) && Array.isArray(value.tiers)) {
+    const rows = editorRows(value, "relic");
+    return rows.length ? rows : null;
+  }
+  if (typeof value === "string" && value.trim()) return value;
+  return null;
+}
+
+/** A passive tier list from an array, an editor object ({ tiers }), or its JSON string, else null. */
+function passiveTiers(value) {
+  if (Array.isArray(value)) return value.length ? value.map((row) => tierIds(row, "passive")) : null;
+  if (isObject(value) && Array.isArray(value.tiers)) {
+    const rows = editorRows(value, "passive");
+    return rows.length ? rows : null;
+  }
   if (typeof value === "string" && value.trim()) return value;
   return null;
 }
@@ -204,17 +245,27 @@ function pluginConfigFromSettings(settings, config, notes) {
   // League relics: the website's Relics toggle and editor. The canonical setting names are
   // leagueRelics / relicTiers; an editor may send one { enabled, tiers } object, and the
   // shorter aliases keep older payloads working.
-  const relicSetting = settings.leagueRelics ?? settings.relics;
+  const relicSetting = settings.leagueRelics ?? settings.relics ?? config.relics?.enabled;
   const toggle = relicToggle(relicSetting);
   if (toggle !== null) pluginConfig["league:relics"] = toggle;
   else if (relicSetting !== undefined) notes.push("leagueRelics is not true, false or { enabled }; keeping the packaged relic toggle");
-  const tiers = relicTiers(settings.relicTiers ?? settings.leagueRelicTiers
+  const tiers = relicTiers(settings.relicConfig ?? config.relics?.config
+    ?? settings.relicTiers ?? settings.leagueRelicTiers
     ?? (isObject(relicSetting) ? relicSetting.tiers : undefined));
   if (tiers !== null) {
     pluginConfig["league:relic-tiers"] = tiers;
   } else if (settings.relicTiers !== undefined || settings.leagueRelicTiers !== undefined
     || (isObject(relicSetting) && relicSetting.tiers !== undefined)) {
     notes.push("relicTiers must be an array of tiers; ignoring league:relic-tiers");
+  }
+  const passiveSetting = settings.passiveConfig ?? config.passives?.config
+    ?? settings.passiveTiers ?? settings.leaguePassiveTiers
+    ?? settings.leaguePassives ?? (isObject(relicSetting) ? relicSetting.passives : undefined);
+  const passiveRows = passiveTiers(passiveSetting);
+  if (passiveRows !== null) {
+    pluginConfig["league:passive-tiers"] = passiveRows;
+  } else if (passiveSetting !== undefined) {
+    notes.push("passiveTiers must be an array of tiers; ignoring league:passive-tiers");
   }
   return pluginConfig;
 }
@@ -237,6 +288,18 @@ function templateConfig(config, pluginConfig) {
   const rules = isObject(config.templateContract) ? config.templateContract : {};
   if (rules.hardcore === true) pluginConfig["HardcoreWorld:enabled"] = true;
   if (Number.isInteger(rules.leagueSeason) && rules.leagueSeason > 0) pluginConfig["league:type"] = rules.leagueSeason;
+  // A PaeScape/Level-Up world uses a relic catalog without becoming a seasonal league
+  // profile. Trailblazer Reloaded is the presentation/cost base when no season was set.
+  // Only a world that actually uses relics needs that base; a normal template with its
+  // Relics toggle off must keep its previous, league-free configuration.
+  const relicsRequested = pluginConfig["league:relics"] === true
+    || rules.leagueRelics === true
+    || (isObject(rules.leagueRelics) && rules.leagueRelics.enabled === true)
+    || pluginConfig["league:relic-tiers"] !== undefined
+    || pluginConfig["league:passive-tiers"] !== undefined;
+  if (pluginConfig["league:type"] === undefined && relicsRequested && pluginConfig["league:relics"] !== false) {
+    pluginConfig["league:relic-league"] = 4;
+  }
   // The template contract's relic rule is a runtime setting, not just metadata. Explicit
   // website settings (above) and an explicit pluginConfig win over the template fallback.
   const toggle = relicToggle(rules.leagueRelics);
@@ -247,6 +310,11 @@ function templateConfig(config, pluginConfig) {
     ?? (isObject(rules.leagueRelics) ? rules.leagueRelics.tiers : undefined));
   if (tiers !== null && pluginConfig["league:relic-tiers"] === undefined) {
     pluginConfig["league:relic-tiers"] = tiers;
+  }
+  const passiveRows = passiveTiers(rules.passiveTiers ?? rules.leaguePassiveTiers
+    ?? rules.leaguePassives ?? (isObject(rules.leagueRelics) ? rules.leagueRelics.passives : undefined));
+  if (passiveRows !== null && pluginConfig["league:passive-tiers"] === undefined) {
+    pluginConfig["league:passive-tiers"] = passiveRows;
   }
 }
 

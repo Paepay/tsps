@@ -69,7 +69,9 @@ function structRows(type) {
       [params.tierRelics]: id.relicsEnum(tierIndex),
       [params.tierPassive]: id.passiveStruct(tierIndex),
     } });
-    rows.push({ structId: id.passiveStruct(tierIndex), params: { [params.passiveText]: tier.passive } });
+    rows.push({ structId: id.passiveStruct(tierIndex), params: {
+      [params.passiveText]: Common.passiveTierText(type, tierIndex),
+    } });
     tier.relics.forEach((relic, slotIndex) => {
       const relicParams = {
         [params.relicName]: relic.name,
@@ -129,7 +131,7 @@ function relicCatalog() {
     };
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     canonicalIdFormat: "<leagueType>:<relicKey>",
     limits: {
       minTiers: 1,
@@ -156,17 +158,50 @@ function relicCatalog() {
         icon: iconDetails(entry.relic, entry.sourceLeague),
       };
     }),
+    passiveLimits: {
+      minTiers: WorldCatalog.MIN_TIERS,
+      maxTiers: WorldCatalog.MAX_TIERS,
+      choicesPerTier: null,
+    },
+    passives: Common.passiveCatalog().map((passive) => ({
+      id: passive.id,
+      key: passive.key,
+      name: passive.name,
+      description: passive.description,
+      sourceText: passive.sourceText,
+      sourceLeague: passive.sourceLeague,
+      originalTier: passive.originalTier,
+      effect: { ...passive.effect },
+      implementation: { ...passive.implementation },
+      compatible: passive.compatible,
+      incompatibleReason: passive.incompatibleReason,
+    })),
     world: Common.worldCatalogState(),
+  };
+}
+
+/** The individual passive catalog for the world editor, with each grant's implementation status. */
+function passiveCatalog() {
+  const relic = relicCatalog();
+  return {
+    schemaVersion: 1,
+    canonicalIdFormat: relic.canonicalIdFormat,
+    limits: relic.passiveLimits,
+    leagues: relic.leagues,
+    passives: relic.passives,
+    world: relic.world.passives,
   };
 }
 
 module.exports = function attach(api) {
   api.onCustomEvent("league:content-rows", content);
   api.registerContentEndpoint("relic-catalog", relicCatalog);
+  api.registerContentEndpoint("league-passives", passiveCatalog);
 };
 
 module.exports.datasets = datasets;
 module.exports.structRows = structRows;
 module.exports.enumRows = enumRows;
 module.exports.relicCatalog = relicCatalog;
+module.exports.passiveCatalog = passiveCatalog;
 module.exports.iconDetails = iconDetails;

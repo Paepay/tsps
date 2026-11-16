@@ -32,6 +32,11 @@ const MIXED = [
   ["6:soul-harvest", "4:trickster"],
   ["6:minion", "5:last-stand", "4:guardian"],
 ];
+const PASSIVES = [
+  ["league-4:t1:run-energy", "league-5:t1:minigame-points-x4"],
+  ["league-5:t3:combat-xp-x2"],
+  ["league-4:t3:crystal-of-memories"],
+];
 
 let core;
 let Common;
@@ -366,7 +371,7 @@ test("the Relics toggle turns the interface, effects and passives off but keeps 
 test("the public catalog lists every source relic with stable ids and icon information", () => {
   configure();
   const catalog = Catalog.relicCatalog();
-  assert.equal(catalog.schemaVersion, 1);
+  assert.equal(catalog.schemaVersion, 2);
   assert.equal(catalog.canonicalIdFormat, "<leagueType>:<relicKey>");
   assert.deepEqual(catalog.limits, { minTiers: 1, maxTiers: 8, minChoicesPerTier: 2, maxChoicesPerTier: 3 });
   assert.deepEqual(catalog.leagues.map((league) => league.type), [4, 5, 6]);
@@ -390,25 +395,35 @@ test("the public catalog lists every source relic with stable ids and icon infor
 
 test("the world config accepts every validated editor shape and forwards explicit settings", () => {
   const blob = (settings, extra = {}) => ({ version: 2, mode: "online", template: "osrs", settings, shops: [], mapOverrides: [], ...extra });
-  const direct = toWorldOverlay(blob({ leagueRelics: false, relicTiers: MIXED }));
+  const direct = toWorldOverlay(blob({ leagueRelics: false, relicTiers: MIXED, passiveTiers: PASSIVES }));
   assert.equal(direct.overlay.pluginConfig["league:relics"], false);
+  assert.equal(direct.overlay.pluginConfig["league:relic-league"], undefined, "a non-relic world stays league-free");
   assert.deepEqual(direct.overlay.pluginConfig["league:relic-tiers"], MIXED);
+  assert.deepEqual(direct.overlay.pluginConfig["league:passive-tiers"], PASSIVES);
 
-  const object = toWorldOverlay(blob({ leagueRelics: { enabled: true, tiers: MIXED } }));
+  const object = toWorldOverlay(blob({ leagueRelics: { enabled: true, tiers: MIXED, passives: PASSIVES } }));
   assert.equal(object.overlay.pluginConfig["league:relics"], true);
   assert.deepEqual(object.overlay.pluginConfig["league:relic-tiers"], MIXED);
+  assert.deepEqual(object.overlay.pluginConfig["league:passive-tiers"], PASSIVES);
 
-  const aliases = toWorldOverlay(blob({ relics: false, leagueRelicTiers: JSON.stringify(MIXED) }));
+  const aliases = toWorldOverlay(blob({
+    relics: false, leagueRelicTiers: JSON.stringify(MIXED), leaguePassives: JSON.stringify(PASSIVES),
+  }));
   assert.equal(aliases.overlay.pluginConfig["league:relics"], false);
   assert.equal(aliases.overlay.pluginConfig["league:relic-tiers"], JSON.stringify(MIXED));
+  assert.equal(aliases.overlay.pluginConfig["league:passive-tiers"], JSON.stringify(PASSIVES));
 
   const template = toWorldOverlay({
     version: 2, mode: "online", template: "trailblazer_reloaded",
-    templateContract: { schemaVersion: 1, ruleset: "trailblazer_reloaded", leagueRelics: { enabled: true, tiers: MIXED }, leagueSeason: 4 },
+    templateContract: {
+      schemaVersion: 1, ruleset: "trailblazer_reloaded",
+      leagueRelics: { enabled: true, tiers: MIXED, passives: PASSIVES }, leagueSeason: 4,
+    },
     settings: {},
   });
   assert.equal(template.overlay.pluginConfig["league:relics"], true);
   assert.deepEqual(template.overlay.pluginConfig["league:relic-tiers"], MIXED);
+  assert.deepEqual(template.overlay.pluginConfig["league:passive-tiers"], PASSIVES);
 
   const explicit = toWorldOverlay({
     version: 2, mode: "online", template: "trailblazer_reloaded",
@@ -417,10 +432,79 @@ test("the world config accepts every validated editor shape and forwards explici
   });
   assert.equal(explicit.overlay.pluginConfig["league:relics"], true, "the website setting wins over the template default");
 
-  const invalid = toWorldOverlay(blob({ leagueRelics: "yes", relicTiers: 7 }));
+  const invalid = toWorldOverlay(blob({ leagueRelics: "yes", relicTiers: 7, passiveTiers: 7 }));
   assert.ok(invalid.notes.some((note) => /leagueRelics/i.test(note)));
   assert.ok(invalid.notes.some((note) => /relicTiers/i.test(note)));
+  assert.ok(invalid.notes.some((note) => /passiveTiers/i.test(note)));
   assert.equal(invalid.overlay.pluginConfig["league:relics"], undefined);
+
+  const editorRelics = {
+    version: 1,
+    tierCount: 2,
+    tiers: [
+      { tier: 1, slots: 2, relics: ["league-4:endless-harvest", "league-5:power-miner"] },
+      { tier: 2, slots: 2, relics: ["league-6:flow-state", "league-4:fairys-flight"] },
+    ],
+  };
+  const editorPassives = {
+    version: 1,
+    tierCount: 2,
+    tiers: [
+      { tier: 1, passives: ["league-4:t1:run-energy"] },
+      { tier: 2, passives: ["league-5:t3:combat-xp-x2", "league-4:t4:slayer-points-x5"] },
+    ],
+  };
+  const nonSeasonal = toWorldOverlay({
+    version: 2,
+    mode: "online",
+    template: "paescape",
+    templateContract: { schemaVersion: 1, ruleset: "paescape", leagueSeason: null, leagueRelics: true },
+    settings: { relicConfig: editorRelics, passiveConfig: editorPassives },
+  });
+  assert.equal(nonSeasonal.overlay.pluginConfig["league:type"], undefined, "a PaeScape world is not a seasonal league");
+  assert.equal(nonSeasonal.overlay.pluginConfig["league:relic-league"], 4);
+  assert.equal(nonSeasonal.overlay.pluginConfig["league:relics"], true);
+  assert.deepEqual(nonSeasonal.overlay.pluginConfig["league:relic-tiers"], [
+    ["4:endless-harvest", "5:power-miner"],
+    ["6:flow-state", "4:fairys-flight"],
+  ]);
+  assert.deepEqual(nonSeasonal.overlay.pluginConfig["league:passive-tiers"], [
+    ["league-4:t1:run-energy"],
+    ["league-5:t3:combat-xp-x2", "league-4:t4:slayer-points-x5"],
+  ]);
+
+  const delivered = toWorldOverlay({
+    version: 2,
+    mode: "online",
+    template: "paescape",
+    templateContract: { schemaVersion: 1, ruleset: "paescape", leagueSeason: null, leagueRelics: true },
+    settings: {},
+    relics: { enabled: true, config: editorRelics },
+    passives: { enabled: true, config: editorPassives },
+  });
+  assert.deepEqual(delivered.overlay.pluginConfig["league:relic-tiers"], nonSeasonal.overlay.pluginConfig["league:relic-tiers"]);
+  assert.deepEqual(delivered.overlay.pluginConfig["league:passive-tiers"], nonSeasonal.overlay.pluginConfig["league:passive-tiers"]);
+
+  // A shared tier row may carry both kinds. Each reader must take only its own field.
+  const combined = {
+    version: 1,
+    tierCount: 2,
+    tiers: editorRelics.tiers.map((row, index) => ({ ...row, passives: editorPassives.tiers[index].passives })),
+  };
+  const combinedRows = toWorldOverlay(blob({ relicConfig: combined, passiveConfig: combined }));
+  assert.deepEqual(combinedRows.overlay.pluginConfig["league:relic-tiers"], [
+    ["4:endless-harvest", "5:power-miner"],
+    ["6:flow-state", "4:fairys-flight"],
+  ]);
+  assert.deepEqual(combinedRows.overlay.pluginConfig["league:passive-tiers"], [
+    ["league-4:t1:run-energy"],
+    ["league-5:t3:combat-xp-x2", "league-4:t4:slayer-points-x5"],
+  ]);
+  const rowObjects = toWorldOverlay(blob({ passiveConfig: editorPassives.tiers }));
+  assert.deepEqual(rowObjects.overlay.pluginConfig["league:passive-tiers"], [
+    ["league-4:t1:run-energy"],
+    ["league-5:t3:combat-xp-x2", "league-4:t4:slayer-points-x5"],
+  ]);
 });
 
 test("catalog validation rejects bad shapes, missing definitions, duplicates and too many tiers", () => {
@@ -437,6 +521,7 @@ test("catalog validation rejects bad shapes, missing definitions, duplicates and
   const build = (raw) => WorldCatalog.buildWorldCatalog({ raw, baseLeague: 4, baseTiers, catalogs });
 
   assert.equal(build([["4:one", "4:two"]]).status, "custom");
+  assert.deepEqual(build([["league-4:one", "league-4:two"]]).canonicalTiers, [["4:one", "4:two"]], "website ids are accepted and canonicalised");
   assert.match(build([["4:one", "4:one"]]).error, /more than once/);
   assert.match(build([["4:one"]]).error, /2 or 3/);
   assert.match(build([["4:one", "4:two", "4:three", "4:other"]]).error, /2 or 3/);

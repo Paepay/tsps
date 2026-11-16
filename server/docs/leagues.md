@@ -131,7 +131,8 @@ collecting every plugin's rows with `league:content-rows`.
 
 The tier passives answer other plugins' questions rather than events of their own (below):
 `npc-drops:chance` and `drops:chance`, `minigame:points`, `slayer:task-reward`,
-`slayer:superior-spawn` and `treasure-trails:scroll-boxes`.
+`slayer:superior-spawn`, `treasure-trails:scroll-boxes`, `treasure-trails:clue-progress` and
+`farming:growth-rate`.
 
 
 The relics also answer these generic questions, which their owners ask of any content (the
@@ -173,6 +174,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `farming:plant-rules` | Farming, as a seed or sapling is planted | `{ player, crop, seedId, patch, keepSeed, grown, diseaseFree, undying, message }`: a line said after the planting's own; keep the seed, grow the crop at once (not anima plants), keep it from disease, or keep a diseased crop from dying (it waits for a cure); the last two are kept on the patch's state |
 | `farming:level-rules` | Farming, as a seed or sapling is planted, a seedling made or a scarecrow made or placed without the level | `{ player, kind, required, waived }`: `kind` is `plant`, `seedling` or `scarecrow`; set `waived` to let the player do it anyway |
 | `farming:check-health` | Farming, after a grown crop's health check | `{ player, crop, type, patch, experience }`: `experience` is the check's Farming XP |
+| `farming:growth-rate` | Farming, as a player's patches are advanced | `{ player, rate, tickMinutes }`: content may raise `rate` (the growth-speed multiplier; one-minute ticks are `tickMinutes / 1`) |
 | `runecrafting:essence` | Runecrafting, at an altar that binds pure essence (the Ourania Altar and the combination runes too) or Kourend's dark essence fragments | `{ player, dark, pure }`: push item ids that bind there as pure essence would, or with `dark` as the fragments would |
 | `farming:harvests-per-action`, `farming:pick` | Farming | `{ player, patch, crop, harvests }` picks an action; `{ player, crop, patch, itemId, amount, experience, stored }` before a pick is handed over (`experience` is the pick's Farming XP; `stored` what a listener took itself, as the bank) |
 | `skills:produced` (extended) | the production skills | now with `kind` (the loop, as `skills:actions-per-cycle` names it) and, for leather and jewellery, `materials` (`[id, amount]` one product used) |
@@ -197,6 +199,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `treasure-trails:vessel-chance` | Woodcutting and Hunter (clue nests), Mining (geodes), Hunter's drift nets and aerial fishing (bottles) | `{ player, vessel, tier, multiplier }`: the vessel `multiplier` times as likely |
 | `treasure-trails:trail-length`, `treasure-trails:casket-rolls` | Treasure Trails (both trail kinds) | `{ player, tier, length, minimum, maximum }` as a trail starts; `{ player, tier, rolls, minimum, maximum }` as a casket opens; both kept within the tier's range |
 | `treasure-trails:casket-opened` | Treasure Trails' caskets | `{ player, tier }` after a casket's rewards are handed over (not the Mimic's) |
+| `treasure-trails:clue-progress` | Treasure Trails (both trail runtimes) | `{ player, tier, event, completed, saved }`: `"start"` sets `saved` to the tier's carried step count; `"step"` stores `completed`; `"casket"` clears it |
 | `treasure-trails:requirement-waived` | Treasure Trails | `{ player, kind, waived }`: `kind` "emote" (what to wear), "falo" (the item to show) or "charlie" (the item to bring) |
 | `slayer:always-on-task` | Slayer, for a Slayer monster the task does not cover | `{ player, npc, npcId, name, onTask }`: counted as on task everywhere `slayer:on-task` is asked, and a kill gives its Slayer XP and superior chance without counting down the task (`offTask` on `slayer:task-kill`; no keys) |
 | `slayer:superior-again` | Slayer's superiors, as one dies | `{ player, npc, chance }`: the chance (0 to 1, 0 unless answered) of another of the same superior where it died |
@@ -746,8 +749,9 @@ character's picks live in `league:relics` (tier index -> slot 1-3).
 
 A world may replace its league's catalog with 1-8 tiers of its own, each offering 2 or 3 relics
 drawn from Trailblazer Reloaded (league 4), Raging Echoes (5) or Demonic Pacts (6). The league in
-`league:type` remains the base: its tier costs, passive text, points and client league struct stay
-in use, while each relic keeps its name, description, grants, icon and effect from its source.
+`league:type` remains the base: its tier costs, points and client league struct stay in use,
+while each relic keeps its name, description, grants, icon and effect from its source. Its own
+tier passives stay too unless `league:passive-tiers` replaces them.
 Any relic may sit in any configured tier. Existing worlds and a world with no saved tiers keep
 their league's own catalog.
 
@@ -758,8 +762,8 @@ their league's own catalog.
   canonical ids in `<source league>:<relic key>` form, for example:
 
   ```json
-  [[4:endless-harvest, 6:evil-eye],
-   [5:power-miner, 4:production-prodigy, 6:flow-state]]
+  [["4:endless-harvest", "6:evil-eye"],
+   ["5:power-miner", "4:production-prodigy", "6:flow-state"]]
   ```
 
   The source is part of the id because several keys are shared (`fairys-flight`,
@@ -767,16 +771,45 @@ their league's own catalog.
   relics. A repeated canonical id, an unknown league/key, a malformed row, a missing icon or
   description, or an unsupported choice count rejects the whole configuration. The server logs
   the first error and keeps the base league's complete catalog, never a partial one.
+- `league:passive-tiers` is a separate array (or JSON string) of the passives each tier grants
+  automatically. A row may hold any number of ids; the relic 2/3-choice limit does not apply.
+  Passives are canonical `league-<source league>:t<original tier>:<effect>` ids, so progressive
+  grants and split bundles are independently selectable. For example:
+
+  ```json
+  [["league-4:t1:run-energy", "league-5:t1:minigame-points-x4", "league-4:t3:crystal-of-memories"],
+   ["league-5:t3:combat-xp-x2", "league-5:t3:slayer-points-x5"]]
+  ```
+
+  Rows may be empty. A repeated id, unknown id, incompatible effect, malformed row, or more rows
+  than the relic tiers rejects the whole list and keeps the league's own passives. Configured
+  grants apply automatically once the character reaches their row's tier (any relic chosen in
+  it); no relic selection is needed for the passive itself. Relics off disables every passive
+  while retaining the saved rows. If several active grants do the same thing, the strongest value
+  wins rather than multiplying or stacking.
 - On a hosted world, `PlatformWorldConfig.js` translates the website settings `leagueRelics`
   (boolean or `{ enabled, tiers }`) and `relicTiers` / `leagueRelicTiers` into those two
-  `pluginConfig` keys. Explicit settings override a template contract's defaults. The accepted
-  overlay is persisted in `data/definitions/world.platform.json`, which is read before plugins
-  load; startup-only changes apply on the next restart, like `world.local.json`.
-- `GET /api/relic-catalog` exposes the full catalog for the website editor: schema version,
+  `pluginConfig` keys. `passiveTiers` / `leaguePassiveTiers` / `leaguePassives` (and a
+  `passives` member of the `leagueRelics` object) become `league:passive-tiers`. Explicit
+  settings override a template contract's defaults. The accepted overlay is persisted in
+  `data/definitions/world.platform.json`, which is read before plugins load; startup-only changes
+  apply on the next restart, like `world.local.json`.
+- `GET /api/relic-catalog` exposes the full catalog for the website editor: schema version 2,
   canonical-id format, limits, the three source leagues, every relic's id, key, name,
   description, source, original tier, grants, bank requirement, compatibility and icon
-  parameters, plus this world's resolved state (`league`, `relicsEnabled`, `status`, `custom`,
-  active `tiers`, saved `configuredTiers`, `error` and `warnings`).
+  parameters, every individual passive, plus this world's resolved state (`league`,
+  `relicsEnabled`, `status`, `custom`, active `tiers`, saved `configuredTiers`, `error`,
+  `warnings` and `passives`). `GET /api/league-passives` is the focused passive view: its
+  `limits.choicesPerTier` is `null`, and each entry carries its effect value, implementation
+  location, compatibility and reason when unsupported.
+- `docs/league-passives-audit.json` is generated from the actual tier text by
+  `scripts/generate-league-passives-audit.cjs`. It lists every tier's source text beside its
+  individual grants, source league, original tier, implementation location and status. An
+  unrecognized passive bullet is written as an unsupported entry instead of disappearing, and
+  the generator exits non-zero, so a new source line cannot silently go missing. It currently
+  finds 51 grants (17 per league), all implemented; Raging Echoes and
+  Demonic Pacts each include a tier-1 farming-tick grant and a tier-1 clue-step-progress grant,
+  while Trailblazer Reloaded has neither.
 - Effects resolve by the held relic's source league, not the world's base league, so a Demonic
   Pacts relic keeps its own toggle or reach rules when placed in a Trailblazer Reloaded world.
   `effectSource` chooses the base league's variant when both same-key variants are held and
@@ -1399,6 +1432,19 @@ Level-Up uses its own skill-unlock XP tiers. Tier 1 counts once the character ch
 - **Scroll boxes** (tier 1): ClueCapacity asks `treasure-trails:scroll-boxes { player, unlocked,
   capacity }` and the league answers unlocked with no limit, so every clue drops as a stackable
   box (the Wiki says stackable; live Leagues had no cap) before X Marks the Spot.
+- **Clue-step progress** (Raging Echoes and Demonic Pacts tier 1): both trail runtimes ask
+  `treasure-trails:clue-progress { player, tier, event, completed, saved }`. A fresh clue of a
+  tier starts from that tier's saved step count, so dropping or replacing a clue does not lose
+  progress; completing a step stores the new count and receiving a casket clears it. Beginner
+  clues use the same `beginner` tier. Progress lives on the character
+  (`league:clue-progress`), survives logout and restart, and each of beginner, easy, medium,
+  hard, elite and master is independent.
+- **Farming ticks** (Raging Echoes and Demonic Pacts tier 1): Farming asks
+  `farming:growth-rate { player, rate, tickMinutes }` as it advances a player's patches. The
+  league raises `rate` so the five-minute growth tick runs every minute (`tickMinutes / 1`).
+  Farming stores the resulting multiplier on that player's farm (`growthMultiplier`), and every
+  planting, curing, seedling, resurrection and willow-branch regrowth path reads it; a character
+  without the grant keeps the world's rate.
 - **Crystal of memories** (Trailblazer Reloaded tier 3): `CrystalOfMemories.LeagueRelics.js`
   grants the Crystal of Echoes (this cache's name) on unlocking that tier and at login when the
   character holds none; Collect-items reclaims it. Teleport-back returns to where the last
@@ -1411,10 +1457,9 @@ this cache (struct 6436's tier enum, param 1020). Its boosted drops rest on the 
 server has: the Wiki's "every Desert Treasure II boss drops every Soulreaper axe piece" is a boost
 on the pieces each boss already drops here, not a new drop.
 
-Left out, with why: Raging Echoes' and Demonic Pacts' clue-step progress saved between clues (the trail runtime has
-no per-step save to carry across scrolls); their one-minute farming ticks (Farming's
-growth model has no tick-length seam, and Farming is under active work elsewhere). The ironman
-restriction is under "The league character" above: every league character is a standard Ironman.
+The ironman restriction is under "The league character" above: every league character is a
+standard Ironman. Every one of the 51 catalog entries is implemented and split from the compound
+tier bullets, so any entry can be placed independently on any configured tier.
 
 ## Combat masteries (Raging Echoes)
 
@@ -2419,8 +2464,7 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
 ## Not yet
 
 Most task triggers (see Tasks), the Echo bosses themselves (and so three of the mastery points;
-`startEchoFight` in EchoOrbs.LeagueMode.js is where they start), the tier
-passives left out above (clue-step progress and farming ticks), the boosted sources their own
+`startEchoFight` in EchoOrbs.LeagueMode.js is where they start), the boosted sources their own
 plugins have yet to ask about, and Shattered Relics' rules (see its section). Each is its own item
 on the progress tracker.
 Of the relics, the remaining Overgrown crop types and Pocket Kingdom's hourly cycle are their own

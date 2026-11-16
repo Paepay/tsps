@@ -439,7 +439,8 @@ function farmingItemPair(event) {
         if (!Patches.water(player, can, canSlot, false)) return;
         Patches.spam(player, `You water the ${wateredSeedNoun(seedling)}.`);
         const slot = a === seedling.seedling ? event.usedItemSlot : event.usedWithItemSlot;
-        const saplingAt = Model.nextGrowth(Date.now(), 5, Patches.farmFor(player).offset);
+        const farm = Patches.farmFor(player);
+        const saplingAt = Model.nextGrowth(Date.now(), 5, farm.offset, Model.growthRateOf(farm));
         inventory.forSlot(slot).setId(seedling.wateredSeedling).setMetaValue("farming:sapling-at", saplingAt);
         Patches.noteSeedling(player, saplingAt);
         inventory.refreshItems();
@@ -491,6 +492,7 @@ function farmingItemPair(event) {
 }
 /** Turns due watered seedlings into saplings; returns when the next one is due, or Infinity. */
 function growSeedlings(player, now) {
+    const farm = Patches.farmFor(player), rate = Model.growthRateOf(farm);
     let next = Infinity;
     for (const container of [player.getInventory(), ...player.getBanks()]) {
         if (!container) continue; // Bank tabs are created lazily, including for bots.
@@ -500,7 +502,7 @@ function growSeedlings(player, now) {
             if (!crop) continue;
             const at = item.getMetaValue("farming:sapling-at");
             if (!at) {
-                const due = Model.nextGrowth(now, Data.FORMULAS.growth.tickMinutes, Patches.farmFor(player).offset);
+                const due = Model.nextGrowth(now, Data.FORMULAS.growth.tickMinutes, farm.offset, rate);
                 item.setMetaValue("farming:sapling-at", due);
                 next = Math.min(next, due);
             } else if (now >= at) { item.setId(crop.sapling).setMetaValue("farming:sapling-at", undefined); changed = true; }
@@ -733,7 +735,7 @@ function askGardener(player, npc, p) {
         if (!Patches.nearPatch(player, p) || Patches.stateFor(player, p) !== state || (state.status === "grown" || state.status === "dead") || state.protected || !canPay(player, crop.payment)) return;
         pay(player, crop.payment);
         state.protected = true;
-        if (state.status === "diseased") { state.status = "growing"; state.nextAt = Model.nextGrowth(Date.now(), Data.stageMinutes(crop, state.stage), farm.offset); }
+        if (state.status === "diseased") { state.status = "growing"; state.nextAt = Model.nextGrowth(Date.now(), Data.stageMinutes(crop, state.stage), farm.offset, Model.growthRateOf(farm)); }
         core.PluginManager.emitCustomEvent("farming:protected", { player, npc, patch: p, crop: crop.key });
         Patches.spam(player, `You pay the gardener ${paymentText(crop.payment)} to protect the patch.`);
         gardenerSays(player, npc, `That'll do nicely, ${player.getAppearance().isMale() ? "sir" : "madam"}. Leave it with me - I'll make sure that patch grows for you.`);

@@ -6,6 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const WorldCatalog = require("./WorldCatalog.LeagueRelics");
+const PassivesCatalog = require("./PassivesCatalog.LeagueRelics");
 
 /** Chosen relics: tier index (0-7) -> slot (1-3). */
 const RELICS_ATTRIBUTE = "league:relics";
@@ -13,6 +14,8 @@ const RELICS_ATTRIBUTE = "league:relics";
 const RELICS_CONFIG = "league:relics";
 /** world.json pluginConfig: the world's 1-8 tiers of 2-3 canonical relic ids. */
 const RELIC_TIERS_CONFIG = "league:relic-tiers";
+/** world.json pluginConfig: the world's passive grants for each relic tier, as canonical ids. */
+const PASSIVE_TIERS_CONFIG = "league:passive-tiers";
 
 let api = null;
 let core = null;
@@ -34,6 +37,19 @@ let world = {
   warnings: [],
 };
 
+/** The resolved tier-passive catalog and the world's own rows (or its league's defaults). */
+let passives = {
+  catalog: { entries: [], byId: new Map() },
+  world: {
+    baseLeague: null,
+    status: "default",
+    custom: null,
+    configuredTiers: null,
+    error: null,
+    warnings: [],
+  },
+};
+
 function init(pluginApi) {
   api = pluginApi;
   core = pluginApi.core;
@@ -45,7 +61,10 @@ function init(pluginApi) {
 
 /** The league this world runs, or null for a plain world (LeagueMode reads the same key). */
 function worldLeagueType() {
-  const type = Number(api?.getPluginConfig?.("league:type", 0));
+  const relicLeague = Number(api?.getPluginConfig?.("league:relic-league", 0));
+  const type = [4, 5, 6].includes(relicLeague)
+    ? relicLeague
+    : Number(api?.getPluginConfig?.("league:type", 0));
   return data.leagues[type] && leagues[type] ? type : null;
 }
 
@@ -69,6 +88,16 @@ function reloadWorldCatalog() {
     baseTiers: catalogs[baseLeague]?.tiers ?? [],
     catalogs,
   });
+  const leagueEffects = Object.fromEntries(WorldCatalog.SOURCE_LEAGUES
+    .map((type) => [type, leagues[type]?.passives ?? {}]));
+  const passiveResult = PassivesCatalog.buildWorldPassives({
+    raw: api?.getPluginConfig?.(PASSIVE_TIERS_CONFIG, null),
+    baseLeague,
+    baseTiers: catalogs[baseLeague]?.tiers ?? [],
+    catalogs,
+    leagueEffects,
+    relicTierCount: result.status === "custom" ? result.tiers.length : null,
+  });
   world = {
     baseLeague,
     relicsEnabled,
@@ -78,11 +107,31 @@ function reloadWorldCatalog() {
     error: result.error ?? null,
     warnings: result.warnings ?? [],
   };
+  passives = {
+    catalog: passiveResult.catalog ?? { entries: [], byId: new Map() },
+    world: {
+      baseLeague,
+      status: !relicsEnabled ? "disabled" : passiveResult.status,
+      custom: relicsEnabled && passiveResult.status === "custom"
+        ? { ...passiveResult, custom: true }
+        : null,
+      configuredTiers: passiveResult.status === "default" || passiveResult.status === "invalid"
+        ? null : (passiveResult.ids ?? null),
+      error: passiveResult.error ?? null,
+      warnings: passiveResult.warnings ?? [],
+    },
+  };
   if (result.status === "invalid" && relicsEnabled) {
     api?.log?.(`[league-relics] ${result.error}; keeping league ${baseLeague}'s own relic catalog`);
   } else if (world.custom) {
     api?.log?.(`[league-relics] world catalog: ${world.custom.tiers.length} tier(s) from leagues `
       + `${[...new Set(world.custom.ids.map((id) => id.split(":")[0]))].join(", ")}`);
+  }
+  if (passiveResult.status === "invalid" && relicsEnabled) {
+    api?.log?.(`[league-passives] ${passiveResult.error}; keeping league ${baseLeague}'s own tier passives`);
+  } else if (passives.world.custom) {
+    api?.log?.(`[league-passives] world passives: ${passives.world.custom.entries.length} grant(s) across `
+      + `${passives.world.custom.tiers.length} tier(s)`);
   }
   return world;
 }
@@ -190,7 +239,61 @@ function worldCatalogState() {
     configuredTiers: world.configuredTiers,
     error: world.error,
     warnings: [...world.warnings],
+    passives: passivesWorldState(),
   };
+}
+
+/** The complete passive catalog (every individual grant from every supported league). */
+function passiveCatalog() {
+  return passives.catalog.entries;
+}
+
+/** The world's passive configuration for the public catalog endpoint. */
+function passivesWorldState() {
+  return {
+    league: passives.world.baseLeague,
+    status: passives.world.status,
+    custom: passives.world.custom !== null,
+    tiers: passives.world.custom?.ids ?? passives.world.configuredTiers,
+    configuredTiers: passives.world.configuredTiers,
+    error: passives.world.error,
+    warnings: [...passives.world.warnings],
+  };
+}
+
+/** The passives configured for a tier, or the source league's own entries at that original tier. */
+function passiveTierEntries(type, tierIndex) {
+  if (passives.world.custom) return passives.world.custom.tiers[tierIndex] ?? [];
+  return passives.catalog.entries.filter((passive) => passive.sourceLeague === Number(type)
+    && passive.originalTier === tierIndex + 1);
+}
+
+/** The passive text the client shows for a tier: world rows when configured, else the league's. */
+function passiveTierText(type, tierIndex) {
+  if (!passives.world.custom) return catalog(type)?.tiers[tierIndex]?.passive ?? "";
+  const entries = passives.world.custom.tiers[tierIndex] ?? [];
+  if (entries.length === 0) return "There are no passive unlocks for this tier.";
+  return entries.map((passive) => `- ${passive.description}`).join("<br><br>");
+}
+
+/**
+ * The passive grants active for a character: the world's rows up to the highest tier reached, or
+ * the source league's own grants at their original tiers. Relics off disables all of them.
+ */
+function activePassives(player, type = leagueOf(player)) {
+  if (!relicsEnabled() || type === null) return [];
+  const reached = highestTier(player) + 1;
+  if (reached <= 0) return [];
+  if (passives.world.custom) {
+    return passives.world.custom.entries.filter((passive) => passive.grantTier <= reached);
+  }
+  return passives.catalog.entries.filter((passive) => passive.compatible
+    && passive.sourceLeague === Number(type) && passive.originalTier <= reached);
+}
+
+/** The active grants of one effect type, for the effect handlers and audit-friendly queries. */
+function activePassiveValues(player, effectType, type = leagueOf(player)) {
+  return activePassives(player, type).filter((passive) => passive.effect.type === effectType);
 }
 
 /** A relic's source-qualified id. A source catalog's relics belong to the league it came from. */
@@ -557,10 +660,12 @@ function message(key, values = {}, type = null) {
 
 module.exports = {
   init, reloadWorldCatalog, leagueOf, levelUpOwns, catalog, sourceCatalog, sourceCatalogs, isCustomCatalog, worldCatalogState,
+  passiveCatalog, passivesWorldState, passiveTierEntries, passiveTierText, activePassives, activePassiveValues,
   allRelicEntries, ambiguousRelicIds,
   canonicalIdOf, relicsEnabled, league, relic, chosen, points, highestTier, hasRelic, effectActive, effectSource, effectSources,
   heldRelicEntries, sourceLeagueOf, pickedRelics, reloadedPick,
-  reloadedHolder, reloadedTier, RELOADED_ATTRIBUTE, RELICS_CONFIG, RELIC_TIERS_CONFIG, reloadedTiers, cacheLeague, slug, ids, message,
+  reloadedHolder, reloadedTier, RELOADED_ATTRIBUTE, RELICS_CONFIG, RELIC_TIERS_CONFIG, PASSIVE_TIERS_CONFIG,
+  reloadedTiers, cacheLeague, slug, ids, message,
   maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
   multipliedLoot, isPotion, hasStackableSecondary, batchActions, watchRunXp, runXpTick, derivedHit, isBuildingDerivedHit,
   RELICS_ATTRIBUTE, structIds,

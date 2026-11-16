@@ -43,6 +43,14 @@ supply their defaults. The accepted `pluginConfig` is written to
 `data/definitions/world.platform.json`, read before plugins load, so a relic-catalog
 change is applied by the next world restart.
 
+Tier passives travel separately: `passiveTiers`, `leaguePassiveTiers` or
+`leaguePassives` (also accepted as `passives` inside the `leagueRelics` object) become
+`league:passive-tiers`, one array per tier with any number of canonical
+`league-<source league>:t<original tier>:<effect>` ids. A row has no fixed count, and an
+entry may come from any supported league and original tier.
+`GET /api/league-passives` returns the catalog, effect values, implementation locations
+and compatibility status for the editor.
+
 Fail-closed: an overlay that fails world validation (a bad spawn, a free-to-play
 spawn outside every f2p zone, reversed zone bounds) is refused with a warning, and
 the running world keeps its packaged configuration. Plugin *enablement* and

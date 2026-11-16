@@ -91,7 +91,9 @@ function farmFor(player) {
         farm = { offset: Math.floor(Math.random() * 31) * Model.MINUTE, patches: {}, tools: {}, autoWeed: false };
         player.setAttribute(FARM_ATTRIBUTE, farm);
     }
-    Model.applyGrowthRate(farm, Date.now());
+    const rate = { player, rate: Model.worldGrowthRate(), tickMinutes: Data.FORMULAS.growth.tickMinutes };
+    core.PluginManager.emitCustomEvent("farming:growth-rate", rate);
+    Model.applyGrowthRate(farm, Date.now(), rate.rate);
     return farm;
 }
 
@@ -483,15 +485,15 @@ function plant(player, patch, id, seeds = inventorySeeds(player, id)) {
             barbarian.planting = 2;
             player.sendMessage("You feel you have learned more of barbarian ways. Otto might wish to talk to you more.");
         }
-        const plantedAt = Date.now(), offset = farmFor(player).offset;
+        const farm = farmFor(player), plantedAt = Date.now(), offset = farm.offset, rate = Model.growthRateOf(farm);
         Object.assign(state, { crop: crop.key, stage: 0, status: "growing", checked: false, protected: false, watered: false,
-            lives: 0, plantExperiencePending: true, plantedAt, plantedTick: Model.tickIndex(plantedAt, offset),
-            nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, 0), offset),
+            lives: 0, plantExperiencePending: true, plantedAt, plantedTick: Model.tickIndex(plantedAt, offset, rate),
+            nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, 0), offset, rate),
             diseaseFree: rules.diseaseFree === true, undying: rules.undying === true });
         // Fully grown at once, as the growth model leaves a crop on its last stage (an anima plant's last stage is its end).
         if (rules.grown === true && crop.type !== "ANIMA") {
             Object.assign(state, { stage: crop.stages, status: "grown", lives: Model.startingLives(crop, state.compost) });
-            if (crop.regrow) state.nextAt = Model.nextGrowth(Date.now(), crop.regrow, farmFor(player).offset);
+            if (crop.regrow) state.nextAt = Model.nextGrowth(Date.now(), crop.regrow, offset, rate);
         }
         spam(player, plantLine(crop, patch, crop.seedCount));
         if (typeof rules.message === "string") player.sendMessage(rules.message);
@@ -669,7 +671,7 @@ function cure(player, patch, useItem = true, usedId) {
         if (!hasTool(player, "Secateurs") && !requireTool(player, "Magic secateurs")) return false;
         const now = Date.now();
         // One branch grows back every 5 minutes, at the world's growth rate as the crops are.
-        const regrow = Model.growthDuration(WILLOW_BRANCH_MINUTES);
+        const regrow = Model.growthDuration(WILLOW_BRANCH_MINUTES, Model.growthRateOf(farmFor(player)));
         const elapsed = Math.floor((now - (state.branchAt ?? now)) / regrow);
         state.branches = Math.min(6, (state.branches ?? 6) + elapsed);
         state.branchAt = (state.branchAt ?? now) + elapsed * regrow;
@@ -703,7 +705,9 @@ function cure(player, patch, useItem = true, usedId) {
         if (pruning && Math.random() < Data.FORMULAS.pruneFailureChance) { player.sendMessage("There are still some diseased leaves left."); return false; }
     }
     state.status = "growing";
-    state.nextAt = Model.nextGrowth(Date.now(), Data.stageMinutes(Data.CROPS.get(state.crop), state.stage), farmFor(player).offset);
+    const farm = farmFor(player);
+    state.nextAt = Model.nextGrowth(Date.now(), Data.stageMinutes(Data.CROPS.get(state.crop), state.stage),
+        farm.offset, Model.growthRateOf(farm));
     syncPatch(player, patch);
     return true;
 }
@@ -1101,6 +1105,8 @@ function depleteTree(event) {
 // farming tick, with their account offset - and at least every SWEEP_MS in case something
 // changed that nothing reported (a seedling received in a trade, say).
 const SWEEP_MS = 5 * Model.MINUTE;
+/** Bucket resolution for player due times; growth rates vary per player, so a growth-minute bucket cannot serve all. */
+const DUE_RESOLUTION_MS = 1000;
 const dueByMinute = new Map(); // minute -> players due within it
 const dueMinuteOf = new WeakMap();
 const immediate = new Set();
@@ -1209,8 +1215,8 @@ function automaticHerb(player, patch, state, expectedLives = state.lives) {
     if (usedSeed) farm.vault[crop.seed]--;
     const plantedAt = Date.now();
     farm.patches[key] = { ...Model.emptyPatch(plantedAt, farm), crop: crop.key, compost: 3,
-        plantedAt, plantedTick: Model.tickIndex(plantedAt, farm.offset),
-        nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, 0), farm.offset),
+        plantedAt, plantedTick: Model.tickIndex(plantedAt, farm.offset, Model.growthRateOf(farm)),
+        nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, 0), farm.offset, Model.growthRateOf(farm)),
         diseaseFree: rules.diseaseFree === true, undying: rules.undying === true,
         plantExperiencePending: true };
     syncAutomaticPatch(player, patch);
@@ -1271,7 +1277,7 @@ function schedule(player) {
     const now = Date.now();
     const due = Math.min(Model.nextDue(farmFor(player)), seedlingDue.get(player) ?? Infinity, now + SWEEP_MS);
     if (due <= now) { immediate.add(player); return; }
-    const minute = Math.ceil(due / Model.growthDuration(1));
+    const minute = Math.ceil(due / DUE_RESOLUTION_MS);
     let players = dueByMinute.get(minute);
     if (!players) dueByMinute.set(minute, players = new Set());
     players.add(player);
@@ -1300,8 +1306,8 @@ function farmingTick() {
         const here = (pos.getZ() << 28) | (pos.getX() << 14) | pos.getY();
         if (here !== tile) { nearPatches.set(player, here); syncNearby(player); }
     }
-    // Due players are bucketed by a minute of growth: a real minute at OSRS's speed.
-    const minute = Math.floor(Date.now() / Model.growthDuration(1));
+    // Due times are bucketed per second because each character can have a different growth rate.
+    const minute = Math.floor(Date.now() / DUE_RESOLUTION_MS);
     lastMinute ??= minute;
     while (lastMinute < minute) {
         const due = dueByMinute.get(++lastMinute);

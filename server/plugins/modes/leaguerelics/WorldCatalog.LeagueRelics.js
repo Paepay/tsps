@@ -15,7 +15,10 @@ const MAX_TIERS = 8;
 const MIN_CHOICES = 2;
 const MAX_CHOICES = 3;
 const SOURCE_LEAGUES = [4, 5, 6];
-const RELIC_ID = /^([1-9]\d*):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+// The website stores `league-4:key`; the runtime's canonical form is `4:key`.
+// Accept both so a platform payload cannot be dropped merely because it kept
+// the shared contract's league- prefix.
+const RELIC_ID = /^(?:league-)?([1-9]\d*):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const RELIC_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function canonicalId(sourceLeague, key) {

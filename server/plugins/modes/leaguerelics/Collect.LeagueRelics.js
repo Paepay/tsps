@@ -35,10 +35,9 @@ function tutorCollectIds(type) {
 /** The relic items the character owns none of, each once. */
 function owed(player, type) {
   const ids = heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic));
-  // Trailblazer Reloaded tier 3 passive: the Crystal of memories (cache name Crystal of Echoes).
+  // The Crystal of memories passive, wherever the world assigned it (cache name Crystal of Echoes).
   const crystal = Common.data.effects.crystalOfMemories;
-  if (Common.relicsEnabled() && crystal && [].concat(crystal.league).includes(type)
-    && Common.highestTier(player) + 1 >= crystal.fromTier) {
+  if (Common.activePassiveValues(player, "crystalOfMemories").length > 0) {
     const id = Common.core.ItemIdentifiers[crystal.item];
     if (Number.isInteger(id)) ids.push(id);
   }

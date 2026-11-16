@@ -91,7 +91,7 @@ function view({ player, slot }) {
   sender.sendVarbit(Common.data.lastViewedVarbit, index);
   // This cache's script takes the relic's description and the tier's passive text after the structs.
   const relic = Common.relic(type, tier, relicSlot);
-  const passive = Common.catalog(type).tiers[tier]?.passive ?? "";
+  const passive = Common.passiveTierText(type, tier);
   sender.sendInterfaceScript(viewScript, [
     ...viewScriptComponents.map((child) => Unlock.uid(group, child)),
     viewState(player, type, tier, relicSlot),
