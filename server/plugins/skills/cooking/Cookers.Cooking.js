@@ -111,9 +111,14 @@ function burnMessage(cookable) {
 const FIRE_OBJECT_NAMES = new Set(["Fire", "Forester's Campfire", "Firepit", "Firepit with hook", "Firepit with pot"]);
 const HOUSE_RANGE_NAMES = new Set(["Small oven", "Large oven", "Steel range", "Fancy range"]);
 // The cache spells the clay ovens two ways: "Clay oven" in Hosidius (the kitchen and the mess) and
-// on Neitiznot, "Clay Oven" in Nardah.
-const RANGE_OBJECT_NAMES = new Set(["Cooking range", "Range", "Stove", "Oven", "Clay oven", "Clay Oven"]);
+// on Neitiznot, "Clay Oven" in Nardah. A "Cooking pot" with Cook is a range too (Wiki: the Sailing
+// islands' amenity, The Pandemonium's pot), as is Fossil Island's built one (fossil_range_built).
+const RANGE_OBJECT_NAMES = new Set(["Cooking range", "Range", "Stove", "Oven", "Clay oven", "Clay Oven", "Cooking pot"]);
 const COOKABLE_OBJECT_NAMES = new Set([...RANGE_OBJECT_NAMES, ...HOUSE_RANGE_NAMES, ...FIRE_OBJECT_NAMES]);
+// Names that are cookers only with their Cook option. The op-less "Cooking pot"s (fireplacecookingpot
+// 26180, qip_sheep_shearer_fireplacecookingpot 12969, fai_varrock_shanty_cookingpot 7483) stay out:
+// live cooks on 26180 as a fire (rsprox 240/911358 tick 1197-1201, human_firecooking), not a range.
+const COOK_OPTION_ONLY_NAMES = new Set(["Cooking pot"]);
 
 function cookAnimationFor(name) {
   const seq = FIRE_OBJECT_NAMES.has(name) || HOUSE_RANGE_NAMES.has(name) ? "human_firecooking" : "human_cooking";
@@ -550,6 +555,11 @@ function cookStep(player, session, cycle) {
   }
 }
 
+/** How many of the cooked item one success gives (Wiki: giant seaweed makes six soda ash, one on a fail). */
+function cookedAmount(cookable) {
+  return cookable.cookedAmount ?? 1;
+}
+
 function cookOne(player, session) {
   const { Item, Skill } = Common.core;
   const cookable = cookedResult(player, session.cookable);
@@ -578,6 +588,11 @@ function cookOne(player, session) {
   } else {
     // A cake tin comes back as well as the cake: room for it before anything changes.
     if (cookable.returnItem !== undefined && inventory.getFreeSlots() < 1) { inventory.full(); return false; }
+    // Wiki (Giant seaweed): six soda ash a success. The raw's own slot takes one; the rest need room first.
+    if (cookedAmount(cookable) > 1 && inventory.getAddableAmount(new Item(cookable.cooked, cookedAmount(cookable))) < cookedAmount(cookable) - 1) {
+      inventory.full();
+      return false;
+    }
     inventory.deleteNumber(session.cookable.raw, 1);
   }
   const burnRequest = {
@@ -597,7 +612,7 @@ function cookOne(player, session) {
     session.selected = null;
   }
   if (!burnRequest.burn) {
-    const output = new Item(cookable.cooked, 1);
+    const output = new Item(cookable.cooked, cookedAmount(cookable));
     if (typeof inventory.getAddableAmount === "function" && inventory.getAddableAmount(output) === 0) {
       inventory.addItem(rawRestore);
       return;
@@ -635,7 +650,7 @@ function cookOne(player, session) {
       objectLocation: session.location,
     });
     Common.addXp(player, cookable.xp);
-    Common.api.emitCustomEvent("skills:produced", { player, skill: Skill.COOKING, itemId: cookable.cooked, amount: 1, xp: cookable.xp, kind: "cook" });
+    Common.api.emitCustomEvent("skills:produced", { player, skill: Skill.COOKING, itemId: cookable.cooked, amount, xp: cookable.xp, kind: "cook" });
   } else if (cookable.failsWithoutBurning) {
     // Wiki (Drunk dragon): "sometimes no experience is gained" until 38 Cooking, but "you will always
     // receive a finished drunk dragon": the item, no XP, no burn line (none is recorded for it).
@@ -658,13 +673,15 @@ function isCookingActive(player) {
 /** A cooker this use or click reaches: a fire, or a range or oven with a Cook option. */
 function isCooker(definition) {
   const actions = definition.getInteractions() ?? [];
+  const name = definition.getName();
+  if (COOK_OPTION_ONLY_NAMES.has(name)) return actions.includes("Cook");
   // A Forester's Campfire has no Cook action; food is used on it directly.
-  return COOKABLE_OBJECT_NAMES.has(definition.getName())
-    && (!actions.some(Boolean) || actions.includes("Cook") || FIRE_OBJECT_NAMES.has(definition.getName()));
+  return COOKABLE_OBJECT_NAMES.has(name)
+    && (!actions.some(Boolean) || actions.includes("Cook") || FIRE_OBJECT_NAMES.has(name));
 }
 
 function handleCook(event) {
-  const definition = event.object.getDefinition();
+  const definition = event.definition ?? event.object.getDefinition();
   if (!isCooker(definition)) return;
 
   const cookable = cookableFor(event.itemId);
@@ -680,7 +697,7 @@ function handleCook(event) {
 
 /** Anything else used on a cooker, when no other content takes it (rsprox captures 269, 1718). */
 function refuseCook(event) {
-  if (!isCooker(event.object.getDefinition())) return;
+  if (!isCooker(event.definition ?? event.object.getDefinition())) return;
   event.handled = true;
   Common.mesbox(event.player, CANNOT_COOK_MESSAGE);
 }
@@ -720,6 +737,11 @@ function stopOnDisconnect({ player }) {
   stopCooking(player, false);
 }
 
+/** An inventory action or an attack (auto-retaliate too) replaces the cooking. */
+function stopOnInteractionCleared({ player }) {
+  stopCooking(player);
+}
+
 /** The one task that steps every cooking player, submitted with the first cook. */
 function ensureCookTask() {
   if (cookingTask) return;
@@ -737,6 +759,7 @@ function attachCookers(api) {
   api.persistAttribute(SUCCESS_COUNT_ATTRIBUTE, 0);
   api.onPlayerLogin(sendSuccessCount);
   api.onPlayerDisconnect(stopOnDisconnect);
+  api.onCustomEvent("player:interaction-cleared", stopOnInteractionCleared);
   api.onCustomEvent("level-up:popup-opened", pauseCooking);
   api.onCustomEvent("cooking:count", countCookEvent);
 
@@ -748,6 +771,7 @@ function attachCookers(api) {
   api.onObjectInteraction("Stove", { Cook: handleCookClick });
   api.onObjectInteraction("Oven", { Cook: handleCookClick });
   api.onObjectInteraction("Clay oven", { Cook: handleCookClick });
+  api.onObjectInteraction("Cooking pot", { Cook: handleCookClick });
   api.onObjectInteraction("Clay Oven", { Cook: handleCookClick });
   api.onObjectInteraction("Small oven", { Cook: handleCookClick });
   api.onObjectInteraction("Large oven", { Cook: handleCookClick });

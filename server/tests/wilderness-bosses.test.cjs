@@ -217,6 +217,18 @@ test('WildernessBosses:entryFee sets the fee asked and paid, and caps the discou
   assert.equal(Caves.feeCost(player), 0);
 });
 
+test('WildernessBosses:entryFee above the coin stack cap asks and takes at most 2,147,483,647', (t) => {
+  assert.equal(require('../plugins/bosses/WildernessBosses.plugin').config['WildernessBosses:entryFee'].max, 2_147_483_647);
+  const prompts = configureFee(t, 3_000_000_000);
+  const { player, purse } = payingPlayer({ coins: 0, banked: 2_147_483_647 });
+  let entered = false;
+  Caves._test.feeThen(player, () => { entered = true; });
+  assert.deepEqual(prompts, ['Pay 2,147,483,647 coins to enter?']);
+  assert.equal(entered, true);
+  assert.deepEqual(purse, { coins: 0, banked: 0 });
+  assert.equal(player.attributes[Common.FEE_AMOUNT_ATTRIBUTE], 2_147_483_647);
+});
+
 test('WildernessBosses:entryFee 0: in without a box or coins, no discount, nothing for a player killer', (t) => {
   const prompts = configureFee(t, 0);
   const { player, purse } = payingPlayer({ coins: 17, banked: 23 });
@@ -262,4 +274,25 @@ test('the bears\' crescent and the spiders\' shots splat when they land, not bef
     assert.ok(lands(Spiders._test.shotHitTicks(end), end), `spider shot at ${tiles} tiles`);
   }
   assert.equal(Spiders._test.shotHitTicks(31), 2);
+});
+
+// rsprox_transcripts/235/03403.txt (line 5110 on; also 03404, 03405): the bash's inner dust ring is
+// zebak_roar_wave_dust (2184) at delay=2. A 2 passed to the two-argument Graphic read as Priority.HIGH (delay 0).
+test("Vet'ion's bash dust keeps a delay of 2, not a priority", (t) => {
+  const sent = [];
+  const player = { getPacketSender: () => ({ sendGlobalGraphic: (graphic, location) => sent.push({ graphic, location }) }) };
+  t.mock.method(Caves, 'playersIn', () => [player]);
+  const tile = new core.Location(1883, 11545, 0);
+  for (const delay of [2, 4]) Vetion._test.tileGraphic({ key: 'vetion' }, 2184, tile, delay);
+  assert.deepEqual(sent.map(({ graphic }) => [graphic.id, graphic.getDelay(), graphic.getHeight()]), [[2184, 2, 0], [2184, 4, 0]]);
+});
+
+test("Callisto's ranged impact is delayed by its flight, never read as a height", () => {
+  const Bears = require('../plugins/bosses/wildernessbosses/Bears.WildernessBosses');
+  // 30 + 6 * (10 + 1) = 96 at ten tiles: GraphicHeight's 96, which the two-argument Graphic read as a height.
+  for (const tiles of [1, 10]) {
+    const end = Bears._test.RANGED.start + 6 * (tiles + 1);
+    const graphic = Bears._test.impactGraphic(end);
+    assert.deepEqual([graphic.getDelay(), graphic.getHeight()], [end, 0], `${tiles} tiles`);
+  }
 });

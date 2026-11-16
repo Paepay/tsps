@@ -204,15 +204,15 @@ function isSmeltingActive(player) {
   return Sessions.typeOf(player) === "smelt";
 }
 
-/** Other furnace products (cannonballs) offered beside the bars: (player) => [{ itemId, most, start }]. */
+/** Other furnace products (cannonballs) offered beside the bars: (player, furnaceId) => [{ itemId, most, start }]. */
 const MENU_EXTRAS = [];
 
 function addMenuEntries(provider) {
   MENU_EXTRAS.push(provider);
 }
 
-function extraEntries(player) {
-  return MENU_EXTRAS.flatMap((provider) => provider(player));
+function extraEntries(player, furnaceId = -1) {
+  return MENU_EXTRAS.flatMap((provider) => provider(player, furnaceId));
 }
 
 /** entries: [{ itemId, most, start(player, amount) }], shown in order. */
@@ -239,7 +239,7 @@ function recipeEntries(player, recipes, furnaceId) {
 /** "Smelt" on a furnace: the menu lists every bar; with nothing to smelt, a message box instead. */
 function smelt({ player, objectId }) {
   const hasOre = Data.SMELTING_RECIPES.some((recipe) => !recipe.skill && !recipe.furnace && recipe.ingredients.some(([id]) => id !== Core.ItemIdentifiers.COAL && available(player, id) > 0));
-  const extras = extraEntries(player);
+  const extras = extraEntries(player, objectId ?? -1);
   if (!hasOre && extras.length === 0) {
     const crafting = Data.SMELTING_RECIPES.filter((recipe) => recipe.skill && !recipe.furnace
       && (!recipe.members || Core.WorldDefinition.isMembersWorld()) && hasIngredients(player, recipe));
@@ -262,7 +262,7 @@ function smelt({ player, objectId }) {
  * which aren't on it, open a menu of their own product.
  */
 function useOnFurnace(event) {
-  const furnace = event.object.getDefinition().getName();
+  const furnace = (event.definition ?? event.object.getDefinition()).getName();
   if (furnace === LOVAKITE_FURNACE) return smeltLovakite(event);
   const recipes = Data.SMELTING_RECIPES.filter((recipe) => !recipe.furnace
     && (!recipe.members || Core.WorldDefinition.isMembersWorld())

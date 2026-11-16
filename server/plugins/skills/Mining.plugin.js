@@ -242,7 +242,8 @@ const ROCKS = [
   // No petBase: "Players cannot obtain the rock golem from mining salts in the salt mine" (Wiki Rock golem).
   // Ours: basalt has no rock golem either (the Wiki names no rate). No Wiki success chart: [100, 201] is fitted
   // to the capture's 23 of 29 rolls at 99. A pickaxe slower than 4 ticks keeps its own interval (only an infernal
-  // pickaxe was recorded). The gem pre-roll is kept as on other rocks: no gem came in 29 rolls, too few to say.
+  // pickaxe was recorded). No gem pre-roll: the Wiki rock pages (Te salt rocks, ...) carry no gem table, and no gem
+  // came in the capture's 29 rolls.
   ...[
     ["Te salt rocks", ItemIdentifiers.TE_SALT, "Te salt"],
     ["Efh salt rocks", ItemIdentifiers.EFH_SALT, "Efh salt"],
@@ -251,7 +252,7 @@ const ROCKS = [
   ].map(([objectName, itemId, name]) => ({
     objectName,
     level: 72, xp: 5, oreId: itemId,
-    chance: [100, 201], gems: true, respawnTicks: 9, rollTicks: 4,
+    chance: [100, 201], respawnTicks: 9, rollTicks: 4,
     yield: { min: 1, chance: 1 / 7 }, depletedRock: "my2arm_saltrock_empty", minerDepletionSound: 2661,
     outcomes: [itemId === ItemIdentifiers.BASALT
       ? { itemId, min: 1, max: 1, weight: 1, xp: 5, message: "You manage to mine some Basalt." }
@@ -982,9 +983,11 @@ class MiningTask extends Task {
       // Content may change what a success yields ("mining:ore-yield": a bracelet of clay softens clay and
       // doubles soft clay). `spend` runs once the ore is really kept, so a charge is not used on an ore
       // that content takes off the player or a pickaxe burns.
-      const oreYield = { player, rock: state.rock.objectName, oreId, amount, spend: null };
+      const oreYield = { player, rock: state.rock.objectName, rockObject, oreId, amount, spend: null };
       pluginApi.emitCustomEvent("mining:ore-yield", oreYield);
       ({ oreId, amount } = oreYield);
+      // An enhancer's extra ore is the rock's own ore unless the content names another (`extraOreId`).
+      const extraOreId = oreYield.extraOreId ?? oreId;
       // Content may take the ore off the player as it is mined ("mining:hand-over", Miscellania's
       // coal goes to Miner Magnus): no ore, no count and no sound, only the line naming who took it.
       const handOver = { player, object: rockObject, itemId: oreId, amount, taker: null };
@@ -1017,7 +1020,7 @@ class MiningTask extends Task {
       const petRoll = { player, skill: Skill.MINING, petBase: state.rock.petBase, handled: false };
       pluginApi.emitCustomEvent("pets:skilling-roll", petRoll);
       deliverOre(player, pendingOre);
-      if (kept && !state.rock.outcomes) mineExtraOre(player, state.rock, outcome, oreId);
+      if (kept && !state.rock.outcomes) mineExtraOre(player, state.rock, outcome, extraOreId);
       const minedNpcRock = state.npcRock;
       pluginApi.emitCustomEvent("mining:success", { player, skill: Skill.MINING, petBase: state.rock.petBase, itemId: oreId, petRolled: petRoll.handled, pickaxeId: state.pickaxe?.id ?? null, objectId: state.objectId, location: state.location });
       if (minedNpcRock) {

@@ -63,6 +63,8 @@ export class Combat {
     /** The player whose damage `addDamage` recorded last. */
     private lastDamager: Player | null = null;
     private readonly lastAttack = new TickStopwatch();
+    /** Damage can delay healing without renewing another fighter\'s single-way tag. */
+    private readonly lastDamage = new TickStopwatch();
     // Most NPCs never use these; each SecondsTimer also holds a Stopwatch, so allocate on first use.
     private poisonImmunityTimer: SecondsTimer | null = null;
     private poisonClock: PoisonClock | null = null;
@@ -295,7 +297,12 @@ export class Combat {
         this.autoRetaliating = autoRetaliation;
         this.method = null;
         this.cycleState = null;
-        if (this.character.isPlayer()) TaskManager.cancelTasks(this.character.getIndex());
+        if (this.character.isPlayer()) {
+            // An attack replaces the player's interaction, clicked or auto-retaliate alike, so a
+            // chop, a fire or a make-X ends even with the target adjacent and no step to take.
+            TaskManager.cancelTasks(this.character.getIndex());
+            this.character.getAsPlayer().interactionCleared("attack");
+        }
         this.character.getMovementQueue().reset();
         // A retaliation chase isn't the player's click: it follows the run setting.
         if (autoRetaliation) this.character.getMovementQueue().endClickRunOverride();
@@ -797,7 +804,9 @@ export class Combat {
         return this.lastAttackedCycle < 0 ? Infinity : World.getProcessCycle() - this.lastAttackedCycle;
     }
     private clearAttacker(): void {
-        this.applyAttacker(null);
+        // PJ expiry releases the attacker; it is not another hit or an explicit
+        // combat reset, so NPC regeneration keeps its original timestamp.
+        this.applyAttacker(null, false);
     }
 
     /**
@@ -808,9 +817,12 @@ export class Combat {
     public clearAttackerIf(attacker: Mobile): void {
         if (this.attacker === attacker) this.applyAttacker(null);
     }
-    private applyAttacker(attacker: Mobile | null): void {
+    private applyAttacker(attacker: Mobile | null, resetTimer = true): void {
         this.attacker = attacker;
-        this.lastAttack.reset();
+        if (resetTimer) {
+            this.lastAttack.reset();
+            this.lastDamage.reset();
+        }
         if (this.character.isNpc()) {
             World.markNpcCombatActive(this.character.getAsNpc(), attacker != null || this.target != null);
         }
@@ -841,6 +853,7 @@ export class Combat {
     public getTeleblockTimer(): SecondsTimer { return this.teleblockTimer ??= new SecondsTimer(); }
     public getPrayerBlockTimer(): SecondsTimer { return this.prayerBlockTimer ??= new SecondsTimer(); }
     public getLastAttack(): TickStopwatch { return this.lastAttack; }
+    public getLastDamage(): TickStopwatch { return this.lastDamage; }
 
     private shouldRetreat(method: CombatMethod): boolean {
         if (!this.character.isNpc()) return false;
@@ -1186,9 +1199,14 @@ export class Combat {
         target: Mobile,
         generation: number
     ): void {
+        const pluginMessage = CombatFactory.takePluginDenialMessage(this.character);
         if (this.target !== target || this.generation !== generation) return;
         const player = this.character.isPlayer() ? this.character.getAsPlayer() : null;
         switch (response) {
+            case CanAttackResponse.CANT_ATTACK_IN_AREA:
+                // A plugin's own refusal line (PluginCanAttackEvent.message), only on this attack.
+                if (pluginMessage) player?.sendMessage(pluginMessage);
+                break;
             case CanAttackResponse.COMBAT_METHOD_NOT_ALLOWED:
                 // The weapon/spell is momentarily unusable (no ammo loaded, blowpipe
                 // empty, spell unselected). Keep the target so re-equipping resumes;

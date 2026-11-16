@@ -102,6 +102,12 @@ export class Player extends Mobile {
     private static readonly RESTORE_UP_TIMER_SCRIPT = 4517;
     /** The overlay's timers are resent every quarter of the restore cycle. */
     private static readonly RESTORE_TIMER_SEND_TICKS = 25;
+    /**
+     * The restore timer's ticks left, saved at each 25-tick send: a relog resumes it from there, as
+     * live does (its first send after login reads 50 or 25, rsprox_transcripts/239/04288.txt,
+     * 231/02990.txt), instead of starting a fresh minute.
+     */
+    public static readonly STAT_RESTORE_LEFT_ATTRIBUTE = "stats:restore-ticks-left";
     /** Cycle the next drained-stat restore is due on (-1: not started). */
     private statRestoreDue = -1;
     /** Cycle Rapid Restore's own restore is due on; it starts when the prayer is switched on. */
@@ -592,7 +598,7 @@ export class Player extends Mobile {
      */
     public processStatRestoration(cycle: number): void {
         const skills = this.getSkillManager();
-        if (this.statRestoreDue < 0) this.statRestoreDue = cycle + Player.STAT_RESTORE_TICKS;
+        if (this.statRestoreDue < 0) this.statRestoreDue = cycle + this.savedRestoreTicksLeft();
         const restoreDue = cycle >= this.statRestoreDue;
         if (restoreDue) this.statRestoreDue = cycle + Player.STAT_RESTORE_TICKS;
 
@@ -653,14 +659,22 @@ export class Player extends Mobile {
     private sendRestoreTimers(cycle: number, rapidRestoreRestarted: boolean, rapidRestoreStopped: boolean): void {
         const remaining = this.statRestoreDue - cycle;
         if (remaining % Player.RESTORE_TIMER_SEND_TICKS === 0) {
+            this.setAttribute(Player.STAT_RESTORE_LEFT_ATTRIBUTE, remaining);
             this.getPacketSender().sendClientScript(Player.RESTORE_UP_TIMER_SCRIPT, 0, Player.STAT_RESTORE_TICKS, remaining);
-            PluginManager.emitCustomEvent("stats:restore-timer-sent", { player: this });
+            PluginManager.emitCustomEvent("stats:restore-timer-sent", { player: this, remaining });
         }
         if (rapidRestoreRestarted) {
             this.getPacketSender().sendClientScript(Player.RESTORE_UP_TIMER_SCRIPT, 1, Player.STAT_RESTORE_TICKS, Player.STAT_RESTORE_TICKS);
         } else if (rapidRestoreStopped) {
             this.getPacketSender().sendClientScript(Player.RESTORE_UP_TIMER_SCRIPT, 1, 0, 0);
         }
+    }
+
+    /** The restore timer a save left (a whole 25-tick segment), or a full cycle. */
+    private savedRestoreTicksLeft(): number {
+        const left = Number(this.getAttribute(Player.STAT_RESTORE_LEFT_ATTRIBUTE));
+        return Number.isInteger(left) && left > 0 && left <= Player.STAT_RESTORE_TICKS
+            && left % Player.RESTORE_TIMER_SEND_TICKS === 0 ? left : Player.STAT_RESTORE_TICKS;
     }
 
     /** Worn items changed: the next Hitpoints regen asks gear again, keeping the countdown. */
@@ -743,11 +757,12 @@ export class Player extends Mobile {
             .Sailing.onLogout(this);
         this.getPacketSender().sendInterfaceRemoval();
 
-        // Leave area. An area's leave code that throws must not stop the rest of the logout: the logout hooks, the
-        // task cancel and the save below (a plugin's postLeave error left the player's tasks running and unsaved).
+        // Leave area, through callArea like every other leave: it runs as the area's plugin (tasks and objects
+        // it makes are that plugin's) and an area's leave code that throws is logged there and must not stop the
+        // rest of the logout: the logout hooks, the task cancel and the save below.
         if (this.getArea() != null) {
             try {
-                this.getArea().leave(this, true);
+                PluginManager.callArea(this.getArea(), "leave", this, true);
             } catch (err) {
                 console.error(`[World] area leave failed on logout (${this.getUsername()})`, err);
             }
@@ -872,7 +887,17 @@ export class Player extends Mobile {
             if (this.getInteractingMobile() === following) this.setMobileInteraction(null);
             if (this.getPositionToFace()?.equals(following.getLocation())) this.setPositionToFace(null);
         }
-        PluginManager.emitCustomEvent("player:interaction-cleared", { player: this });
+        this.interactionCleared("item");
+    }
+
+    /**
+     * `player:interaction-cleared` { player, reason }: the player's interaction was replaced, so a
+     * repeating action held outside the task keys (a chop, a fire, a smelt) ends. `reason` is "item"
+     * (an inventory or equipment action) or "attack" (an Attack click, a spell on a target, or
+     * auto-retaliate). osrs-docs: Entity Interactions - Interruptions.
+     */
+    interactionCleared(reason: "item" | "attack"): void {
+        PluginManager.emitCustomEvent("player:interaction-cleared", { player: this, reason });
     }
 
     isStaff(): boolean {

@@ -165,6 +165,15 @@
     "perDay": [0, 20, 40, 80],
     "varbit": "kourend_free_dynamite"
   },
+  "cromperty": {
+    "npc": "Wizard Cromperty",
+    "npcGamevals": ["cromperty_pre_diary", "cromperty_post_diary"],
+    "diary": "ardougne",
+    "item": "cert_blankrune_high",
+    "perDay": [0, 100, 150, 250],
+    "varbit": "ardougne_free_essence"
+  },
+  "rantz": { "npc": "Rantz", "diary": "western", "item": "ogre_arrow", "perDay": [25, 50, 100, 150], "varbit": "western_rantz_arrows" },
   "lundail": {
     "npc": "Lundail",
     "diary": "wilderness",

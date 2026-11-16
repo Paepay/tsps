@@ -377,11 +377,13 @@ export class NPC extends Mobile {
 
             AreaManager.process(this);
             // "combat:no-regen": a boss whose fight has phases it can't be hit in (Vet'ion's hounds)
-            // keeps its damage.
+            // keeps its damage. The damage clock includes untagged hits; lastAttack also
+            // preserves existing boss scripts that explicitly reset that clock to hold healing.
             // Idle regen only: leash / low-HP walk-home must not heal mid-fight (10%/tick while
             // RETREATING made ranged Fire giants and similar look immortal). Mole uses
             // combat:no-regen for its own resurface case.
             if (this.hitpoints > 0 && !this.hitpointsLocked && !this.hasFlag("combat:no-regen")
+                && this.getCombat().getLastDamage().hasElapsed(20000)
                 && this.getCombat().getLastAttack().hasElapsed(20000)) {
                 const max = this.getMaxHitpoints();
                 if (max > this.hitpoints) {

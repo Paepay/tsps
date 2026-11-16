@@ -40,6 +40,8 @@ From the most specific source to the least:
 
 So weapons whose speed differs from their type's are right without a per-item entry: the Scythe of Vitur is 5 (its type, scythe, is 4), the plain Scythe 7.
 
+One per-item entry overrides the cache, as an approved exception to AGENTS rule 13: the Guthix, Saradomin and Zamorak mjolnirs (6760, 6762, 6764) attack at the Wiki's 6 ticks, where the cache says 5.
+
 ## Two-handed weapons
 
 A weapon is two-handed when the cache also wears it in the shield slot (its second wear position is 5), so wielding it takes off a shield or defender. `item-gameplay.json`'s `doubleHanded` isn't read: the old export left newer weapons and variants one-handed (the Soulreaper axe, a Noxious halberd, Elder maul (or)) and had the Keris partisans two-handed.
@@ -221,7 +223,7 @@ The bow shows the arrow being drawn: the ammunition's `<ammo>_arrow_launch` spot
   The [Ice sceptre](https://oldschool.runescape.wiki/w/Ice_ancient_sceptre?action=raw) adds 10%
   to the additive magic accuracy percentage for Ice spells against a target a freeze would take
   hold on now (no freeze or freeze immunity running, and freezable by `CombatFactory.freezeTicks`'
-  own size and resistance rules). Known but not modelled yet: the
+  own rules: resistance below 100% and no `"combat:unfreezable"` flag). Known but not modelled yet: the
   [Smoke sceptre](https://oldschool.runescape.wiki/w/Smoke_ancient_sceptre?action=raw)'s 20%
   healing reduction for 6 seconds (10 ticks) on poisoned targets hit by Smoke spells (tsps has no
   healing-reduction effect). Only the

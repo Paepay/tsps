@@ -461,13 +461,18 @@ test("the ornament kit on each part, Dismantle back; an ornament cannon uses its
 
 test("restrictions: every Wiki area has its message; outlines are polygons; instances refuse", () => {
   const data = Restrictions.load();
-  assert.equal(data.restrictions.length, 72);
+  assert.equal(data.restrictions.length, 74);
   for (const r of data.restrictions) {
     assert.ok(r.name && r.message, r.name);
     for (const area of r.areas ?? []) assert.ok(area.points.length >= 3 && r.source, r.name);
   }
   assert.equal(Restrictions.restrictionAt(new core.Location(3165, 3490, 0)), "The Grand Exchange staff prefer not to have heavy artillery operated around their premises.");
   assert.equal(Restrictions.restrictionAt(new core.Location(3200, 10100, 0)), "You can't set up a cannon here.", "the Revenant Caves");
+  // Wiki (Ynysdail Cavern): the whole cavern, from beside its exit to its far end; not the island above.
+  for (const [x, y] of [[2292, 9914], [2243, 9832], [2298, 9918]]) {
+    assert.equal(Restrictions.restrictionAt(new core.Location(x, y, 0)), "The ground is too damp to set up a cannon here.", `${x},${y}`);
+  }
+  assert.equal(Restrictions.restrictionAt(new core.Location(2219, 3477, 0)), null, "Ynysdail's surface");
   assert.equal(Restrictions.restrictionAt(CENTRE), null);
   assert.equal(Restrictions.restrictionAt(CENTRE, {}), data.default, "an instance");
 });
@@ -657,6 +662,7 @@ test("Tower of Magic restriction applies only during Ascent of Arceuus, through 
 
 test("cache-derived room restrictions match closed walkable components and cannot include another valid cannon room", () => {
   const rooms = [
+    ['Elven rabbit cave', 3295, 12581, 0, 95, [3291, 12574, 3300, 12583]],
     ['Fight Arena interior', 2603, 3156, 0, 382, [2583, 3152, 2606, 3170]],
     ['Karuulm Slayer Dungeon', 1259, 10154, 0, 299, [1251, 10147, 1276, 10170]],
     ['Karuulm Slayer Dungeon', 1268, 10191, 0, 603, [1256, 10175, 1301, 10206]],

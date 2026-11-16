@@ -78,7 +78,7 @@ const NAMELESS_DOOR_LEAF_IDS = Object.freeze({
   PIP_CELL_GATE_OPEN: 3464,
   CRANDOR_SECRET_DOOR_OPEN: 25039, // dragonsecretdoor_open; capture 2951
   INVISWALL: 38848, // actionless collision blocker; captures 2951 and 740
-  HAROLD_DOOR_OPEN: 1542, // inactiveposhdoor: Harold's door (3747) open, 233/03247.txt:4726
+  HAROLD_DOOR_OPEN: 1542, // inactiveposhdoor: Harold's door (3747) open, 233/03247.txt:4726; Temple of Ikov's trap-lever door (92), 242/912156.txt:26149
   CASTLE_DOOR_OPEN: 3744, // castledoor_inactive: the Death Plateau equipment room door (3743) open, 233/03252.txt:36063
   MOURNER_CAGE_GATE_LEFT_OPEN: 2059, // mournerquaters_gatelopen; Biohazard capture tick 557
   MOURNER_CAGE_GATE_RIGHT_OPEN: 2061, // mournerquaters_gateropen
@@ -111,6 +111,11 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   SELF_OPENING_DOOR_IDS = new Set([O.DOOR_223, O.DOOR_225, O.DOOR_226, O.DOOR_227, O.DOOR_228, O.DOOR_229, O.DOOR_230, O.DOOR_231,
     O.DOOR_67, // Khazard stronghold: Open-only door 2184 has no paired open loc.
     O.DOOR_283, // Ardougne Castle's lockpick door has no separate open loc in the cache.
+    // The magic axe hut's and Pirates' Hideout's lockpick doors (toollock2/3, #5744) have no open loc either: their
+    // same-model Close locs belong to other doors, so the leaf swings in place (LockedDoors.Thieving.js unlocks them).
+    O.DOOR_285, O.DOOR_286,
+    // The Chaos Druid Tower's lockpick door (11723) likewise swings in place.
+    O.DOOR_282,
     // The Ranging Guild's entrance (11665) is Open only; 11666 is a ladder, so there is no
     // open leaf to pair with and the leaf swings in place.
     O.GUILD_DOOR,
@@ -426,6 +431,16 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // across, from the low side to the high side or back, along their own row. crossDelay holds the
   // opener that many ticks after the opening sound before the gate opens and they cross.
   PASS_THROUGH_GATES = Object.freeze([
+    // Authored Ikov passage: a shared blocker preserves unqualified players' clipping.
+    // The authorized opener is explicitly carried one tile; this is not ordinary clipped walking.
+    Object.freeze({
+      closed: [[O.DOOR_11, 2646, 9870, 0, 1]],
+      opened: [[NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2646, 9870, 0, 1], [O.DOOR_11, 2646, 9871, 0, 2]],
+      crossY: 9871,
+      carry: true,
+      guardCarry: true,
+      closeTicks: 2,
+    }),
     // Death Plateau: Harold's door (233/03247.txt:4726-4744, and leaving at :5755-5783). The doorway gets inviswall
     // 38848 and the open door the tile south; the player walks over, and the door is back two ticks later. Entering,
     // the quest knocks first ("You knock on the door.", "Harold: Come in!") and opens it through door:open.
@@ -543,6 +558,18 @@ function defineDoorData({ ObjectIdentifiers: O }) {
       closeTicks: 2,
       openSoundId: 81,
     })),
+    // Temple of Ikov's trap-lever door (ikov_trapleverdoor 92), rsprox_transcripts/242/912156.txt ticks 1764-1768,
+    // 1885-1893 and 2014-2019: Open puts inviswall 38848 on the doorway and inactiveposhdoor (1542) on the tile
+    // north, sound 62, the player steps across (either way) and the door is back two ticks later. TempleOfIkov
+    // keeps it shut until the trapped lever is pulled safely (door:toggle).
+    Object.freeze({
+      closed: [[O.DOOR_10, 2648, 9857, 0, 1]],
+      opened: [[NAMELESS_DOOR_LEAF_IDS.INVISWALL, 2648, 9857, 0, 1], [NAMELESS_DOOR_LEAF_IDS.HAROLD_DOOR_OPEN, 2648, 9858, 0, 2]],
+      crossY: 9858,
+      walkOver: true,
+      closeTicks: 2,
+      openSoundId: 62,
+    }),
     // Waterfall guide xWBSnGkQTi4 3:53.2-3:54.4: Golrie's panel opens, the player walks
     // through, then it closes (~1.2s). Cache 1991 is Open-only model609, with no open loc.
     Object.freeze({
@@ -1919,9 +1946,22 @@ function carryOneTile(player, gate, x, y, z) {
   const delta = (position < cross ? cross : cross - 1) - position;
   if (Math.abs(delta) !== 1) return;
   const direction = acrossX ? (delta > 0 ? 1 : 3) : (delta > 0 ? 0 : 2);
-  core.TaskManager.submit(new core.ForceMovementTask(player, 1,
+  const task = new core.ForceMovementTask(player, 1,
     new core.ForceMovement(cloneLocation(here.getX(), here.getY(), z),
-      new core.Location(acrossX ? delta : 0, acrossX ? 0 : delta, 0), 0, 30, direction, GATE_WALK_ANIMATION)));
+      new core.Location(acrossX ? delta : 0, acrossX ? 0 : delta, 0), 0, 30, direction, GATE_WALK_ANIMATION));
+  if (gate.guardCarry) {
+    const start = here.clone(), area = player.getArea(), privateArea = player.getPrivateArea();
+    const teleportSerial = player.getTeleportSerial();
+    const execute = task.execute.bind(task);
+    task.execute = () => {
+      if (!player.isRegistered() || player.getHitpoints() <= 0 || player.getArea() !== area
+        || player.getPrivateArea() !== privateArea || player.getTeleportSerial() !== teleportSerial
+        || !player.getLocation().equals(start)) { task.stop(); return; }
+      execute();
+    };
+  }
+  // The anchor's separate close task still owns shared restoration if this actor cancels.
+  core.TaskManager.submit(task);
 }
 
 /** Players walking over a walkOver gate's blocker, with whether they had the flag before. */
