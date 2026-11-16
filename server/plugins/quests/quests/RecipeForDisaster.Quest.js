@@ -136,8 +136,6 @@ module.exports = function registerRecipeForDisasterQuest(api) {
   const DINING_KITCHEN_BARRIER = ObjectIdentifiers.BARRIER_3;
   const FROZEN_ROOM_BY_PLAYER = new WeakMap();
   let frozenRoomLayout = null;
-  const CULINAROMANCER_CHEST_CELLAR = 12308;
-  const CULINAROMANCER_CHEST_SIDE = { x: 3218, y: 9623, z: 0 };
   const COUNCIL_SPAWNS = [
     { id: NpcIdentifiers.MOUNTAIN_DWARF, x: 1862, y: 5345 },
     { id: NpcIdentifiers.GENERAL_WARTFACE_5, x: 1862, y: 5351 },
@@ -3393,69 +3391,6 @@ module.exports = function registerRecipeForDisasterQuest(api) {
     leaveDiningDimension(player, objectId === DINING_KITCHEN_BARRIER);
     return true;
   }
-  // The chest sits against the cellar's east wall, so no tile on its cache access side can be
-  // stood on; it is operated from the floor beside it.
-  function routeCulinaromancerChest(event) {
-    if (event.objectId !== CULINAROMANCER_CHEST_CELLAR) return;
-    event.destination = { ...CULINAROMANCER_CHEST_SIDE };
-  }
-  const CHEST_SHOP = "Culinaromancer's Chest";
-  const CHEST_ITEM_VARIANTS = ["Full", "Elite Diary", ...Array.from({ length: 9 }, (_, count) => `${count} Subquest${count === 1 ? "" : "s"}`)];
-  const CHEST_FOOD_VARIANTS = ["food, full", "food, full, diary", ...Array.from({ length: 9 }, (_, count) => `food, ${count} Subquest${count === 1 ? "" : "s"}`)];
-  const CHEST_SHOP_NAMES = new Set([...CHEST_ITEM_VARIANTS, ...CHEST_FOOD_VARIANTS].map(variant => `${CHEST_SHOP} (${variant})`));
-
-  function chestDiscount(player) {
-    if (!quest.isComplete(player)) return false;
-    const request = { player, diary: "lumbridge", tier: "elite", claimed: false };
-    api.emitCustomEvent("diary:is-reward-claimed", request);
-    return request.claimed === true;
-  }
-
-  function chestShopName(player, food) {
-    const variants = food ? CHEST_FOOD_VARIANTS : CHEST_ITEM_VARIANTS;
-    if (quest.isComplete(player)) return `${CHEST_SHOP} (${variants[chestDiscount(player) ? 1 : 0]})`;
-    const rescued = (flags(player) & ALL_RESCUES).toString(2).replaceAll("0", "").length;
-    return `${CHEST_SHOP} (${variants[rescued + 2]})`;
-  }
-
-  // Apply the canonical full-stock coefficients before rounding. Stock-dependent
-  // pricing remains the shared shop engine's policy.
-  function priceCulinaromancerChest(event) {
-    if (!event.player || event.currency !== "COINS" || !CHEST_SHOP_NAMES.has(event.shopName) || event.price <= 0) return;
-    const stock = api.core.ShopDefinition.forId(event.shopId)?.getOriginalStock().find(item => item.id === event.itemId);
-    const base = stock?.price > 0 ? stock.price : api.core.ItemDefinition.forId(event.itemId).getValue();
-    // Earlier hooks may already have set a free or otherwise customized price.
-    if (event.price !== base) return;
-    event.price = Math.floor(base * (chestDiscount(event.player) ? 104 : 130) / 100);
-  }
-
-  function buybackCulinaromancerChest(event) {
-    if (event.currency !== "COINS" || !CHEST_SHOP_NAMES.has(event.shopName) || event.price <= 0) return;
-    event.price = Math.floor(event.buyPrice * 40 / 100);
-  }
-
-  function handleCulinaromancerChest(event) {
-    if (event.objectId !== CULINAROMANCER_CHEST_CELLAR) return false;
-    const option = event.definition?.getActions?.()?.[event.clickType - 1];
-    if (option === "Bank") {
-      event.handled = true;
-      event.player.getBank(event.player.getCurrentBankTab()).open();
-      return true;
-    }
-    if (option !== "Buy-food" && option !== "Buy-items") return false;
-    event.handled = true;
-    const player = event.player;
-    if (stage(player) < STAGE_OPENING_COMPLETE) {
-      player.sendMessage("You must help the Cook prepare the banquet before using this shop.");
-      return true;
-    }
-    const name = chestShopName(player, option === "Buy-food");
-    const shop = api.core.ShopDefinition.all().find(definition => definition.getName() === name);
-    if (!shop || !api.core.ShopManager.open(player, shop.getId())) {
-      player.sendMessage("This shop is currently unavailable.");
-    }
-    return true;
-  }
   function blockStaticDiningGuests(event) {
     const x = event.location?.getX?.() ?? event.location?.x;
     const y = event.location?.getY?.() ?? event.location?.y;
@@ -3927,12 +3862,8 @@ module.exports = function registerRecipeForDisasterQuest(api) {
   api.onObjectInteraction(handleAwowogeiSnakePit);
   api.onCustomEvent("ladders:climb", claimSnakePitRope);
   api.onObjectRoute(routeRedBananaTree);
-  api.onObjectRoute(routeCulinaromancerChest);
   api.onCustomEvent("door:toggle", handleDiningDoors);
   api.onObjectInteraction("Barrier", { "Pass-through": passDiningBarrier });
-  api.onObjectInteraction(handleCulinaromancerChest);
-  api.onCustomEvent("shop:buy-price", priceCulinaromancerChest);
-  api.onCustomEvent("shop:sell-price", buybackCulinaromancerChest);
   api.onCanSpawnNpc(blockStaticDiningGuests);
   api.onObjectInteraction(handleAwowogeiKing);
   api.onItemAction("Balloon toad", { Drop: handleSkrachDrop, Release: handleSkrachDrop });
