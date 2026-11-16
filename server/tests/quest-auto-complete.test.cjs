@@ -34,7 +34,7 @@ function coreWithQuestSwitch(enabled, saves, { members = true } = {}) {
 }
 
 function recordingApi(core, { template = null } = {}) {
-  const hooks = { login: [], custom: new Map(), canShop: [], npcDialogueVariant: [], objectInteraction: new Map() };
+  const hooks = { login: [], custom: new Map(), canShop: [], npcDialogueVariant: [], objectInteraction: new Map(), itemAction: [] };
   const emitted = [];
   const api = {
     core,
@@ -50,6 +50,7 @@ function recordingApi(core, { template = null } = {}) {
     onCanShop: (handler) => hooks.canShop.push(handler),
     onNpcDialogueVariant: (handler) => hooks.npcDialogueVariant.push(handler),
     onObjectInteraction: (name, actions) => hooks.objectInteraction.set(name, actions),
+    onItemAction: (handler) => hooks.itemAction.push(handler),
   };
   return { api, hooks, emitted };
 }
@@ -77,6 +78,7 @@ function fakePlayer(bot = false) {
     getAttribute: (key) => attributes.get(key),
     setAttribute: (key, value) => attributes.set(key, value),
     getLocation: () => location,
+    sendMessage: (message) => sent.push(['message', message]),
     moveTo: (next) => {
       position = { x: next.getX(), y: next.getY(), z: next.getZ() };
     },
@@ -220,14 +222,42 @@ test('a Level-Up Quests-off world restores the quest-owned shops and Ape gate, a
   assert.equal(other.bypass, false, 'only the Knight Waves prayers are handed out');
 });
 
-test('a non-Level-Up Quests-off world leaves Chivalry and Piety on the Knight Waves gate', () => {
+test('every Quests-off world leaves Chivalry and Piety unlocked with the auto-completed quests', () => {
   const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'standard' });
   QuestAutoComplete.register(api);
   const bypass = hooks.custom.get('prayer:unlocks-bypass')?.[0];
   assert.ok(bypass);
-  const request = { prayer: api.core.PrayerData.CHIVALRY, bypass: false };
-  bypass(request);
-  assert.equal(request.bypass, false);
+  for (const prayer of [api.core.PrayerData.CHIVALRY, api.core.PrayerData.PIETY]) {
+    const request = { prayer, bypass: false };
+    bypass(request);
+    assert.equal(request.bypass, true);
+  }
+  const other = { prayer: api.core.PrayerData.THICK_SKIN, bypass: false };
+  bypass(other);
+  assert.equal(other.bypass, false, 'only the Knight Waves prayers are handed out');
+});
+
+test('a Quests-off world registers the royal seed pod teleport', () => {
+  const landed = [];
+  const core = coreWithQuestSwitch(false);
+  Object.defineProperty(core, 'TeleportHandler', {
+    value: {
+      checkReqs: () => true,
+      confirm: (player, location, go) => go(),
+      teleport: (player, location, type, warning, onArrival) => {
+        landed.push([location.getX(), location.getY(), location.getZ()]);
+        onArrival?.();
+      },
+    },
+  });
+  const { api, hooks } = recordingApi(core, { template: 'standard' });
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  const event = { player, itemId: api.core.ItemIdentifiers.ROYAL_SEED_POD, option: 'Commune', handled: false };
+  assert.ok(hooks.itemAction.some((handler) => (handler(event), event.handled === true)),
+    'the pod is answered without the Monkey Madness II plugin');
+  assert.deepEqual(landed, [[2465, 3496, 0]]);
+  assert.ok(player.sent.some(([, message]) => message === 'The Royal seed pod teleports you to the Grand Tree.'));
 });
 
 test('the completion hook skips player bots', () => {

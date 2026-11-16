@@ -121,6 +121,12 @@ function relic(type, tier, slot) {
   return catalog(type)?.tiers[tier]?.relics[slot - 1] ?? null;
 }
 
+/** A catalog relic by its platform id (the slug of its name), or null. */
+function relicBySlug(type, id) {
+  const wanted = slug(id);
+  return catalog(type)?.tiers.flatMap((tier) => tier.relics).find((entry) => slug(entry.name) === wanted) ?? null;
+}
+
 function chosen(player) {
   const value = player.getAttribute(RELICS_ATTRIBUTE);
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -352,6 +358,7 @@ function message(key, values = {}, type = null) {
 
 module.exports = {
   init, leagueOf, levelUpOwns, catalog, league, relic, chosen, points, highestTier, hasRelic, effectActive, reloadedPick,
+  relicBySlug,
   RELOADED_ATTRIBUTE, reloadedTiers, cacheLeague, slug, ids, message, maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
   multipliedLoot, isPotion, hasStackableSecondary, batchActions, watchRunXp, runXpTick, derivedHit, isBuildingDerivedHit,
   RELICS_ATTRIBUTE, structIds,

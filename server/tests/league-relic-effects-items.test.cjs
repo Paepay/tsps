@@ -365,6 +365,48 @@ test("Banker's Note (both leagues): an item used on it is noted or unnoted; Acti
   }
 });
 
+test("Banker's Note remembers every item used on it, each in the direction it was used", () => {
+  const relic = character("noteall", "league", BANKERS_NOTE_TR, 4);
+  const inventory = relic.getInventory();
+  const notedLogs = core.ItemDefinition.forId(I.LOGS).getNoteId();
+  const notedDagger = core.ItemDefinition.forId(I.BRONZE_DAGGER).getNoteId();
+  inventory.add(new Item(I.BANKERS_NOTE, 1), false);
+  inventory.add(new Item(I.LOGS, 2), false);
+  inventory.add(new Item(notedDagger, 3), false);
+  const note = inventory.getItems().find((item) => item?.getId() === I.BANKERS_NOTE);
+  const useOn = (itemId) => {
+    const item = inventory.getItems().find((entry) => entry?.getId() === itemId);
+    hooks.onItemOnItem({ player: relic, usedItem: item, usedWithItem: note, handled: false });
+  };
+
+  useOn(I.LOGS);
+  inventory.add(new Item(I.LOGS, 2), false);
+  useOn(notedDagger);
+  inventory.add(new Item(notedDagger, 2), false);
+  assert.equal(inventory.getAmount(notedLogs), 2, "the logs were noted");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 3, "the noted daggers were unnoted");
+  assert.deepEqual(relic.getAttribute("league:bankers-note").items,
+    { [I.LOGS]: "note", [I.BRONZE_DAGGER]: "unnote" }, "both items keep their own direction");
+
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 0, "Activate notes the logs it remembered");
+  assert.equal(inventory.getAmount(notedLogs), 4);
+  assert.equal(inventory.getAmount(notedDagger), 0, "and unnotes the daggers it remembered");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 5);
+  assert.ok(relic.messages.includes("You note 2 x Logs."), relic.messages.join(" | "));
+  assert.ok(relic.messages.includes("You unnote 2 x Bronze dagger."), relic.messages.join(" | "));
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(notedDagger), 5, "Toggle makes every remembered item note");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 0);
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 4, "and back makes every remembered item unnote");
+  assert.equal(inventory.getAmount(notedLogs), 0);
+});
+
 test("Banker's Note treats item 0 (Dwarf remains) as a remembered item, not as none", () => {
   const relic = character("notezero", "league", BANKERS_NOTE_TR, 4);
   relic.getInventory().add(new Item(I.BANKERS_NOTE, 1), false);

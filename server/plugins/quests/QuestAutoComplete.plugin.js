@@ -12,14 +12,11 @@ function shouldAutoComplete(api) {
 }
 
 /**
- * Level-Up's auto-completed quests stand in for the Knight Waves too: its template hands out
- * Chivalry and Piety with the rest of the quest completion. Other Quests-off worlds keep the
- * activity's own gate (the Knight Waves plugin still answers false there).
+ * Auto-completed quests stand in for the Knight Waves too: every quest counts complete on a
+ * Quests-off world, so Chivalry and Piety unlock with the rest of the quest rewards.
  */
-function levelUpPrayerUnlocks(request) {
+function autoCompletePrayerUnlocks(request) {
   if (!request || request.bypass === true) return;
-  if (typeof pluginApi?.getPluginConfig !== "function"
-    || pluginApi.getPluginConfig("template:id", null) !== "level_up") return;
   const { CHIVALRY, PIETY } = pluginApi.core.PrayerData;
   if (request.prayer === CHIVALRY || request.prayer === PIETY) request.bypass = true;
 }
@@ -52,10 +49,11 @@ function attach(api) {
   // Quest shops and Sir Tiffy's common dialogue only existed through Quests. Their gates read
   // "quest:is-complete", which the completion hooks now answer.
   require("./Shops.Quests")(api);
-  api.onCustomEvent("prayer:unlocks-bypass", levelUpPrayerUnlocks);
+  api.onCustomEvent("prayer:unlocks-bypass", autoCompletePrayerUnlocks);
   if (api.core.WorldDefinition.isMembersWorld()) {
     require("./SirTiffy.Quests")(api);
     require("./ApeAtollGate.Quests").register(api);
+    require("./RoyalSeedPod.Quests").register(api);
   }
   api.log?.(`QuestAutoComplete: Quests is off; ${definitions.length} quests count as complete`);
 }
@@ -66,5 +64,5 @@ module.exports = {
   register(api) {
     attach(api);
   },
-  _test: { shouldAutoComplete, definitionApi, levelUpPrayerUnlocks },
+  _test: { shouldAutoComplete, definitionApi, autoCompletePrayerUnlocks, levelUpPrayerUnlocks: autoCompletePrayerUnlocks },
 };

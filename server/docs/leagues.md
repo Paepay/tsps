@@ -1213,11 +1213,11 @@ open). Each item remembers its last destination. The menus' grouping and wording
   Jewellery to the ornate jewellery box's 27 destinations, up to level 20 Wilderness, 30 for a
   dragonstone piece's destination and its last destination (Wiki, 6 December 2023). No runes.
 - **Banker's Note** (Trailblazer Reloaded tier 3, Raging Echoes tier 6): an item used on the note
-  is noted, a note unnoted (as many as the inventory and the stack's limit hold); Activate repeats
-  the last item;
-  Note-Quantity and Un-note-Quantity set how many each use converts (all until set: ours); Toggle
-  switches Activate between noting and unnoting (ours: the Wiki does not say). Not here: Guardians
-  of the Rift's essence rule.
+  is noted, a note unnoted (as many as the inventory and the stack's limit hold); the note
+  remembers every item used on it and Activate converts each remembered item the player holds in
+  the direction it was last used; Note-Quantity and Un-note-Quantity set how many each use
+  converts (all until set: ours); Toggle switches every remembered item between noting and
+  unnoting (ours: the Wiki does not say). Not here: Guardians of the Rift's essence rule.
 - **Clue Compass** (Raging Echoes tier 3): the compass goes to any STASH unit, built or not, and
   to Falo the Bard; Current-step to where the clue read last leads (not a step that asks for a
   kill, nor a hot-cold step's spot: ours), from any Wilderness level, onto the nearest open tile

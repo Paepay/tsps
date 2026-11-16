@@ -551,6 +551,27 @@ test("Trailblazer Reloaded's Infernal Gathering grants the Trailblazer tools and
   }
 });
 
+test("an older Level-Up save's stored relic list still reclaims the Infernal Gathering tools", () => {
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I } = core;
+  const player = relicCharacter("infernal-old", 4);
+  // Before league:relics held Level-Up's picks, the milestone list was the only record.
+  const progress = (query) => {
+    query.active = true;
+    query.progress = { relics: [{ id: "infernal-gathering", name: "Infernal Gathering" }] };
+  };
+  (custom["level-up:progress"] ??= []).push(progress);
+  try {
+    const tools = [I.TRAILBLAZER_AXE, I.TRAILBLAZER_PICKAXE, I.TRAILBLAZER_HARPOON];
+    assert.deepEqual(Collect.owed(player, 4).filter((id) => tools.includes(id)), tools);
+    const { action } = collect(player, 315);
+    action.send(player);
+    for (const id of tools) assert.equal(player.getInventory().contains(id), true, `reclaimed ${id}`);
+  } finally {
+    custom["level-up:progress"] = custom["level-up:progress"].filter((handler) => handler !== progress);
+  }
+});
+
 test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tutor reclaims them", () => {
   const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
   const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");

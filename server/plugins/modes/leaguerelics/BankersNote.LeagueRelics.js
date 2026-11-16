@@ -1,8 +1,8 @@
 /**
  * Banker's Note (https://oldschool.runescape.wiki/w/Banker's_Note_(Trailblazer_Reloaded_League)),
  * Trailblazer Reloaded's tier 3 and Raging Echoes' tier 6 relic: an item used on the banker's
- * note becomes banknotes, or a note becomes its items. Activate repeats the last item used on it
- * (Wiki: an item must be used on it first). The cache's options:
+ * note becomes banknotes, or a note becomes its items. Activate repeats every item used on it, in
+ * the direction that item was last used (Wiki: an item must be used on it first). The cache's options:
  * - Note-Quantity and Un-note-Quantity set how many each use notes or unnotes (ours: all by
  *   default; the Wiki says only that it can be set).
  * - Toggle switches Activate between noting and unnoting that item (ours: the Wiki does not say
@@ -29,11 +29,35 @@ function active(player) {
 
 function stateOf(player) {
   const saved = player.getAttribute(STATE_ATTRIBUTE);
-  return { itemId: null, mode: "note", noteQuantity: null, unnoteQuantity: null, ...(saved && typeof saved === "object" ? saved : {}) };
+  const stored = saved && typeof saved === "object" ? saved : {};
+  const items = {};
+  if (stored.items && typeof stored.items === "object" && !Array.isArray(stored.items)) {
+    for (const [rawId, rawMode] of Object.entries(stored.items)) {
+      const itemId = Number(rawId);
+      if (Number.isInteger(itemId) && itemId >= 0) items[itemId] = rawMode === "unnote" ? "unnote" : "note";
+    }
+  }
+  // Saves from before every item was remembered only kept the last one.
+  if (Number.isInteger(stored.itemId) && items[stored.itemId] === undefined) {
+    items[stored.itemId] = stored.mode === "unnote" ? "unnote" : "note";
+  }
+  return {
+    itemId: Number.isInteger(stored.itemId) ? stored.itemId : null,
+    mode: stored.mode === "unnote" ? "unnote" : "note",
+    noteQuantity: Number.isFinite(stored.noteQuantity) ? stored.noteQuantity : null,
+    unnoteQuantity: Number.isFinite(stored.unnoteQuantity) ? stored.unnoteQuantity : null,
+    items,
+  };
 }
 
 function save(player, changes) {
   player.setAttribute(STATE_ATTRIBUTE, { ...stateOf(player), ...changes });
+}
+
+/** Remembers the item and the direction it was used on the note. */
+function remember(player, itemId, mode) {
+  const state = stateOf(player);
+  save(player, { itemId, mode, items: { ...state.items, [itemId]: mode } });
 }
 
 function isNote(itemId) {
@@ -98,10 +122,10 @@ function unnote(player, noteId, limit) {
 }
 
 /** Notes or unnotes the item (its own form says which), remembering it for Activate. */
-function convert(player, itemId, mode = isNote(itemId) ? "unnote" : "note") {
+function convert(player, itemId, mode = isNote(itemId) ? "unnote" : "note", rememberItem = true) {
   const state = stateOf(player);
   const done = mode === "note" ? note(player, base(itemId), state.noteQuantity) : unnote(player, Common.noted(base(itemId)), state.unnoteQuantity);
-  save(player, { itemId: base(itemId), mode });
+  if (rememberItem) remember(player, base(itemId), mode);
   if (done === PRESET_ONLY) {
     player.sendMessage(PRESET_TEXT);
     return 0;
@@ -132,11 +156,22 @@ function useOn(event) {
 function activate({ player }) {
   if (!active(player)) return false;
   const state = stateOf(player);
-  if (state.itemId == null) {
+  const remembered = Object.entries(state.items)
+    .map(([rawId, mode]) => [Number(rawId), mode])
+    .filter(([itemId]) => Number.isInteger(itemId) && itemId >= 0);
+  if (remembered.length === 0) {
     player.sendMessage(Common.message("bankersNoteFirst"));
     return;
   }
-  convert(player, state.itemId, state.mode);
+  const inventory = player.getInventory();
+  let converted = false;
+  for (const [itemId, mode] of remembered) {
+    // Preset-only stacks must reach convert for its own refusal message.
+    if (inventory.getAmount(itemId) <= 0 && inventory.getAmount(Common.noted(itemId)) <= 0) continue;
+    converted = true;
+    convert(player, itemId, mode, false);
+  }
+  if (!converted) player.sendMessage(Common.message("bankersNoteNothing"));
 }
 
 function askQuantity(key, prompt) {
@@ -154,8 +189,10 @@ function askQuantity(key, prompt) {
 
 function toggle({ player }) {
   if (!active(player)) return false;
-  const mode = stateOf(player).mode === "note" ? "unnote" : "note";
-  save(player, { mode });
+  const state = stateOf(player);
+  const mode = state.mode === "note" ? "unnote" : "note";
+  const items = Object.fromEntries(Object.entries(state.items).map(([itemId]) => [itemId, mode]));
+  save(player, { mode, items });
   player.sendMessage(Common.message(mode === "note" ? "bankersNoteToggleNote" : "bankersNoteToggleUnnote"));
 }
 

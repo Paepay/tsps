@@ -10,12 +10,24 @@
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
 
-/** The relics the character holds: one a chosen tier, and Reloaded's extra pick. */
+/**
+ * Level-Up's stored relic list. Older saves kept only this list; the tutor still reclaims what
+ * the character earned before `league:relics` held their picks.
+ */
+function levelUpRelics(player, type) {
+  const query = { player };
+  Common.api.emitCustomEvent("level-up:progress", query);
+  if (query.active !== true || !Array.isArray(query.progress?.relics)) return [];
+  return query.progress.relics.map(({ id }) => Common.relicBySlug(type, id)).filter(Boolean);
+}
+
+/** The relics the character holds: one a chosen tier, Reloaded's extra pick and Level-Up's list. */
 function heldRelics(player, type) {
   const held = Object.entries(Common.chosen(player)).map(([tier, slot]) => Common.relic(type, Number(tier), slot));
   const extra = Common.reloadedPick(player, type);
   if (extra) held.push(extra);
-  return held.filter(Boolean);
+  held.push(...levelUpRelics(player, type));
+  return held.filter(Boolean).filter((relic, index, all) => all.findIndex((other) => other.key === relic.key) === index);
 }
 
 /** Carried, worn or banked; a bank placeholder (amount 0) isn't owning it. */
