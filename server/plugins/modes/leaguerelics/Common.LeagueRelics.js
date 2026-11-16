@@ -5,14 +5,34 @@
  */
 const fs = require("fs");
 const path = require("path");
+const WorldCatalog = require("./WorldCatalog.LeagueRelics");
 
 /** Chosen relics: tier index (0-7) -> slot (1-3). */
 const RELICS_ATTRIBUTE = "league:relics";
+/** world.json pluginConfig: whether this world's relic system is on (default true, so old worlds keep it). */
+const RELICS_CONFIG = "league:relics";
+/** world.json pluginConfig: the world's 1-8 tiers of 2-3 canonical relic ids. */
+const RELIC_TIERS_CONFIG = "league:relic-tiers";
 
 let api = null;
 let core = null;
 let data = null;
 let leagues = null;
+
+/**
+ * The world's relic configuration, resolved once while plugins load (the same point at which
+ * the league profile and catalog are read). `custom` is the complete validated catalog for
+ * the world's base league, or null for the league's own catalog / an invalid configuration.
+ */
+let world = {
+  baseLeague: null,
+  relicsEnabled: true,
+  status: "default",
+  custom: null,
+  configuredTiers: null,
+  error: null,
+  warnings: [],
+};
 
 function init(pluginApi) {
   api = pluginApi;
@@ -20,6 +40,51 @@ function init(pluginApi) {
   const dir = path.join(__dirname, "..", "data");
   data = JSON.parse(fs.readFileSync(path.join(dir, "league-relics.json"), "utf8"));
   leagues = JSON.parse(fs.readFileSync(path.join(dir, "leagues.json"), "utf8")).leagues;
+  reloadWorldCatalog();
+}
+
+/** The league this world runs, or null for a plain world (LeagueMode reads the same key). */
+function worldLeagueType() {
+  const type = Number(api?.getPluginConfig?.("league:type", 0));
+  return data.leagues[type] && leagues[type] ? type : null;
+}
+
+/** Re-read the world's relic settings; start-up calls this once, tests may call it again. */
+function reloadWorldCatalog() {
+  const baseLeague = worldLeagueType();
+  const relicsEnabled = api?.getPluginConfig?.(RELICS_CONFIG, true) !== false;
+  const raw = api?.getPluginConfig?.(RELIC_TIERS_CONFIG, null);
+  const catalogs = {};
+  for (const type of WorldCatalog.SOURCE_LEAGUES) {
+    try {
+      catalogs[type] = sourceCatalog(type);
+    } catch (error) {
+      catalogs[type] = null;
+      if (baseLeague === type) api?.log?.(`[league-relics] league ${type}'s catalog is unavailable: ${error.message}`);
+    }
+  }
+  const result = WorldCatalog.buildWorldCatalog({
+    raw,
+    baseLeague,
+    baseTiers: catalogs[baseLeague]?.tiers ?? [],
+    catalogs,
+  });
+  world = {
+    baseLeague,
+    relicsEnabled,
+    status: !relicsEnabled ? "disabled" : result.status,
+    custom: relicsEnabled && result.status === "custom" ? { ...result, custom: true } : null,
+    configuredTiers: result.status === "default" ? null : (result.canonicalTiers ?? null),
+    error: result.error ?? null,
+    warnings: result.warnings ?? [],
+  };
+  if (result.status === "invalid" && relicsEnabled) {
+    api?.log?.(`[league-relics] ${result.error}; keeping league ${baseLeague}'s own relic catalog`);
+  } else if (world.custom) {
+    api?.log?.(`[league-relics] world catalog: ${world.custom.tiers.length} tier(s) from leagues `
+      + `${[...new Set(world.custom.ids.map((id) => id.split(":")[0]))].join(", ")}`);
+  }
+  return world;
 }
 
 /** The league a character is in (its type), or null for a main character. */
@@ -94,13 +159,70 @@ function cacheLeague(type) {
   return Object.values(data.effects).find((entry) => entry?.cacheLeague === true && [].concat(entry.league).includes(Number(type))) ?? null;
 }
 
-/** A league's tiers and relics: the data's, or the cache's own for a league marked `fromCache`. */
-function catalog(type) {
+/** A league's own tiers and relics: the data's, or the cache's own for a league marked `fromCache`. */
+function sourceCatalog(type) {
   const row = data.leagues[type];
   if (!row) return null;
   if (!row.fromCache) return row;
   if (!cacheCatalogs.has(type)) cacheCatalogs.set(type, catalogFromCache(type));
   return cacheCatalogs.get(type);
+}
+
+/** The catalog the world plays with: its configured mixed catalog, else the league's own. */
+function catalog(type) {
+  if (world.custom && Number(type) === world.baseLeague) return world.custom;
+  return sourceCatalog(type);
+}
+
+function isCustomCatalog(type) {
+  return world.custom !== null && Number(type) === world.baseLeague;
+}
+
+/** The world's relic catalog configuration for the public catalog endpoint. */
+function worldCatalogState() {
+  const tiers = world.baseLeague === null ? null : catalog(world.baseLeague)?.tiers ?? null;
+  return {
+    league: world.baseLeague,
+    relicsEnabled: world.relicsEnabled,
+    status: world.status,
+    custom: world.custom !== null,
+    tiers: tiers === null ? null : tiers.map((tier) => tier.relics.map((relic) => canonicalIdOf(relic, world.baseLeague))),
+    configuredTiers: world.configuredTiers,
+    error: world.error,
+    warnings: [...world.warnings],
+  };
+}
+
+/** A relic's source-qualified id. A source catalog's relics belong to the league it came from. */
+function canonicalIdOf(relic, fallbackLeague) {
+  return relic?.canonicalId ?? WorldCatalog.canonicalId(relic?.sourceLeague ?? fallbackLeague, relic?.key);
+}
+
+function relicsEnabled() {
+  return world.relicsEnabled;
+}
+
+/** Every source catalog that is currently readable, by league type. */
+function sourceCatalogs() {
+  const catalogs = {};
+  for (const type of WorldCatalog.SOURCE_LEAGUES) {
+    try {
+      catalogs[type] = sourceCatalog(type);
+    } catch {
+      catalogs[type] = null;
+    }
+  }
+  return catalogs;
+}
+
+/** Every relic from every source league, once per canonical id, for the public catalog endpoint. */
+function allRelicEntries() {
+  return [...WorldCatalog.sourceEntries(sourceCatalogs()).byId.values()];
+}
+
+/** Canonical ids a source catalog itself repeats; these cannot be configured unambiguously. */
+function ambiguousRelicIds() {
+  return WorldCatalog.sourceEntries(sourceCatalogs()).ambiguous;
 }
 
 /** The struct ids the relic interface's scripts take for a relic and its tier's passive. */
@@ -134,45 +256,128 @@ function points(player) {
 
 /** The highest tier index chosen, or -1. */
 function highestTier(player) {
+  if (!relicsEnabled()) return -1;
   return Object.keys(chosen(player)).reduce((highest, tier) => Math.max(highest, Number(tier)), -1);
 }
 
-/** Whether the character chose relic `key` in its own league's catalog. */
-function hasRelic(player, key) {
-  const type = leagueOf(player);
-  if (type === null) return false;
-  const picks = chosen(player);
-  if (catalog(type).tiers.some((tier, tierIndex) => tier.relics[picks[tierIndex] - 1]?.key === key)) return true;
-  return reloadedPick(player, type, picks)?.key === key;
+/** The relics the character picked, with the league each relic came from. */
+function pickedRelics(player, type, picks = chosen(player)) {
+  const catalogRows = catalog(type)?.tiers;
+  if (!Array.isArray(catalogRows)) return [];
+  const picked = [];
+  for (const [tierValue, slotValue] of Object.entries(picks)) {
+    const tier = Number(tierValue);
+    const slot = Number(slotValue);
+    if (!Number.isInteger(tier) || !Number.isInteger(slot)) continue;
+    const relic = catalogRows[tier]?.relics[slot - 1];
+    if (!relic) continue;
+    picked.push({ tier, slot, relic, sourceLeague: relic.sourceLeague ?? type });
+  }
+  return picked;
+}
+
+/** Whether an effect's key (or an alias) names the relic. */
+function namesEffect(effect, key) {
+  return key === effect?.key || (effect?.aliases ?? []).includes(key);
+}
+
+/** The source league a relic definition came from (a source catalog's own league by default). */
+function sourceLeagueOf(relic, fallbackLeague = null) {
+  return relic?.sourceLeague ?? fallbackLeague;
+}
+
+/** The character's picks plus Reloaded's extra pick, each with the league its definition came from. */
+function heldRelicEntries(player, type = leagueOf(player), picks = chosen(player)) {
+  if (!relicsEnabled() || type === null) return [];
+  const entries = pickedRelics(player, type, picks);
+  const extra = reloadedPick(player, type, picks);
+  if (extra) {
+    const attribute = player.getAttribute(RELOADED_ATTRIBUTE);
+    entries.push({
+      tier: Number(attribute?.tier),
+      slot: Number(attribute?.slot),
+      relic: extra,
+      sourceLeague: sourceLeagueOf(extra, type),
+    });
+  }
+  return entries;
+}
+
+/** Whether the character chose relic `key`; a source league may be required to tell same-key relics apart. */
+function hasRelic(player, key, sourceLeague = null) {
+  const wanted = sourceLeague === null || sourceLeague === undefined ? null : Number(sourceLeague);
+  return heldRelicEntries(player).some((entry) => entry.relic.key === key
+    && (wanted === null || entry.sourceLeague === wanted));
 }
 
 /** The extra pick Reloaded gives (Raging Echoes' tier 4): { tier, slot } saved beside the tiers' picks. */
 const RELOADED_ATTRIBUTE = "league:relics-extra";
 
-/** The tiers Reloaded's extra pick may come from in a league: the league's own (`leagueTiers`), else `tiers`. */
-function reloadedTiers(effect, type) {
-  return effect.leagueTiers?.[type] ?? effect.tiers;
+/**
+ * The character's Reloaded pick, if it holds one from a league the effect supports, else null.
+ * In a world catalog its place is the configured tier, so the extra pick may come from any
+ * configured tier below it; in a league's own catalog it keeps that league's rule.
+ */
+function reloadedHolder(player, type, picks = chosen(player)) {
+  const effect = data.effects.reloaded;
+  if (!effect || type === null) return null;
+  const sources = [].concat(effect.league).map(Number);
+  return pickedRelics(player, type, picks)
+    .find((entry) => entry.relic.key === effect.key && sources.includes(entry.sourceLeague)) ?? null;
+}
+
+/** The configured tier holding Reloaded, or -1. */
+function reloadedTier(player, type, picks = chosen(player)) {
+  return reloadedHolder(player, type, picks)?.tier ?? -1;
+}
+
+/** The tiers Reloaded's extra pick may come from: the source league's rule, or the tiers below it. */
+function reloadedTiers(effect, type, tier = null) {
+  if (isCustomCatalog(type)) {
+    return tier === null || tier < 0 ? [] : Array.from({ length: tier }, (_value, index) => index);
+  }
+  return effect.leagueTiers?.[type] ?? effect.tiers ?? [];
 }
 
 /** The relic of the extra pick, while the character holds Reloaded itself; else null. */
 function reloadedPick(player, type = leagueOf(player), picks = chosen(player)) {
   const effect = data.effects.reloaded;
-  if (!effect || ![].concat(effect.league).includes(type)) return null;
-  const holds = catalog(type).tiers.some((tier, tierIndex) => tier.relics[picks[tierIndex] - 1]?.key === effect.key);
+  const holder = reloadedHolder(player, type, picks);
   const extra = player.getAttribute(RELOADED_ATTRIBUTE);
-  if (!holds || !extra || !reloadedTiers(effect, type).includes(extra.tier)) return null;
+  if (!effect || !holder || !extra || !reloadedTiers(effect, type, holder.tier).includes(extra.tier)) return null;
   return relic(type, extra.tier, extra.slot);
 }
 
 /**
- * An effect applies to a player character in one of the effect's leagues (`league`: a type, or
- * several for a relic both leagues have) who chose its relic (`key`, or one of its `aliases`).
+ * The source leagues of the relics the character holds that implement an effect, restricted to
+ * the leagues the effect names. A world catalog may place a relic far from its source league, so
+ * this is the relic's own source, never the world's base league. One relic key can exist in more
+ * than one league, so callers that need a league-specific rule use `effectSource` (base league
+ * first, else the first held source) or `effectSources` (every held source).
  */
+function effectSources(player, effect, type = null, picks = null) {
+  if (!relicsEnabled() || player?.isPlayer?.() !== true) return [];
+  const league = type ?? leagueOf(player);
+  if (league === null) return [];
+  const held = picks ?? chosen(player);
+  const allowed = [].concat(effect?.league ?? []).map(Number);
+  const sources = new Set();
+  for (const entry of heldRelicEntries(player, league, held)) {
+    if (allowed.includes(entry.sourceLeague) && namesEffect(effect, entry.relic.key)) sources.add(entry.sourceLeague);
+  }
+  return [...sources];
+}
+
 function effectActive(player, effect) {
-  if (player?.isPlayer?.() !== true) return false;
-  const league = leagueOf(player);
-  if (league === null || ![].concat(effect.league).includes(league)) return false;
-  return [effect.key, ...(effect.aliases ?? [])].some((key) => hasRelic(player, key));
+  return effectSources(player, effect).length > 0;
+}
+
+/** The league whose variant of an effect applies, or null; the base league wins when both are held. */
+function effectSource(player, effect) {
+  const type = leagueOf(player);
+  const sources = effectSources(player, effect, type);
+  if (sources.length === 0) return null;
+  return sources.includes(type) ? type : sources[0];
 }
 
 /** Virtual struct and enum ids for a league's catalog: the client reads them as if from the cache. */
@@ -351,8 +556,12 @@ function message(key, values = {}, type = null) {
 }
 
 module.exports = {
-  init, leagueOf, levelUpOwns, catalog, league, relic, chosen, points, highestTier, hasRelic, effectActive, reloadedPick,
-  RELOADED_ATTRIBUTE, reloadedTiers, cacheLeague, slug, ids, message, maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
+  init, reloadWorldCatalog, leagueOf, levelUpOwns, catalog, sourceCatalog, sourceCatalogs, isCustomCatalog, worldCatalogState,
+  allRelicEntries, ambiguousRelicIds,
+  canonicalIdOf, relicsEnabled, league, relic, chosen, points, highestTier, hasRelic, effectActive, effectSource, effectSources,
+  heldRelicEntries, sourceLeagueOf, pickedRelics, reloadedPick,
+  reloadedHolder, reloadedTier, RELOADED_ATTRIBUTE, RELICS_CONFIG, RELIC_TIERS_CONFIG, reloadedTiers, cacheLeague, slug, ids, message,
+  maxHitFor, restoreSpecial, bankHasRoom, bank, noted, multipliable,
   multipliedLoot, isPotion, hasStackableSecondary, batchActions, watchRunXp, runXpTick, derivedHit, isBuildingDerivedHit,
   RELICS_ATTRIBUTE, structIds,
   get data() { return data; },

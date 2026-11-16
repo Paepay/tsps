@@ -66,7 +66,7 @@ function herbName(itemId) {
 
 /** How many of each herb the player's pouch holds: the league's own (Demonic Pacts' 100), else 30. */
 function herbCap(player) {
-  return effect.leagueHerbCap?.[Common.leagueOf(player)] ?? effect.herbCap;
+  return effect.leagueHerbCap?.[Common.effectSource(player, effect)] ?? effect.herbCap;
 }
 
 let herbOrder = null;
@@ -356,7 +356,7 @@ function mix(request) {
 /** A league's batch (`leagueBatch`, Demonic Pacts' Herblore all at once), as the production relics answer. */
 function allAtOnce(request) {
   if (!active(request.player)) return;
-  const batch = effect.leagueBatch?.[Common.leagueOf(request.player)];
+  const batch = effect.leagueBatch?.[Common.effectSource(request.player, effect)];
   const actions = batch ? Common.batchActions(batch, request) : null;
   if (actions) request.actions = Math.max(request.actions, actions);
 }

@@ -466,8 +466,7 @@
           "passive": "- League XP multiplier increased from 5x to 8x.<br><br>- Minigame points received are boosted by 3x.",
           "relics": [
             { "key": "fairys-flight", "name": "Fairy's Flight", "icon": 3, "description": "- Grants a fairy mushroom that teleports you to any fairy ring, spirit tree or tool leprechaun in your unlocked regions.", "grants": ["FAIRY_MUSHROOM"], "requiresBank": true },
-            { "key": "globetrotter", "name": "Globetrotter", "icon": 4, "description": "- Grants a globetrotter pendant that teleports you to every ornate jewellery box destination and nearly every spellbook teleport in your unlocked regions.", "grants": ["GLOBETROTTER_PENDANT"], "requiresBank": true },
-            { "key": "crystal-of-memories", "name": "Crystal of Memories", "icon": 26, "description": "- Grants a crystal of memories that returns you to where you last teleported from.<br><br>- Its cooldown of 6 minutes falls by 1 minute per 300 total levels.", "grants": [], "_missing": "The crystal of memories is not in this cache.", "_note": "The Wiki lists the crystal as the tier 3 passive; the tier's two relics are Banker's Note and Fire Sale, so this third slot is left for it to keep three choices a tier." }
+            { "key": "globetrotter", "name": "Globetrotter", "icon": 4, "description": "- Grants a globetrotter pendant that teleports you to every ornate jewellery box destination and nearly every spellbook teleport in your unlocked regions.", "grants": ["GLOBETROTTER_PENDANT"], "requiresBank": true }
           ]
         },
         {
@@ -475,8 +474,7 @@
           "passive": "- Grants a crystal of memories, which teleports you back to the last place you teleported from.",
           "relics": [
             { "key": "bankers-note", "name": "Banker's Note", "icon": 13, "description": "- Grants a banker's note: use an item on it to note or unnote it, or Activate it to convert a chosen quantity at once.", "grants": ["BANKERS_NOTE"], "requiresBank": true },
-            { "key": "fire-sale", "name": "Fire Sale", "icon": 5, "description": "- Every coin shop with a standard interface sells for free, and can note what you buy.<br><br>- Shops no longer buy items for gold.", "grants": [] },
-            { "key": "treasure-seeker-preview", "name": "Treasure Seeker", "icon": 9, "description": "- NPCs that drop clues have a 1 in 15 chance to drop one, including impling jars.<br><br>- Clue scrolls have the fewest steps and reward caskets roll the most rewards.", "grants": [], "_note": "Tier 5's Treasure Seeker, shown here as the third choice to keep three a tier; the Wiki lists only two tier 3 relics." }
+            { "key": "fire-sale", "name": "Fire Sale", "icon": 5, "description": "- Every coin shop with a standard interface sells for free, and can note what you buy.<br><br>- Shops no longer buy items for gold.", "grants": [] }
           ]
         },
         {

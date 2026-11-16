@@ -17,26 +17,25 @@ function uid(group, child) {
  */
 function sendSelections(player) {
   const sender = player.getPacketSender();
-  const picks = Common.chosen(player);
+  const enabled = Common.relicsEnabled();
+  const picks = enabled ? Common.chosen(player) : {};
   Common.data.selectionVarbits.forEach((varbit, tier) => sender.sendVarbit(varbit, picks[tier] | 0));
   const type = Common.leagueOf(player);
-  const extra = Common.reloadedPick(player, type, picks) ? player.getAttribute(Common.RELOADED_ATTRIBUTE) : null;
+  const extra = enabled && Common.reloadedPick(player, type, picks) ? player.getAttribute(Common.RELOADED_ATTRIBUTE) : null;
   Common.data.selectionOtherVarbits.forEach((varbit, tier) => sender.sendVarbit(varbit, extra?.tier === tier ? extra.slot : 0));
-  sendRepick(player, type, !extra && holdsReloaded(type, picks));
+  sendRepick(player, type, enabled && !extra && holdsReloaded(player, type, picks));
   sender.sendVarbit(Common.data.lastViewedVarbit, 0);
 }
 
 /** Whether the picks hold Reloaded itself, in a league that has it. */
-function holdsReloaded(type, picks) {
-  const effect = Common.data.effects.reloaded;
-  if (!effect || ![].concat(effect.league).includes(type)) return false;
-  return Common.catalog(type).tiers.some((entry, index) => entry.relics[picks[index] - 1]?.key === effect.key);
+function holdsReloaded(player, type, picks = Common.chosen(player)) {
+  return Common.reloadedTier(player, type, picks) >= 0;
 }
 
 /** The repick varbits: 1 for each tier Reloaded's extra pick may come from while `open`, else 0. */
 function sendRepick(player, type, open) {
   const effect = Common.data.effects.reloaded;
-  const tiers = open ? Common.reloadedTiers(effect, type) : [];
+  const tiers = open ? Common.reloadedTiers(effect, type, Common.reloadedTier(player, type)) : [];
   const sender = player.getPacketSender();
   Common.data.repickVarbits.forEach((varbit, tier) => sender.sendVarbit(varbit, tiers.includes(tier) ? 1 : 0));
 }
@@ -127,11 +126,13 @@ function canDeliver(player, relic) {
 /** Why a pick is refused (a message key), or null when it may go ahead. `bankOpen` is the bank as it was when the relic interface opened. */
 function refusal(player, type, tier, slot, bankOpen) {
   if (type === null) return "notLeague";
+  if (!Common.relicsEnabled()) return "noSuchRelic";
   const relic = Common.relic(type, tier, slot);
   if (!relic) return "noSuchRelic";
   if (Common.chosen(player)[tier] !== undefined) return "alreadyChosen";
   if (Common.points(player) < Common.catalog(type).tiers[tier].cost) return "notEnoughPoints";
-  if (relic.requiresBank && grantedItems(relic).length > 0 && !mayReceiveItems(player, type, bankOpen)) return "needsBank";
+  const source = Common.sourceLeagueOf(relic, type);
+  if (relic.requiresBank && grantedItems(relic).length > 0 && !mayReceiveItems(player, source, bankOpen)) return "needsBank";
   if (!canDeliver(player, relic)) return "noRoom";
   return null;
 }
@@ -148,10 +149,10 @@ function grant(player, relic) {
  * What a cache-read league says after an unlock, as captured (237/01098): "Congratulations, you've
  * unlocked a new Relic: ..." and, for each item it gave, the item box "You receive an Evil eye.".
  */
-function announce(player, type, relic) {
-  const own = Common.cacheLeague(type)?.messages;
+function announce(player, league, relic) {
+  const own = Common.cacheLeague(league)?.messages;
   if (!own?.unlocked) return;
-  player.sendMessage(Common.message("unlocked", { relic: relic.name }, type));
+  player.sendMessage(Common.message("unlocked", { relic: relic.name }, league));
   const { ItemStatementDialogue, DialogueChainBuilder, ItemDefinition } = Common.core;
   const items = grantedItems(relic);
   if (items.length === 0 || !ItemStatementDialogue || !DialogueChainBuilder) return;
@@ -159,7 +160,7 @@ function announce(player, type, relic) {
   items.forEach((id, index) => {
     const name = ItemDefinition.forId(id)?.getName?.() ?? "";
     const item = `${/^[aeiou]/i.test(name) ? "an" : "a"} ${name}`;
-    chain.add(new ItemStatementDialogue(index, id, Common.message("received", { item }, type)));
+    chain.add(new ItemStatementDialogue(index, id, Common.message("received", { item }, league)));
   });
   player.getDialogueManager?.()?.startDialogues?.(chain);
 }
@@ -203,18 +204,20 @@ function present(player, type, varbit, slot) {
 function reloadedRefusal(player, type, tier, slot, bankOpen) {
   const effect = Common.data.effects.reloaded;
   const picks = Common.chosen(player);
-  if (picks[tier] === undefined || !holdsReloaded(type, picks)) return null;
-  if (!Common.reloadedTiers(effect, type).includes(tier) || player.getAttribute(Common.RELOADED_ATTRIBUTE)) return null;
+  if (!Common.relicsEnabled() || picks[tier] === undefined || !holdsReloaded(player, type, picks)) return null;
+  if (!Common.reloadedTiers(effect, type, Common.reloadedTier(player, type, picks)).includes(tier)
+    || player.getAttribute(Common.RELOADED_ATTRIBUTE)) return null;
   const relic = Common.relic(type, tier, slot);
   if (!relic) return "noSuchRelic";
   if (picks[tier] === slot) return "alreadyChosen";
-  if (relic.requiresBank && grantedItems(relic).length > 0 && !mayReceiveItems(player, type, bankOpen)) return "needsBank";
+  if (relic.requiresBank && grantedItems(relic).length > 0
+    && !mayReceiveItems(player, Common.sourceLeagueOf(relic, type), bankOpen)) return "needsBank";
   if (!canDeliver(player, relic)) return "noRoom";
   return "";
 }
 
 function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player) } = {}) {
-  if (Common.levelUpOwns(player)) return false;
+  if (!Common.relicsEnabled() || Common.levelUpOwns(player)) return false;
   const type = Common.leagueOf(player);
   const reloaded = reloadedRefusal(player, type, tier, slot, bankOpen);
   if (reloaded !== null) {
@@ -228,9 +231,11 @@ function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player)
     player.setAttribute(Common.RELOADED_ATTRIBUTE, { tier, slot });
     present(player, type, Common.data.selectionOtherVarbits[tier], slot);
     grant(player, extra);
-    announce(player, type, extra);
+    announce(player, Common.sourceLeagueOf(extra, type), extra);
     sendRepick(player, type, false);
-    Common.api.emitCustomEvent("league:relic-unlocked", { player, league: type, tier, slot, relic: extra.key, reloaded: true });
+    Common.api.emitCustomEvent("league:relic-unlocked", {
+      player, league: type, tier, slot, relic: extra.key, sourceLeague: Common.sourceLeagueOf(extra, type), reloaded: true,
+    });
     return true;
   }
   const why = refusal(player, type, tier, slot, bankOpen);
@@ -242,9 +247,11 @@ function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player)
   player.setAttribute(Common.RELICS_ATTRIBUTE, { ...Common.chosen(player), [tier]: slot });
   present(player, type, Common.data.selectionVarbits[tier], slot);
   grant(player, relic);
-  announce(player, type, relic);
-  if (relic.key === Common.data.effects.reloaded?.key && holdsReloaded(type, Common.chosen(player))) offerRepick(player, type, tier);
-  Common.api.emitCustomEvent("league:relic-unlocked", { player, league: type, tier, slot, relic: relic.key });
+  announce(player, Common.sourceLeagueOf(relic, type), relic);
+  if (relic.key === Common.data.effects.reloaded?.key && holdsReloaded(player, type, Common.chosen(player))) offerRepick(player, type, tier);
+  Common.api.emitCustomEvent("league:relic-unlocked", {
+    player, league: type, tier, slot, relic: relic.key, sourceLeague: Common.sourceLeagueOf(relic, type),
+  });
   return true;
 }
 
@@ -252,7 +259,7 @@ function unlock(player, tier, slot, { bankOpen = Common.core.Bank.isOpen(player)
 function pointsChanged({ player, points, previous }) {
   // Level-Up earns relic choices from skill milestones, not seasonal points. Its login
   // announces `league:points-changed` without point totals, so this tier popup must not run.
-  if (!player || Common.levelUpOwns(player)) return;
+  if (!player || !Common.relicsEnabled() || Common.levelUpOwns(player)) return;
   const type = Common.leagueOf(player);
   if (type === null) return;
   const picks = Common.chosen(player);
@@ -279,10 +286,10 @@ function answerHighestTier(query) {
   query.tier = Common.highestTier(query.player);
 }
 
-/** `league:has-relic` { player, relic: key } -> active: the character's league has that relic and chose it. */
+/** `league:has-relic` { player, relic: key, sourceLeague? } -> active: the character chose that relic (from that source, when given). */
 function answerHasRelic(query) {
   if (!query) return;
-  query.active = query.player ? Common.hasRelic(query.player, query.relic) : false;
+  query.active = query.player ? Common.hasRelic(query.player, query.relic, query.sourceLeague) : false;
 }
 
 /** `league:relics` { player } -> league, chosen (tier index -> slot). */
@@ -290,6 +297,8 @@ function answerRelics(query) {
   if (!query) return;
   const type = query.player ? Common.leagueOf(query.player) : null;
   query.league = type;
+  query.enabled = Common.relicsEnabled();
+  query.custom = type !== null && Common.isCustomCatalog(type);
   query.chosen = type === null ? {} : { ...Common.chosen(query.player) };
   // Reloaded's extra pick, { tier, slot }, while it counts.
   query.extra = type !== null && Common.reloadedPick(query.player) ? { ...query.player.getAttribute(Common.RELOADED_ATTRIBUTE) } : null;

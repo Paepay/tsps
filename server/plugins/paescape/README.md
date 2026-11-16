@@ -36,6 +36,13 @@ disk). This makes an owner's configured spawn/respawn, XP rate, description,
 gameframe, zone tags and members/F2P flag take effect on the host. The overlay is
 re-applied whenever the platform's `configRevision` changes.
 
+The website's Relics settings travel the same way: `leagueRelics` (a boolean or
+`{ enabled, tiers }`) and `relicTiers` / `leagueRelicTiers` become the runtime
+`league:relics` and `league:relic-tiers` plugin settings. A template contract may
+supply their defaults. The accepted `pluginConfig` is written to
+`data/definitions/world.platform.json`, read before plugins load, so a relic-catalog
+change is applied by the next world restart.
+
 Fail-closed: an overlay that fails world validation (a bad spawn, a free-to-play
 spawn outside every f2p zone, reversed zone bounds) is refused with a warning, and
 the running world keeps its packaged configuration. Plugin *enablement* and

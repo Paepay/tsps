@@ -98,14 +98,14 @@ An account can own several characters ([character slots](../../docs/character-sl
 | `league:completed-tasks` | `{ player } -> { ids }` | Points |
 | `league:complete-task` | `{ player, id } -> { found, completed }` (a catalog task, by id) | Tasks |
 | `league:points-changed` | `{ player, points, previous, tasks, previousTasks }` | LeagueMode (journal), Tasks, Relics, Area unlocks listen |
-| `league:has-relic` | `{ player, relic } -> { active }` | Relics |
+| `league:has-relic` | `{ player, relic, sourceLeague? } -> { active }` | Relics |
 | `league:masteries` | `{ player } -> { league, masteries: { melee, ranged, magic }, passiveTier, points: { earned, spent, available }, challenges }` | Combat masteries |
 | `league:mastery-point` | `{ player, challenge, earned }` after a Combat Mastery point | - |
 | `league:mastery-unlocked` | `{ player, style, tier, key, passiveUnlocked }` after an unlock | - |
 | `stats:heal` | `{ player, previous, amount, hitpoints }` before any heal (core); `amount` may change | Combat masteries |
 | `skills:restore` | `{ player, skill, amount, max }` before a stat restore or boost (core); `amount` may change | Combat masteries |
 | `combat:hit-rolled` | `{ attacker, target, combatType, damage, minimum, maximum }` after a hit's damage roll, before defences (core); `damage` may change | Combat masteries |
-| `league:relics` | `{ player } -> { league, chosen }` (tier index -> slot) | Relics |
+| `league:relics` | `{ player } -> { league, enabled, custom, chosen, extra }` (tier index -> slot) | Relics |
 | `league:content-rows` | `{ player, league, base, structs, enums, dbRows }`: units push the rows the client lacks | Relics (Catalog), Tasks (Catalog), LeagueMode (Rank), Area unlocks answer |
 | `league:send-content` | `{ player }`: send the content payload again (before an interface opens) | LeagueMode (Content) |
 | `league:rank` | `{ player } -> { rank, name, next }` (ranks reached 0-7, the next threshold) | LeagueMode (Rank) |
@@ -741,6 +741,51 @@ A quest the character had started keeps its quest items when a pack completes it
 each with a point cost, a passive and the relics the Wiki lists (three a tier, except
 Trailblazer Reloaded's tiers 2 and 3, which have two); a tier's pick is permanent. A
 character's picks live in `league:relics` (tier index -> slot 1-3).
+
+### World-configured relic tiers
+
+A world may replace its league's catalog with 1-8 tiers of its own, each offering 2 or 3 relics
+drawn from Trailblazer Reloaded (league 4), Raging Echoes (5) or Demonic Pacts (6). The league in
+`league:type` remains the base: its tier costs, passive text, points and client league struct stay
+in use, while each relic keeps its name, description, grants, icon and effect from its source.
+Any relic may sit in any configured tier. Existing worlds and a world with no saved tiers keep
+their league's own catalog.
+
+- `league:relics` (boolean, default true) is the world's Relics toggle. Turning it off hides the
+  interface and choices and disables relic effects and tier passives. Saved picks and configured
+  tiers stay stored, so turning it back on restores them.
+- `league:relic-tiers` is an array (or a JSON string) of enabled tiers. Each tier is an array of
+  canonical ids in `<source league>:<relic key>` form, for example:
+
+  ```json
+  [[4:endless-harvest, 6:evil-eye],
+   [5:power-miner, 4:production-prodigy, 6:flow-state]]
+  ```
+
+  The source is part of the id because several keys are shared (`fairys-flight`,
+  `bankers-note`, `equilibrium`, `guardian`); the same key from two sources is two distinct
+  relics. A repeated canonical id, an unknown league/key, a malformed row, a missing icon or
+  description, or an unsupported choice count rejects the whole configuration. The server logs
+  the first error and keeps the base league's complete catalog, never a partial one.
+- On a hosted world, `PlatformWorldConfig.js` translates the website settings `leagueRelics`
+  (boolean or `{ enabled, tiers }`) and `relicTiers` / `leagueRelicTiers` into those two
+  `pluginConfig` keys. Explicit settings override a template contract's defaults. The accepted
+  overlay is persisted in `data/definitions/world.platform.json`, which is read before plugins
+  load; startup-only changes apply on the next restart, like `world.local.json`.
+- `GET /api/relic-catalog` exposes the full catalog for the website editor: schema version,
+  canonical-id format, limits, the three source leagues, every relic's id, key, name,
+  description, source, original tier, grants, bank requirement, compatibility and icon
+  parameters, plus this world's resolved state (`league`, `relicsEnabled`, `status`, `custom`,
+  active `tiers`, saved `configuredTiers`, `error` and `warnings`).
+- Effects resolve by the held relic's source league, not the world's base league, so a Demonic
+  Pacts relic keeps its own toggle or reach rules when placed in a Trailblazer Reloaded world.
+  `effectSource` chooses the base league's variant when both same-key variants are held and
+  otherwise the first held source; `effectSources` returns all held variants for effects that
+  combine them. Reloaded in a custom catalog offers its extra pick from any configured tier
+  below the tier holding Reloaded. Unlock, bank/item delivery, announcements, toggle rows and
+  `league:has-relic` all use the relic's source where the leagues differ. Picks remain in
+  `league:relics` and Reloaded's extra pick in `league:relics-extra`, so they survive reconnect
+  and restart.
 
 On this cache (rev 241, as the Leagues VI recordings 237/01098, 01102, 01104 show) the unlock is
 `confirm_button` 655:51 (rev 227's confirm_text 50 has no op now), the open adds IF_SCRIPT_TRIGGER

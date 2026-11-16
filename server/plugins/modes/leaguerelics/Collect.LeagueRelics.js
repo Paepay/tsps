@@ -12,6 +12,7 @@ const Unlock = require("./Unlock.LeagueRelics");
 
 /** The relics the character holds: one a chosen tier, and Reloaded's extra pick. */
 function heldRelics(player, type) {
+  if (!Common.relicsEnabled()) return [];
   const held = Object.entries(Common.chosen(player)).map(([tier, slot]) => Common.relic(type, Number(tier), slot));
   const extra = Common.reloadedPick(player, type);
   if (extra) held.push(extra);
@@ -36,7 +37,8 @@ function owed(player, type) {
   const ids = heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic));
   // Trailblazer Reloaded tier 3 passive: the Crystal of memories (cache name Crystal of Echoes).
   const crystal = Common.data.effects.crystalOfMemories;
-  if (crystal && [].concat(crystal.league).includes(type) && Common.highestTier(player) + 1 >= crystal.fromTier) {
+  if (Common.relicsEnabled() && crystal && [].concat(crystal.league).includes(type)
+    && Common.highestTier(player) + 1 >= crystal.fromTier) {
     const id = Common.core.ItemIdentifiers[crystal.item];
     if (Number.isInteger(id)) ids.push(id);
   }

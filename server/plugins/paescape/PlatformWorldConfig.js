@@ -19,12 +19,12 @@
  * be unit-tested without loading the game engine (see `LeaseLiveness.js` for the
  * same pattern).
  *
- * Scope: it emits the keys the runtime reads *live* - spawn/respawn, XP rate, world
- * name/description, gameframe, zone tags and the members (FreeToPlay) flag. Plugin
- * *enablement* and per-plugin `pluginConfig` are resolved once, at startup, so they
- * are deliberately not translated here: applying them mid-run would change nothing
- * and would misrepresent the overlay as authoritative. A world whose owner toggles a
- * plugin must be restarted for that to take effect, which is also true of world.json.
+ * Scope: it emits the keys the runtime reads live - spawn/respawn, XP rate, world
+ * name/description, gameframe, zone tags and the members (FreeToPlay) flag - and the
+ * plugin switches/pluginConfig that must be persisted for the next startup. PaeScape
+ * writes the accepted overlay to world.platform.json, which WorldDefinition layers
+ * into the startup configuration; a world whose owner changes a plugin setting must
+ * be restarted for it to take effect, which is also true of world.json.
  */
 
 /** world.json's own valid gameframe values (WorldDefinition.WORLD_GAMEFRAMES). */
@@ -38,6 +38,21 @@ const BUILDINGS_SAFE_TAG = "all-buildings-safe";
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A relic toggle from a boolean or an editor object ({ enabled }), else null. */
+function relicToggle(value) {
+  if (typeof value === "boolean") return value;
+  if (isObject(value) && typeof value.enabled === "boolean") return value.enabled;
+  return null;
+}
+
+/** A relic tier list from an array, an editor object ({ tiers }), or its JSON string, else null. */
+function relicTiers(value) {
+  if (Array.isArray(value)) return value.length ? value : null;
+  if (isObject(value) && Array.isArray(value.tiers)) return value.tiers.length ? value.tiers : null;
+  if (typeof value === "string" && value.trim()) return value;
+  return null;
 }
 
 /** A world coordinate is an integer inside the world; a plane is 0-3. */
@@ -186,6 +201,21 @@ function pluginConfigFromSettings(settings, config, notes) {
   if (isObject(settings.commandPermissions) && Object.keys(settings.commandPermissions).length) {
     pluginConfig["commands:permissions"] = settings.commandPermissions;
   }
+  // League relics: the website's Relics toggle and editor. The canonical setting names are
+  // leagueRelics / relicTiers; an editor may send one { enabled, tiers } object, and the
+  // shorter aliases keep older payloads working.
+  const relicSetting = settings.leagueRelics ?? settings.relics;
+  const toggle = relicToggle(relicSetting);
+  if (toggle !== null) pluginConfig["league:relics"] = toggle;
+  else if (relicSetting !== undefined) notes.push("leagueRelics is not true, false or { enabled }; keeping the packaged relic toggle");
+  const tiers = relicTiers(settings.relicTiers ?? settings.leagueRelicTiers
+    ?? (isObject(relicSetting) ? relicSetting.tiers : undefined));
+  if (tiers !== null) {
+    pluginConfig["league:relic-tiers"] = tiers;
+  } else if (settings.relicTiers !== undefined || settings.leagueRelicTiers !== undefined
+    || (isObject(relicSetting) && relicSetting.tiers !== undefined)) {
+    notes.push("relicTiers must be an array of tiers; ignoring league:relic-tiers");
+  }
   return pluginConfig;
 }
 
@@ -207,6 +237,17 @@ function templateConfig(config, pluginConfig) {
   const rules = isObject(config.templateContract) ? config.templateContract : {};
   if (rules.hardcore === true) pluginConfig["HardcoreWorld:enabled"] = true;
   if (Number.isInteger(rules.leagueSeason) && rules.leagueSeason > 0) pluginConfig["league:type"] = rules.leagueSeason;
+  // The template contract's relic rule is a runtime setting, not just metadata. Explicit
+  // website settings (above) and an explicit pluginConfig win over the template fallback.
+  const toggle = relicToggle(rules.leagueRelics);
+  if (toggle !== null && pluginConfig["league:relics"] === undefined) {
+    pluginConfig["league:relics"] = toggle;
+  }
+  const tiers = relicTiers(rules.relicTiers ?? rules.leagueRelicTiers
+    ?? (isObject(rules.leagueRelics) ? rules.leagueRelics.tiers : undefined));
+  if (tiers !== null && pluginConfig["league:relic-tiers"] === undefined) {
+    pluginConfig["league:relic-tiers"] = tiers;
+  }
 }
 
 /**

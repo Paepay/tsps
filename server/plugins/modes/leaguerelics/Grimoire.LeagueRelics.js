@@ -19,7 +19,8 @@ function unlocked(request) {
 }
 
 function prayersUnlocked(request) {
-  if (effect.prayersLeagues?.includes(Common.leagueOf(request.player)) && Common.effectActive(request.player, effect)) request.bypass = true;
+  if (effect.prayersLeagues?.includes(Common.effectSource(request.player, effect))
+    && Common.effectActive(request.player, effect)) request.bypass = true;
 }
 
 /**
@@ -27,12 +28,16 @@ function prayersUnlocked(request) {
  * Knight Waves state and the three scroll flags with the relic's message (capture 237/01107).
  */
 function arceuusUnlocked(request) {
-  if (effect.arceuusLeagues?.includes(Common.leagueOf(request.player)) && Common.effectActive(request.player, effect)) request.unlocked = true;
+  if (effect.arceuusLeagues?.includes(Common.effectSource(request.player, effect))
+    && Common.effectActive(request.player, effect)) request.unlocked = true;
 }
 
-function syncPrayerBook({ player, relic }) {
+function syncPrayerBook({ player, relic, sourceLeague }) {
   if (relic !== undefined && ![effect.key, ...(effect.aliases ?? [])].includes(relic)) return;
-  if (!effect.prayersLeagues?.includes(Common.leagueOf(player))) return;
+  const league = Common.leagueOf(player);
+  const source = sourceLeague ?? Common.effectSource(player, effect) ?? league;
+  // A mixed catalog can place Demonic Pacts' Grimoire in any base league; sync for it there too.
+  if (!effect.prayersLeagues?.includes(source) && !Common.isCustomCatalog(league)) return;
   Common.api.emitCustomEvent("prayer:sync-unlocks", { player });
 }
 

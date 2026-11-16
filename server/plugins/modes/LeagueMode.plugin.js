@@ -29,6 +29,14 @@ module.exports = {
       type: "date", label: "League end date", defaultText: "Not set",
       help: "When the league ends, as YYYY-MM-DD. The welcome message then shows how many days remain.",
     },
+    "league:relics": {
+      type: "boolean", label: "Relics", default: true,
+      help: "League relics: the relic interface, choices and their effects. On for existing worlds; turn off to run the league without relics. Restart to change.",
+    },
+    "league:relic-tiers": {
+      type: "json", label: "Relic tiers", defaultText: "The league's own relic catalog",
+      help: "A world-configured mixed-league catalog: 1-8 tiers, each 2 or 3 source-qualified relic ids such as \"4:endless-harvest\". Tier costs and passives stay the base league's. An invalid catalog is refused whole and the league's own catalog stays. Restart to change.",
+    },
   },
   members: true,
   register(api) {
