@@ -166,7 +166,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `herblore:herbs` | Herblore | lookup: every herb `{ grimyId, cleanId, level, xp }` |
 | `firemaking:light-roll`, `firemaking:logs-per-action` | Firemaking | `{ player, success }` after the lighting roll; `{ player, logId, amount }` for the logs one action burns |
 | `shop:buy-price`, `shop:delivery` | core `ShopManager` (the price shown, the value check and the purchase; the purchase) | `{ player, shopId, shopName, currency, itemId, price }`: a priced item may become free (0), never below; `{ player, shopId, currency, itemId, deliverId }`: the purchase is handed over as `deliverId` (a note), whose own stacking decides the room it needs |
-| `shop:keep-stock` | core `ShopManager` (a purchase, as it takes the stock) | `{ player, shopId, itemId, amount, keep }`: `keep` leaves the shop's own stock as it was, so only stock above its own amount (what players sold it) goes; ShopStock.LeagueMode.js keeps it for a league whose `shopStock.keep` is set (Leagues VI) |
+| `shop:keep-stock` | core `ShopManager` (a purchase, as it takes the stock) | `{ player, shopId, itemId, amount, keep }`: `keep` leaves the shop's own stock as it was, so only stock above its own amount (what players sold it) goes; ShopStock.LeagueMode.js keeps it for a league whose `shopStock.keep` is set (Trailblazer Reloaded, Raging Echoes, Demonic Pacts) and for Level-Up (via `level-up:relic-profile`) |
 | `shop:can-sell`, `shop:sell-price` (extended) | core `ShopManager` | the existing payloads now carry `player` (when a player is selling) and `currency` |
 | `magic:alchemy-policy` (extended) | core `MagicOnItemPacketListener` | asked before the level check (the zone rules still follow it), now with `requiredLevel`, `freeRunes`, `keepItem` and `recast` (cast again on the slot once this cast ends while it holds the same item); a plugin that turns the cast into something else (Mage Training Arena, While Guthix Sleeps) clears `confirm`, `keepItem` and `recast` |
 | `bone-altars:offering` | BoneAltars | `{ player, itemId, boneItemId, cost, anyAltar }`: an item that is not a bone offered as `boneItemId`, `cost` of it an offering, and with `anyAltar` on any altar one prays at (the bone's burying XP; a private area's altars, a house's, stay its own) |
@@ -1057,12 +1057,14 @@ Animal Wrangler's Hunter and cooking ones) do not.
 ### The economy and farming relics
 
 - **Fire Sale** (Trailblazer Reloaded tier 3): every shop with the standard shop interface that
-  takes coins sells for nothing (`shop:buy-price`; the stock still limits what can be bought, so a
-  shop with one left sells one a click), what it sells comes noted when the item has a note
-  (`shop:delivery`), and it buys nothing for coins (`shop:can-sell`). The Wiki's noting is a
-  player's toggle; this shop interface has no button for it, so it is always on: ours. Tokkul and
-  the other currencies are untouched (selling to a Tokkul shop works), as are costs outside shops
-  (sawmills, servants). The Grand Exchange and the reward shops (Omnishop) are not this interface.
+  takes coins sells for nothing (`shop:buy-price`), what it sells comes noted when the item has a
+  note (`shop:delivery`), and it buys nothing for coins (`shop:can-sell`). The shown stock still
+  caps each buy (Wiki: 0 stock cannot be bought; 1 in stock is one a click): with
+  `shopStock.keep` that amount never falls, so Fire Sale buys forever at that cap (1 → forever
+  one a click; 250 → forever Buy-50). The Wiki's noting is a player's toggle; this shop interface
+  has no button for it, so it is always on: ours. Tokkul and the other currencies are untouched
+  (selling to a Tokkul shop works), as are costs outside shops (sawmills, servants). The Grand
+  Exchange and the reward shops (Omnishop) are not this interface.
 - **Golden God** (Raging Echoes tier 4): High and Low Level Alchemy need no runes and no Magic
   level, give 15% more coins (rounded down), keep the item 65% of the time (a kept item frees no
   slot, so a full inventory without coins refuses the cast rather than lose them), and cast again on what
@@ -1415,16 +1417,20 @@ progress in `league:mastery-progress`.
   the roll bypasses the target's protection prayer and the damage then takes 40% of the usual
   reduction (0.6 + 0.4 x the core's constant).
 
-### Shops that never deplete (Leagues VI)
+### Shops that never deplete
 
-`league/ShopStock.LeagueMode.js`, data `leagues.json` `shopStock`: "Most shop stock will not
-deplete" (Leagues VI's news posts, the Wiki's guides). A league character's purchase leaves the
-shop's own stock as it was (`shop:keep-stock`), and a sale adds nothing (the same event with
-`selling: true`, ShopManager.sellItem): 237/01102 sold 21 sapphires to Toci's Gem Store, whose
-stock stayed 3, and the 10 general-store opens in the Leagues VI recordings show only base stock.
-Only stock main characters sold still goes, down to the shop's own amount. Every league buy in
-the recordings (39 shops, 600+ buys) left the stock unchanged; the exceptions "most" implies are
-not recorded, so there are none.
+`league/ShopStock.LeagueMode.js`, data `leagues.json` `shopStock` on Trailblazer Reloaded, Raging
+Echoes and Demonic Pacts (and Level-Up via the same keep, answering `level-up:relic-profile`):
+shop stock does not deplete for those characters. Trailblazer Reloaded's FAQ: stocks never
+decrease / restock after every transaction; Leagues VI news: "most shop stock will not deplete".
+A purchase leaves the shop's own stock as it was (`shop:keep-stock`), and a sale adds nothing
+(the same event with `selling: true`, ShopManager.sellItem): 237/01102 sold 21 sapphires to
+Toci's Gem Store, whose stock stayed 3, and the 10 general-store opens in the Leagues VI
+recordings show only base stock. Only stock main characters sold still goes, down to the shop's
+own amount. Every league buy in the recordings (39 shops, 600+ buys) left the stock unchanged;
+the exceptions "most" implies are not recorded, so there are none. Buy quantity still follows
+the shown stock, so Fire Sale (free coin shops) can buy forever one a click from 1 stock or
+fifty a click from 250.
 
 ### Echo orbs (Leagues VI)
 
