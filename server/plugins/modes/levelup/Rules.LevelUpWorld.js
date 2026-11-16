@@ -45,7 +45,11 @@ const SKILLS = Object.freeze([
   Object.freeze({ index: 23, name: "Sailing" }),
 ]);
 
-/** Stable platform ids, mapped to the cache/map area ids used by region enforcement. */
+/**
+ * Stable platform ids, mapped to the cache/map area ids used by region enforcement.
+ * Trailblazer Reloaded's ten areas plus Varlamore (Raging Echoes / later), so Level-Up can
+ * unlock every modern region shield on the Areas interface.
+ */
 const REGIONS = Object.freeze([
   Object.freeze({ id: "misthalin", name: "Misthalin", area: 1, starting: true }),
   Object.freeze({ id: "karamja", name: "Karamja", area: 2 }),
@@ -57,6 +61,7 @@ const REGIONS = Object.freeze([
   Object.freeze({ id: "fremennik", name: "Fremennik", area: 8 }),
   Object.freeze({ id: "wilderness", name: "Wilderness", area: 11 }),
   Object.freeze({ id: "kourend", name: "Kourend", area: 20 }),
+  Object.freeze({ id: "varlamore", name: "Varlamore", area: 21 }),
 ]);
 
 const REGION_BY_ID = new Map(REGIONS.map((region) => [region.id, region]));
