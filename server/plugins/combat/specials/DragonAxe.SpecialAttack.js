@@ -7,7 +7,7 @@ module.exports = function registerDragonAxeSpecialAttack(api) {
   const ANIMATION = new Animation(2876);
   const SWOOSH = new Graphic(479, GraphicHeight.HIGH);
   const CRYSTAL_SWOOSH = new Graphic(1689, GraphicHeight.HIGH);
-  const CRYSTAL_AXES = [ItemIdentifiers.CRYSTAL_AXE, ItemIdentifiers.CRYSTAL_FELLING_AXE];
+  const CRYSTAL_AXES = [ItemIdentifiers.CRYSTAL_AXE, ItemIdentifiers.CRYSTAL_FELLING_AXE, ItemIdentifiers.TRAILBLAZER_AXE];
 
   // Lumber Up is an instant utility special: +3 Woodcutting, no attack roll.
   class DragonAxeCombatMethod extends CombatMethod {
@@ -64,6 +64,7 @@ module.exports = function registerDragonAxeSpecialAttack(api) {
       ItemIdentifiers.CRYSTAL_FELLING_AXE,
       ItemIdentifiers.CRYSTAL_FELLING_AXE_INACTIVE_,
       ItemIdentifiers._3RD_AGE_FELLING_AXE,
+      ItemIdentifiers.TRAILBLAZER_AXE,
     ],
     drainAmount: DRAIN,
     strengthMultiplier: 1,

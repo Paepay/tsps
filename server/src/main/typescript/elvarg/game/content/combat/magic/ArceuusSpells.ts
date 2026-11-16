@@ -276,7 +276,7 @@ export class ArceuusSpells {
         // Wiki (Barrows Teleport): "Completion of the quest Priest in Peril ... is required".
         ["barrows teleport", teleport(83, 90, [rune(566, 2), rune(565), rune(563, 2)], 3565, 3315, 0, undefined, PRIEST_IN_PERIL)],
         // Wiki (Ape Atoll Teleport (Arceuus)): "Completion of the Monkey Madness I quest is required to cast this spell."
-        ["ape atoll teleport", teleport(90, 100, [rune(566, 2), rune(565, 2), rune(563, 2)], 2770, 9100, 0, undefined, { key: "monkey_madness_i", name: "Monkey Madness I" })],
+        ["ape atoll teleport", teleport(90, 100, [rune(566, 2), rune(565, 2), rune(563, 2)], 2769, 2703, 0, undefined, { key: "monkey_madness_i", name: "Monkey Madness I" })],
     ]);
 
     public static getTeleportDestinations() {

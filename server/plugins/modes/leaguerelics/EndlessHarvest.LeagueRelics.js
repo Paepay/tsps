@@ -38,7 +38,8 @@ function harvested(skill) {
  */
 function gather(request) {
   const { player, itemId, amount, skill, xp } = request;
-  if (!harvested(skill) || !active(player)) return;
+  // Infernal Gathering's burn/smelt/cook takes the doubled yield itself (Wiki).
+  if (request.gatherProcessed || !harvested(skill) || !active(player)) return;
   const left = Math.max(0, amount - request.stored);
   const extra = amount * (effect.multiplier - 1);
   let placed = 0;

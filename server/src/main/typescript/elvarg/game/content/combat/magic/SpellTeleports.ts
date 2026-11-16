@@ -72,7 +72,8 @@ export class SpellTeleports {
         ["civitas illa fortis teleport", teleport(MagicSpellbook.NORMAL, 54, 64, [rune(563, 2), rune(557), rune(554)], 1681, 3133)],
         ["watchtower teleport", teleport(MagicSpellbook.NORMAL, 58, 68, [rune(563, 2), rune(557, 2)], 2549, 3112, 2)],
         ["trollheim teleport", teleport(MagicSpellbook.NORMAL, 61, 68, [rune(563, 2), rune(554, 2)], 2890, 3679)],
-        ["ape atoll teleport", teleport(MagicSpellbook.NORMAL, 64, 74, [rune(563, 2), rune(555, 2), rune(554, 2), rune(1963)], 2796, 2798)],
+        // Wiki (Ape Atoll Teleport (standard)): next to Hafuba in the safe upstairs Temple of Marimbo.
+        ["ape atoll teleport", teleport(MagicSpellbook.NORMAL, 64, 74, [rune(563, 2), rune(555, 2), rune(554, 2), rune(1963)], 2798, 2799)],
         ["paddewwa teleport", teleport(MagicSpellbook.ANCIENT, 54, 64, [rune(563, 2), rune(556), rune(554)], 3097, 9880)],
         ["senntisten teleport", teleport(MagicSpellbook.ANCIENT, 60, 70, [rune(563, 2), rune(566)], 3320, 3338)],
         ["kharyrll teleport", teleport(MagicSpellbook.ANCIENT, 66, 76, [rune(563, 2), rune(565)], 3492, 3471)],

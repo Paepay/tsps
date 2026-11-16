@@ -140,6 +140,8 @@ function npc(id, name, x, y, hitpoints = 10) {
 
 const ENDLESS_HARVEST = { 0: 1 };
 const TRICKSTER = { 0: 3 };
+const INFERNAL_GATHERING = { 4: 3 };
+const ENDLESS_AND_INFERNAL = { 0: 1, 4: 3 };
 const POWER_MINER = { 0: 1 };
 const LUMBERJACK = { 0: 2 };
 const ANIMAL_WRANGLER = { 0: 3 };
@@ -518,4 +520,75 @@ test("Dodgy Deals: sure thieving, loot noted and multiplied by the crowd of the 
   for (const player of [who.without, who.main]) {
     assert.equal(emit("thieving:done", { player, kind: "pickpocket", npc: man, succeeded: true, again: false }).again, false, "the other league's slot repeats pickpockets too");
   }
+});
+
+test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and Toggle turns them off", () => {
+  const who = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_AXE");
+  who.relic.getInventory().adds(I.TRAILBLAZER_PICKAXE, 1);
+  who.relic.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  const beforeFm = xp(who.relic, Skill.FIREMAKING);
+  const burnt = gather(who.relic, I.LOGS, 1, Skill.WOODCUTTING, 25);
+  assert.equal(burnt.stored, 1, "the burnt log is consumed");
+  assert.equal(burnt.gatherProcessed, true);
+  assert.ok(xp(who.relic, Skill.FIREMAKING) > beforeFm);
+  assert.equal(who.relic.getInventory().getAmount(I.LOGS), 0);
+
+  const beforeSmith = xp(who.relic, Skill.SMITHING);
+  const smelted = gather(who.relic, I.IRON_ORE, 1, Skill.MINING, 35);
+  assert.equal(smelted.stored, 1);
+  assert.equal(who.relic.getInventory().getAmount(I.STEEL_BAR), 1, "iron becomes steel without coal");
+  assert.ok(xp(who.relic, Skill.SMITHING) > beforeSmith);
+
+  const beforeCook = xp(who.relic, Skill.COOKING);
+  const cooked = gather(who.relic, I.RAW_SHRIMPS, 1, Skill.FISHING, 10);
+  assert.equal(cooked.stored, 1);
+  assert.equal(who.relic.getInventory().getAmount(I.SHRIMPS), 1);
+  assert.ok(xp(who.relic, Skill.COOKING) > beforeCook);
+
+  assert.equal(emit("skills:action-interval", { player: who.relic, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 3);
+  assert.equal(emit("fishing:interval", { player: who.relic, ticks: 5 }).ticks, 3);
+
+  itemActions.get("Trailblazer axe").Toggle({ player: who.relic });
+  assert.equal(gather(who.relic, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "Toggle off leaves the log");
+  assert.equal(emit("skills:action-interval", { player: who.relic, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 3, "the tools still work a tick faster");
+
+  for (const player of others(who)) {
+    assert.equal(gather(player, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, `${player.getUsername()} keeps the log`);
+  }
+});
+
+test("Infernal Gathering's effects and speed-ups need the matching tool", () => {
+  const pickaxe = character("pickaxe-only", "league", INFERNAL_GATHERING);
+  pickaxe.getInventory().adds(I.TRAILBLAZER_PICKAXE, 1);
+  assert.equal(gather(pickaxe, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "a pickaxe does not burn logs");
+  assert.equal(emit("skills:action-interval", { player: pickaxe, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 4, "nor chop faster");
+  assert.equal(gather(pickaxe, I.IRON_ORE, 1, Skill.MINING, 35).stored, 1, "the pickaxe smelts ore");
+
+  const axe = character("axe-only", "league", INFERNAL_GATHERING);
+  axe.getInventory().adds(I.TRAILBLAZER_AXE, 1);
+  assert.equal(gather(axe, I.IRON_ORE, 1, Skill.MINING, 35).stored, 0, "an axe does not smelt ore");
+  assert.equal(gather(axe, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 0, "nor cook fish");
+  assert.equal(emit("fishing:interval", { player: axe, ticks: 5 }).ticks, 5, "nor fish sooner");
+
+  const harpoon = character("harpoon-only", "league", INFERNAL_GATHERING);
+  harpoon.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  assert.equal(gather(harpoon, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 1, "the harpoon cooks fish");
+  assert.equal(emit("fishing:interval", { player: harpoon, ticks: 5 }).ticks, 3, "and fishes two ticks sooner");
+  assert.equal(gather(harpoon, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "but does not burn logs");
+});
+
+test("Infernal Gathering with Endless Harvest burns or banks the doubled yield", () => {
+  const who = cases(ENDLESS_AND_INFERNAL, 4, "TRAILBLAZER_AXE");
+  who.relic.getInventory().adds(I.TRAILBLAZER_PICKAXE, 1);
+  const beforeFm = xp(who.relic, Skill.FIREMAKING);
+  const burnt = gather(who.relic, I.LOGS, 1, Skill.WOODCUTTING, 25);
+  assert.equal(burnt.stored, 1);
+  assert.equal(banked(who.relic, I.LOGS), 0, "burning takes precedence over banking");
+  assert.equal(xp(who.relic, Skill.FIREMAKING) - beforeFm, 80, "two logs' Firemaking XP");
+
+  const beforeSmith = xp(who.relic, Skill.SMITHING);
+  const smelted = gather(who.relic, I.IRON_ORE, 1, Skill.MINING, 35);
+  assert.equal(smelted.stored, 1);
+  assert.equal(banked(who.relic, I.STEEL_BAR), 2, "two bars banked");
+  assert.ok(xp(who.relic, Skill.SMITHING) - beforeSmith > 0);
 });

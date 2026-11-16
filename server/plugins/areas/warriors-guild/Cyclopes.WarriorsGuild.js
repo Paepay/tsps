@@ -313,7 +313,9 @@ function keepCapeOn(event) {
 
 /** Logging out inside a room keeps its clock and the defender it drops; nothing is charged or reset. */
 function leaveRooms({ player }) {
-  const state = inside.get(player);
+  // A player put in either room without its door is still in the room: use the same
+  // late registration as the room clock so their kills drop a defender too.
+  const state = inside.get(player) ?? arrivedUnannounced(player);
   inside.delete(player);
   player.setAttribute(ROOM_ATTRIBUTE, state ? { room: state.room, tier: state.tier, ticks: state.ticks, graceTicks: state.graceTicks } : {});
 }
@@ -346,7 +348,7 @@ function dropDefenders({ player, npc, npcId, drops }) {
   if (!top && !BASEMENT_CYCLOPES.has(npcId)) return;
   // The exported table lists every defender as a plain drop; which one drops depends on the killer.
   for (let i = drops.length - 1; i >= 0; i--) if (TIERS.has(drops[i].itemId)) drops.splice(i, 1);
-  const state = inside.get(player);
+  const state = inside.get(player) ?? arrivedUnannounced(player);
   if (!state || state.room !== (top ? "top" : "basement") || npc.getLocation().getZ() !== player.getLocation().getZ()) return;
   const Items = Guild.core.ItemIdentifiers;
   if (top && Guild.random(1, DEFENDER_CHANCE) === 1) drops.push({ itemId: DEFENDERS[state.tier], amount: 1 });

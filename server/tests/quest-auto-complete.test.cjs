@@ -18,12 +18,13 @@ before(async () => {
   await require('../dist/game/cache/CachePipeline').CachePipeline.initialize(path.resolve(__dirname, '..'));
 });
 
-function coreWithQuestSwitch(enabled, saves) {
+function coreWithQuestSwitch(enabled, saves, { members = true } = {}) {
   const core = PluginManager.getCoreApi();
   const overridden = Object.create(core);
   Object.defineProperty(overridden, 'PluginManager', {
     value: { getPluginSwitch: (name) => name === 'Quests' ? enabled : undefined },
   });
+  Object.defineProperty(overridden, 'WorldDefinition', { value: { isMembersWorld: () => members } });
   if (saves) {
     Object.defineProperty(overridden, 'GameConstants', {
       value: { PLAYER_PERSISTENCE: { requestSave: (player, reason) => saves.push({ player, reason }) } },
@@ -32,16 +33,23 @@ function coreWithQuestSwitch(enabled, saves) {
   return overridden;
 }
 
-function recordingApi(core) {
-  const hooks = { login: [], custom: new Map() };
+function recordingApi(core, { template = null } = {}) {
+  const hooks = { login: [], custom: new Map(), canShop: [], npcDialogueVariant: [], objectInteraction: new Map() };
   const emitted = [];
   const api = {
     core,
     log: () => {},
+    getPluginConfig: (key, fallback) => key === 'template:id' ? (template ?? fallback) : fallback,
     persistAttribute: (key, value) => PlayerSave.persistAttribute(key, value),
     onPlayerLogin: (handler) => hooks.login.push(handler),
     onCustomEvent: (name, handler) => hooks.custom.set(name, [...(hooks.custom.get(name) ?? []), handler]),
-    emitCustomEvent: (name, event) => emitted.push({ name, event }),
+    emitCustomEvent: (name, event) => {
+      emitted.push({ name, event });
+      for (const handler of hooks.custom.get(name) ?? []) handler(event);
+    },
+    onCanShop: (handler) => hooks.canShop.push(handler),
+    onNpcDialogueVariant: (handler) => hooks.npcDialogueVariant.push(handler),
+    onObjectInteraction: (name, actions) => hooks.objectInteraction.set(name, actions),
   };
   return { api, hooks, emitted };
 }
@@ -51,6 +59,8 @@ function fakePlayer(bot = false) {
   const varbits = new Map();
   const varps = new Map();
   const sent = [];
+  let position = { x: 2720, y: 2765, z: 0 };
+  const location = { getX: () => position.x, getY: () => position.y, getZ: () => position.z };
   const sender = {
     sendConfig: (id, value) => { varps.set(id, value); sent.push(['config', id, value]); return sender; },
     sendVarbit: (id, value) => { varbits.set(id, value); sent.push(['varbit', id, value]); return sender; },
@@ -61,10 +71,15 @@ function fakePlayer(bot = false) {
   return {
     attributes,
     sent,
+    get position() { return position; },
     isPlayerBot: () => bot,
     getPacketSender: () => sender,
     getAttribute: (key) => attributes.get(key),
     setAttribute: (key, value) => attributes.set(key, value),
+    getLocation: () => location,
+    moveTo: (next) => {
+      position = { x: next.getX(), y: next.getY(), z: next.getZ() };
+    },
   };
 }
 
@@ -131,7 +146,7 @@ test('a Quests-off world registers every definition and completes it at login', 
     'the quest points varp is sent');
 
   const expectedPoints = registered.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
-  assert.equal(expectedPoints, 335, 'the implemented quest catalogue is worth 335 quest points');
+  assert.equal(expectedPoints, 337, 'the implemented quest catalogue is worth 337 quest points');
 });
 
 test('an older saved character is migrated and stays complete after a save and reload', () => {
@@ -163,8 +178,56 @@ test('an older saved character is migrated and stays complete after a save and r
   const registered = QuestRuntime.getRegisteredQuests();
   assert.equal(registered.filter((quest) => quest.isComplete(reloaded)).length, registered.length,
     'the migrated save reloads with every quest complete');
-  assert.equal(reloaded.getAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE), 335,
+  assert.equal(reloaded.getAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE), 337,
     'the migrated save keeps the full quest point total');
+});
+
+test('a Level-Up Quests-off world restores the quest-owned shops and Ape gate, and hands out Chivalry and Piety', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  for (const handler of hooks.login) handler({ player });
+
+  // quest-shops.json gates the Proselyte armoury on The Slug Menace; the completion hooks answer it.
+  Object.defineProperty(api.core, 'ShopDefinition', {
+    configurable: true,
+    value: { forId: () => ({ getName: () => 'Proselyte Temple Knight Armoury' }) },
+  });
+  const shop = { player, shopId: 1, allow: true };
+  for (const handler of hooks.canShop) handler(shop);
+  assert.equal(shop.allow, true, 'The Slug Menace counts complete, so Sir Tiffy sells Proselyte armour');
+
+  const sirTiffy = hooks.npcDialogueVariant
+    .map((handler) => handler({ player, npcId: api.core.NpcIdentifiers.SIR_TIFFY_CASHIEN }))
+    .find(Boolean);
+  assert.deepEqual(sirTiffy, { page: 'Sir Tiffy Cashien', variant: 'after-slug-menace' });
+
+  const gate = hooks.objectInteraction.get('Bamboo Gate');
+  assert.ok(gate?.Open, 'the Bamboo Gate has its Open handler');
+  gate.Open({ player });
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [2720, 2767, 0]);
+
+  const bypass = hooks.custom.get('prayer:unlocks-bypass')?.[0];
+  assert.ok(bypass, 'a prayer unlock bypass is attached');
+  const chivalry = { prayer: api.core.PrayerData.CHIVALRY, bypass: false };
+  const piety = { prayer: api.core.PrayerData.PIETY, bypass: false };
+  const other = { prayer: api.core.PrayerData.THICK_SKIN, bypass: false };
+  bypass(chivalry);
+  bypass(piety);
+  bypass(other);
+  assert.equal(chivalry.bypass, true);
+  assert.equal(piety.bypass, true);
+  assert.equal(other.bypass, false, 'only the Knight Waves prayers are handed out');
+});
+
+test('a non-Level-Up Quests-off world leaves Chivalry and Piety on the Knight Waves gate', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'standard' });
+  QuestAutoComplete.register(api);
+  const bypass = hooks.custom.get('prayer:unlocks-bypass')?.[0];
+  assert.ok(bypass);
+  const request = { prayer: api.core.PrayerData.CHIVALRY, bypass: false };
+  bypass(request);
+  assert.equal(request.bypass, false);
 });
 
 test('the completion hook skips player bots', () => {

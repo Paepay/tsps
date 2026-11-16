@@ -132,7 +132,7 @@ function useOn(event) {
 function activate({ player }) {
   if (!active(player)) return false;
   const state = stateOf(player);
-  if (!state.itemId) {
+  if (state.itemId == null) {
     player.sendMessage(Common.message("bankersNoteFirst"));
     return;
   }
