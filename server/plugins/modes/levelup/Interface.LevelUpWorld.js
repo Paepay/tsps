@@ -372,18 +372,34 @@ function areaOfButton(buttonId) {
   return null;
 }
 
+/** Unlockable Level-Up catalog entry for a cache area id (starting Misthalin is never a pick). */
+function levelUpRegion(areaId) {
+  const region = Rules.region(areaId);
+  return region && !region.starting ? region : null;
+}
+
 function areaState(player, areaId) {
   const state = progress(player);
-  if (state.regions.some((entry) => Rules.region(entry.id)?.area === areaId)) return AreaData.interface.states.unlocked;
+  const region = Rules.region(areaId);
+  if (region && state.regions.some((entry) => entry.id === region.id)) return AreaData.interface.states.unlocked;
+  // Cache shields outside Rules.REGIONS must not look unlockable.
+  if (!levelUpRegion(areaId)) return AreaData.interface.states.message;
   if (state.pendingRegionMilestone !== null) return AreaData.interface.states.available;
   return AreaData.interface.states.message;
 }
 
+function areaMessage(player, areaId) {
+  if (!levelUpRegion(areaId) && !Rules.region(areaId)?.starting) {
+    return "That region is not available in Level-Up.";
+  }
+  const next = progress(player).nextRegionMilestone;
+  if (next === null) return "You cannot unlock any more areas.";
+  return `Reach ${next} unlocked skills to earn another region choice.`;
+}
+
 function showArea(player, area) {
   const state = areaState(player, area.id);
-  const text = state === AreaData.interface.states.message
-    ? `Reach ${progress(player).nextRegionMilestone} unlocked skills to earn another region choice.`
-    : "";
+  const text = state === AreaData.interface.states.message ? areaMessage(player, area.id) : "";
   areaViewing.set(player, area.id);
   const { viewScript, viewScriptComponentsBefore, viewScriptComponentsAfter } = AreaData.interface;
   player.getPacketSender().sendVarbit(AreaData.varbits.lastViewed, area.id);
@@ -411,7 +427,9 @@ function areaHeaderClicked(event) {
 
 function presentArea(player, area) {
   const { Animation, Graphic } = core;
-  const graphic = areaCommon().spotanim(LEAGUE_STYLE_TYPE, area.id);
+  // Relics reuse Trailblazer Reloaded (4); Varlamore's unlock graphic lives on Raging Echoes (5).
+  let graphic = areaCommon().spotanim(LEAGUE_STYLE_TYPE, area.id);
+  if (graphic < 0) graphic = areaCommon().spotanim(5, area.id);
   player.performAnimation(new Animation(AreaData.interface.unlockAnimation));
   if (graphic >= 0) player.performGraphic(new Graphic(graphic, 0, 0));
   player.getPacketSender().sendInterfaceRemoval();
@@ -426,8 +444,13 @@ function areaConfirm(event) {
     player.sendMessage("Select a region first.");
     return true;
   }
+  const region = levelUpRegion(area.id);
+  if (!region) {
+    player.sendMessage("That region is not available in Level-Up.");
+    return true;
+  }
   const before = progress(player).regions.length;
-  TemplateWorlds.unlockRegion(player, area.key);
+  TemplateWorlds.unlockRegion(player, region.id);
   const after = progress(player).regions.length;
   if (after > before) presentArea(player, area);
   sendAreaState(player);

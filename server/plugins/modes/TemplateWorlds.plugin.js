@@ -431,7 +431,11 @@ function unlockRegion(player, text) {
   const milestone = pendingMilestone(player, "region");
   if (milestone === null) return player.sendMessage("You do not have an unclaimed region milestone."), true;
   const chosen = Rules.regionByText(text);
-  if (!chosen || chosen.starting) return player.sendMessage("Choose an eligible region by id or full name."), true;
+  if (!chosen || chosen.starting) {
+    return player.sendMessage(
+      "Choose an eligible region by id or full name (Karamja, Asgarnia, Kandarin, Morytania, Kharidian Desert, Tirannwn, Fremennik, Wilderness, Kourend or Varlamore).",
+    ), true;
+  }
   if (regions(player).some((region) => region.id === chosen.id)) {
     return player.sendMessage(`${chosen.name} is already unlocked.`), true;
   }

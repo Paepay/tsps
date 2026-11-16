@@ -524,8 +524,38 @@ test("canonical normalisation migrates runtime indexes and old numeric map areas
   assert.deepEqual(Rules.REGIONS.map(({ id, area }) => [id, area]), [
     ["misthalin", 1], ["karamja", 2], ["asgarnia", 3], ["kandarin", 4],
     ["morytania", 5], ["kharidian-desert", 6], ["tirannwn", 7], ["fremennik", 8],
-    ["wilderness", 11], ["kourend", 20],
+    ["wilderness", 11], ["kourend", 20], ["varlamore", 21],
   ]);
+  assert.equal(Rules.region(21).id, "varlamore");
+  assert.equal(Rules.regionByText("varlamore").id, "varlamore");
+  assert.equal(Rules.regionByText("Varlamore").id, "varlamore");
+});
+
+test("Level-Up unlocks Varlamore at a pending region milestone", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  plugin.register(fake.api);
+  plugin._test.configure("level_up", validContract());
+  fake.attributes.set("level-up:unlocked-skills", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  fake.attributes.set("level-up:regions", ["misthalin", "kandarin", "wilderness"]);
+  fake.attributes.set("level-up:claimed-region-milestones", [3, 6]);
+  assert.equal(plugin._test.progress(fake.player).pendingRegionMilestone, 9);
+  assert.equal(plugin._test.progress(fake.player).unlockedCount, 10);
+
+  const messages = [];
+  const originalSend = fake.player.sendMessage.bind(fake.player);
+  fake.player.sendMessage = (text) => { messages.push(String(text)); return originalSend(text); };
+
+  plugin.unlockRegion(fake.player, "varlamore");
+  assert.deepEqual(plugin._test.progress(fake.player).regions.map(({ id }) => id), [
+    "misthalin", "kandarin", "wilderness", "varlamore",
+  ]);
+  assert.equal(plugin._test.progress(fake.player).pendingRegionMilestone, null);
+  assert.match(messages.at(-1), /Varlamore unlocked/i);
+  assert.deepEqual(
+    fake.attributes.get("level-up:claimed-region-milestones"),
+    [3, 6, 9],
+  );
 });
 
 test("the core skill lock keeps the real level and rejects direct experience gains", () => {
