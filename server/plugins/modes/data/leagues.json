@@ -177,6 +177,8 @@
       "unlockSpotanim": 2603,
       "xpMultiplier": { "base": 5, "fromTier": { "2": 8, "5": 12, "7": 16 } },
       "startingLevels": { "HERBLORE": 3, "RUNECRAFTING": 5, "AGILITY": 10 },
+      "_shopStock": "Wiki Trailblazer_Reloaded_League and FAQs: to accommodate every player as an Ironman, shop stocks never decrease / restock after every transaction. Implemented as keep (stock display and buy cap stay at the shop's own amount; Fire Sale then buys forever one/fifty a click from that amount). Level-Up worlds reuse this league's catalog and the same keep via ShopStock.LeagueMode.",
+      "shopStock": { "keep": true },
       "passives": {
         "dropRate": { "fromTier": { "1": 2, "4": 3, "6": 4, "8": 5 } },
         "runEnergy": { "fromTier": 1 },
@@ -195,6 +197,8 @@
       "xpMultiplier": { "base": 5, "fromTier": { "2": 8, "5": 12, "7": 16 } },
       "_startingLevels": "Wiki Raging_Echoes_League: level 3 Herblore and level 5 Runecraft.",
       "startingLevels": { "HERBLORE": 3, "RUNECRAFTING": 5 },
+      "_shopStock": "Same Ironman accommodation as Trailblazer Reloaded and Demonic Pacts: shop stock does not deplete for league characters (`shop:keep-stock`). Buy quantity still follows the shown stock.",
+      "shopStock": { "keep": true },
       "passives": {
         "dropRate": { "fromTier": { "1": 2, "4": 5 } },
         "runEnergy": { "fromTier": 1 },
