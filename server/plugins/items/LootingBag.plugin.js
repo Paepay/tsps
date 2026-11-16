@@ -446,7 +446,18 @@ function bankComponents() {
   return { items: id("bankside:lootingbag_items"), bankAll: id("bankside:lootingbag_bankall"), dismiss: id("bankside:lootingbag_dismiss") };
 }
 
-/** The bag's op1 in the bank's inventory panel shows its contents in place of the inventory. */
+/**
+ * Cache script bankside_build only offers View (and the bag glow) when inv 516 already holds the
+ * bag's items. Seed that inventory whenever the bank is open so left-click View works without a
+ * prior Check (rsprox bankside_drawitem: View only when inv_516 is non-empty).
+ */
+function syncBankSideBag({ player }) {
+  if (!core.Bank.isOpen(player)) return;
+  const bag = bagFor(player);
+  if (bag) sendContents(player, bag);
+}
+
+/** The bag's op1 / "View" in the bank's inventory panel shows its contents in place of the inventory. */
 function viewInBank(event) {
   if (!isBag(event.item) || !core.Bank.isOpen(event.player)) return;
   if (event.op === BANK_EMPTY_OP) {
@@ -456,12 +467,13 @@ function viewInBank(event) {
     if (bankViewing(event.player)) sendContents(event.player, event.item);
     return;
   }
-  if (event.op !== BANK_VIEW_OP) return;
+  const option = String(event.option ?? "").trim().toLowerCase();
+  if (event.op !== BANK_VIEW_OP && option !== "view") return;
   event.handled = true;
   const { player, item } = event;
   const { Bank } = core;
   const sender = player.getPacketSender();
-  if (sender.getVarbit(Bank.VIEW_CONTAINER_VARBIT) !== BANK_VIEW) sender.sendVarbit(Bank.VIEW_CONTAINER_VARBIT, BANK_VIEW);
+  sender.sendVarbit(Bank.VIEW_CONTAINER_VARBIT, BANK_VIEW);
   sender.sendConfig(Bank.VIEW_CONTAINER_OBJ_VARP, item.getId());
   sendContents(player, item);
   sender.sendInterfaceFlagsRange(bankComponents().items, 0, BAG_SIZE - 1, BANK_ITEM_FLAGS);
@@ -478,31 +490,44 @@ function refreshBank(player) {
   else player.getBank(player.getCurrentBankTab()).refreshItems();
 }
 
-/** Banks up to `amount` of the bag's slot `slot`: a stack from that slot, single items from it onwards. */
+/**
+ * Banks up to `amount` of the bag's slot `slot`: a stack from that slot, single items from it onwards.
+ * Wiki: unbankable items move to the inventory instead; a can-bank veto leaves them in the bag.
+ */
 function bankSlot(player, bag, slot, amount) {
   const items = bagItems(bag);
   const entry = items[slot];
   if (!entry || amount <= 0) return false;
   const tab = player.getBank(core.Bank.getTabForItem(player, entry.id));
+  const inventory = player.getInventory();
   const slots = isStackable(entry.id) ? [slot]
     : [slot, ...items.map((_, index) => index).filter((index) => index !== slot && entryKey(items[index]) === entryKey(entry))];
   let left = amount;
   const emptied = new Set();
+  let touchedInventory = false;
   for (const index of slots) {
     if (left <= 0) break;
     const stored = items[index];
     const moving = Math.min(stored.amount, left);
     const source = new core.Inventory(player);
     source.setItem(0, new Item(stored.id, moving, stored.meta));
-    if (core.PluginManager.emitCanBankItem(player, source.forSlot(0)) === false) continue;
-    // Use the inventory transfer's note conversion, metadata, capacity and search rules without sending a staged inventory.
-    source.switchItem(tab, source.forSlot(0).clone(), false, 0, false);
+    const staged = source.forSlot(0);
+    if (staged.isUnbankable?.() === true) {
+      source.switchItem(inventory, staged.clone(), false, 0, false);
+      touchedInventory = true;
+    } else if (core.PluginManager.emitCanBankItem(player, staged) === false) {
+      continue;
+    } else {
+      // Inventory transfer's note conversion, metadata, capacity and search rules; no staged inventory packet.
+      source.switchItem(tab, staged.clone(), false, 0, false);
+    }
     const moved = moving - source.forSlot(0).getAmount();
     stored.amount -= moved;
     left -= moved;
     if (!stored.amount) emptied.add(index);
   }
   setBagItems(bag, items.filter((_, index) => !emptied.has(index)));
+  if (touchedInventory) inventory.refreshItems();
   return left < amount;
 }
 
@@ -630,6 +655,8 @@ module.exports = {
     api.onCustomEvent("looting-bag:store", storeLoot);
     api.onCustomEvent("destroy-item:prompt", destroyPrompt);
     api.onCustomEvent(core.Bank.INVENTORY_OP_EVENT, viewInBank);
+    api.onCustomEvent(core.Bank.OPENED_EVENT, syncBankSideBag);
+    api.onCustomEvent(core.Bank.REFRESHED_EVENT, syncBankSideBag);
     api.onCustomEvent("bank:empty-containers", emptyContainers);
     api.onGroundItemPickup(pickUp);
     api.onCustomEvent("ground-items:take", refuseSecondBag);
@@ -644,5 +671,8 @@ module.exports = {
     api.onPlayerDeathItemDrop(dropOnDeath);
     api.onPlayerDefeated(giveToKiller);
   },
-  _test: { bagItems, canStore, isBag, ownsBag, store, storeLoot, depositChoices, room, valueText, settings, settingClicked, sendSettings, STORE_ALL_ATTRIBUTE, SKIP_SUPPLIES_ATTRIBUTE },
+  _test: {
+    bagItems, canStore, isBag, ownsBag, store, storeLoot, depositChoices, room, valueText, settings, settingClicked,
+    sendSettings, syncBankSideBag, viewInBank, STORE_ALL_ATTRIBUTE, SKIP_SUPPLIES_ATTRIBUTE,
+  },
 };

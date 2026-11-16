@@ -228,8 +228,8 @@ function playSteps(player, master, npc, npcId, build) {
 /**
  * Where Assignment says more than the task line, as the transcript's "I need another
  * assignment." branch does (rsprox captures): Turael and Aya on a task, with their short
- * "You're still hunting ..., you have N to go." and the offer to replace a task they wouldn't
- * give (1445, 2965), and Krystilia's warning before the first Wilderness task (3279, 3434).
+ * "You're still hunting ..., you have N to go." and the free replace offer (always, including
+ * tasks on their own list), and Krystilia's warning before the first Wilderness task (3279, 3434).
  */
 function assignmentTalk(player, master) {
   const task = Tasks.current(player);
@@ -308,8 +308,11 @@ const CONDITIONS = [
   [/^If the player has a high combat level:/, () => false],
   [/^If the player has disabled combat checking:/, ({ player }) => State.varbit(player, "combat_level_reqs_disabled") === 1],
   [/^If the player has enabled combat checking:/, ({ player }) => State.varbit(player, "combat_level_reqs_disabled") !== 1],
-  [/^If the assignment isn't on \w+'s task list:/, ({ task, master }) => task != null && !onMastersList(master, task)],
-  [/^If the assignment is on \w+'s task list:/, ({ task, master }) => task != null && onMastersList(master, task)],
+  // Turael/Aya (replacesTasks): always offer a free replace, even for tasks they assign.
+  [/^If the assignment isn't on \w+'s task list:/, ({ task, master }) =>
+    task != null && (master.replacesTasks === true || !onMastersList(master, task))],
+  [/^If the assignment is on \w+'s task list:/, ({ task, master }) =>
+    task != null && master.replacesTasks !== true && onMastersList(master, task)],
   [/^If the player already has an assignment from Krystilia:/, ({ task, master }) => task != null && task.masterId === master.id],
   [/^If the player already has an assignment from another slayer master:/, ({ task, master }) => task != null && task.masterId !== master.id],
   [/^If the player has not received a Wilderness assignment before and does not have a current assignment:/,
@@ -512,7 +515,7 @@ function findOption(steps, text) {
   return null;
 }
 
-/** Turael/Aya replace a task from another master's list; the standard streak resets (Wiki). */
+/** Turael/Aya replace the held task (always offered); the standard streak resets. */
 function replaceTask(player, master) {
   Tasks.clear(player);
   State.setVarbit(player, "slayer_tasks_completed", 0);
@@ -565,8 +568,13 @@ const STEVE_MASTER_VARIANT = "standard-dialogue-slayer-master";
 
 function dialogueVariant({ npcId, definition }) {
   const id = definition?.getId?.() ?? npcId;
-  if (id == null || id !== core.CacheDefinitions.getNpcId("slayer_master_steve")) return null;
-  return STEVE_MASTER_VARIANT;
+  if (id != null && id === core.CacheDefinitions.getNpcId("slayer_master_steve")) {
+    return STEVE_MASTER_VARIANT;
+  }
+  // pickVariant prefers Turael's first-time intro forever; returning players need the
+  // subsequent branch (assignment + free replace).
+  if (definition?.getName?.() === "Turael") return ASSIGNMENT_VARIANT;
+  return null;
 }
 
 const EQUIPMENT_SHOP = "Slayer Equipment (shop)";

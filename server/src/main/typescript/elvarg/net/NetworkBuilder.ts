@@ -611,7 +611,22 @@ export class ClientConnection {
       console.warn(`[network] ${channel.kind} client error`, error.message);
       this.cleanup("socket_error");
     });
-    channel.onClose(() => this.cleanup("socket_close"));
+    channel.onClose((code, reason) => {
+      const reasonText =
+        typeof reason === "string"
+          ? reason
+          : Buffer.isBuffer(reason)
+            ? reason.toString("utf8")
+            : reason == null
+              ? ""
+              : String(reason);
+      console.warn("[network] websocket closed", {
+        code: code ?? null,
+        reason: reasonText,
+        kind: channel.kind,
+      });
+      this.cleanup("socket_close");
+    });
     try {
       this.loginExtension = PluginManager.createLoginExtension({
         send: (packet) => this.send(packet),

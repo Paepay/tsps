@@ -25,6 +25,10 @@ const CULLING_SPREE = { 5: 3 };
 const VARLAMORE = 21;
 const WILDERNESS = 11;
 const ASGARNIA = 3;
+const MISTHALIN = 1;
+const KANDARIN = 4;
+const DESERT = 6;
+const KOUREND = 20;
 
 let core;
 let Data;
@@ -390,6 +394,35 @@ test("a master leaves out a task none of whose monsters lives in an area the cha
   assert.equal(eligibleNames(morytania, duradel).includes("Araxytes"), true, "Morytania unlocked");
   const main = character("areas-main", { profile: "main", likeABoss: false });
   assert.equal(eligibleNames(main, duradel).includes("Araxytes"), true, "a main character is never asked");
+});
+
+test("Kalphites stay out until the Desert is unlocked (league and Level-Up)", () => {
+  const duradel = Data.get().masters.get(5);
+  // Demonic Pacts never opens Misthalin; Asgarnia + Kandarin + Kourend still leave the Lair locked.
+  const league = character("areas-no-desert", {
+    picks: {},
+    areas: [VARLAMORE, ASGARNIA, KANDARIN, KOUREND],
+    likeABoss: false,
+  });
+  assert.equal(eligibleNames(league, duradel).includes("Kalphites"), false, "Kalphites live in the Desert alone");
+  league.setAttribute("league:areas", [VARLAMORE, ASGARNIA, KANDARIN, KOUREND, DESERT]);
+  assert.equal(eligibleNames(league, duradel).includes("Kalphites"), true, "Desert unlocked");
+
+  // Level-Up has no seasonal league:type; its regions answer level-up:area-profile instead.
+  const levelUpAreas = { list: [MISTHALIN, ASGARNIA, KANDARIN, KOUREND] };
+  const answerLevelUp = (query) => {
+    query.active = true;
+    query.unlocked = levelUpAreas.list;
+  };
+  custom["level-up:area-profile"] = (custom["level-up:area-profile"] ?? []).concat([answerLevelUp]);
+  try {
+    const levelUp = character("areas-levelup-no-desert", { profile: "main", likeABoss: false });
+    assert.equal(eligibleNames(levelUp, duradel).includes("Kalphites"), false, "Level-Up without Desert");
+    levelUpAreas.list = [MISTHALIN, ASGARNIA, KANDARIN, KOUREND, DESERT];
+    assert.equal(eligibleNames(levelUp, duradel).includes("Kalphites"), true, "Level-Up with Desert");
+  } finally {
+    custom["level-up:area-profile"] = (custom["level-up:area-profile"] ?? []).filter((handler) => handler !== answerLevelUp);
+  }
 });
 
 test("a spawn on a square no area names is not an area the character may enter", () => {

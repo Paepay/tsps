@@ -539,6 +539,43 @@ function summaryFromSave(save) {
   return progressFrom(attributes, attributes[ATTR.skills], levelsFromRuntime(skillValues, rawLevels), attributes[ATTR.relics]);
 }
 
+/**
+ * Developer (`::resetrelics`): clear every Level-Up relic pick and claim so earned
+ * milestones can be chosen again. Relic items already granted stay where they are.
+ */
+function resetRelics(player) {
+  if (!active()) return player.sendMessage("This world is not running Level-Up."), true;
+  player.setAttribute(ATTR.relics, []);
+  player.setAttribute(ATTR.relicClaims, []);
+  player.setAttribute(ATTR.leagueRelics, {});
+  api.emitCustomEvent("league:relics-reset", { player, league: Rules.LEAGUE_STYLE_TYPE });
+  const pending = pendingMilestone(player, "relic");
+  player.sendMessage(
+    pending == null
+      ? "Your Level-Up relics have been reset."
+      : `Your Level-Up relics have been reset. Relic reward pending at ${pending} skills.`,
+  );
+  return true;
+}
+
+/**
+ * Developer (`::resetareas`): Misthalin only, every region claim cleared so earned
+ * milestones can be chosen again.
+ */
+function resetAreas(player) {
+  if (!active()) return player.sendMessage("This world is not running Level-Up."), true;
+  player.setAttribute(ATTR.regions, ["misthalin"]);
+  player.setAttribute(ATTR.regionClaims, []);
+  api.emitCustomEvent("level-up:regions-reset", { player });
+  const pending = pendingMilestone(player, "region");
+  player.sendMessage(
+    pending == null
+      ? "Your Level-Up areas have been reset to Misthalin."
+      : `Your Level-Up areas have been reset to Misthalin. Region reward pending at ${pending} skills.`,
+  );
+  return true;
+}
+
 function command({ player, parts }) {
   if (!active()) return false;
   const action = String(parts[1] ?? "").toLowerCase();
@@ -619,12 +656,16 @@ module.exports = {
     api.onCanGainExperience(canGainExperience);
     api.onCustomEvent("combat:developer-protection", developerProtection);
     api.registerCommand("levelup", command, api.core.PlayerRights.NONE, "View Level-Up progression or choose a skill, region or relic");
+    api.registerCommand("resetrelics", ({ player }) => resetRelics(player), api.core.PlayerRights.DEVELOPER, "Clear every Level-Up relic pick so earned milestones can be chosen again");
+    api.registerCommand("resetareas", ({ player }) => resetAreas(player), api.core.PlayerRights.DEVELOPER, "Reset Level-Up areas to Misthalin so earned region milestones can be chosen again");
     require("./levelup/Interface.LevelUpWorld").attach(api);
   },
   progress,
   unlockSkill,
   unlockRegion,
   unlockRelic,
+  resetRelics,
+  resetAreas,
   isActive: active,
   sendLockState,
   summaryFromSave,
@@ -641,6 +682,8 @@ module.exports = {
     sanitizeRemovedRelics,
     enforceSkillLevels,
     spawnLeaguesTutor,
+    resetRelics,
+    resetAreas,
     ATTR,
   },
 };

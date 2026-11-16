@@ -39,6 +39,9 @@ before(() => {
       VIEW_CONTAINER_VARBIT: real.Bank.VIEW_CONTAINER_VARBIT,
       VIEW_CONTAINER_OBJ_VARP: real.Bank.VIEW_CONTAINER_OBJ_VARP,
       INVENTORY_OP_EVENT: real.Bank.INVENTORY_OP_EVENT,
+      OPENED_EVENT: real.Bank.OPENED_EVENT,
+      REFRESHED_EVENT: real.Bank.REFRESHED_EVENT,
+      MAIN_INTERFACE_ID: real.Bank.MAIN_INTERFACE_ID,
       BANK_SEARCH_TAB_INDEX: real.Bank.BANK_SEARCH_TAB_INDEX,
       actionAmount: real.Bank.actionAmount,
       isOpen: (player) => player.bankOpen === true,
@@ -391,6 +394,15 @@ test("Open and Close lines (rsprox 449, 452, 1545)", () => {
   assert.equal(p.messages.at(-1), "You close your looting bag.");
 });
 
+test("opening the bank seeds inv 516 so the client offers View (bankside_drawitem)", () => {
+  const bag = bagWith(OPEN_BAG, [{ id: COINS, amount: 5 }]);
+  const p = player({ at: LUMBRIDGE, items: [bag] });
+  p.bankOpen = true;
+  hooks.events[core.Bank.OPENED_EVENT]({ player: p });
+  assert.equal(packets(p, "sendInventory").at(-1)[1], BAG_INV);
+  assert.deepEqual(packets(p, "sendInventory").at(-1)[3].slice(0, 1), [{ id: COINS, amount: 5 }]);
+});
+
 test("the bank's looting bag view: View, Deposit-1/5/10/X/All, Deposit loot, Dismiss (rsprox 454, 457, 464, 1545)", () => {
   bankTabs = bankTab();
   const bag = bagWith(OPEN_BAG, [
@@ -399,7 +411,7 @@ test("the bank's looting bag view: View, Deposit-1/5/10/X/All, Deposit loot, Dis
   ]);
   const p = player({ at: LUMBRIDGE, items: [bag] });
   p.bankOpen = true;
-  const view = { player: p, item: bag, slot: 0, op: 1, handled: false };
+  const view = { player: p, item: bag, slot: 0, op: 1, option: "View", handled: false };
   hooks.events[core.Bank.INVENTORY_OP_EVENT](view);
   assert.equal(view.handled, true);
   assert.equal(p.varbits.get(core.Bank.VIEW_CONTAINER_VARBIT), 1);

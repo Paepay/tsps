@@ -536,6 +536,30 @@ test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tut
   assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Leagues Tutor.");
 });
 
+test("Demonic Pacts' Dramen staff is reclaimed from the Leagues Tutor after loss", () => {
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I, CacheDefinitions } = core;
+  const staff = CacheDefinitions.getObjId("dramen_staff");
+  assert.equal(staff, I.DRAMEN_STAFF);
+  assert.deepEqual(require("../plugins/modes/data/leagues.json").leagues["6"].tutorCollect, ["dramen_staff"]);
+
+  const player = relicCharacter("pacts-dramen", 6);
+  assert.equal(player.getInventory().contains(staff), true, "the starter kit already holds the Dramen staff");
+  assert.deepEqual(Collect.owed(player, 6), [], "holding the staff clears the debt");
+  player.getInventory().delete(staff, 1);
+  assert.deepEqual(Collect.owed(player, 6), [staff], "a lost Dramen staff is owed");
+
+  const { action, chains } = collect(player, 15609);
+  action.send(player);
+  assert.equal(player.getInventory().contains(staff), true, "Collect-items hands the Dramen staff back");
+  assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Tutor.");
+  assert.equal(player.getInventory().contains(I.SPADE), false, "no free spade");
+  assert.equal(player.getInventory().contains(I.IMPLING_JAR), false, "no free impling jar");
+
+  const reloaded = relicCharacter("reloaded-no-dramen", 4);
+  assert.equal(Collect.owed(reloaded, 4).includes(staff), false, "other leagues are not owed a Dramen staff");
+});
+
 test("Sage's greaves pay 10 + floor(Agility level x 2/3) every 10 run ticks while worn", (t) => {
   const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
   const { ItemIdentifiers: I, Item, Equipment, TaskManager } = core;

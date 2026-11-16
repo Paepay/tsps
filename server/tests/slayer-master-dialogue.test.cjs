@@ -223,6 +223,25 @@ test("Aya's replacement of another master's task is followed by the same menu", 
   } finally { h.close(); }
 });
 
+test("Turael offers a free replace even when the task is on his own list", async () => {
+  const h = harness(13618);
+  try {
+    const masters = [...require("../plugins/skills/slayer/Data.Slayer").get().masters.values()];
+    const named = (name) => masters.find((master) => master.names.includes(name));
+    const entry = named("Duradel").tasks.find((row) => named("Turael").tasks.some((own) => own.task.id === row.task.id));
+    assert.ok(entry, "Duradel and Turael share at least one task");
+    Tasks.assignPicked(h.player, named("Duradel"), entry, 0, 10);
+    State.setVarbit(h.player, "slayer_tasks_completed", 12);
+    await h.option("Assignment");
+    assert.ok((await h.toMenu()).includes("Yes, please."));
+    await h.choose("Yes, please.");
+    const task = Tasks.current(h.player);
+    assert.ok(task, "a replacement task");
+    assert.equal(task.masterId, 1);
+    assert.equal(State.varbit(h.player, "slayer_tasks_completed"), 0);
+  } finally { h.close(); }
+});
+
 test("Talk-to with a task held still gives the transcript's still-hunting line", async () => {
   const h = harness(DURADEL);
   try {

@@ -97,6 +97,11 @@ The bank's inventory panel op1 on the bag sets `bank_viewcontainer` to 1 and
 `bank_viewcontainer_obj` to the bag (rev 233), and shows the bag's items with Deposit-1, Deposit-5,
 Deposit-10, Deposit-X and Deposit-All (script 3744; op1 follows the bank's quantity buttons). Deposit-X
 asks "Enter amount:". "Deposit loot" banks everything and "Dismiss" goes back to the inventory.
+Unbankable items go to the inventory instead (Wiki).
+
+Cache script `bankside_build` / `bankside_drawitem` only labels the bag's left-click **View** (and its
+glow) when inv `looting_bag` (516) already holds items. Opening or refreshing the bank therefore
+sends that inventory from the carried bag so View is available without a prior Check.
 
 ## Destroy (captured, Wiki)
 Recording [1541](https://rsprox.net/download/1541) sends synth `2381` (one loop, no delay)

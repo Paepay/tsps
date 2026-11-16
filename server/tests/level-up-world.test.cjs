@@ -711,6 +711,25 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.deepEqual(fake.attributes.get("level-up:claimed-relic-milestones"), [2]);
   assert.deepEqual(fake.attributes.get("league:relics"), { 0: 1 });
 
+  fake.handlers["command:resetrelics"][0]({ player: fake.player, parts: ["resetrelics"] });
+  assert.deepEqual(fake.attributes.get("level-up:relics"), []);
+  assert.deepEqual(fake.attributes.get("level-up:claimed-relic-milestones"), []);
+  assert.deepEqual(fake.attributes.get("league:relics"), {});
+  assert.ok(fake.events.some(({ name }) => name === "league:relics-reset"));
+  assert.match(fake.player.messages.at(-1), /relics have been reset/i);
+  assert.equal(plugin._test.pendingMilestone(fake.player, "relic"), 2, "earned relic milestones return after ::resetrelics");
+  fake.handlers["command:levelup"][0]({ player: fake.player, parts: ["levelup", "relic", "2"] });
+  assert.deepEqual(fake.attributes.get("league:relics"), { 0: 2 });
+
+  fake.handlers["command:resetareas"][0]({ player: fake.player, parts: ["resetareas"] });
+  assert.deepEqual(fake.attributes.get("level-up:regions"), ["misthalin"]);
+  assert.deepEqual(fake.attributes.get("level-up:claimed-region-milestones"), []);
+  assert.ok(fake.events.some(({ name }) => name === "level-up:regions-reset"));
+  assert.match(fake.player.messages.at(-1), /areas have been reset to Misthalin/i);
+  assert.equal(plugin._test.pendingMilestone(fake.player, "region"), 3, "earned region milestones return after ::resetareas");
+  fake.handlers["command:levelup"][0]({ player: fake.player, parts: ["levelup", "region", "Asgarnia"] });
+  assert.deepEqual(fake.attributes.get("level-up:regions"), ["misthalin", "asgarnia"]);
+
   const beforeReconnect = { ...Object.fromEntries(fake.attributes) };
   const reconnectSummary = plugin._test.progress(fake.player);
   login(fake, { player: fake.player });

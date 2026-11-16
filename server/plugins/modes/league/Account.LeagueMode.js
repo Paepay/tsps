@@ -48,7 +48,8 @@ function applyStartingLevels(player, type) {
 /**
  * A new league character's inventory (`starterKit`, obj gameval names): Demonic Pacts' is what live
  * sends at the first login (237/01098), the Lumbridge kit and a Dramen staff. Given once, as the
- * character joins. A name the cache lacks is skipped and logged (the tests check every name).
+ * character joins. A lost Dramen staff is reclaimed from the Leagues Tutor (`tutorCollect`). A name
+ * the cache lacks is skipped and logged (the tests check every name).
  */
 function giveStarterKit(player, type) {
   const kit = Common.league(type).starterKit;

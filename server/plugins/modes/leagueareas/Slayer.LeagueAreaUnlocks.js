@@ -1,8 +1,9 @@
 /**
- * Slayer masters and a league character's areas (Wiki, Demonic_Pacts_League/Areas: Slayer masters
- * "will all assign their standard task list, taking into account unlocked areas"): a master leaves
- * out a task none of whose monsters lives in an area the character may enter, as Slayer asks
- * through `slayer:task-available`.
+ * Slayer masters and a league or Level-Up character's areas (Wiki, Demonic_Pacts_League/Areas:
+ * Slayer masters "will all assign their standard task list, taking into account unlocked areas"):
+ * a master leaves out a task none of whose monsters lives in an area the character may enter, as
+ * Slayer asks through `slayer:task-available`. Level-Up uses the same map via
+ * `level-up:area-profile` (Regions.levelUpAreas), not a seasonal `league:type`.
  * - A task's monsters are where the world spawns them (npc-spawns.json), every NPC that counts for
  *   it, and a spawn counts only inside an area the character unlocked or on a square the league
  *   opens to everyone by name (its `area: null` overrides: Demonic Pacts' Zanaris and Abyss).
@@ -66,20 +67,37 @@ function bossArea(task) {
   return bossAreas[task?.displayName];
 }
 
+/** The region map a character walks: Level-Up shares the untyped index; leagues use their type. */
+function mapType(player, type) {
+  return Regions.levelUpAreas(player) ? null : type;
+}
+
+/**
+ * Areas the character may enter for Slayer: Level-Up's region picks, else the league's unlocks.
+ * Null when neither applies (a main character): leave the master's full list alone.
+ */
+function unlockedFor(player, type) {
+  const levelUp = Regions.levelUpAreas(player);
+  if (levelUp) return levelUp;
+  return type === null ? null : Common.unlocked(player);
+}
+
 /**
  * Whether a spawn or box centre on this tile counts for the character: its square lies in an area
  * the character unlocked, or a league override opens it to everyone (`area: null`). Unlike
- * Regions.isOpen, a square no area names is not entered.
+ * Regions.isOpenForPlayer alone, a square no area names is not entered.
  */
 function entered(type, player, x, y) {
-  if (!Regions.indexFor(type).has(Regions.squareOf(x, y))) return false;
-  return Regions.isOpen(type, player, x, y);
+  if (!Regions.indexFor(mapType(player, type)).has(Regions.squareOf(x, y))) return false;
+  return Regions.isOpenForPlayer(type, player, x, y);
 }
 
 function taskAvailable(request) {
   const { player } = request;
-  const type = player ? Common.leagueOf(player) : null;
-  if (type === null || request.available === false) return;
+  if (!player || request.available === false) return;
+  const type = Common.leagueOf(player);
+  const unlocked = unlockedFor(player, type);
+  if (unlocked === null) return;
   if (request.area) {
     const boxes = request.area.boxes ?? [];
     if (boxes.length && !boxes.some(([minX, minY, maxX, maxY]) =>
@@ -90,7 +108,7 @@ function taskAvailable(request) {
     const key = bossArea(request.task);
     const area = key === undefined ? null : [...Common.areas.values()].find((entry) => entry.key === key);
     // As Culling Spree's bossAllowed: Krystilia's boss comes from the Wilderness.
-    if (!area || !Common.unlocked(player).includes(area.id) || (request.wilderness && key !== "wilderness")) {
+    if (!area || !unlocked.includes(area.id) || (request.wilderness && key !== "wilderness")) {
       request.available = false;
     }
     return;

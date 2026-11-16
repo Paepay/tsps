@@ -1,9 +1,11 @@
 /**
  * The Leagues Tutor's Collect-items for every league: the player asks "Do I have any League items
  * to collect?" (chatquiz1); on Continue the item box names the Tutor and the items go into the
- * inventory. What is owed: each item the character's relics hand out (the Reloaded pick's too)
- * that it owns none of, carried, worn or banked; as many as the inventory takes. Ours
- * (unrecorded): the lines when nothing is owed and when the inventory is too full for the rest.
+ * inventory. What is owed: each item the character's relics hand out (the Reloaded pick's too),
+ * Trailblazer Reloaded's Crystal of memories when that passive is unlocked, and the league's
+ * `tutorCollect` free reclaimables (Demonic Pacts: the Dramen staff), that it owns none of,
+ * carried, worn or banked; as many as the inventory takes. Ours (unrecorded): the lines when
+ * nothing is owed and when the inventory is too full for the rest.
  */
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
@@ -21,6 +23,14 @@ function owns(player, itemId) {
   return Common.core.Bank.owns(player, itemId);
 }
 
+/** Free tutor reclaimables for this league (`tutorCollect` in leagues.json), by obj gameval name. */
+function tutorCollectIds(type) {
+  const names = Common.league(type)?.tutorCollect;
+  if (!Array.isArray(names)) return [];
+  const { CacheDefinitions } = Common.core;
+  return names.map((name) => CacheDefinitions.getObjId(name)).filter((id) => Number.isInteger(id));
+}
+
 /** The relic items the character owns none of, each once. */
 function owed(player, type) {
   const ids = heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic));
@@ -30,6 +40,7 @@ function owed(player, type) {
     const id = Common.core.ItemIdentifiers[crystal.item];
     if (Number.isInteger(id)) ids.push(id);
   }
+  ids.push(...tutorCollectIds(type));
   return [...new Set(ids)].filter((id) => !owns(player, id));
 }
 

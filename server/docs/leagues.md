@@ -1784,10 +1784,11 @@ starts with what live's holds at its first login (237/01098, in slot order): the
 (bronze axe, pickaxe, dagger and sword, tinderbox, small fishing net, shrimps, wooden shield,
 shortbow and 25 bronze arrows, 25 air, 15 mind, 6 water, 4 earth and 2 body runes, a bucket, a pot,
 bread) and a Dramen staff, nothing worn. Account gives it once, as the character joins: this world
-runs no Tutorial Island (world.json turns its plugin off), whose leaving is the only other kit. The
-Wiki has the Leagues Tutor hand out the Dramen staff (with a spade, an impling jar and two strange
-devices); with no Leagues Tutor here, the staff comes with the kit, as the recording shows it held.
-The other leagues have no recorded kit, so none.
+runs no Tutorial Island (world.json turns its plugin off), whose leaving is the only other kit. A
+lost Dramen staff is reclaimed from the Leagues Tutor's Collect-items (`tutorCollect` in
+leagues.json; Wiki / news Get Ready For Leagues VI). The Wiki's free tutor table also lists a
+spade, an impling jar and two strange devices; those are not handed out here. The other leagues
+have no recorded kit, so none.
 
 **Yama's Lair** (Demonic Pacts' start, `start` 1503, 5602; 237/01098): its 24 NPCs are world
 spawns from that recording (`npc-spawns.json`, source `rsprox:237/01098`); the Glowing portal's
@@ -1882,7 +1883,8 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
   square the league opens to all (`area: null` overrides: Demonic Pacts' Zanaris and Abyss), a
   boss task whose boss is in a locked area or missing from the Slayer guide's table (Culling
   Spree's `bossAreas`; the Shellbane Gryphon and the Maggot King) and a Konar area whose box is
-  locked (`slayer:task-available`). A square no area names (an instance such as Cerberus' lair)
+  locked (`slayer:task-available`). Level-Up uses the same filter through `level-up:area-profile`
+  (no seasonal `league:type`). A square no area names (an instance such as Cerberus' lair)
   does not count. Krystilia's tasks count only Wilderness spawns. A task with no placed monster is left to
   the master (ours).
 - **The tutorial's first unlock** is the Tutorial's areas section (above: Raging Echoes waits on
