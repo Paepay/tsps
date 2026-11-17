@@ -1,42 +1,12 @@
 {
   "name": "Old School RuneScape",
-  "description": "Demonic Pacts, Yama's Lair spawn, free relics, No staking",
+  "plugins": { "TutorialIsland": false },
+  "description": "",
   "experienceMultiplier": 1,
-  "membersWorld": true,
-  "gameframe": "modern-resizable",
   "spawn": {
-    "x": 1503,
-    "y": 5602,
+    "x": 3089,
+    "y": 3524,
     "z": 0
-  },
-  "plugins": {
-    "TutorialIsland": false,
-    "Ironman": true,
-    "NpcSpawns": true,
-    "RandomEvents": true,
-    "Quests": true,
-    "AchievementDiaries": true,
-    "CombatAchievements": true,
-    "CollectionLog": true,
-    "Pets": true,
-    "Gravestones": true,
-    "DuelStaking": false,
-    "PvpMode": false,
-    "SetSkillLevel": false,
-    "GrandExchange": false,
-    "Omnishop": false,
-    "ShootingStars": true,
-    "VoiceChat": false
-  },
-  "pluginConfig": {
-    "NpcDrops:bossRareMultiplier": 5,
-    "Gravestones:enabled": true,
-    "random-events:enabled": true,
-    "TutorialIsland:allowSkip": true,
-    "commands:permissions": {},
-    "LeagueRelics:free": true,
-    "league:type": 6,
-    "league:regionLocked": false
   },
   "zones": [
     { "_description": "Global zone", "tags": ["blast-furnace"] },
