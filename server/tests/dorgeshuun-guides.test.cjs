@@ -53,7 +53,7 @@ function ticks(count, p, log) {
   }
 }
 
-test("Kazgar's Follow: the recorded line and fade, moved 3 ticks later to (3309, 9613), back in a tick on, closed 2 ticks after", () => {
+test("Kazgar's Follow before Death to the Dorgeshuun: the recorded line and fade, moved 3 ticks later to (3309, 9613), back in a tick on, closed 2 ticks after", () => {
   const p = player();
   assert.equal(handlers.Kazgar.Follow({ player: p }), true);
   assert.deepEqual(p.messages, ['Kazgar shows you the way through the tunnels.']);
@@ -68,7 +68,7 @@ test("Kazgar's Follow: the recorded line and fade, moved 3 ticks later to (3309,
   assert.deepEqual(p.alphas, [200, 200], 'the screen dims to 200 and back');
 });
 
-test("Mistag's Follow and Cellar lead to Kazgar (3235, 9610); after Death to the Dorgeshuun, Kazgar's Mines goes to the mine", () => {
+test("Mistag's Follow and Cellar lead to Kazgar (3235, 9610); before Death to the Dorgeshuun, Kazgar's Mines goes to the mine", () => {
   for (const option of ['Follow', 'Cellar']) {
     const p = player();
     handlers.Mistag[option]({ player: p });
@@ -84,12 +84,23 @@ test("Mistag's Follow and Cellar lead to Kazgar (3235, 9610); after Death to the
   assert.ok(handlers.Kazgar.Watermill && handlers.Mistag.Watermill, 'both guides take players to the water mill');
 });
 
+test("after Death to the Dorgeshuun, Kazgar's Follow and Mines lead into Dorgesh-Kaan", () => {
+  for (const option of ['Follow', 'Mines']) {
+    const p = player();
+    dttdDone.add(p);
+    assert.equal(handlers.Kazgar[option]({ player: p }), true, option);
+    assert.deepEqual(p.messages, ['Kazgar shows you the way through the tunnels.'], option);
+    ticks(6, p, []);
+    assert.deepEqual([p.location.getX(), p.location.getY()], [2747, 5374], option);
+  }
+});
 
-test("recorded dialogue routes use the same timed crossing as quick travel", () => {
+
+test("dialogue routes use the same timed crossing as quick travel; after the quest Kazgar enters the city", () => {
   const routes = [
     ['Mistag', 'uzpbCL', 3235, 9610],
     ['Mistag', 'yWjjdW', 3235, 9610],
-    ['Kazgar', 'm471ps', 3309, 9613],
+    ['Kazgar', 'm471ps', 2747, 5374],
     ['Kazgar', 'ccERZh', 3242, 9648],
     ['Mistag', '_mrum5', 3245, 9645],
     ['Dartog', 'SCTNDo', 3309, 9613],
@@ -108,6 +119,15 @@ test("recorded dialogue routes use the same timed crossing as quick travel", () 
     ticks(4, p, []);
     assert.deepEqual([p.location.getX(), p.location.getY()], [x, y], stepId);
   }
+});
+
+test("Kazgar's dialogue route stays in the mine before Death to the Dorgeshuun", () => {
+  const p = player();
+  const event = { player: p, stepId: 'm471ps', kind: 'message', text: 'Kazgar shows you the way through the tunnels.' };
+  custom['npc-dialogue:action'](event);
+  assert.equal(event.handled, true);
+  ticks(6, p, []);
+  assert.deepEqual([p.location.getX(), p.location.getY()], [3309, 9613]);
 });
 
 test("water mill dialogue routes stay put before Death to the Dorgeshuun", () => {
