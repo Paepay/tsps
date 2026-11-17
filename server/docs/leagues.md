@@ -807,8 +807,9 @@ tooltip is 655:53.
   its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
   greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
-  Trailblazer Reloaded's tools are still absent from this cache and are not granted; the data
-  says so. The crystal of memories is Trailblazer Reloaded tier 3's passive (not a relic slot):
+  Trailblazer Reloaded's Infernal Gathering tools are custom items too (the cache reused their
+  ids for the Echo tools); they are granted and reclaimable the same way. The crystal of
+  memories is Trailblazer Reloaded tier 3's passive (not a relic slot):
   `CrystalOfMemories.LeagueRelics.js` grants the Crystal of Echoes (this cache's name for it) on
   that unlock and at login, reclaimable from the Leagues Tutor's Collect-items; Level-Up gets the
   same grant from the Trailblazer Reloaded catalog. Level-Up worlds also get the same relic items,
@@ -860,9 +861,10 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 ### Not in this cache
 
 No unit, and the data says so: the **Guardian** effects of both leagues (both grant their horns,
-but a thrall with its own combat would be a feature of its own), **Infernal Gathering** (no
-Trailblazer tools), and **Ruinous Powers** beyond the book it grants (the server has no Ruinous
-Powers prayer book). The tier 3 **Crystal of Memories** passive is implemented
+but a thrall with its own combat would be a feature of its own), and **Ruinous Powers** beyond
+the book it grants (the server has no Ruinous Powers prayer book). **Infernal Gathering** grants
+its Trailblazer tools as custom items and burns, smelts and cooks with them
+(`InfernalGathering.LeagueRelics.js`). The tier 3 **Crystal of Memories** passive is implemented
 (`CrystalOfMemories.LeagueRelics.js`: the Crystal of Echoes item, Last Recall with the Wiki's
 total-level cooldown).
 
@@ -974,6 +976,18 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
 
 ### Trailblazer Reloaded's gathering relics
 
+- **Infernal Gathering** (tier 5): grants the Trailblazer axe, pickaxe and harpoon (custom items
+  based on the Echo tools; unlock in a bank). They sit in Woodcutting's, Mining's and Fishing's
+  tool tables as crystal tools with no requirement; the pickaxe always rolls every 2 ticks, the
+  axe chops one tick faster (`skills:action-interval`) and the harpoon fishes two ticks sooner
+  (`fishing:interval`). Toggle on any tool turns burn / smelt / cook on or off for all three
+  (`league:infernal-gathering-mode`). With the effect on, the matching tool must be carried or
+  wielded: the axe burns logs for Firemaking XP, the pickaxe smelts ore into bars for Smithing XP
+  (tin becomes bronze and iron becomes steel, coal waived, as Power Miner's `smeltBars`), and
+  the harpoon cooks fish for Cooking XP
+  (`storage:gather`); with Endless Harvest the doubled yield is processed the same way and
+  Endless Harvest skips (`gatherProcessed`). Equipped, the harpoon stands in for any fishing tool
+  (`fishing:tool`).
 - **Endless Harvest** (tier 1): what Mining, Woodcutting and Fishing gather is doubled and banked
   (`storage:gather` with the skill: two go to the bank and the inventory gets nothing; an open
   container such as a coal bag keeps what it took and the rest goes to the bank; when the bank

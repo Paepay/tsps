@@ -224,6 +224,8 @@ const AXES = [
   axe(ItemIds.INFERNAL_AXE_OR__3, 61, 7, 8778, { requiredFiremaking: 85, speed: 0.3 }),
   // The league's Echo axe (Wiki): a crystal axe with no requirement.
   axe(ItemIds.ECHO_AXE, 1, 7, 8324),
+  // Trailblazer Reloaded's Infernal Gathering axe (custom item): crystal-tier, no requirement.
+  axe(ItemIds.TRAILBLAZER_AXE, 1, 7, 8324),
 ];
 
 // OSRS Wiki "cut chance" charts: [low, high] per axe tier (bronze, iron, steel, black, mithril,

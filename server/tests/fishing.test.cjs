@@ -113,6 +113,10 @@ test("fishing spots, catch chances and the catch cascade follow OSRS", async () 
   }
   assert.equal(findTool(player({ fishing: 60, inventory: [I.HARPOON], equipment: [I.DRAGON_HARPOON] }), TOOLS.HARPOON).bonus, 100);
   assert.equal(findTool(player({ fishing: 60, equipment: [I.DRAGON_HARPOON] }), TOOLS.HARPOON), null);
+  // Infernal harpoons need 75 Fishing (Wiki); below that the refusal names the level, not "no tool".
+  const underInfernal = player({ fishing: 74, inventory: [I.INFERNAL_HARPOON] });
+  assert.equal(hasToolRequirements(underInfernal, TOOLS.HARPOON), null);
+  assert.match(underInfernal.messages[0], /at least 75/);
   assert.equal(findTool(player({ inventory: [I.PEARL_FISHING_ROD] }), TOOLS.FISHING_ROD).bonus, 100, "pearl rod");
   assert.equal(FISH.SHRIMP.caught, "some raw shrimps");
 
@@ -213,6 +217,7 @@ test("the infernal harpoon cooks a third of its catch, runs on 5,000 charges and
       }),
       getLocation: () => null,
       sendMessage: (message) => messages.push(message),
+      performGraphic() {},
       getPacketSender: () => ({ sendTypedMessage: (type, message) => messages.push(message), sendSoundEffect() {} }),
     };
   }
@@ -235,7 +240,7 @@ test("the infernal harpoon cooks a third of its catch, runs on 5,000 charges and
   assert.equal(findTool(lastCharge, TOOLS.HARPOON).infernal, undefined);
   assert.equal(findTool(lastCharge, TOOLS.HARPOON).bonus, 120);
 
-  // A cooked catch still gives Fishing XP and the pet roll, but no fish.
+  // A cooked catch still gives Fishing XP, the catch line and the pet roll, but no fish.
   const random = Math.random;
   try {
     // The first roll is the 1/5,000 big shark (missed here); every later one cooks.
@@ -246,6 +251,7 @@ test("the infernal harpoon cooks a third of its catch, runs on 5,000 charges and
     assert.equal(landing.items.length, 0);
     assert.equal(landing.xp.get("Fishing"), 110);
     assert.equal(landing.xp.get("Cooking"), 105);
+    assert.match(landing.messages[0], /shark/i, "a cooked catch still says so, as a burnt log does");
     Math.random = () => 0.9;
     landCatch(landing, TOOLS.SHARK_HARPOON, findTool(landing, TOOLS.SHARK_HARPOON), [FISH.SHARK]);
     assert.equal(landing.items[0].getId(), I.RAW_SHARK);

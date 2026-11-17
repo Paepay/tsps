@@ -5,12 +5,19 @@
  * harpoon. A smouldering stone on a dragon harpoon makes one (75 Fishing and 85 Cooking, not
  * boostable; 200 Fishing and 350 Cooking experience), and a smouldering stone or another dragon
  * harpoon recharges an uncharged one. Harpoons with no charge data yet count as fully charged.
+ * Toggle (14 October 2026) turns the cook effect off; ornamented copies keep Toggle under Options.
  */
+const InfernalToolEffect = require("../InfernalToolEffect");
+
 const COOK_CHANCE = 3;
 const MAX_CHARGES = 5000;
 const CHARGES_META_KEY = "infernal-harpoon";
 const CREATE_LEVELS = Object.freeze({ fishing: 75, cooking: 85 });
 const CREATE_XP = Object.freeze({ fishing: 200, cooking: 350 });
+// Same smokepuff the infernal axe and pickaxe use when they burn / smelt (Mining 86 @ height 150).
+const COOK_GRAPHIC = 86;
+const COOK_GRAPHIC_HEIGHT = 150;
+const ITEM_NAMES = Object.freeze(["Infernal harpoon", "Infernal harpoon (or)", "Infernal harpoon (uncharged)"]);
 
 let api = null;
 let core = null;
@@ -50,6 +57,7 @@ function useCharge(player, item) {
 
 /** Returns true when the fish was cooked and destroyed instead of going to the inventory. */
 function tryCookFish(player, rawId, random = Math.random) {
+  if (!InfernalToolEffect.enabled(player, "harpoon")) return false;
   const item = findCharged(player);
   if (!item || Math.floor(random() * COOK_CHANCE) !== 0) {
     return false;
@@ -60,6 +68,9 @@ function tryCookFish(player, rawId, random = Math.random) {
     return false;
   }
   player.getSkillManager().addExperiences(core.Skill.COOKING, request.xp / 2);
+  // Match the infernal axe/pickaxe: a smokepuff and fire sound so a cooked catch is visible.
+  player.performGraphic?.(new core.Graphic(COOK_GRAPHIC, 0, COOK_GRAPHIC_HEIGHT));
+  player.getPacketSender?.().sendSoundEffect?.(core.Sound.FIRE_SUCCESSFUL.getId(), 1, 0, 1);
   useCharge(player, item);
   return true;
 }
@@ -69,6 +80,7 @@ function tryCookFish(player, rawId, random = Math.random) {
  * 1/3 roll and the charge, with the caller giving the cooked fish and its experience.
  */
 function tryCookKept(player, random = Math.random) {
+  if (!InfernalToolEffect.enabled(player, "harpoon")) return false;
   const item = findCharged(player);
   if (!item || Math.floor(random() * COOK_CHANCE) !== 0) {
     return false;
@@ -141,8 +153,7 @@ function attach(pluginApi) {
   ]);
   chargedByUncharged = new Map([...unchargedByCharged].map(([charged, uncharged]) => [uncharged, charged]));
 
-  api.onItemAction("Infernal harpoon", { Check: checkCharges });
-  api.onItemAction("Infernal harpoon (or)", { Check: checkCharges });
+  InfernalToolEffect.attach(api, "harpoon", ITEM_NAMES, checkCharges);
   api.onItemOnItem("Smouldering stone", "Dragon harpoon", makeHarpoon, { noted: false });
   api.onItemOnItem("Smouldering stone", "Infernal harpoon (uncharged)", rechargeHarpoon, { noted: false });
   api.onItemOnItem("Dragon harpoon", "Infernal harpoon (uncharged)", rechargeHarpoon, { noted: false });
