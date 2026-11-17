@@ -9,6 +9,8 @@ const path = require("path");
 
 /** Unlocked areas: area ids in unlock order (slot 0 Misthalin, 1 Karamja, then the picks). */
 const AREAS_ATTRIBUTE = "league:areas";
+/** world.json pluginConfig: false disables the seasonal area barriers for this world. */
+const REGION_LOCKED_CONFIG = "league:regionLocked";
 
 let api = null;
 let core = null;
@@ -94,6 +96,11 @@ function league(type) {
   return data.leagues[type] ?? null;
 }
 
+/** Whether seasonal area barriers apply on this world (default true). */
+function regionLocked() {
+  return api.getPluginConfig(REGION_LOCKED_CONFIG, true) !== false;
+}
+
 /** The league's name and colour (leagues.json). */
 function leagueInfo(type) {
   return leagues[type] ?? null;
@@ -149,6 +156,7 @@ function nextSlot(type, player) {
 
 /** Whether the next pick is affordable now. */
 function available(type, player) {
+  if (!regionLocked()) return false;
   const next = nextSlot(type, player);
   return next !== null && tasks(player) >= next.tasks;
 }
@@ -167,7 +175,7 @@ function uid(group, child) {
 }
 
 module.exports = {
-  init, leagueOf, league, leagueInfo, area, areaByName, spotanim, unlocked, tasks, thresholdFor, nextSlot, available,
+  init, leagueOf, league, leagueInfo, regionLocked, area, areaByName, spotanim, unlocked, tasks, thresholdFor, nextSlot, available,
   colourHex, message, uid, unpackCoord, AREAS_ATTRIBUTE,
   get areas() { return areas; },
   get data() { return data; },

@@ -4,8 +4,9 @@
  * answers LeagueMode's `league:content-rows` with a league's own structs and enums (sent as
  * structOverrides / enumOverrides at login and before the interface opens). A league the cache
  * carries (data `fromCache`) needs none unless the world configured a mixed catalog, which always
- * needs overrides. Icons are the relic's own source league's sprites, which the cache still carries
- * by name (league_5_relics_tli,3 ...), at the index that source's cache gave.
+ * needs overrides, or its data sets `costs` (custom worlds), which override the cache's tier-cost
+ * params. Icons are the relic's own source league's sprites, which the cache still carries by name
+ * (league_5_relics_tli,3 ...), at the index that source's cache gave.
  */
 const Common = require("./Common.LeagueRelics");
 const WorldCatalog = require("./WorldCatalog.LeagueRelics");
@@ -111,9 +112,19 @@ function datasets(type) {
 function content(query) {
   const type = query?.league;
   const catalog = Common.catalog(type);
-  if (!catalog || (catalog.fromCache && !Common.isCustomCatalog(type))) return;
-  query.structs.push(...structRows(type));
-  query.enums.push(...enumRows(type));
+  if (!catalog) return;
+  if (!catalog.fromCache || Common.isCustomCatalog(type)) {
+    query.structs.push(...structRows(type));
+    query.enums.push(...enumRows(type));
+    return;
+  }
+  const costs = Common.data.leagues[type]?.costs;
+  if (!Array.isArray(costs)) return;
+  const { tierCost } = Common.data.params;
+  catalog.tiers.forEach((tier, index) => {
+    if (!Number.isFinite(costs[index]) || tier.struct === undefined) return;
+    query.structs.push({ structId: tier.struct, params: { [tierCost]: Number(costs[index]) } });
+  });
 }
 
 /** The public relic catalog: every source relic, its stable id and icon, and this world's configuration. */

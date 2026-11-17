@@ -96,6 +96,7 @@ function areaAt(type, x, y) {
 
 /** Whether the character may stand on the tile: open ground, or an area it unlocked in a league that offers it. */
 function isOpen(type, player, x, y) {
+  if (!Common.regionLocked()) return true;
   const area = areaAt(type, x, y);
   if (area === null) return true;
   return Common.league(type).areas.includes(area) && Common.unlocked(player).includes(area);

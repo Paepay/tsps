@@ -331,12 +331,12 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   query("player:respawn", { player: league, killer: null, handled: true });
   const home = league.getLocation();
   assert.equal(areaAt(home.getX(), home.getY()), MISTHALIN, "the respawn lands in Misthalin");
-  assert.notEqual(areaAt(core.WorldDefinition.WORLD_SPAWN.getX(), core.WorldDefinition.WORLD_SPAWN.getY()), MISTHALIN, "(this world's spawn is in another area, so the hub stands in)");
+  assert.equal(areaAt(core.WorldDefinition.WORLD_SPAWN.getX(), core.WorldDefinition.WORLD_SPAWN.getY()), MISTHALIN, "(this world's spawn is the league home)");
 
-  // The default respawn into a locked spawn is handled the same way.
+  // The default respawn into an open spawn is left to the normal handler.
   const dead = { player: league, killer: null, handled: false };
   query("player:respawn", dead);
-  assert.equal(dead.handled, true);
+  assert.equal(dead.handled, false);
   assert.equal(areaAt(league.getLocation().getX(), league.getLocation().getY()), MISTHALIN);
 
   // A death flags the player: a respawn handler after ours that lands them in a locked area still goes home.
@@ -834,7 +834,7 @@ test("Death's Office's exit portal: a locked destination leads to the league hom
   const Enforcement = require("../plugins/modes/leagueareas/Enforcement.LeagueAreaUnlocks");
   const homeOf = (player, league) => Enforcement.home(league, player);
   const spawn = core.WorldDefinition.WORLD_SPAWN;
-  assert.equal(areaAt(spawn.getX(), spawn.getY()), WILDERNESS, "(the tutorial's exit, the world's spawn, is locked for a new character)");
+  assert.equal(areaAt(spawn.getX(), spawn.getY()), MISTHALIN, "(the tutorial's exit, the world's spawn, is in the starting area)");
 
   // The first death's tutorial leads to the respawn point: the respawn rule's league home here.
   const tutorial = inDeathsOffice("tutorialexit");
