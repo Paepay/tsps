@@ -1,0 +1,32 @@
+name: Sync upstream main
+
+# Keep this fork's main current with RSPSApp/tsps, then merge that main into
+# custom/demonic-pacts. Scheduled workflows are disabled on a new
+# fork until this workflow is enabled once in Actions.
+on:
+    schedule:
+        - cron: "*/15 * * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: sync-upstream-main
+    cancel-in-progress: false
+
+jobs:
+    sync:
+        if: github.repository == 'Paepay/tsps'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Merge RSPSApp/tsps main into main and the demonic-pacts branch
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh api --method POST repos/Paepay/tsps/merge-upstream -f branch=main
+                  gh api --method POST repos/Paepay/tsps/merges \
+                    -f base=custom/demonic-pacts \
+                    -f head=main \
+                    -f commit_message='Merge main into custom/demonic-pacts' \
+                    --silent

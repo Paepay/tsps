@@ -463,7 +463,11 @@
     }
   },
   "leagues": {
-    "6": { "_comment": "Leagues VI - Demonic Pacts is the league this cache (rev 241) carries: its tiers, costs, passives and relics are read from the league struct (6436, enum 2670) and sent as nothing; a relic's item is its struct's param 2049, and one with an item (param 1855) unlocks only in a bank or near the Leagues Tutor, as recorded (237/01102).", "fromCache": true },
+    "6": {
+      "_comment": "Leagues VI - Demonic Pacts is the league this cache (rev 241) carries: its tiers, passives and relics are read from the league struct (6436, enum 2670); a relic's item is its struct's param 2049, and one with an item (param 1855) unlocks only in a bank or near the Leagues Tutor, as recorded (237/01102). Wiki/cache tier costs are 0, 600, 1200, 2600, 5200, 8500, 16500, 28000; this custom world uses 60% of those (40% fewer points) because only ~1100/1800 tasks are wired. `costs` overrides the cache's param 877 and is sent as structOverrides so the client matches.",
+      "fromCache": true,
+      "costs": [0, 360, 720, 1560, 3120, 5100, 9900, 16800]
+    },
     "4": {
       "iconSprite": "league_4_relics",
       "tiers": [
