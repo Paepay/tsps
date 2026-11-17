@@ -227,7 +227,7 @@ test("Fire Sale: coin shops sell for nothing, noted when they can be; they buy n
   assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 5, "five steel axes, noted, with no coins at all");
   assert.equal(amount(who.relic, I.STEEL_AXE), 0);
   buy(who.relic, COIN_SHOP, 0, I.STEEL_AXE);
-  assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 5, "the stock still limits it: none left");
+  assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 6, "keep-stock leagues sell up to the shown stock on every buy");
   buy(who.relic, COIN_SHOP, 1, I.FIRE_RUNE, "Buy 50");
   assert.equal(amount(who.relic, I.FIRE_RUNE), 50, "runes have no note: they come as they are");
   buy(who.relic, TOKKUL_SHOP, 0, I.STEEL_AXE);

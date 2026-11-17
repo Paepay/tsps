@@ -1,0 +1,1353 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "server/scripts/generate-league-passives-audit.cjs",
+  "sources": [
+    "server/plugins/modes/data/league-relics.json",
+    "server/plugins/modes/data/leagues.json",
+    "cache league struct 6436 (Demonic Pacts tier passive text)"
+  ],
+  "counts": {
+    "4": 17,
+    "5": 17,
+    "6": 17
+  },
+  "otherLeagues": [
+    {
+      "type": 1,
+      "key": "twisted",
+      "name": "Leagues I - Twisted",
+      "tierPassiveCatalog": false,
+      "definitionNote": "Wiki Twisted_League: 5x, no tier passives."
+    },
+    {
+      "type": 2,
+      "key": "trailblazer",
+      "name": "Leagues II - Trailblazer",
+      "tierPassiveCatalog": false,
+      "definitionNote": "Wiki Leagues: 5x rising to 16x at relic tier 6; the 8x and 12x steps are Trailblazer Reloaded's (same passives, Wiki Trailblazer_League_(2020)/Guide)."
+    },
+    {
+      "type": 3,
+      "key": "shattered-relics",
+      "name": "Leagues III - Shattered Relics",
+      "tierPassiveCatalog": false,
+      "definitionNote": "Wiki Shattered_Relics_League: 5x; the 8x / 12x / 16x steps come with fragment slots, not relic tiers."
+    }
+  ],
+  "tiers": [
+    {
+      "type": 4,
+      "key": "trailblazer-reloaded",
+      "name": "Leagues IV - Trailblazer Reloaded",
+      "tiers": [
+        {
+          "tier": 1,
+          "sourceText": "- Items from eligible sources will be 2x as common.<br><br>- Run energy is never drained whilst running.<br><br>- All clue scrolls will drop as stackable scroll boxes, limited to steps in unlocked regions.",
+          "passives": [
+            "league-4:t1:drop-rate-x2",
+            "league-4:t1:run-energy",
+            "league-4:t1:scroll-boxes"
+          ]
+        },
+        {
+          "tier": 2,
+          "sourceText": "- League XP multiplier increased from 5x to 8x.<br><br>- Minigame points received are boosted by 3x.",
+          "passives": [
+            "league-4:t2:xp-multiplier-8x",
+            "league-4:t2:minigame-points-x3"
+          ]
+        },
+        {
+          "tier": 3,
+          "sourceText": "- Grants a crystal of memories, which teleports you back to the last place you teleported from.",
+          "passives": [
+            "league-4:t3:crystal-of-memories"
+          ]
+        },
+        {
+          "tier": 4,
+          "sourceText": "- Items from eligible sources will be 3x as common.<br><br>- Bigger and Badder is unlocked, and superior slayer monsters spawn 1 in 50.<br><br>- Slayer point rewards are 5x, with no minimum task streak.",
+          "passives": [
+            "league-4:t4:drop-rate-x3",
+            "league-4:t4:slayer-bigger-and-badder",
+            "league-4:t4:slayer-superior-1-in-50",
+            "league-4:t4:slayer-points-x5",
+            "league-4:t4:slayer-no-task-streak"
+          ]
+        },
+        {
+          "tier": 5,
+          "sourceText": "- League XP multiplier increased from 8x to 12x.<br><br>- Minigame points received are boosted by 5x.",
+          "passives": [
+            "league-4:t5:xp-multiplier-12x",
+            "league-4:t5:minigame-points-x5"
+          ]
+        },
+        {
+          "tier": 6,
+          "sourceText": "- Items from eligible sources will be 4x as common.",
+          "passives": [
+            "league-4:t6:drop-rate-x4"
+          ]
+        },
+        {
+          "tier": 7,
+          "sourceText": "- League XP multiplier increased from 12x to 16x.<br><br>- Minigame points received are boosted by 8x.",
+          "passives": [
+            "league-4:t7:xp-multiplier-16x",
+            "league-4:t7:minigame-points-x8"
+          ]
+        },
+        {
+          "tier": 8,
+          "sourceText": "- Items from eligible sources will be 5x as common.",
+          "passives": [
+            "league-4:t8:drop-rate-x5"
+          ]
+        }
+      ]
+    },
+    {
+      "type": 5,
+      "key": "raging-echoes",
+      "name": "Leagues V - Raging Echoes",
+      "tiers": [
+        {
+          "tier": 1,
+          "sourceText": "- League XP multiplier is 5x.<br><br>- Items from eligible sources will be 2x as common.<br><br>- Farming ticks will occur every minute instead of every five minutes.<br><br>- Minigame points received are boosted by 4x.<br><br>- Run energy is never drained whilst running.<br><br>- All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+          "passives": [
+            "league-5:t1:xp-multiplier-5x",
+            "league-5:t1:drop-rate-x2",
+            "league-5:t1:farming-ticks-every-minute",
+            "league-5:t1:minigame-points-x4",
+            "league-5:t1:run-energy",
+            "league-5:t1:scroll-boxes",
+            "league-5:t1:clue-step-progress"
+          ]
+        },
+        {
+          "tier": 2,
+          "sourceText": "- League XP multiplier increased from 5x to 8x.",
+          "passives": [
+            "league-5:t2:xp-multiplier-8x"
+          ]
+        },
+        {
+          "tier": 3,
+          "sourceText": "- Combat skills (Including Hitpoints & Prayer) have a 2x Multiplier (Multiplicative with other modifiers).<br>- The \"Bigger and badder\" slayer unlock is unlocked for free.<br>- Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.<br>- Slayer Superior rates are increased to a 1/50 chance to appear.",
+          "passives": [
+            "league-5:t3:combat-xp-x2",
+            "league-5:t3:slayer-bigger-and-badder",
+            "league-5:t3:slayer-points-x5",
+            "league-5:t3:slayer-no-task-streak",
+            "league-5:t3:slayer-superior-1-in-50"
+          ]
+        },
+        {
+          "tier": 4,
+          "sourceText": "- Items from eligible sources will be 5x as common.<br>- Minigame points received are boosted by 8x.",
+          "passives": [
+            "league-5:t4:drop-rate-x5",
+            "league-5:t4:minigame-points-x8"
+          ]
+        },
+        {
+          "tier": 5,
+          "sourceText": "- League XP multiplier increased from 8x to 12x.",
+          "passives": [
+            "league-5:t5:xp-multiplier-12x"
+          ]
+        },
+        {
+          "tier": 6,
+          "sourceText": "There are no passive unlocks for this tier.",
+          "passives": []
+        },
+        {
+          "tier": 7,
+          "sourceText": "- League XP multiplier increased from 12x to 16x.",
+          "passives": [
+            "league-5:t7:xp-multiplier-16x"
+          ]
+        },
+        {
+          "tier": 8,
+          "sourceText": "There are no passive unlocks for this tier.",
+          "passives": []
+        }
+      ]
+    },
+    {
+      "type": 6,
+      "key": "demonic-pacts",
+      "name": "Leagues VI - Demonic Pacts",
+      "tiers": [
+        {
+          "tier": 1,
+          "sourceText": "- League XP multiplier is 5x.<br><br>- Items from eligible sources will be 2x as common.<br><br>- Farming ticks will occur every minute instead of every five minutes.<br><br>- Minigame points received are boosted by 4x.<br><br>- Run energy is never drained whilst running.<br><br>- All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+          "passives": [
+            "league-6:t1:xp-multiplier-5x",
+            "league-6:t1:drop-rate-x2",
+            "league-6:t1:farming-ticks-every-minute",
+            "league-6:t1:minigame-points-x4",
+            "league-6:t1:run-energy",
+            "league-6:t1:scroll-boxes",
+            "league-6:t1:clue-step-progress"
+          ]
+        },
+        {
+          "tier": 2,
+          "sourceText": "- League XP multiplier increased from 5x to 8x.",
+          "passives": [
+            "league-6:t2:xp-multiplier-8x"
+          ]
+        },
+        {
+          "tier": 3,
+          "sourceText": "- Combat skills (Including Hitpoints & Prayer) have a 1.5x Multiplier (Multiplicative with other modifiers).<br>- The \"Bigger and badder\" slayer unlock is unlocked for free.<br>- Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.<br>- Slayer Superior rates are increased to a 1/50 chance to appear.<br>",
+          "passives": [
+            "league-6:t3:combat-xp-x1-5",
+            "league-6:t3:slayer-bigger-and-badder",
+            "league-6:t3:slayer-points-x5",
+            "league-6:t3:slayer-no-task-streak",
+            "league-6:t3:slayer-superior-1-in-50"
+          ]
+        },
+        {
+          "tier": 4,
+          "sourceText": "- Items from eligible sources will be 5x as common.<br>- Minigame points received are boosted by 8x.<br>- League XP multiplier increased from 8x to 12x.",
+          "passives": [
+            "league-6:t4:drop-rate-x5",
+            "league-6:t4:minigame-points-x8",
+            "league-6:t4:xp-multiplier-12x"
+          ]
+        },
+        {
+          "tier": 5,
+          "sourceText": "There are no passive unlocks for this tier.",
+          "passives": []
+        },
+        {
+          "tier": 6,
+          "sourceText": "- League XP multiplier increased from 12x to 16x.",
+          "passives": [
+            "league-6:t6:xp-multiplier-16x"
+          ]
+        },
+        {
+          "tier": 7,
+          "sourceText": "There are no passive unlocks for this tier.",
+          "passives": []
+        },
+        {
+          "tier": 8,
+          "sourceText": "There are no passive unlocks for this tier.",
+          "passives": []
+        }
+      ]
+    }
+  ],
+  "passives": [
+    {
+      "id": "league-4:t1:drop-rate-x2",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 2x as common.",
+      "sourceText": "Items from eligible sources will be 2x as common.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 1,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 2
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t1:run-energy",
+      "name": "No run-energy drain",
+      "description": "Run energy is never drained whilst running.",
+      "sourceText": "Run energy is never drained whilst running.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 1,
+      "effect": {
+        "type": "runEnergy"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:runEnergyDrain",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t1:scroll-boxes",
+      "name": "Clue scrolls drop as scroll boxes",
+      "description": "All clue scrolls will drop as stackable scroll boxes, limited to steps in unlocked regions.",
+      "sourceText": "All clue scrolls will drop as stackable scroll boxes, limited to steps in unlocked regions.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 1,
+      "effect": {
+        "type": "scrollBoxes"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:scrollBoxes",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t2:xp-multiplier-8x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 5x to 8x.",
+      "sourceText": "League XP multiplier increased from 5x to 8x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 2,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 8
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t2:minigame-points-x3",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 3x.",
+      "sourceText": "Minigame points received are boosted by 3x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 2,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 3,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t3:crystal-of-memories",
+      "name": "Crystal of memories",
+      "description": "Grants a crystal of memories, which teleports you back to the last place you teleported from.",
+      "sourceText": "Grants a crystal of memories, which teleports you back to the last place you teleported from.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 3,
+      "effect": {
+        "type": "crystalOfMemories"
+      },
+      "implementation": {
+        "location": "plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics.js:unlocked",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t4:drop-rate-x3",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 3x as common.",
+      "sourceText": "Items from eligible sources will be 3x as common.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 4,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 3
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t4:slayer-bigger-and-badder",
+      "name": "Bigger and Badder",
+      "description": "Bigger and Badder is unlocked",
+      "sourceText": "Bigger and Badder is unlocked, and superior slayer monsters spawn 1 in 50.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 4,
+      "effect": {
+        "type": "biggerAndBadder"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t4:slayer-superior-1-in-50",
+      "name": "Superior Slayer chance",
+      "description": "superior slayer monsters spawn 1 in 50",
+      "sourceText": "Bigger and Badder is unlocked, and superior slayer monsters spawn 1 in 50.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 4,
+      "effect": {
+        "type": "superiorSlayer",
+        "chance": 50
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t4:slayer-points-x5",
+      "name": "Slayer task points",
+      "description": "Slayer point rewards are 5x",
+      "sourceText": "Slayer point rewards are 5x, with no minimum task streak.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 4,
+      "effect": {
+        "type": "slayerPoints",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t4:slayer-no-task-streak",
+      "name": "No Slayer task streak",
+      "description": "with no minimum task streak",
+      "sourceText": "Slayer point rewards are 5x, with no minimum task streak.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 4,
+      "effect": {
+        "type": "slayerFreeTasks",
+        "freeTasks": 0
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t5:xp-multiplier-12x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 8x to 12x.",
+      "sourceText": "League XP multiplier increased from 8x to 12x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 5,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 12
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t5:minigame-points-x5",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 5x.",
+      "sourceText": "Minigame points received are boosted by 5x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 5,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 5,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t6:drop-rate-x4",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 4x as common.",
+      "sourceText": "Items from eligible sources will be 4x as common.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 6,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 4
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t7:xp-multiplier-16x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 12x to 16x.",
+      "sourceText": "League XP multiplier increased from 12x to 16x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 7,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 16
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t7:minigame-points-x8",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 8x.",
+      "sourceText": "Minigame points received are boosted by 8x.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 7,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 8,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-4:t8:drop-rate-x5",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 5x as common.",
+      "sourceText": "Items from eligible sources will be 5x as common.",
+      "sourceLeague": 4,
+      "sourceLeagueKey": "trailblazer-reloaded",
+      "originalTier": 8,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:xp-multiplier-5x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier is 5x.",
+      "sourceText": "League XP multiplier is 5x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:drop-rate-x2",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 2x as common.",
+      "sourceText": "Items from eligible sources will be 2x as common.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 2
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:farming-ticks-every-minute",
+      "name": "Farming ticks",
+      "description": "Farming ticks will occur every minute instead of every five minutes.",
+      "sourceText": "Farming ticks will occur every minute instead of every five minutes.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "farmingTicks",
+        "minutes": 1
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:farmingGrowthRate",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:minigame-points-x4",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 4x.",
+      "sourceText": "Minigame points received are boosted by 4x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 4,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:run-energy",
+      "name": "No run-energy drain",
+      "description": "Run energy is never drained whilst running.",
+      "sourceText": "Run energy is never drained whilst running.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "runEnergy"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:runEnergyDrain",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:scroll-boxes",
+      "name": "Clue scrolls drop as scroll boxes",
+      "description": "All clue scrolls will drop as stackable scroll boxes",
+      "sourceText": "All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "scrollBoxes"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:scrollBoxes",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t1:clue-step-progress",
+      "name": "Clue-step progress is saved",
+      "description": "clue-step progress is saved between clues",
+      "sourceText": "All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 1,
+      "effect": {
+        "type": "clueStepProgress"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:clueProgress",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t2:xp-multiplier-8x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 5x to 8x.",
+      "sourceText": "League XP multiplier increased from 5x to 8x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 2,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 8
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t3:combat-xp-x2",
+      "name": "Combat XP",
+      "description": "Combat skills (Including Hitpoints & Prayer) have a 2x Multiplier (Multiplicative with other modifiers).",
+      "sourceText": "Combat skills (Including Hitpoints & Prayer) have a 2x Multiplier (Multiplicative with other modifiers).",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 3,
+      "effect": {
+        "type": "combatXp",
+        "multiplier": 2,
+        "skills": [
+          "ATTACK",
+          "STRENGTH",
+          "DEFENCE",
+          "RANGED",
+          "MAGIC",
+          "HITPOINTS",
+          "PRAYER"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:combatExperience",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t3:slayer-bigger-and-badder",
+      "name": "Bigger and Badder",
+      "description": "The \"Bigger and badder\" slayer unlock is unlocked for free.",
+      "sourceText": "The \"Bigger and badder\" slayer unlock is unlocked for free.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 3,
+      "effect": {
+        "type": "biggerAndBadder"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t3:slayer-points-x5",
+      "name": "Slayer task points",
+      "description": "Slayer points are x5 from tasks",
+      "sourceText": "Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 3,
+      "effect": {
+        "type": "slayerPoints",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t3:slayer-no-task-streak",
+      "name": "No Slayer task streak",
+      "description": "you aren't required to complete 5 tasks before earning points",
+      "sourceText": "Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 3,
+      "effect": {
+        "type": "slayerFreeTasks",
+        "freeTasks": 0
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t3:slayer-superior-1-in-50",
+      "name": "Superior Slayer chance",
+      "description": "Slayer Superior rates are increased to a 1/50 chance to appear.",
+      "sourceText": "Slayer Superior rates are increased to a 1/50 chance to appear.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 3,
+      "effect": {
+        "type": "superiorSlayer",
+        "chance": 50
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t4:drop-rate-x5",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 5x as common.",
+      "sourceText": "Items from eligible sources will be 5x as common.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 4,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t4:minigame-points-x8",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 8x.",
+      "sourceText": "Minigame points received are boosted by 8x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 4,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 8,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t5:xp-multiplier-12x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 8x to 12x.",
+      "sourceText": "League XP multiplier increased from 8x to 12x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 5,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 12
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-5:t7:xp-multiplier-16x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 12x to 16x.",
+      "sourceText": "League XP multiplier increased from 12x to 16x.",
+      "sourceLeague": 5,
+      "sourceLeagueKey": "raging-echoes",
+      "originalTier": 7,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 16
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:xp-multiplier-5x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier is 5x.",
+      "sourceText": "League XP multiplier is 5x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:drop-rate-x2",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 2x as common.",
+      "sourceText": "Items from eligible sources will be 2x as common.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 2
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:farming-ticks-every-minute",
+      "name": "Farming ticks",
+      "description": "Farming ticks will occur every minute instead of every five minutes.",
+      "sourceText": "Farming ticks will occur every minute instead of every five minutes.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "farmingTicks",
+        "minutes": 1
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:farmingGrowthRate",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:minigame-points-x4",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 4x.",
+      "sourceText": "Minigame points received are boosted by 4x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 4,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:run-energy",
+      "name": "No run-energy drain",
+      "description": "Run energy is never drained whilst running.",
+      "sourceText": "Run energy is never drained whilst running.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "runEnergy"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:runEnergyDrain",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:scroll-boxes",
+      "name": "Clue scrolls drop as scroll boxes",
+      "description": "All clue scrolls will drop as stackable scroll boxes",
+      "sourceText": "All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "scrollBoxes"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:scrollBoxes",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t1:clue-step-progress",
+      "name": "Clue-step progress is saved",
+      "description": "clue-step progress is saved between clues",
+      "sourceText": "All clue scrolls will drop as stackable scroll boxes, and clue-step progress is saved between clues.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 1,
+      "effect": {
+        "type": "clueStepProgress"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:clueProgress",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t2:xp-multiplier-8x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 5x to 8x.",
+      "sourceText": "League XP multiplier increased from 5x to 8x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 2,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 8
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t3:combat-xp-x1-5",
+      "name": "Combat XP",
+      "description": "Combat skills (Including Hitpoints & Prayer) have a 1.5x Multiplier (Multiplicative with other modifiers).",
+      "sourceText": "Combat skills (Including Hitpoints & Prayer) have a 1.5x Multiplier (Multiplicative with other modifiers).",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 3,
+      "effect": {
+        "type": "combatXp",
+        "multiplier": 1.5,
+        "skills": [
+          "ATTACK",
+          "STRENGTH",
+          "DEFENCE",
+          "RANGED",
+          "MAGIC",
+          "HITPOINTS",
+          "PRAYER"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:combatExperience",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t3:slayer-bigger-and-badder",
+      "name": "Bigger and Badder",
+      "description": "The \"Bigger and badder\" slayer unlock is unlocked for free.",
+      "sourceText": "The \"Bigger and badder\" slayer unlock is unlocked for free.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 3,
+      "effect": {
+        "type": "biggerAndBadder"
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t3:slayer-points-x5",
+      "name": "Slayer task points",
+      "description": "Slayer points are x5 from tasks",
+      "sourceText": "Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 3,
+      "effect": {
+        "type": "slayerPoints",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t3:slayer-no-task-streak",
+      "name": "No Slayer task streak",
+      "description": "you aren't required to complete 5 tasks before earning points",
+      "sourceText": "Slayer points are x5 from tasks and you aren't required to complete 5 tasks before earning points.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 3,
+      "effect": {
+        "type": "slayerFreeTasks",
+        "freeTasks": 0
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:slayerTaskReward",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t3:slayer-superior-1-in-50",
+      "name": "Superior Slayer chance",
+      "description": "Slayer Superior rates are increased to a 1/50 chance to appear.",
+      "sourceText": "Slayer Superior rates are increased to a 1/50 chance to appear.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 3,
+      "effect": {
+        "type": "superiorSlayer",
+        "chance": 50
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:superiorSpawn",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t4:drop-rate-x5",
+      "name": "Boosted drops",
+      "description": "Items from eligible sources will be 5x as common.",
+      "sourceText": "Items from eligible sources will be 5x as common.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 4,
+      "effect": {
+        "type": "dropRate",
+        "multiplier": 5
+      },
+      "implementation": {
+        "location": "plugins/modes/league/BoostedDrops.LeagueMode.js:rule",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t4:minigame-points-x8",
+      "name": "Minigame points",
+      "description": "Minigame points received are boosted by 8x.",
+      "sourceText": "Minigame points received are boosted by 8x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 4,
+      "effect": {
+        "type": "minigamePoints",
+        "multiplier": 8,
+        "minigames": [
+          "pest-control",
+          "soul-wars",
+          "castle-wars",
+          "guardians-of-the-rift",
+          "mage-training-arena",
+          "volcanic-mine",
+          "giants-foundry",
+          "mastering-mixology",
+          "mahogany-homes",
+          "tithe-farm",
+          "brimhaven-agility-arena",
+          "warriors-guild",
+          "hallowed-sepulchre",
+          "rooftop-agility",
+          "shooting-stars",
+          "barbarian-assault"
+        ]
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Passives.LeagueMode.js:minigamePoints",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t4:xp-multiplier-12x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 8x to 12x.",
+      "sourceText": "League XP multiplier increased from 8x to 12x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 4,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 12
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    },
+    {
+      "id": "league-6:t6:xp-multiplier-16x",
+      "name": "League XP multiplier",
+      "description": "League XP multiplier increased from 12x to 16x.",
+      "sourceText": "League XP multiplier increased from 12x to 16x.",
+      "sourceLeague": 6,
+      "sourceLeagueKey": "demonic-pacts",
+      "originalTier": 6,
+      "effect": {
+        "type": "xpRate",
+        "multiplier": 16
+      },
+      "implementation": {
+        "location": "plugins/modes/league/Common.LeagueMode.js:xpMultiplier",
+        "status": "implemented"
+      },
+      "compatible": true,
+      "incompatibleReason": null
+    }
+  ]
+}

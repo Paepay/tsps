@@ -176,6 +176,17 @@ function stepItem(tier, step, state) {
   return new core.Item(step.itemId, 1).setMetaValue(metaKey(tier), { ...state, row: step.row });
 }
 
+/**
+ * "treasure-trails:clue-progress" { player, tier, event, completed, saved }: saved clue-step
+ * progress between clues of a tier. A fresh clue asks for it (`start`), a finished step stores
+ * it (`step`) and a casket clears it (`casket`). Content without the passive leaves `saved` 0.
+ */
+function clueProgress(player, tier, event, completed = null) {
+  const request = { player, tier: tier.name, event, completed, saved: 0 };
+  api?.emitCustomEvent?.("treasure-trails:clue-progress", request);
+  return Number.isInteger(request.saved) && request.saved >= 0 ? request.saved : 0;
+}
+
 function stateOf(player, slot, random = Math.random) {
   const inventory = player.getInventory();
   const item = inventory.getItems()[slot];
@@ -187,7 +198,9 @@ function stateOf(player, slot, random = Math.random) {
   if (validState(tier, item, current)) return { tier, item, slot, state: current, step: data(tier).byRow.get(current.row) };
   // A clue without a trail (a drop, box or vessel) starts one on a random step of its tier.
   const step = pick(data(tier).rollable, random);
-  const state = { version: 1, token: randomUUID(), revision: 0, completed: 0, length: trailLength(tier, random, player), row: step.row, ...stepState(tier, step, random, player) };
+  const length = trailLength(tier, random, player);
+  const carried = clueProgress(player, tier, "start");
+  const state = { version: 1, token: randomUUID(), revision: 0, completed: Math.min(carried, length - 1), length, row: step.row, ...stepState(tier, step, random, player) };
   const replacement = stepItem(tier, step, state);
   inventory.setItem(slot, replacement);
   inventory.refreshItems();
@@ -345,6 +358,7 @@ function advance(player, snapshot, random = Math.random, said = {}, show = true,
   // The exact slot matters when scrolls of several tiers are carried.
   if (!mergeCasket) inventory.setItem(trail.slot, received);
   inventory.refreshItems();
+  clueProgress(player, trail.tier, casket ? "casket" : "step", casket ? 0 : trail.state.completed + 1);
   if (show) Dialogue.itemBox(player, received.getId(), words);
   return true;
 }
@@ -854,6 +868,6 @@ module.exports = function attachTreasureTrails(pluginApi) {
   api.onNpcDeath(killDrop);
 };
 
-Object.assign(module.exports, { META_PREFIX, EMOTE_RADIUS, MUSIC_RADIUS, data, tierOfItem, trailLength, stateOf, trails, read, checkSteps,
+Object.assign(module.exports, { META_PREFIX, EMOTE_RADIUS, MUSIC_RADIUS, data, tierOfItem, trailLength, clueProgress, stateOf, trails, read, checkSteps,
   advance, nextItem, partOffered, puzzleSlot, lightSlot, boxSlot, auxiliarySlot, handOutPuzzle, summon, liveEncounter, partsText, wearing, TORN_PARTS, MASTER_PARTS, startedTrails, stillHeld, rollable, talk, search, keyDrop, killDrop, holdsKillStep, dig, emote, encounterDied,
   songPlayed, emoteReady, answered, clueText, restore, categoryCount, completedAttribute, metaKey, requirementWaived });

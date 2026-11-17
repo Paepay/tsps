@@ -7,9 +7,17 @@ let growthRate = 1;
 function setGrowthMultiplier(rate) {
     growthRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
 }
+/** The world's configured growth rate, before a player's own modifiers. */
+function worldGrowthRate() {
+    return growthRate;
+}
+/** The rate a farm is growing at, from its own saved rate or the world's. */
+function growthRateOf(farm) {
+    return farm?.growthMultiplier ?? growthRate;
+}
 /** How long `minutes` of the Wiki's crop growth takes at the world's growth rate, in ms. */
-function growthDuration(minutes) {
-    return minutes * MINUTE / growthRate;
+function growthDuration(minutes, rate = growthRate) {
+    return minutes * MINUTE / rate;
 }
 /**
  * Brings a farm saved at another growth rate onto this one, once: each planted crop keeps the
@@ -20,17 +28,17 @@ function growthDuration(minutes) {
  * `branchAt` the same way. Redwood branches regrow in fixed ticks (Redwood.REGROW_TICKS), so
  * their timestamps are left alone.
  */
-function applyGrowthRate(farm, now) {
+function applyGrowthRate(farm, now, rate = growthRate) {
     const previous = farm.growthMultiplier ?? 1;
-    if (previous === growthRate) return;
+    if (previous === rate) return;
     for (const state of Object.values(farm.patches)) {
         if (state.crop && state.status !== "dead" && Number.isFinite(state.nextAt)) {
-            state.nextAt = now + (state.nextAt - now) * previous / growthRate;
+            state.nextAt = now + (state.nextAt - now) * previous / rate;
         }
-        if (Number.isFinite(state.branchAt)) state.branchAt = now + (state.branchAt - now) * previous / growthRate;
+        if (Number.isFinite(state.branchAt)) state.branchAt = now + (state.branchAt - now) * previous / rate;
     }
-    if (growthRate === 1) delete farm.growthMultiplier;
-    else farm.growthMultiplier = growthRate;
+    if (rate === 1) delete farm.growthMultiplier;
+    else farm.growthMultiplier = rate;
 }
 function advanceTithe(plant, now) {
     while (!plant.dead && plant.stage < 3 && plant.nextAt <= now) {
@@ -61,8 +69,8 @@ function nextGrowth(now, minutes, offset, rate = growthRate) {
     return EPOCH + (Math.floor((now - EPOCH + offset) / period) + 1) * period - offset;
 }
 /** The five-minute growth tick a timestamp belongs to, from the same epoch and player offset. */
-function tickIndex(at, offset) {
-    return Math.floor((at - EPOCH + offset) / growthDuration(Data.FORMULAS.growth.tickMinutes));
+function tickIndex(at, offset, rate = growthRate) {
+    return Math.floor((at - EPOCH + offset) / growthDuration(Data.FORMULAS.growth.tickMinutes, rate));
 }
 function emptyPatch(now, farm, weeds = 0) {
     return { stage: 0, weeds, compost: 0, watered: false, status: "growing", checked: false,
@@ -123,7 +131,7 @@ function saveLifeChance(crop, level, secateurs = false, cape = false, diary = 0,
 }
 function activeAnima(farm, at) {
     return Object.values(farm.patches).find(s => s.crop && Data.CACHE.timing[s.crop]?.type === "ANIMA"
-        && at >= s.plantedAt && at < s.nextAt + (8 - s.stage - 1) * growthDuration(640) && s.status !== "dead")?.crop;
+        && at >= s.plantedAt && at < s.nextAt + (8 - s.stage - 1) * growthDuration(640, growthRateOf(farm)) && s.status !== "dead")?.crop;
 }
 function kronosGrowth(farm, at, minutes, random, skips) {
     if (activeAnima(farm, at) !== "KRONOS") return 1;
@@ -210,6 +218,7 @@ function nextDue(farm) {
 }
 
 function advanceFarm(farm, now, random = Math.random, onMature = null) {
+    const rate = growthRateOf(farm);
     for (const { state } of patchStates(farm)) if (state.crop === "REDWOOD") Redwood.advance(state, now);
     const kronos = new Map();
     const planted = [];
@@ -232,10 +241,10 @@ function advanceFarm(farm, now, random = Math.random, onMature = null) {
             const maximum = startingLives(crop, state.compost);
             // Partial patches need chronological rolls, including anima planting and expiry.
             // Once full, skip empty work in bulk; at most the produce cap needs individual ticks.
-            const ticks = state.lives >= maximum ? 1 + Math.floor((now - at) / growthDuration(crop.regrow)) : 1;
+            const ticks = state.lives >= maximum ? 1 + Math.floor((now - at) / growthDuration(crop.regrow, rate)) : 1;
             if (state.lives < maximum) state.lives = Math.min(maximum,
                 state.lives + kronosGrowth(farm, at, crop.regrow, random, kronos));
-            state.nextAt = at + ticks * growthDuration(crop.regrow);
+            state.nextAt = at + ticks * growthDuration(crop.regrow, rate);
             continue;
         }
         if (state.status === "diseased") { state.status = "dead"; continue; }
@@ -259,7 +268,7 @@ function advanceFarm(farm, now, random = Math.random, onMature = null) {
 
         }
         state.nextAt = nextGrowth(at, state.status === "diseased" ? Data.diseasedMinutes(crop)
-            : state.status === "grown" && crop.regrow ? crop.regrow : Data.stageMinutes(crop, state.stage), farm.offset);
+            : state.status === "grown" && crop.regrow ? crop.regrow : Data.stageMinutes(crop, state.stage), farm.offset, rate);
     }
     for (const { patch, state } of patchStates(farm)) {
         if (!state || ["GRAPES", "CORAL"].includes(patch.type)) continue;
@@ -298,4 +307,4 @@ function patchValue(patch, state) {
     return (state.watered ? visual.WATERED?.[state.stage] : undefined) ?? visual.GROWING[state.stage];
 }
 
-Object.assign(module.exports, { MINUTE, setGrowthMultiplier, growthDuration, applyGrowthRate, advanceTithe, titheDeposit, nextGrowth, tickIndex, stageAt, emptyPatch, startingLives, diseaseChance, saveLifeChance, activeAnima, advanceFarm, diseaseFree, nextDue, patchValue });
+Object.assign(module.exports, { MINUTE, setGrowthMultiplier, worldGrowthRate, growthRateOf, growthDuration, applyGrowthRate, advanceTithe, titheDeposit, nextGrowth, tickIndex, stageAt, emptyPatch, startingLives, diseaseChance, saveLifeChance, activeAnima, advanceFarm, diseaseFree, nextDue, patchValue });
