@@ -2,6 +2,8 @@
 
 const TOTAL_SKILLS = 24;
 const HITPOINTS_INDEX = 7;
+/** Skills that open above level 1 when unlocked (Herblore starts at 3 so potions can be made). */
+const STARTING_LEVELS = Object.freeze({ 9: 3 });
 /** Relic, area and unlock graphic catalog Level-Up reuses (Trailblazer Reloaded). */
 const LEAGUE_STYLE_TYPE = 4;
 const REGION_MILESTONES = Object.freeze([3, 6, 9, 12, 15, 18, 21, 24]);
@@ -95,6 +97,11 @@ function statChild(index) {
 
 function skillIndexByName(name) {
   return SKILL_BY_RUNTIME_NAME.get(normalizeSkillName(name))?.index ?? null;
+}
+
+/** The level a newly unlocked skill starts at; every skill is 1 unless listed above. */
+function startingLevel(index) {
+  return STARTING_LEVELS[Number(index)] ?? 1;
 }
 
 function normaliseSkills(value) {
@@ -197,6 +204,8 @@ function slug(name) {
 module.exports = {
   TOTAL_SKILLS,
   HITPOINTS_INDEX,
+  STARTING_LEVELS,
+  startingLevel,
   LEAGUE_STYLE_TYPE,
   SKILLS,
   REGIONS,

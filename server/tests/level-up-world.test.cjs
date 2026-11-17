@@ -591,6 +591,9 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   login(fake, { player: fake.player });
   assert.equal(fake.attributes.has("level-up:unlocked-skills"), false, "plain templates are untouched");
   assert.deepEqual(fake.contentData.at(-1)?.datasets?.[0]?.rows, [], "plain templates send no locked-skill overlay");
+  const plainWealth = { enabled: true };
+  fake.api.emitCustomEvent("wealth:enabled", plainWealth);
+  assert.equal(plainWealth.enabled, true, "other templates keep wealth transfer on");
   const plainProtection = { player: fake.player, protected: true };
   fake.api.emitCustomEvent("combat:developer-protection", plainProtection);
   assert.equal(plainProtection.protected, true, "plain templates keep staff damage protection");
@@ -630,7 +633,13 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   fake.attributes.set("level-up:unlocked-skills", [7]);
   fake.packets.varbits.length = 0;
   fake.packets.configs.length = 0;
+  fake.events.length = 0;
   login(fake, { player: fake.player, isNewAccount: true });
+  assert.ok(fake.events.some(({ name, payload }) => name === "diary:complete-all" && payload?.player === fake.player),
+    "Level-Up completes every achievement diary at login");
+  const levelUpWealth = { enabled: true };
+  fake.api.emitCustomEvent("wealth:enabled", levelUpWealth);
+  assert.equal(levelUpWealth.enabled, false, "Level-Up vetoes wealth transfer on the live world");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10031 && value === 1), "league account varbit");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10032 && value === 4), "league style varbit");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037), "completed tutorial varbit");
@@ -793,4 +802,27 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(buildStateDocument(offline, JSON.stringify({ inventory: [] })).levelUpProgress, undefined);
   assert.equal(plugin.summaryFromSave({ attributes: {}, getSkills: () => ({ maxLevel: [] }) }), undefined);
   assert.equal(plugin._test.active(), false, "Level-Up progress is absent outside the level_up template");
+});
+
+test("unlocking Herblore starts it at level 3 while other skills still start at 1", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  plugin._test.configure("level_up", JSON.stringify(validContract()));
+  login(fake, { player: fake.player, isNewAccount: true });
+
+  assert.equal(Rules.startingLevel(9), 3, "Herblore's canonical index opens at 3");
+  assert.equal(Rules.startingLevel(0), 1);
+  assert.equal(Rules.startingLevel(20), 1);
+  assert.equal(plugin.unlockSkill(fake.player, "Herblore"), true);
+
+  const herblore = fake.byName("Herblore");
+  assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [7, 9]);
+  assert.equal(fake.manager.getMaxLevel(herblore), 3);
+  assert.equal(fake.manager.getCurrentLevel(herblore), 3);
+  assert.equal(fake.manager.getExperience(herblore), 300, "XP matches getExperienceForLevel(3)");
+  assert.equal(fake.locked.has(herblore.getIndex()), false);
+
+  plugin._test.configure("", null);
 });

@@ -89,6 +89,15 @@ test("a non-object config is refused rather than throwing", () => {
   assert.deepEqual(toWorldOverlay("nope").overlay, null);
 });
 
+test("a Level-Up world turns wealth transfer off; other templates keep the packaged default", () => {
+  const levelUp = toWorldOverlay({ ...platformBlob({}), template: "level_up" }).overlay;
+  assert.equal(levelUp.pluginConfig["WealthTransfer:enabled"], false);
+  assert.equal(levelUp.pluginConfig["template:id"], "level_up");
+  const osrs = toWorldOverlay(platformBlob({})).overlay;
+  assert.equal(osrs.pluginConfig["WealthTransfer:enabled"], undefined,
+    "the bridge does not invent a setting for ordinary worlds");
+});
+
 /* ------------------------------------------------------ overlay (core) --- */
 
 const modulePath = require.resolve("../dist/game/definition/WorldDefinition");

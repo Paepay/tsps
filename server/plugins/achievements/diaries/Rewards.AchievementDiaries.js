@@ -23,8 +23,15 @@ function claimableTier(player, diary) {
   return null;
 }
 
+/** Auto-completed diaries (diaries off, or the Level-Up world) hand out every tier regardless of stats. */
+function rewardsUnrestricted(player) {
+  const request = { player, unrestricted: false };
+  pluginApi.emitCustomEvent("diary:rewards-unrestricted", request);
+  return request.unrestricted === true;
+}
+
 function meetsRequirement(player, requirement) {
-  if (!requirement) return true;
+  if (!requirement || rewardsUnrestricted(player)) return true;
   const skill = pluginApi.core.Skill.values().find((entry) => entry.getName().toLowerCase() === requirement.skill.toLowerCase());
   return !skill || player.getSkillManager().getCurrentLevel(skill) >= requirement.level;
 }
