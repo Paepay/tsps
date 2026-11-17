@@ -545,7 +545,8 @@ test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and T
 
   assert.equal(gather(who.relic, I.TIN_ORE, 1, Skill.MINING, 35).stored, 1, "tin smelts");
   assert.equal(who.relic.getInventory().getAmount(I.BRONZE_BAR), 1, "tin becomes bronze (Wiki)");
-  assert.equal(gather(who.relic, I.COPPER_ORE, 1, Skill.MINING, 35).stored, 0, "copper alone is not a bar");
+  assert.equal(gather(who.relic, I.COPPER_ORE, 1, Skill.MINING, 35).stored, 1, "copper smelts");
+  assert.equal(who.relic.getInventory().getAmount(I.BRONZE_BAR), 2, "copper and tin both become bronze");
   assert.equal(gather(who.relic, I.MITHRIL_ORE, 1, Skill.MINING, 35).stored, 1, "mithril smelts");
   assert.equal(who.relic.getInventory().getAmount(I.MITHRIL_BAR), 1, "mithril ore becomes a mithril bar");
   assert.equal(gather(who.relic, I.COAL, 1, Skill.MINING, 50).stored, 0, "coal is fuel, not a bar");

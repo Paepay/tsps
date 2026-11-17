@@ -983,7 +983,7 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   (`fishing:interval`). Toggle on any tool turns burn / smelt / cook on or off for all three
   (`league:infernal-gathering-mode`). With the effect on, the matching tool must be carried or
   wielded: the axe burns logs for Firemaking XP, the pickaxe smelts ore into bars for Smithing XP
-  (tin becomes bronze and iron becomes steel, coal waived, as Power Miner's `smeltBars`), and
+  (copper and tin become bronze, iron becomes steel, coal waived, as Power Miner's `smeltBars`), and
   the harpoon cooks fish for Cooking XP
   (`storage:gather`); with Endless Harvest the doubled yield is processed the same way and
   Endless Harvest skips (`gatherProcessed`). Equipped, the harpoon stands in for any fishing tool
