@@ -34,9 +34,17 @@ const worldMenu = (): SimpleMenuEntry[] => [
     npc("Examine", BANKER, 1, "Banker"),
 ];
 
+const emptyPresets = {
+    bank: false,
+    trade: false,
+    pickpocket: false,
+    shopSell: false,
+    shiftDrop: false,
+};
+
 const config = (overrides: Partial<MenuSwapperPluginConfig> = {}): MenuSwapperPluginConfig => ({
     enabled: true,
-    presets: { bank: false, trade: false, pickpocket: false, shiftDrop: false },
+    presets: { ...emptyPresets },
     swaps: {},
     shiftSwaps: {},
     ...overrides,
@@ -90,14 +98,14 @@ const snapshot = JSON.stringify(input);
 applyMenuSwaps(
     input,
     world(true),
-    config({ presets: { bank: true, trade: false, pickpocket: false, shiftDrop: false } }),
+    config({ presets: { ...emptyPresets, bank: true } }),
     noSave,
 );
 assert.equal(JSON.stringify(input), snapshot);
 
 // A preset applies when no swap is saved; a saved swap beats it; a missing option is a no-op.
 const bankPreset = config({
-    presets: { bank: true, trade: false, pickpocket: false, shiftDrop: false },
+    presets: { ...emptyPresets, bank: true },
 });
 assert.equal(leftClick(applyMenuSwaps(worldMenu(), world(), bankPreset, noSave)), "Bank");
 const collect = {
@@ -184,9 +192,57 @@ assert.equal(shifted[0].swapPinned, true);
 assert.equal(leftClick(shifted), "Use");
 assert.equal(leftClick(applyMenuSwaps(whip(), inventory(false, false), shiftUse, noSave)), "Wield");
 const shiftDrop = config({
-    presets: { bank: false, trade: false, pickpocket: false, shiftDrop: true },
+    presets: { ...emptyPresets, shiftDrop: true },
 });
 assert.equal(leftClick(applyMenuSwaps(whip(), inventory(false, true), shiftDrop, noSave)), "Drop");
+
+// Shop inventory: the shopSell preset makes "Sell 1" the left-click; swaps use shopitem keys.
+const SHOPSIDE = 301;
+const shopInventory = (menu: boolean, isShiftHeld: boolean) => ({
+    surface: "inventory" as const,
+    menu,
+    isShiftHeld,
+    widgetId: SHOPSIDE << 16,
+    target: { type: MenuTargetType.ITEM, id: 1351, name: "Bronze axe" },
+});
+const shopItem = (): SimpleMenuEntry[] => [
+    { option: "Value", target: "Bronze axe" },
+    { option: "Sell 1", target: "Bronze axe" },
+    { option: "Sell 5", target: "Bronze axe" },
+    { option: "Sell 10", target: "Bronze axe" },
+    { option: "Sell 50", target: "Bronze axe" },
+    { option: "Examine", target: "Bronze axe" },
+    { option: "Cancel" },
+];
+assert.equal(
+    leftClick(applyMenuSwaps(shopItem(), shopInventory(false, false), config(), noSave)),
+    "Value",
+);
+const shopSellPreset = config({ presets: { ...emptyPresets, shopSell: true } });
+assert.equal(
+    leftClick(applyMenuSwaps(shopItem(), shopInventory(false, false), shopSellPreset, noSave)),
+    "Sell 1",
+);
+assert.equal(
+    leftClick(applyMenuSwaps(whip(), inventory(false, false), shopSellPreset, noSave)),
+    "Wield",
+    "shopSell does not touch the backpack",
+);
+const sell50 = config({
+    swaps: { "shopitem:1351": { option: "Sell 50", name: "Bronze axe" } },
+});
+assert.equal(
+    leftClick(applyMenuSwaps(shopItem(), shopInventory(false, false), sell50, noSave)),
+    "Sell 50",
+);
+const shopSaved: Array<Parameters<SaveSwap>> = [];
+const shopMenu = applyMenuSwaps(shopItem(), shopInventory(true, true), config(), (...args) =>
+    shopSaved.push(args),
+);
+assert.ok(options(shopMenu).includes(SWAP_LEFT_CLICK));
+const shopSwap = shopMenu.find((e) => e.option === SWAP_LEFT_CLICK)!;
+shopSwap.subEntries!.find((e) => e.option === "Sell 10")!.onClick?.();
+assert.deepEqual(shopSaved, [["left", "shopitem:1351", "Sell 10", "Bronze axe"]]);
 
 // The plugin saves, clears and persists swaps.
 let persisted: MenuSwapperPluginConfig | undefined;

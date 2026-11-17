@@ -19,7 +19,7 @@ type MenuSwapperPluginListener = () => void;
 
 const DEFAULT_CONFIG: MenuSwapperPluginConfig = Object.freeze({
     enabled: true,
-    presets: { bank: false, trade: false, pickpocket: false, shiftDrop: false },
+    presets: { bank: false, trade: false, pickpocket: false, shopSell: false, shiftDrop: false },
     swaps: {},
     shiftSwaps: {},
 });
@@ -109,8 +109,8 @@ export class MenuSwapperPlugin extends Plugin {
         entries: SimpleMenuEntry[],
         context: MenuTransformContext,
     ): SimpleMenuEntry[] {
-        // Swaps are keyed per world target and inventory item; other interfaces' item menus
-        // (worn equipment, bank side...) keep their own order.
+        // Swaps are keyed per world target, inventory item, and shop-side sell item; other
+        // interfaces' item menus (worn equipment, bank side...) keep their own order.
         if (context.surface === "widget") return entries;
         return applyMenuSwaps(
             entries,

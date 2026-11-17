@@ -1,4 +1,5 @@
 import { ClientState } from "../../game/ClientState";
+import { SHOPSIDE } from "../../runelite/api/gameval/InterfaceID";
 import { MenuTargetType } from "../../rs/MenuEntry";
 import { getShiftClickActionIndex } from "../../ui/menu/MenuEngine";
 import { applyMenuTransform } from "../../ui/menu/menuTransforms";
@@ -256,6 +257,8 @@ export function isPauseButtonWidget(
 // 1. The transmit flag for that action is set (bits 1-10), OR
 // 2. The widget has an onOp handler
 const INVENTORY_GROUP_ID = 149;
+/** Interfaces whose item menus use inventory-style left-click swaps (backpack + shop sell side). */
+const INVENTORY_LIKE_GROUPS = new Set([INVENTORY_GROUP_ID, SHOPSIDE]);
 /** Cache script 7779 (enum 4303) puts inventory ops 1-5 in widget ops 2, 3, 4, 6 and 7. */
 const INVENTORY_OBJ_OP_WIDGET_OPS = [2, 3, 4, 6, 7];
 
@@ -290,8 +293,8 @@ function applyShiftClickDrop<T extends { option: string; opIndex?: number }>(ite
 }
 
 /**
- * An inventory item's menu as the client plugins order it (e.g. a swapped left-click). `menu`
- * is true for the opened right-click menu, which plugins may extend.
+ * An inventory (or shop-side) item's menu as the client plugins order it (e.g. a swapped
+ * left-click). `menu` is true for the opened right-click menu, which plugins may extend.
  */
 export function transformWidgetMenuEntries<T extends { option: string; opIndex?: number }>(
     w: any,
@@ -300,11 +303,13 @@ export function transformWidgetMenuEntries<T extends { option: string; opIndex?:
 ): T[] {
     const itemId = typeof w?.itemId === "number" ? w.itemId | 0 : -1;
     const uid = typeof w?.uid === "number" ? w.uid | 0 : 0;
-    if (itemId < 0 || uid >>> 16 !== INVENTORY_GROUP_ID) {
+    const group = uid >>> 16;
+    if (itemId < 0 || !INVENTORY_LIKE_GROUPS.has(group)) {
         return applyMenuTransform(entries as any, { surface: "widget", menu, widgetId: uid,
             childIndex: w?.childIndex ?? -1, itemId }) as unknown as T[];
     }
-    entries = applyShiftClickDrop(itemId, entries);
+    // Shift-click drop is a backpack setting; shop Value/Sell ops do not use it.
+    if (group === INVENTORY_GROUP_ID) entries = applyShiftClickDrop(itemId, entries);
     return applyMenuTransform(entries as any, {
         surface: "inventory",
         menu,
