@@ -156,13 +156,17 @@ test("the skills' lookups: a bar only for a recipe's main ore, shafts only for a
   assert.equal(bar(I.TIN_ORE), null);
   const steel = emit("smithing:bar-for-ore", { oreId: I.IRON_ORE, outputId: I.STEEL_BAR, barId: null, xp: null });
   assert.deepEqual([steel.barId, steel.xp], [I.STEEL_BAR, 17.5], "a caller can choose a matching recipe's output and XP");
+  const tin = emit("smithing:bar-for-ore", { oreId: I.TIN_ORE, outputId: I.BRONZE_BAR, allowSecondary: true, barId: null, xp: null });
+  assert.deepEqual([tin.barId, tin.xp], [I.BRONZE_BAR, 6.2], "tin becomes bronze when the caller names the output");
   assert.equal(emit("smithing:bar-for-ore", { oreId: I.COAL, outputId: I.STEEL_BAR, barId: null }).barId, null, "an output selector cannot turn a secondary ingredient into a bar");
-  const conversions = require("../plugins/modes/data/league-relics.json").effects.powerMiner.smeltBars;
-  for (const [ore, output] of Object.entries(conversions)) {
-    assert.ok(Number.isInteger(I[ore]) && Number.isInteger(I[output]), `${ore} and ${output} resolve in the cache`);
-    const result = emit("smithing:bar-for-ore", { oreId: I[ore], outputId: I[output], barId: null, xp: null });
-    assert.equal(result.barId, I[output], `${ore}'s configured output has a matching recipe`);
-    assert.ok(result.xp > 0);
+  for (const relic of ["powerMiner", "infernalGathering"]) {
+    const conversions = require("../plugins/modes/data/league-relics.json").effects[relic].smeltBars;
+    for (const [ore, output] of Object.entries(conversions)) {
+      assert.ok(Number.isInteger(I[ore]) && Number.isInteger(I[output]), `${ore} and ${output} resolve in the cache`);
+      const result = emit("smithing:bar-for-ore", { oreId: I[ore], outputId: I[output], allowSecondary: true, barId: null, xp: null });
+      assert.equal(result.barId, I[output], `${relic}: ${ore}'s configured output has a matching recipe`);
+      assert.ok(result.xp > 0);
+    }
   }
   const shafts = (logId) => emit("fletching:shafts", { logId, itemId: null, amount: 0, xp: null });
   assert.deepEqual([shafts(I.LOGS).itemId, shafts(I.LOGS).amount], [I.ARROW_SHAFT, 15]);
@@ -539,6 +543,13 @@ test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and T
   assert.equal(who.relic.getInventory().getAmount(I.STEEL_BAR), 1, "iron becomes steel without coal");
   assert.ok(xp(who.relic, Skill.SMITHING) > beforeSmith);
 
+  assert.equal(gather(who.relic, I.TIN_ORE, 1, Skill.MINING, 35).stored, 1, "tin smelts");
+  assert.equal(who.relic.getInventory().getAmount(I.BRONZE_BAR), 1, "tin becomes bronze (Wiki)");
+  assert.equal(gather(who.relic, I.COPPER_ORE, 1, Skill.MINING, 35).stored, 0, "copper alone is not a bar");
+  assert.equal(gather(who.relic, I.MITHRIL_ORE, 1, Skill.MINING, 35).stored, 1, "mithril smelts");
+  assert.equal(who.relic.getInventory().getAmount(I.MITHRIL_BAR), 1, "mithril ore becomes a mithril bar");
+  assert.equal(gather(who.relic, I.COAL, 1, Skill.MINING, 50).stored, 0, "coal is fuel, not a bar");
+
   const beforeCook = xp(who.relic, Skill.COOKING);
   const cooked = gather(who.relic, I.RAW_SHRIMPS, 1, Skill.FISHING, 10);
   assert.equal(cooked.stored, 1);
@@ -557,24 +568,32 @@ test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and T
   }
 });
 
-test("Infernal Gathering's effects and speed-ups need the matching tool", () => {
-  const pickaxe = character("pickaxe-only", "league", INFERNAL_GATHERING);
-  pickaxe.getInventory().adds(I.TRAILBLAZER_PICKAXE, 1);
-  assert.equal(gather(pickaxe, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "a pickaxe does not burn logs");
-  assert.equal(emit("skills:action-interval", { player: pickaxe, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 4, "nor chop faster");
-  assert.equal(gather(pickaxe, I.IRON_ORE, 1, Skill.MINING, 35).stored, 1, "the pickaxe smelts ore");
+test("Infernal Gathering: each Trailblazer tool only drives its own skill; equipped harpoon stands in for any spot", () => {
+  const axeOnly = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_AXE").relic;
+  assert.equal(gather(axeOnly, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 1, "the axe burns logs");
+  assert.equal(gather(axeOnly, I.IRON_ORE, 1, Skill.MINING, 35).stored, 0, "the axe does not smelt");
+  assert.equal(gather(axeOnly, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 0, "the axe does not cook");
+  assert.equal(emit("skills:action-interval", { player: axeOnly, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 3);
+  assert.equal(emit("fishing:interval", { player: axeOnly, ticks: 5 }).ticks, 5, "no harpoon: fishing pace is unchanged");
 
-  const axe = character("axe-only", "league", INFERNAL_GATHERING);
-  axe.getInventory().adds(I.TRAILBLAZER_AXE, 1);
-  assert.equal(gather(axe, I.IRON_ORE, 1, Skill.MINING, 35).stored, 0, "an axe does not smelt ore");
-  assert.equal(gather(axe, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 0, "nor cook fish");
-  assert.equal(emit("fishing:interval", { player: axe, ticks: 5 }).ticks, 5, "nor fish sooner");
+  const pickOnly = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_PICKAXE").relic;
+  assert.equal(gather(pickOnly, I.IRON_ORE, 1, Skill.MINING, 35).stored, 1, "the pickaxe smelts");
+  assert.equal(gather(pickOnly, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "the pickaxe does not burn");
+  assert.equal(emit("skills:action-interval", { player: pickOnly, skill: Skill.WOODCUTTING, kind: "chop", ticks: 4 }).ticks, 4);
 
-  const harpoon = character("harpoon-only", "league", INFERNAL_GATHERING);
-  harpoon.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
-  assert.equal(gather(harpoon, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 1, "the harpoon cooks fish");
-  assert.equal(emit("fishing:interval", { player: harpoon, ticks: 5 }).ticks, 3, "and fishes two ticks sooner");
-  assert.equal(gather(harpoon, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "but does not burn logs");
+  const harpOnly = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_HARPOON").relic;
+  assert.equal(gather(harpOnly, I.RAW_SHRIMPS, 1, Skill.FISHING, 10).stored, 1, "the harpoon cooks");
+  assert.equal(gather(harpOnly, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 0, "the harpoon does not burn");
+  assert.equal(emit("fishing:interval", { player: harpOnly, ticks: 5 }).ticks, 3);
+
+  // Wiki: equipped, the harpoon stands in for any fishing tool (bait still needed).
+  const standIn = cases(INFERNAL_GATHERING, 4).relic;
+  standIn.getEquipment().set(core.Equipment.WEAPON_SLOT, new core.Item(I.TRAILBLAZER_HARPOON, 1));
+  const tool = emit("fishing:tool", { player: standIn, variant: null });
+  assert.equal(tool.variant?.ids?.[0], I.TRAILBLAZER_HARPOON);
+  assert.equal(tool.variant?.bonus, 135);
+  const carried = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_HARPOON").relic;
+  assert.equal(emit("fishing:tool", { player: carried, variant: null }).variant, null, "only while equipped");
 });
 
 test("Infernal Gathering with Endless Harvest burns or banks the doubled yield", () => {

@@ -166,10 +166,10 @@
       "modeText": { "on": "burn, smelt and cook what you gather", "off": "leave what you gather as it is" },
       "axeTicksFaster": 1, "pickaxeIntervalTicks": 2, "harpoonTicksFaster": 2, "harpoonBonus": 135,
       "smeltBars": {
-        "COPPER_ORE": "BRONZE_BAR", "BLURITE_ORE": "BLURITE_BAR", "IRON_ORE": "STEEL_BAR",
+        "TIN_ORE": "BRONZE_BAR", "BLURITE_ORE": "BLURITE_BAR", "IRON_ORE": "STEEL_BAR",
         "SILVER_ORE": "SILVER_BAR", "LEAD_ORE": "LEAD_BAR", "GOLD_ORE": "GOLD_BAR",
         "MITHRIL_ORE": "MITHRIL_BAR", "ADAMANTITE_ORE": "ADAMANTITE_BAR", "RUNITE_ORE": "RUNITE_BAR",
-        "PERFECT_GOLD_ORE": "PERFECT_GOLD_BAR", "BUCKET_OF_SAND": "MOLTEN_GLASS"
+        "PERFECT_GOLD_ORE": "PERFECT_GOLD_BAR"
       }
     },
     "endlessHarvest": {
