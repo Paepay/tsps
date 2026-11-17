@@ -138,6 +138,7 @@ function reloadWorldCatalog() {
 
 /** The league a character is in (its type), or null for a main character. */
 function leagueOf(player) {
+  if (!api || !player) return null;
   const query = { player, league: null };
   api.emitCustomEvent("league:profile", query);
   // Level-Up worlds reuse relic effects and catalogs without becoming a full
