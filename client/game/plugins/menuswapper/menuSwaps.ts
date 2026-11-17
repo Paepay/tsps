@@ -1,3 +1,4 @@
+import { SHOPSIDE } from "../../../runelite/api/gameval/InterfaceID";
 import { MenuTargetType } from "../../../rs/MenuEntry";
 import type { SimpleMenuEntry } from "../../../ui/menu/MenuEngine";
 import type { MenuTransformContext } from "../../../ui/menu/menuTransforms";
@@ -19,6 +20,8 @@ const PRESETS: ReadonlyArray<{
     option: string;
     types: ReadonlyArray<MenuTargetType>;
     kind: MenuSwapKind;
+    /** When set, only apply while the menu's widget is one of these interface groups. */
+    groups?: ReadonlyArray<number>;
 }> = [
     {
         preset: "bank",
@@ -28,6 +31,13 @@ const PRESETS: ReadonlyArray<{
     },
     { preset: "trade", option: "trade", types: [MenuTargetType.NPC], kind: "left" },
     { preset: "pickpocket", option: "pickpocket", types: [MenuTargetType.NPC], kind: "left" },
+    {
+        preset: "shopSell",
+        option: "sell 1",
+        types: [MenuTargetType.ITEM],
+        kind: "left",
+        groups: [SHOPSIDE],
+    },
     { preset: "shiftDrop", option: "drop", types: [MenuTargetType.ITEM], kind: "shift" },
 ];
 
@@ -38,6 +48,11 @@ const KEY_PREFIX: Partial<Record<MenuTargetType, string>> = {
     [MenuTargetType.ITEM]: "item",
 };
 
+/** Shop inventory side (Value / Sell 1 / …): swaps stay separate from the backpack. */
+function isShopSide(widgetId: number | undefined): boolean {
+    return typeof widgetId === "number" && (widgetId >>> 16) === SHOPSIDE;
+}
+
 /** Options that never become a swap target. */
 const NOT_SWAPPABLE = new Set(["cancel", "walk here", "cast"]);
 
@@ -47,7 +62,11 @@ export const SWAP_SHIFT_CLICK = "Swap shift click";
 export function swapKey(
     type: MenuTargetType | undefined,
     id: number | undefined,
+    widgetId?: number,
 ): string | undefined {
+    if (type === MenuTargetType.ITEM && isShopSide(widgetId) && typeof id === "number" && id >= 0) {
+        return `shopitem:${id}`;
+    }
     const prefix = type === undefined ? undefined : KEY_PREFIX[type];
     return prefix && typeof id === "number" && id >= 0 ? `${prefix}:${id}` : undefined;
 }
@@ -65,13 +84,14 @@ type Group = { key: string; type: MenuTargetType; name: string; positions: numbe
 /** Entries per target, in menu order; a "Use x -> y" or spell entry is left out. */
 function groupTargets(entries: SimpleMenuEntry[], context: SwapContext): Group[] {
     const groups = new Map<string, Group>();
+    const widgetId = context.surface === "inventory" ? context.widgetId : undefined;
     entries.forEach((entry, index) => {
         const option = String(entry.option ?? "").toLowerCase();
         if (!option || NOT_SWAPPABLE.has(option) || String(entry.target ?? "").includes("->"))
             return;
         const type = context.surface === "inventory" ? context.target.type : entry.targetType;
         const id = context.surface === "inventory" ? context.target.id : entry.targetId;
-        const key = swapKey(type, id);
+        const key = swapKey(type, id, widgetId);
         if (!key || type === undefined) return;
         // Two NPCs or objects of the same kind in one menu are separate targets.
         const { npcServerId = "", mapX = "", mapY = "" } = entry;
@@ -94,11 +114,20 @@ function chosenOption(
     group: Group,
     kind: MenuSwapKind,
     config: MenuSwapperPluginConfig,
+    context: SwapContext,
 ): string | undefined {
     const saved = (kind === "left" ? config.swaps : config.shiftSwaps)[group.key];
     if (saved) return saved.option.toLowerCase();
+    const groupId =
+        context.surface === "inventory" && typeof context.widgetId === "number"
+            ? context.widgetId >>> 16
+            : undefined;
     return PRESETS.find(
-        (p) => p.kind === kind && config.presets[p.preset] && p.types.includes(group.type),
+        (p) =>
+            p.kind === kind &&
+            config.presets[p.preset] &&
+            p.types.includes(group.type) &&
+            (!p.groups || (groupId !== undefined && p.groups.includes(groupId))),
     )?.option;
 }
 
@@ -153,9 +182,9 @@ export function applyMenuSwaps(
     const out = entries.slice();
     const groups = groupTargets(out, context);
     for (const group of groups) {
-        const shift = context.isShiftHeld ? chosenOption(group, "shift", config) : undefined;
+        const shift = context.isShiftHeld ? chosenOption(group, "shift", config, context) : undefined;
         if (shift && moveFirst(out, group, shift, true)) continue;
-        const left = chosenOption(group, "left", config);
+        const left = chosenOption(group, "left", config, context);
         if (left) moveFirst(out, group, left, false);
     }
     if (!context.menu || !context.isShiftHeld) return out;

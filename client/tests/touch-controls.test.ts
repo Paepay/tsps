@@ -297,7 +297,7 @@ const refusal = (fromX: number, fromY: number, toX: number, toY: number): Contin
 {
     const swaps = { "npc:90": { option: "Bank", name: "Banker" } };
     setMenuTransform((entries, context) => applyMenuSwaps(entries, { ...context, isShiftHeld: false },
-        { enabled: true, presets: { bank: false, trade: false, pickpocket: false, shiftDrop: false }, swaps, shiftSwaps: {} },
+        { enabled: true, presets: { bank: false, trade: false, pickpocket: false, shopSell: false, shiftDrop: false }, swaps, shiftSwaps: {} },
         () => {}));
     const { client } = makeClient({
         playerEcs: { getIndexForServerId: () => 0, getX: () => 64, getY: () => 64, getLevel: () => 0 },
