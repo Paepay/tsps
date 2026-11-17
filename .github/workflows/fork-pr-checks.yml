@@ -1,0 +1,71 @@
+name: Fork PR checks
+
+# Paepay/tsps is the automation target fork. Upstream's client checks deliberately
+# run only on RSPSApp/tsps, so this read-only workflow gives fork PRs a real gate.
+on:
+    pull_request:
+        branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: fork-pr-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    server:
+        if: github.repository == 'Paepay/tsps'
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+            - run: corepack enable
+            - run: yarn install --immutable
+              working-directory: server
+            - run: yarn build
+              working-directory: server
+
+    client:
+        if: github.repository == 'Paepay/tsps'
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+            - run: corepack enable
+            - run: yarn install --immutable
+              working-directory: client
+            - run: yarn typecheck
+              working-directory: client
+            - name: Focused client regression suite
+              working-directory: client
+              run: >-
+                  yarn test
+                  edit-mode-custom-content
+                  engine-event-hooks
+                  widget-action-dispatch
+                  widget-primary-op
+                  widget-script-inventory
+                  widget-menu-use
+                  menu-click
+                  menu-swapper
+                  widget-drag
+                  map-square-cache
+                  runelite
+                  item-stats-plugin
+                  item-prices-plugin
+                  first-person-reticle-input
+                  combat-level
+                  game-container-sidebar-lifecycle
+                  bank-value
