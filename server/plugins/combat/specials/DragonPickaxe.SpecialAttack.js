@@ -25,6 +25,7 @@ module.exports = function registerDragonPickaxeSpecialAttack(api) {
     [ItemIdentifiers._3RD_AGE_PICKAXE, THIRD_AGE_KNOCK], // rockknocker_3a
     [ItemIdentifiers.CRYSTAL_PICKAXE, CRYSTAL_KNOCK], // rockknocker_crystal
     [ItemIdentifiers.CRYSTAL_PICKAXE_INACTIVE_, CRYSTAL_KNOCK],
+    [ItemIdentifiers.TRAILBLAZER_PICKAXE, CRYSTAL_KNOCK],
     [ItemIdentifiers.DRAGON_PICKAXE_OR__3, TRAILBLAZER_KNOCK], // rockknocker_trailblazer
     [ItemIdentifiers.INFERNAL_PICKAXE_OR_, TRAILBLAZER_KNOCK],
     [ItemIdentifiers.INFERNAL_PICKAXE_UNCHARGED__2, TRAILBLAZER_KNOCK],

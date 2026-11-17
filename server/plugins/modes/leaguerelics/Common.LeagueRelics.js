@@ -346,6 +346,12 @@ function relic(type, tier, slot) {
   return catalog(type)?.tiers[tier]?.relics[slot - 1] ?? null;
 }
 
+/** A catalog relic by its platform id (the slug of its name), or null. */
+function relicBySlug(type, id) {
+  const wanted = slug(id);
+  return catalog(type)?.tiers.flatMap((tier) => tier.relics).find((entry) => slug(entry.name) === wanted) ?? null;
+}
+
 function chosen(player) {
   const value = player.getAttribute(RELICS_ATTRIBUTE);
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -661,7 +667,7 @@ function message(key, values = {}, type = null) {
 module.exports = {
   init, reloadWorldCatalog, leagueOf, levelUpOwns, catalog, sourceCatalog, sourceCatalogs, isCustomCatalog, worldCatalogState,
   passiveCatalog, passivesWorldState, passiveTierEntries, passiveTierText, activePassives, activePassiveValues,
-  allRelicEntries, ambiguousRelicIds,
+  allRelicEntries, ambiguousRelicIds, relicBySlug,
   canonicalIdOf, relicsEnabled, league, relic, chosen, points, highestTier, hasRelic, effectActive, effectSource, effectSources,
   heldRelicEntries, sourceLeagueOf, pickedRelics, reloadedPick,
   reloadedHolder, reloadedTier, RELOADED_ATTRIBUTE, RELICS_CONFIG, RELIC_TIERS_CONFIG, PASSIVE_TIERS_CONFIG,

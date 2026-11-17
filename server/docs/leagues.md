@@ -885,8 +885,9 @@ tooltip is 655:53.
   its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
   greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
-  Trailblazer Reloaded's tools are still absent from this cache and are not granted; the data
-  says so. The crystal of memories is Trailblazer Reloaded tier 3's passive (not a relic slot):
+  Trailblazer Reloaded's Infernal Gathering tools are custom items too (the cache reused their
+  ids for the Echo tools); they are granted and reclaimable the same way. The crystal of
+  memories is Trailblazer Reloaded tier 3's passive (not a relic slot):
   `CrystalOfMemories.LeagueRelics.js` grants the Crystal of Echoes (this cache's name for it) on
   that unlock and at login, reclaimable from the Leagues Tutor's Collect-items; Level-Up gets the
   same grant from the Trailblazer Reloaded catalog. Level-Up worlds also get the same relic items,
@@ -938,9 +939,10 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 ### Not in this cache
 
 No unit, and the data says so: the **Guardian** effects of both leagues (both grant their horns,
-but a thrall with its own combat would be a feature of its own), **Infernal Gathering** (no
-Trailblazer tools), and **Ruinous Powers** beyond the book it grants (the server has no Ruinous
-Powers prayer book). The tier 3 **Crystal of Memories** passive is implemented
+but a thrall with its own combat would be a feature of its own), and **Ruinous Powers** beyond
+the book it grants (the server has no Ruinous Powers prayer book). **Infernal Gathering** grants
+its Trailblazer tools as custom items and burns, smelts and cooks with them
+(`InfernalGathering.LeagueRelics.js`). The tier 3 **Crystal of Memories** passive is implemented
 (`CrystalOfMemories.LeagueRelics.js`: the Crystal of Echoes item, Last Recall with the Wiki's
 total-level cooldown).
 
@@ -1052,6 +1054,16 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
 
 ### Trailblazer Reloaded's gathering relics
 
+- **Infernal Gathering** (tier 5): grants the Trailblazer axe, pickaxe and harpoon (custom items
+  based on the Echo tools; unlock in a bank). They sit in Woodcutting's, Mining's and Fishing's
+  tool tables as crystal tools with no requirement; the pickaxe always rolls every 2 ticks, the
+  axe chops one tick faster (`skills:action-interval`) and the harpoon fishes two ticks sooner
+  (`fishing:interval`). Toggle on any tool turns burn / smelt / cook on or off for all three
+  (`league:infernal-gathering-mode`). With the effect on, logs burn for Firemaking XP, ore smelts
+  into bars for Smithing XP (coal waived, as Power Miner's `smeltBars`), and fish cook for Cooking
+  XP (`storage:gather`); with Endless Harvest the doubled yield is processed the same way and
+  Endless Harvest skips (`gatherProcessed`). Equipped, the harpoon stands in for any fishing tool
+  (`fishing:tool`).
 - **Endless Harvest** (tier 1): what Mining, Woodcutting and Fishing gather is doubled and banked
   (`storage:gather` with the skill: two go to the bank and the inventory gets nothing; an open
   container such as a coal bag keeps what it took and the rest goes to the bank; when the bank
@@ -1279,11 +1291,11 @@ open). Each item remembers its last destination. The menus' grouping and wording
   Jewellery to the ornate jewellery box's 27 destinations, up to level 20 Wilderness, 30 for a
   dragonstone piece's destination and its last destination (Wiki, 6 December 2023). No runes.
 - **Banker's Note** (Trailblazer Reloaded tier 3, Raging Echoes tier 6): an item used on the note
-  is noted, a note unnoted (as many as the inventory and the stack's limit hold); Activate repeats
-  the last item;
-  Note-Quantity and Un-note-Quantity set how many each use converts (all until set: ours); Toggle
-  switches Activate between noting and unnoting (ours: the Wiki does not say). Not here: Guardians
-  of the Rift's essence rule.
+  is noted, a note unnoted (as many as the inventory and the stack's limit hold); the note
+  remembers every item used on it and Activate converts each remembered item the player holds in
+  the direction it was last used; Note-Quantity and Un-note-Quantity set how many each use
+  converts (all until set: ours); Toggle switches every remembered item between noting and
+  unnoting (ours: the Wiki does not say). Not here: Guardians of the Rift's essence rule.
 - **Clue Compass** (Raging Echoes tier 3): the compass goes to any STASH unit, built or not, and
   to Falo the Bard; Current-step to where the clue read last leads (not a step that asks for a
   kill, nor a hot-cold step's spot: ours), from any Wilderness level, onto the nearest open tile

@@ -133,7 +133,7 @@ test('Arceuus and Lunar tablets land where their spells do; Ape Atoll is the Arc
     diaries = new Set();
     assertLanding(use('barrows teleport', 'break').tile, [3565, 3315, 0]);
     assertLanding(use('moonclan teleport', 'break').tile, [2113, 3917, 0]);
-    assertLanding(use('ape atoll teleport', 'break').tile, [2770, 9100, 0]);
+    assertLanding(use('ape atoll teleport', 'break').tile, [2769, 2703, 0]);
 });
 
 // Wiki maps (each a 2-tile square): Key master teleport 1310,1250 (next to the Key Master in Cerberus' Lair),

@@ -32290,4 +32290,9 @@ export class ItemIdentifiers {
     // models of Searing boots and the Minion whistle respectively.
     public static SAGES_GREAVES = 50001; // Sage's greaves
     public static GUARDIAN_HORN = 50002; // Guardian horn
+    // Trailblazer Reloaded Infernal Gathering tools: the originals (hist 25110/25112/25114) were
+    // replaced by the Echo tools, so these custom rows copy the Echo models under the Wiki names.
+    public static TRAILBLAZER_AXE = 50003; // Trailblazer axe
+    public static TRAILBLAZER_PICKAXE = 50004; // Trailblazer pickaxe
+    public static TRAILBLAZER_HARPOON = 50005; // Trailblazer harpoon
 }

@@ -85,5 +85,77 @@
       "sellable": false,
       "value": 1
     }
+  },
+  {
+    "id": 50003,
+    "baseItemId": 25110,
+    "objType": {
+      "name": "Trailblazer axe",
+      "examine": "A very powerful axe in the colours of the Trailblazer League.",
+      "inventoryActions": ["Wield", "Toggle", null, null, "Destroy"],
+      "isTradable": false,
+      "price": 10,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": {
+      "tradeable": false,
+      "dropable": false,
+      "sellable": false,
+      "value": 10
+    },
+    "specialAttack": { "from": 23673 }
+  },
+  {
+    "id": 50004,
+    "baseItemId": 25112,
+    "objType": {
+      "name": "Trailblazer pickaxe",
+      "examine": "A very powerful pickaxe in the colours of the Trailblazer League.",
+      "inventoryActions": ["Wield", "Toggle", null, null, "Destroy"],
+      "isTradable": false,
+      "price": 10,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": {
+      "tradeable": false,
+      "dropable": false,
+      "sellable": false,
+      "value": 10
+    },
+    "specialAttack": { "from": 23680 }
+  },
+  {
+    "id": 50005,
+    "baseItemId": 25114,
+    "objType": {
+      "name": "Trailblazer harpoon",
+      "examine": "A very powerful harpoon in the colours of the Trailblazer League.",
+      "inventoryActions": ["Wield", "Toggle", null, null, "Destroy"],
+      "isTradable": false,
+      "price": 1,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": {
+      "tradeable": false,
+      "dropable": false,
+      "sellable": false,
+      "value": 1
+    },
+    "specialAttack": { "from": 23762 }
   }
 ]

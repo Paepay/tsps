@@ -66,13 +66,19 @@ const core = {
 };
 
 const handlers = new Map();
+const itemOnNpcHooks = [];
 const api = new Proxy({
   core,
   onCustomEvent: (name, handler) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
   emitCustomEvent: (name, payload) => (handlers.get(name) ?? []).forEach((handler) => handler(payload)),
+  onItemOnNpc: (handler) => itemOnNpcHooks.push(handler),
 }, { get: (object, name) => object[name] ?? (() => {}) });
 for (const unit of [Points, Emblems, EarningPotential, BountyCrates, Coffer, EmblemTrader, CorruptedWarrior]) unit(api);
 const emit = (name, payload) => api.emitCustomEvent(name, payload);
+const useOnNpc = (event) => {
+  for (const handler of itemOnNpcHooks) handler(event);
+  return event;
+};
 
 let ironman = false;
 api.onCustomEvent("ironman:mode", (query) => { query.mode = ironman ? "standard" : "none"; });
@@ -306,4 +312,45 @@ test("Corrupted Warriors swap (bh) armour both ways; the Emblem Trader answers s
   assert.equal(EmblemTrader.answerCondition({ player: player({ skulled: true }), npcId: trader, text: "If the skull can be extended:" }), true);
   assert.equal(EmblemTrader.answerCondition({ player: unskulled, npcId: 1, text: "If the player is skulled" }), null);
   assert.equal(EmblemTrader.band(unskulled), 5);
+});
+
+test("the Revenant Caves Emblem Trader buys every ancient artefact for coins, plain or noted", () => {
+  const trader = core.NpcIdentifiers.EMBLEM_TRADER;
+  const artefacts = [
+    [I.ANCIENT_EMBLEM, 500_000], [I.ANCIENT_TOTEM, 1_000_000], [I.ANCIENT_STATUETTE, 2_000_000],
+    [I.ANCIENT_MEDALLION, 4_000_000], [I.ANCIENT_EFFIGY, 8_000_000], [I.ANCIENT_RELIC, 16_000_000],
+  ];
+  const noted = [
+    [I.ANCIENT_EMBLEM_2, 500_000], [I.ANCIENT_TOTEM_2, 1_000_000], [I.ANCIENT_STATUETTE_2, 2_000_000],
+    [I.ANCIENT_MEDALLION_2, 4_000_000], [I.ANCIENT_EFFIGY_2, 8_000_000], [I.ANCIENT_RELIC_2, 16_000_000],
+  ];
+  for (const [itemId, price] of [...artefacts, ...noted]) {
+    const holder = player({ inventory: { [itemId]: 2 } });
+    const event = useOnNpc({
+      player: holder, itemId, slot: 0, npcId: trader, item: holder.getInventory().get(0),
+      definition: { getName: () => "Emblem Trader" }, handled: false,
+    });
+    assert.equal(event.handled, true, `artefact ${itemId} is sold`);
+    assert.equal(holder.getInventory().getAmount(itemId), 1, `one of ${itemId} is taken`);
+    assert.equal(holder.getInventory().getAmount(I.COINS), price, `${price} coins for ${itemId}`);
+    assert.match(holder.messages.at(-1), new RegExp(price.toLocaleString("en-US")));
+  }
+});
+
+test("only the Revenant Caves Emblem Trader buys artefacts; the esoteric-emblem points branch still runs", () => {
+  const relic = player({ inventory: { [I.ANCIENT_RELIC]: 1 } });
+  const wasted = useOnNpc({
+    player: relic, itemId: I.ANCIENT_RELIC, slot: 0, npcId: core.NpcIdentifiers.EMBLEM_TRADER_2,
+    item: relic.getInventory().get(0), definition: { getName: () => "Emblem Trader" }, handled: false,
+  });
+  assert.equal(wasted.handled, false, "the crater trader does not buy artefacts");
+  assert.equal(relic.getInventory().getAmount(I.ANCIENT_RELIC), 1);
+  assert.equal(relic.getInventory().getAmount(I.COINS), 0);
+
+  const emblem = player({ inventory: { [I.ESOTERIC_EMBLEM_TIER_1_]: 1 } });
+  const sold = useOnNpc({
+    player: emblem, itemId: I.ESOTERIC_EMBLEM_TIER_1_, slot: 0, npcId: core.NpcIdentifiers.EMBLEM_TRADER_2,
+    item: emblem.getInventory().get(0), definition: { getName: () => "Emblem Trader" }, handled: false,
+  });
+  assert.equal(sold.handled, true, "the esoteric emblem still sells for points");
 });

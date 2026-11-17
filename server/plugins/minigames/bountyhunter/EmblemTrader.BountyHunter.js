@@ -7,8 +7,8 @@
  * version for the crater's trader, answers its conditions, fills in the target band, sets the
  * band (varbit bh_combat_band, read by target matching), and gives the PK skull. Rewards opens
  * the Bounty Hunter Store in the crater (the transcript's "trade for rewards" branch) and refuses
- * outside it; Skull goes straight to the skull branch. Using an esoteric emblem on him sells it
- * for its points.
+ * outside it; Skull goes straight to the skull branch. The Revenant Caves trader buys ancient
+ * artefacts for coins; using an esoteric emblem on any trader sells it for its points.
  */
 
 const Points = require("./Points.BountyHunter");
@@ -27,11 +27,23 @@ const BAND_LINE = "You may be assigned Targets up to [value] levels stronger tha
 const SKULL_MESSAGES = new Set(["You are now skulled.", "Your PK skull will now last for the full 20 minutes."]);
 
 const PK_SKULL_SECONDS = 20 * 60;
+/** Ancient artefacts (plain and noted) and their coin prices at the Revenant Caves trader (Wiki). */
+const ARTEFACTS = Object.freeze([
+  ["ANCIENT_EMBLEM", "ANCIENT_EMBLEM_2", 500_000],
+  ["ANCIENT_TOTEM", "ANCIENT_TOTEM_2", 1_000_000],
+  ["ANCIENT_STATUETTE", "ANCIENT_STATUETTE_2", 2_000_000],
+  ["ANCIENT_MEDALLION", "ANCIENT_MEDALLION_2", 4_000_000],
+  ["ANCIENT_EFFIGY", "ANCIENT_EFFIGY_2", 8_000_000],
+  ["ANCIENT_RELIC", "ANCIENT_RELIC_2", 16_000_000],
+]);
 
 let core;
 let pluginApi;
 let TRADER_IDS;
 let CRATER_TRADER;
+let REVENANT_CAVE_TRADER;
+/** Item id -> its coin price, both plain and noted. */
+let artefactPrices;
 
 function band(player) {
   const value = Number(player.getAttribute(BAND_ATTRIBUTE));
@@ -142,12 +154,32 @@ function completeSale(player, npcId, itemId, slot, tier) {
     .add(new core.NpcDialogue(1, npcId, "Thank you. My master in the north will be very pleased.")));
 }
 
+/** The Revenant Caves trader buys ancient artefacts, plain or noted, for coins. */
+function sellArtefact(event) {
+  const price = artefactPrices.get(event.itemId);
+  if (price === undefined || event.npcId !== REVENANT_CAVE_TRADER) return;
+  const { player, itemId, slot } = event;
+  const inventory = player.getInventory();
+  const held = inventory.get(slot);
+  if (held?.getId?.() !== itemId || held.getAmount() <= 0) return;
+  event.handled = true;
+  if (held.getAmount() > 1) inventory.setItem(slot, new core.Item(itemId, held.getAmount() - 1));
+  else inventory.setItem(slot, new core.Item(-1, 0));
+  inventory.addItem(new core.Item(core.ItemIdentifiers.COINS, price));
+  inventory.refreshItems();
+  const name = core.ItemDefinition.forId(itemId)?.getName?.() ?? "ancient artefact";
+  player.sendMessage(`You sell the ${name} to the Emblem Trader for ${price.toLocaleString("en-US")} coins.`);
+}
+
 module.exports = function attachBountyHunterEmblemTrader(api) {
   core = api.core;
   pluginApi = api;
   const Npcs = core.NpcIdentifiers;
   CRATER_TRADER = Npcs.EMBLEM_TRADER_2;
   TRADER_IDS = [Npcs.EMBLEM_TRADER, Npcs.EMBLEM_TRADER_2, Npcs.EMBLEM_TRADER_3];
+  REVENANT_CAVE_TRADER = Npcs.EMBLEM_TRADER;
+  artefactPrices = new Map(ARTEFACTS.flatMap(([plain, noted, price]) =>
+    [[core.ItemIdentifiers[plain], price], [core.ItemIdentifiers[noted], price]]));
   api.persistAttribute(BAND_ATTRIBUTE, BANDS[0]);
   api.onPlayerLogin(syncBand);
   api.onNpcDialogueVariant(selectVariant);
@@ -155,6 +187,7 @@ module.exports = function attachBountyHunterEmblemTrader(api) {
   api.onCustomEvent("npc-dialogue:line", bandLine);
   api.onCustomEvent("npc-dialogue:action", skull);
   api.onNpcInteraction("Emblem Trader", { Rewards: rewards, Skull: skullOption });
+  api.onItemOnNpc(sellArtefact);
   api.onItemOnNpc(sellEmblem);
 };
-Object.assign(module.exports, { band, findOption, answerCondition });
+Object.assign(module.exports, { band, findOption, answerCondition, sellArtefact });

@@ -507,6 +507,70 @@ test("every Raging Echoes item relic hands out its item and the Leagues Tutor re
   }
 });
 
+test("Trailblazer Reloaded's Infernal Gathering grants the Trailblazer tools and the Leagues Tutor reclaims them", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I, ItemDefinition } = core;
+  const relic = Common.relic(4, 4, 3);
+  assert.equal(relic.key, "infernal-gathering");
+  assert.deepEqual(Unlock.grantedItems(relic), [I.TRAILBLAZER_AXE, I.TRAILBLAZER_PICKAXE, I.TRAILBLAZER_HARPOON]);
+  assert.equal(relic.requiresBank, true, "Infernal Gathering unlocks in a bank");
+  assert.equal(relic._missing, undefined);
+
+  for (const [id, name, examine] of [
+    [I.TRAILBLAZER_AXE, "Trailblazer axe", "A very powerful axe in the colours of the Trailblazer League."],
+    [I.TRAILBLAZER_PICKAXE, "Trailblazer pickaxe", "A very powerful pickaxe in the colours of the Trailblazer League."],
+    [I.TRAILBLAZER_HARPOON, "Trailblazer harpoon", "A very powerful harpoon in the colours of the Trailblazer League."],
+  ]) {
+    const def = ItemDefinition.forId(id);
+    assert.deepEqual([def.getName(), def.getExamine(), def.isTradeable(), def.isDropable()], [name, examine, false, false]);
+  }
+
+  const denied = relicCharacter("infernal-denied", 4);
+  givePoints(denied, 4000);
+  assert.equal(Unlock.refusal(denied, 4, 4, 3, false), "needsBank");
+  assert.equal(Unlock.unlock(denied, 4, 3), false);
+
+  const player = relicCharacter("infernal-grant", 4);
+  givePoints(player, 4000);
+  assert.equal(Unlock.unlock(player, 4, 3, { bankOpen: true }), true);
+  const tools = [I.TRAILBLAZER_AXE, I.TRAILBLAZER_PICKAXE, I.TRAILBLAZER_HARPOON];
+  for (const id of tools) {
+    assert.equal(player.getInventory().contains(id), true, `granted ${id}`);
+    player.getInventory().delete(id, 1);
+  }
+  // Tier 3's Crystal of Memories passive may also be owed after enough points.
+  assert.deepEqual(tools.filter((id) => Collect.owed(player, 4).includes(id)), tools);
+
+  const { action } = collect(player, 315);
+  action.send(player);
+  for (const id of tools) {
+    assert.equal(player.getInventory().contains(id), true, `reclaimed ${id}`);
+  }
+});
+
+test("an older Level-Up save's stored relic list still reclaims the Infernal Gathering tools", () => {
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I } = core;
+  const player = relicCharacter("infernal-old", 4);
+  // Before league:relics held Level-Up's picks, the milestone list was the only record.
+  const progress = (query) => {
+    query.active = true;
+    query.progress = { relics: [{ id: "infernal-gathering", name: "Infernal Gathering" }] };
+  };
+  (custom["level-up:progress"] ??= []).push(progress);
+  try {
+    const tools = [I.TRAILBLAZER_AXE, I.TRAILBLAZER_PICKAXE, I.TRAILBLAZER_HARPOON];
+    assert.deepEqual(Collect.owed(player, 4).filter((id) => tools.includes(id)), tools);
+    const { action } = collect(player, 315);
+    action.send(player);
+    for (const id of tools) assert.equal(player.getInventory().contains(id), true, `reclaimed ${id}`);
+  } finally {
+    custom["level-up:progress"] = custom["level-up:progress"].filter((handler) => handler !== progress);
+  }
+});
+
 test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tutor reclaims them", () => {
   const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
   const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");

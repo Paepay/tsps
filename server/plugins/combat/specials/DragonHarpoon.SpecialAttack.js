@@ -14,7 +14,7 @@ module.exports = function registerDragonHarpoonSpecialAttack(api) {
   const CRYSTAL_STAB = new Animation(8333);
   const TRAILBLAZER_STAB = new Animation(11823);
   const RELOADED_STAB = new Animation(11824);
-  const CRYSTAL_HARPOONS = [ItemIdentifiers.CRYSTAL_HARPOON, ItemIdentifiers.CRYSTAL_HARPOON_INACTIVE_];
+  const CRYSTAL_HARPOONS = [ItemIdentifiers.CRYSTAL_HARPOON, ItemIdentifiers.CRYSTAL_HARPOON_INACTIVE_, ItemIdentifiers.TRAILBLAZER_HARPOON];
   // The cache's Fishstabber sequences carry the held tool model. Keep every
   // wieldable variant here so an ornament or depleted charge cannot lose the special.
   const HARPOON_ANIMATIONS = new Map([
@@ -23,6 +23,7 @@ module.exports = function registerDragonHarpoonSpecialAttack(api) {
     [ItemIdentifiers.INFERNAL_HARPOON_UNCHARGED_, INFERNAL_STAB],
     [ItemIdentifiers.CRYSTAL_HARPOON, CRYSTAL_STAB],
     [ItemIdentifiers.CRYSTAL_HARPOON_INACTIVE_, CRYSTAL_STAB],
+    [ItemIdentifiers.TRAILBLAZER_HARPOON, CRYSTAL_STAB],
     [ItemIdentifiers.DRAGON_HARPOON_OR_, TRAILBLAZER_STAB],
     [ItemIdentifiers.INFERNAL_HARPOON_OR_, TRAILBLAZER_STAB],
     [ItemIdentifiers.INFERNAL_HARPOON_UNCHARGED__2, TRAILBLAZER_STAB],

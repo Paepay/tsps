@@ -180,6 +180,8 @@ function rollInterval(tool) {
 const HARPOONS = Object.freeze([
   // The league's Echo harpoon (Wiki): a crystal harpoon with no requirement and no charges.
   { ids: [ItemIds.ECHO_HARPOON], level: 1, bonus: 135 },
+  // Trailblazer Reloaded's Infernal Gathering harpoon (custom item): same crystal-tier bonus.
+  { ids: [ItemIds.TRAILBLAZER_HARPOON], level: 1, bonus: 135 },
   // Charged crystal harpoons consume one charge per fish (./fishing/CrystalHarpoon.Fishing.js).
   { ids: [ItemIds.CRYSTAL_HARPOON, ItemIds.CRYSTAL_HARPOON_3], level: 71, agility: 50, bonus: 135, crystal: true },
   // Charged infernal harpoons can cook what they catch (./fishing/InfernalHarpoon.Fishing.js).
