@@ -40,11 +40,20 @@ function lengthFor(player, random = Math.random) {
   return Number.isInteger(request.length) ? Math.max(1, Math.min(3, request.length)) : rolled;
 }
 
+/** The same saved clue-step progress a league's clue-step grant answers, for beginner clues. */
+function clueProgress(player, event, completed = null) {
+  const request = { player, tier: "beginner", event, completed, saved: 0 };
+  api?.emitCustomEvent?.("treasure-trails:clue-progress", request);
+  return Number.isInteger(request.saved) && request.saved >= 0 ? request.saved : 0;
+}
+
 function stateOf(item, player = null) {
   const current = item.getMetaValue(TRAIL_META);
   if (current?.version === 1 && data().byRow.has(current.row) && Number.isInteger(current.completed) && current.completed >= 0 &&
       [1, 2, 3].includes(current.length) && current.completed < current.length && typeof current.token === "string") return current;
-  const state = newStep({ version: 1, token: randomUUID(), revision: 0, completed: 0, length: lengthFor(player) });
+  const trailLength = lengthFor(player);
+  const state = newStep({ version: 1, token: randomUUID(), revision: 0,
+    completed: Math.min(clueProgress(player, "start"), trailLength - 1), length: trailLength });
   item.setMetaValue(TRAIL_META, state);
   return state;
 }
@@ -109,10 +118,12 @@ function advance(player, snapshot) {
     // Exact-slot deletion matters when several generic scrolls are carried.
     player.getInventory().deleteAtSlot(trail.slot, 1);
     player.getInventory().adds(data().casket, 1);
+    clueProgress(player, "casket", 0);
     // rsprox (e.g. 227/00091.txt:346163, 346841): in a message box with the item, not chat.
     itemBox(player, data().casket, "You've obtained a casket!");
   } else {
     trail.item.setMetaValue(TRAIL_META, newStep({ ...trail.state, completed }));
+    clueProgress(player, "step", completed);
     player.getInventory().refreshItems();
     itemBox(player, trail.item.getId(), "You've found a new clue!");
   }
@@ -321,4 +332,4 @@ module.exports = function attachBeginnerTreasureTrails(pluginApi) {
   api.onInterfaceActionButton((203 << 16) | 1, close);
 };
 
-Object.assign(module.exports, { TRAIL_META, COMPLETED_ATTRIBUTE, data, trailLength: length, stateOf, trails, read, checkSteps, advance, talk, dig, emote, feel, temperature, reading, feelSound, playFeelSound, emoteReady, restore, categoryCount, canEmote });
+Object.assign(module.exports, { TRAIL_META, COMPLETED_ATTRIBUTE, data, trailLength: length, clueProgress, stateOf, trails, read, checkSteps, advance, talk, dig, emote, feel, temperature, reading, feelSound, playFeelSound, emoteReady, restore, categoryCount, canEmote });

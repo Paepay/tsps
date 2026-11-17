@@ -218,13 +218,14 @@ function iconIndex(params, league) {
 
 test("a past league's relics show their own league's icons, at the index its own cache gave each", () => {
   const byLeague = {};
+  const counts = { 4: 22, 5: 24 };
   for (const league of [4, 5]) {
     worldLeague = league;
     const player = character(`icons-${league}`);
     const base = 200000 + league * 1000 + 100;
     const structs = new Map(dataset(player, "structOverrides").map((row) => [row.structId, row.params]));
     byLeague[league] = [...structs].filter(([id]) => id >= base && id < base + 24).map(([id, params]) => [id - base, params]);
-    assert.equal(byLeague[league].length, 24, "eight tiers of three");
+    assert.equal(byLeague[league].length, counts[league], "every relic struct the data defines");
     for (const [, params] of byLeague[league]) iconIndex(params, league);
   }
   worldLeague = 4;
@@ -235,10 +236,8 @@ test("a past league's relics show their own league's icons, at the index its own
   assert.deepEqual(icons(relic(4, "Banker's Note", 2)), { 881: 5322, 882: 5431, 883: 5349, 884: 5295, 1853: 5376, 1854: 5404 });
   // Not the Wiki's (or the data's) order: Raging Echoes' tier 1 is Power Miner, Lumberjack, Animal Wrangler.
   assert.deepEqual(["Power Miner", "Lumberjack", "Animal Wrangler"].map((name) => iconIndex(relic(5, name, 0), 5)), [0, 2, 1]);
-  // A preview filler shows the relic it previews; Crystal of Memories, with no struct, the league's generic relic.
+  // Raging Echoes has the same relic at two tiers; the one struct is reused with the same icon.
   assert.equal(iconIndex(relic(5, "Last Stand", 5), 5), iconIndex(relic(5, "Last Stand", 7), 5));
-  assert.equal(iconIndex(relic(4, "Treasure Seeker", 2), 4), iconIndex(relic(4, "Treasure Seeker", 4), 4));
-  assert.equal(relic(4, "Crystal of Memories", 1)[881], core.CacheDefinitions.getStructParams(4699).get(1022), "the Trailblazer Reloaded league struct's relic sprite (league_4_relics,26)");
 });
 
 test("View Relics opens the interface with its click events; a slot click records the relic viewed", () => {

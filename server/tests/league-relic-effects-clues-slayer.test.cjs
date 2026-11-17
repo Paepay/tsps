@@ -298,18 +298,18 @@ test("Bloodthirsty: superiors 1 in 25, a quarter bloodthirsty; points and six (n
   const { drops: variantDrops, rolls: variantRolls } = rewards(who.relic, variant);
   assert.equal(variantRolls, 6, "six more rolls");
   assert.equal(variantRolls + ownRolls(variant), 9, "nine rolls in all");
-  // A superior whose table exports no `rolls` (King kurask) is rolled once, so the relic adds five and eight.
+  // A King kurask's captured table rolls three times, so the relic adds the other three and six.
   const kuraskOf = () => { try { return npcOf("King kurask"); } catch { return npcOf("King Kurask"); } };
   const kurask = kuraskOf();
-  assert.equal(ownRolls(kurask), 1, "a King kurask kill rolls its table once");
+  assert.equal(ownRolls(kurask), 3, "a King kurask kill rolls its table three times");
   const plainKurask = rewards(who.relic, kurask);
-  assert.equal(plainKurask.rolls, 5, "five more rolls");
+  assert.equal(plainKurask.rolls, 3, "three more rolls");
   assert.equal(plainKurask.rolls + ownRolls(kurask), 6, "six rolls in all");
   const variantKurask = kuraskOf();
   Math.random = () => 0.1;
   emit("slayer:superior-spawned", { player: who.relic, npc: npcOf("Kurask"), superior: variantKurask });
   const variantKuraskRolls = rewards(who.relic, variantKurask).rolls;
-  assert.equal(variantKuraskRolls, 8, "eight more rolls");
+  assert.equal(variantKuraskRolls, 6, "six more rolls");
   assert.equal(variantKuraskRolls + ownRolls(variantKurask), 9, "nine rolls in all");
   const table = new Set(require("../plugins/modes/data/league-relics.json").effects.bloodthirsty.uniqueTable.rows.map((row) => row.item));
   assert.ok(variantDrops.some((drop) => [...table].some((name) => [I[name], core.ItemDefinition.forId(I[name]).getNoteId()].includes(drop.itemId))));

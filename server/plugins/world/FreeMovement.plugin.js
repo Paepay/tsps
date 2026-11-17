@@ -6,6 +6,12 @@ const WORLD_INPUTS = new Set(["move", "teleport", "world_map_click", "npc_option
   "player_option", "ground_item_action", "inventory_use_on", "item_on_player", "item_on_npc",
   "item_on_object", "spell_on_npc", "spell_on_player", "widget_target", "interaction_stop"]);
 
+/** A movement tick's drain after the same modifiers tile movement applies (relic passives included). */
+function runEnergyDrain(core, player, amount) {
+  const modified = core.applyRunEnergyDrainModifiers?.(player, amount);
+  return Number.isFinite(modified) && modified >= 0 ? modified : amount;
+}
+
 function snapshot(player, state) {
   return { index: player.getIndex(), seq: state.seq, x: state.x, y: state.y,
     level: state.level, rotation: state.rotation, active: state.active,
@@ -117,11 +123,14 @@ function input(core, { player, packet }) {
   queue.setExternalMovement(state.active && state.moving, tileChanged);
   if (state.moving && state.running) {
     state.runDistance += Math.hypot(state.x - previous.x, state.y - previous.y);
-    const drain = Math.floor((state.runDistance + 1e-6) / 256);
-    if (drain > 0) {
-      state.runDistance = Math.max(0, state.runDistance - drain * 256);
-      player.setRunEnergy(player.getRunEnergy() - drain);
-      player.getPacketSender().sendRunEnergy();
+    const rawDrain = Math.floor((state.runDistance + 1e-6) / 256);
+    if (rawDrain > 0) {
+      state.runDistance = Math.max(0, state.runDistance - rawDrain * 256);
+      const drain = runEnergyDrain(core, player, rawDrain);
+      if (drain > 0) {
+        player.setRunEnergy(player.getRunEnergy() - drain);
+        player.getPacketSender().sendRunEnergy();
+      }
     }
   }
   if (state.running !== player.isRunningReturn()) {
@@ -163,6 +172,7 @@ function syncView({ player, view }) {
 function logout({ player }) { states.delete(player); }
 
 module.exports = {
+  runEnergyDrain,
   name: "Free movement",
   description: "Continuous free movement: moves players by client input at walk and run speed with server-checked timing, and sends fine positions to observers.",
   register(api) {

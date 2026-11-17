@@ -23,7 +23,7 @@ function active(player) {
 
 /** Whether the character's league banks the harvest: always, or while the league's toggle is on. */
 function banks(player) {
-  const toggle = effect.bankToggle?.[Common.leagueOf(player)];
+  const toggle = effect.bankToggle?.[Common.effectSource(player, effect)];
   return !toggle || Toggles.on(player, toggle);
 }
 
@@ -60,7 +60,9 @@ function room(request) {
 
 /** A rock or tree stands while a character of an endless league (Demonic Pacts) gathers from it. */
 function endless(request) {
-  if (!request.handled && effect.endlessLeagues.includes(Common.leagueOf(request.player)) && active(request.player)) request.handled = true;
+  const endlessSource = Common.effectSources(request.player, effect)
+    .some((source) => effect.endlessLeagues.includes(source));
+  if (!request.handled && endlessSource && active(request.player)) request.handled = true;
 }
 
 module.exports = function attach(api) {

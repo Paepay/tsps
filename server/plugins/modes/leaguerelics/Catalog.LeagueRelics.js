@@ -3,35 +3,64 @@
  * enum, tier structs and relic structs, but the cache only carries the current league's, so this
  * answers LeagueMode's `league:content-rows` with a league's own structs and enums (sent as
  * structOverrides / enumOverrides at login and before the interface opens). A league the cache
- * carries (data `fromCache`) needs none. Icons are the league's own relic sprites, which the cache
- * still carries by name (league_5_relics_tli,3 ...), at the index the league's own cache gave.
+ * carries (data `fromCache`) needs none unless the world configured a mixed catalog, which always
+ * needs overrides. Icons are the relic's own source league's sprites, which the cache still carries
+ * by name (league_5_relics_tli,3 ...), at the index that source's cache gave.
  */
 const Common = require("./Common.LeagueRelics");
+const WorldCatalog = require("./WorldCatalog.LeagueRelics");
 
-/** League type -> its relics' icon params ([tier][slot] -> { param: sprite id }), resolved once. */
+/** Relic source/icon -> its six icon params, resolved once. */
 const iconCache = new Map();
 
-/** Each relic's six icon params: the league's sprite name, the param's suffix, the relic's index. */
-function iconParams(type) {
-  if (iconCache.has(type)) return iconCache.get(type);
+function relicSource(relic, type) {
+  return relic?.sourceLeague ?? type;
+}
+
+function iconCacheKey(relic, type) {
+  return Number.isInteger(relic?.struct)
+    ? `struct:${relic.struct}`
+    : `sprite:${relicSource(relic, type)}:${relic?.icon}`;
+}
+
+/** Each relic's six icon params: its source league's sprite name, the param's suffix and index, or its cache struct's params. */
+function iconParams(relic, type) {
+  const key = iconCacheKey(relic, type);
+  if (iconCache.has(key)) return iconCache.get(key);
   const { CacheDefinitions } = Common.core;
-  const { iconSprite, tiers } = Common.catalog(type);
-  const icons = tiers.map((tier) => tier.relics.map((relic) => {
-    const params = {};
+  const params = {};
+  if (Number.isInteger(relic?.struct)) {
+    const source = CacheDefinitions.getStructParams(relic.struct);
+    for (const param of Object.keys(Common.data.params.icons)) {
+      const value = source?.get(Number(param));
+      if (value !== undefined) params[param] = value;
+    }
+  } else {
+    const source = relicSource(relic, type);
+    const iconSprite = Common.sourceCatalog(source)?.iconSprite;
     for (const [param, suffix] of Object.entries(Common.data.params.icons)) {
+      if (!iconSprite || !Number.isInteger(relic?.icon)) continue;
       const sprite = CacheDefinitions.getSpriteId(`${iconSprite}${suffix},${relic.icon}`);
       if (sprite !== null) params[param] = sprite;
     }
-    return params;
-  }));
-  iconCache.set(type, icons);
-  return icons;
+  }
+  iconCache.set(key, params);
+  return params;
+}
+
+/** A relic's icon information for the website: its source sprite, index and the six cache param ids. */
+function iconDetails(relic, type) {
+  const source = relicSource(relic, type);
+  return {
+    sprite: Number.isInteger(relic?.struct) ? null : Common.sourceCatalog(source)?.iconSprite ?? null,
+    index: Number.isInteger(relic?.icon) ? relic.icon : null,
+    params: { ...iconParams(relic, type) },
+  };
 }
 
 /** structId -> params the client reads for it; a cache struct's listed params are replaced, the rest still come from the cache. */
 function structRows(type) {
   const { params } = Common.data;
-  const icons = iconParams(type);
   const id = Common.ids(type);
   const rows = [{ structId: Common.league(type).struct, params: { [params.tiersEnum]: id.tiersEnum } }];
   Common.catalog(type).tiers.forEach((tier, tierIndex) => {
@@ -40,14 +69,16 @@ function structRows(type) {
       [params.tierRelics]: id.relicsEnum(tierIndex),
       [params.tierPassive]: id.passiveStruct(tierIndex),
     } });
-    rows.push({ structId: id.passiveStruct(tierIndex), params: { [params.passiveText]: tier.passive } });
+    rows.push({ structId: id.passiveStruct(tierIndex), params: {
+      [params.passiveText]: Common.passiveTierText(type, tierIndex),
+    } });
     tier.relics.forEach((relic, slotIndex) => {
       const relicParams = {
         [params.relicName]: relic.name,
         [params.relicDescription]: relic.description,
         [params.relicTier]: tierIndex,
         [params.relicHasItem]: relic.grants?.length ? 1 : 0,
-        ...icons[tierIndex][slotIndex],
+        ...iconParams(relic, type),
       };
       rows.push({ structId: id.relicStruct(tierIndex, slotIndex + 1), params: relicParams });
     });
@@ -79,15 +110,98 @@ function datasets(type) {
 /** `league:content-rows` { league, structs, enums }: this league's rows, unless the cache already has them. */
 function content(query) {
   const type = query?.league;
-  if (!Common.catalog(type) || Common.catalog(type).fromCache) return;
+  const catalog = Common.catalog(type);
+  if (!catalog || (catalog.fromCache && !Common.isCustomCatalog(type))) return;
   query.structs.push(...structRows(type));
   query.enums.push(...enumRows(type));
 }
 
+/** The public relic catalog: every source relic, its stable id and icon, and this world's configuration. */
+function relicCatalog() {
+  const ambiguous = Common.ambiguousRelicIds();
+  const league = (type) => {
+    const row = Common.league(type);
+    return {
+      type,
+      key: row?.key ?? null,
+      name: row?.name ?? null,
+      shortName: row?.shortName ?? null,
+      colour: row?.colour ?? null,
+      iconSprite: Common.sourceCatalog(type)?.iconSprite ?? null,
+    };
+  };
+  return {
+    schemaVersion: 2,
+    canonicalIdFormat: "<leagueType>:<relicKey>",
+    limits: {
+      minTiers: 1,
+      maxTiers: 8,
+      minChoicesPerTier: 2,
+      maxChoicesPerTier: 3,
+    },
+    leagues: [4, 5, 6].map(league),
+    relics: Common.allRelicEntries().map((entry) => {
+      const incompatibleReason = ambiguous.has(entry.id)
+        ? "its source catalog repeats this relic key"
+        : WorldCatalog.incompatibleReason(entry.relic);
+      return {
+        id: entry.id,
+        key: entry.relic.key,
+        name: entry.relic.name,
+        description: entry.relic.description,
+        sourceLeague: entry.sourceLeague,
+        originalTier: entry.originalTier + 1,
+        grants: [...(entry.relic.grants ?? [])],
+        requiresBank: entry.relic.requiresBank === true,
+        compatible: incompatibleReason === null,
+        incompatibleReason,
+        icon: iconDetails(entry.relic, entry.sourceLeague),
+      };
+    }),
+    passiveLimits: {
+      minTiers: WorldCatalog.MIN_TIERS,
+      maxTiers: WorldCatalog.MAX_TIERS,
+      choicesPerTier: null,
+    },
+    passives: Common.passiveCatalog().map((passive) => ({
+      id: passive.id,
+      key: passive.key,
+      name: passive.name,
+      description: passive.description,
+      sourceText: passive.sourceText,
+      sourceLeague: passive.sourceLeague,
+      originalTier: passive.originalTier,
+      effect: { ...passive.effect },
+      implementation: { ...passive.implementation },
+      compatible: passive.compatible,
+      incompatibleReason: passive.incompatibleReason,
+    })),
+    world: Common.worldCatalogState(),
+  };
+}
+
+/** The individual passive catalog for the world editor, with each grant's implementation status. */
+function passiveCatalog() {
+  const relic = relicCatalog();
+  return {
+    schemaVersion: 1,
+    canonicalIdFormat: relic.canonicalIdFormat,
+    limits: relic.passiveLimits,
+    leagues: relic.leagues,
+    passives: relic.passives,
+    world: relic.world.passives,
+  };
+}
+
 module.exports = function attach(api) {
   api.onCustomEvent("league:content-rows", content);
+  api.registerContentEndpoint("relic-catalog", relicCatalog);
+  api.registerContentEndpoint("league-passives", passiveCatalog);
 };
 
 module.exports.datasets = datasets;
 module.exports.structRows = structRows;
 module.exports.enumRows = enumRows;
+module.exports.relicCatalog = relicCatalog;
+module.exports.passiveCatalog = passiveCatalog;
+module.exports.iconDetails = iconDetails;

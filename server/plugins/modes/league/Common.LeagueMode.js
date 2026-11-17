@@ -6,6 +6,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const Relics = require("../leaguerelics/Common.LeagueRelics");
 
 /** Which league the profile joined, set on its first login (a league type, 1-6: enum 2670 in the cache, data/leagues.json). */
 const LEAGUE_TYPE_ATTRIBUTE = "league:type";
@@ -79,9 +80,14 @@ function highestTier(player) {
 
 /** The profile's XP rate: the league's base, raised by the relic tiers reached (Wiki tier passives). */
 function xpMultiplier(player) {
-  const type = leagueOf(player);
+  const type = leagueOf(player) ?? Relics.leagueOf(player);
   if (type === null) return 1;
   const { base, fromTier } = league(type).xpMultiplier;
+  if (Relics.passivesWorldState().custom) {
+    const configured = Relics.activePassiveValues(player, "xpRate", type)
+      .map((passive) => Number(passive.effect.multiplier) || 0);
+    return Math.max(base, ...configured);
+  }
   const tier = highestTier(player);
   let rate = base;
   for (const [from, value] of Object.entries(fromTier ?? {})) {

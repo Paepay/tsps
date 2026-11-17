@@ -18,12 +18,10 @@ function itemId() {
   return Common.core.ItemIdentifiers[effect.item];
 }
 
-/** Trailblazer Reloaded (or Level-Up using that catalog) with the tier 3 passive unlocked. */
+/** Whether the world grants the Crystal of memories passive at a tier the character reached. */
 function unlocked(player) {
   if (player?.isPlayer?.() !== true) return false;
-  const league = Common.leagueOf(player);
-  if (league === null || ![].concat(effect.league).includes(league)) return false;
-  return Common.highestTier(player) + 1 >= FROM_TIER;
+  return Common.activePassiveValues(player, "crystalOfMemories").length > 0;
 }
 
 function inBox(location, box) {
@@ -137,7 +135,9 @@ function saveMemory(event) {
 }
 
 function onRelicUnlocked({ player, tier }) {
-  if (Number(tier) === FROM_TIER - 1) grantCrystal(player);
+  const atTier = Common.activePassiveValues(player, "crystalOfMemories")
+    .some((passive) => (passive.grantTier ?? passive.originalTier) - 1 === Number(tier));
+  if (atTier) grantCrystal(player);
 }
 
 function onLogin({ player }) {
