@@ -171,7 +171,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `shop:can-sell`, `shop:sell-price` (extended) | core `ShopManager` | the existing payloads now carry `player` (when a player is selling) and `currency` |
 | `magic:alchemy-policy` (extended) | core `MagicOnItemPacketListener` | asked before the level check (the zone rules still follow it), now with `requiredLevel`, `freeRunes`, `keepItem` and `recast` (cast again on the slot once this cast ends while it holds the same item); a plugin that turns the cast into something else (Mage Training Arena, While Guthix Sleeps) clears `confirm`, `keepItem` and `recast` |
 | `bone-altars:offering` | BoneAltars | `{ player, itemId, boneItemId, cost, anyAltar }`: an item that is not a bone offered as `boneItemId`, `cost` of it an offering, and with `anyAltar` on any altar one prays at (the bone's burying XP; a private area's altars, a house's, stay its own) |
-| `farming:plant-rules` | Farming, as a seed or sapling is planted | `{ player, crop, seedId, patch, keepSeed, grown, diseaseFree, undying, message }`: a line said after the planting's own; keep the seed, grow the crop at once (not anima plants), keep it from disease, or keep a diseased crop from dying (it waits for a cure); the last two are kept on the patch's state |
+| `farming:plant-rules` | Farming, as a seed or sapling is planted; the Tithe Farm marks its plots `tithe: true` | `{ player, crop, seedId, patch, keepSeed, grown, diseaseFree, undying, message }`: a line said after the planting's own; keep the seed, grow the crop at once (not anima plants), keep it from disease, or keep a diseased crop from dying (it waits for a cure); the last two are kept on the patch's state |
 | `farming:level-rules` | Farming, as a seed or sapling is planted, a seedling made or a scarecrow made or placed without the level | `{ player, kind, required, waived }`: `kind` is `plant`, `seedling` or `scarecrow`; set `waived` to let the player do it anyway |
 | `farming:check-health` | Farming, after a grown crop's health check | `{ player, crop, type, patch, experience }`: `experience` is the check's Farming XP |
 | `farming:growth-rate` | Farming, as a player's patches are advanced | `{ player, rate, tickMinutes }`: content may raise `rate` (the growth-speed multiplier; one-minute ticks are `tickMinutes / 1`) |
@@ -1150,7 +1150,7 @@ Animal Wrangler's Hunter and cooking ones) do not.
   keep; the Wiki's other chaos altars that take coins (Ourania, the Asgarnian and Black Knights'
   temples, Underground Pass) are plain altars here.
 - **Farmer's Fortune** (Trailblazer Reloaded tier 6): a 20% chance to keep the seed or sapling
-  planted (with its pot, and no Amulet of bounty charge; the message is ours), patches grown the moment they are planted and never
+  planted (with its pot, and no Amulet of bounty charge; the message is ours), patches, including the Tithe Farm's, grown the moment they are planted and never
   diseased (`farming:plant-rules`; anima plants still grow, their last stage is their end),
   harvesting 25 times faster (25 picks an action, `farming:harvests-per-action`), and each pick
   three times the produce, noted (`farming:pick`; the herb sack takes only unnoted herbs, so these
