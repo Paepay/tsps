@@ -287,6 +287,9 @@ function templateConfig(config, pluginConfig) {
   // Rules with a real runtime consumer are compiled to it rather than left as metadata.
   const rules = isObject(config.templateContract) ? config.templateContract : {};
   if (rules.hardcore === true) pluginConfig["HardcoreWorld:enabled"] = true;
+  // Level-Up is a self-contained progression world. Its config may still carry the website
+  // default (wealth transfer on), but no player-to-player wealth channel belongs there.
+  if (template === "level_up") pluginConfig["WealthTransfer:enabled"] = false;
   if (Number.isInteger(rules.leagueSeason) && rules.leagueSeason > 0) pluginConfig["league:type"] = rules.leagueSeason;
   // A PaeScape/Level-Up world uses a relic catalog without becoming a seasonal league
   // profile. Trailblazer Reloaded is the presentation/cost base when no season was set.

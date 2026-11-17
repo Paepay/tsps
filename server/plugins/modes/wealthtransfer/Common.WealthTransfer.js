@@ -24,7 +24,12 @@ function init(pluginApi) {
 
 /** Whether players may receive items another player owned. Default on. */
 function enabled() {
-  return api.getPluginConfig(ENABLED_CONFIG, true) !== false;
+  if (api.getPluginConfig(ENABLED_CONFIG, true) === false) return false;
+  // A template (the Level-Up world) can veto every wealth channel on the live world, so a
+  // hosted world that received its contract after startup does not keep an open trade window.
+  const request = { enabled: true };
+  api.emitCustomEvent("wealth:enabled", request);
+  return request.enabled !== false;
 }
 
 function message(key) {
