@@ -574,7 +574,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   assert.deepEqual(query("league:areas", { player: echoes }).next, { slot: 2, tasks: 90 }, "then 90 tasks, as before");
 });
 
-test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 80 tasks, its own cast", () => {
+test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 48 tasks, its own cast", () => {
   worldLeague = 6;
   const pacts = character("pactsareas");
   worldLeague = 4;
