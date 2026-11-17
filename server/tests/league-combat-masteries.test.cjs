@@ -17,6 +17,8 @@ const { NpcDefinitionLoader } = require("../dist/game/definition/loader/impl/Npc
 const { GameConstants } = require("../dist/game/GameConstants");
 const { Skill } = require("../dist/game/model/Skill");
 const { Location } = require("../dist/game/model/Location");
+const { Item } = require("../dist/game/model/Item");
+const { MagicOnItemPacketListener } = require("../dist/net/packet/impl/MagicOnItemPacketListener");
 const Melee = require("../plugins/modes/leaguemasteries/Melee.LeagueCombatMasteries");
 const EquipmentEffects = require("../dist/game/content/combat/EquipmentEffects");
 
@@ -40,6 +42,7 @@ const POINT_MESSAGE = "<col=229628>Congratulations, you've earned a Combat Maste
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
   await new NpcDefinitionLoader().load();
+  require("../plugins/items/ItemDefinitionLoader.plugin").register({ log() {}, onPlayerLogin() {}, registerContentEndpoint() {} });
   core = PluginManager.getCoreApi();
   GameConstants.setWorldProfile("league"); // a league world
   const lists = {};
@@ -763,4 +766,32 @@ test("Magic I and IV judge the undefended roll: a defender's damage reduction ap
   caster.setHitpoints(50);
   hooks.onCombatHitResolved({ attacker: caster, target: defender, hit });
   assert.equal(caster.getHitpoints(), 50 + Math.floor(Math.floor(hit.getTotalDamage() * 0.1) * 1.2), "Magic IV heals 10% of the damage dealt");
+});
+
+test("tier 1's rune saving covers High Alchemy, not only combat spells", () => {
+  const { ItemIdentifiers: I, World } = core;
+  const player = character("alchemy-runes", { masteries: { melee: 1, ranged: 0, magic: 0 } });
+  player.setSpellbook(core.MagicSpellbook.NORMAL);
+  const inventory = player.getInventory();
+  inventory.add(new Item(I.NATURE_RUNE, 2), false);
+  inventory.add(new Item(I.FIRE_RUNE, 10), false);
+  inventory.add(new Item(I.BRONZE_DAGGER, 2), false);
+  const listener = new MagicOnItemPacketListener();
+  const high = MagicOnItemPacketListener.HIGH_ALCH_SPELL_ID;
+
+  cycle(10);
+  randoms([0.94]);
+  listener.castAlchemy(player, high, inventory.getSlotForItemId(I.BRONZE_DAGGER), I.BRONZE_DAGGER);
+  assert.equal(inventory.getAmount(I.NATURE_RUNE), 2, "a 94 keeps the nature rune");
+  assert.equal(inventory.getAmount(I.FIRE_RUNE), 10, "and the fire runes");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 1, "the item is still alchemised");
+  assert.ok(inventory.getAmount(I.COINS) > 0, "and its coins arrive");
+
+  cycle(20);
+  randoms([0.96]);
+  listener.castAlchemy(player, high, inventory.getSlotForItemId(I.BRONZE_DAGGER), I.BRONZE_DAGGER);
+  assert.equal(inventory.getAmount(I.NATURE_RUNE), 1, "a 96 spends the nature rune");
+  assert.equal(inventory.getAmount(I.FIRE_RUNE), 5, "and the five fire runes");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 0, "the second item is consumed");
+  assert.equal(World.processCycle, 20);
 });

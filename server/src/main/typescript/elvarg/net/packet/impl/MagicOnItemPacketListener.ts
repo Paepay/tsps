@@ -164,6 +164,15 @@ export class MagicOnItemPacketListener {
     if (missing.length) PluginManager.consumeSpellRuneSource(player, missing);
   }
 
+  /** Content may keep a spell's runes once the cast has checked them (a league passive). */
+  private keepRunes(player: any, offensive: boolean): boolean {
+    const request = { player, offensive, saved: false, message: null as string | null };
+    PluginManager.emitCustomEvent("magic:rune-saving", request);
+    if (!request.saved) return false;
+    if (request.message) player.sendMessage(request.message);
+    return true;
+  }
+
   private canReceiveGroundItem(player: any, item: Item): boolean {
     return ItemOnGroundManager.inventoryCapacity(player, item) > 0;
   }
@@ -224,7 +233,7 @@ export class MagicOnItemPacketListener {
       return;
     }
 
-    this.consumeRunes(player, runes);
+    if (!this.keepRunes(player, false)) this.consumeRunes(player, runes);
     Spell.endSpellbookSwap(player);
     player.getSkillManager().stopSkillable();
 
@@ -438,7 +447,7 @@ export class MagicOnItemPacketListener {
     if (inventory.getItems()[slot] !== clickedItem || inventory.getItems()[alchemySlot] !== item
       || payment.validate?.() === false) return;
     if (policy.keepItem !== true) inventory.deleteAtSlot(alchemySlot, 1);
-    if (!payment.free) this.consumeRunes(player, runes);
+    if (!payment.free && !this.keepRunes(player, false)) this.consumeRunes(player, runes);
     // Only a cast from the spellbook is the swap's one spell: the Explorer's ring panel's own alchemy, which any book
     // may use (allowAnySpellbook), leaves a Spellbook Swap alone.
     if (!payment.allowAnySpellbook) Spell.endSpellbookSwap(player);

@@ -20,6 +20,8 @@ function active(player) {
 
 function planting(rules) {
   if (!active(rules.player)) return;
+  // The Tithe Farm's own seed plots are outside this relic (see above).
+  if (rules.tithe === true) return;
   rules.undying = true;
   if (!rules.keepSeed && Math.random() < effect.seedSaveChance) {
     rules.keepSeed = true;

@@ -425,6 +425,29 @@ test("Kalphites stay out until the Desert is unlocked (league and Level-Up)", ()
   }
 });
 
+test("Custodian Stalkers stay out until Varlamore is unlocked (Level-Up)", () => {
+  const chaeldar = Data.get().masters.get(4);
+  const custodian = chaeldar.tasks.find((entry) => entry.task.id === 126);
+  assert.ok(custodian, "Chaeldar's Custodian Stalkers row");
+  const main = character("areas-main-stalkers", { profile: "main", likeABoss: false });
+  assert.equal(Tasks.eligible(main, chaeldar, custodian, new Set()), true, "a main character is never asked");
+
+  const levelUpAreas = { list: [MISTHALIN, ASGARNIA, KANDARIN, KOUREND] };
+  const answerLevelUp = (query) => {
+    query.active = true;
+    query.unlocked = levelUpAreas.list;
+  };
+  custom["level-up:area-profile"] = (custom["level-up:area-profile"] ?? []).concat([answerLevelUp]);
+  try {
+    const levelUp = character("areas-levelup-no-varlamore", { profile: "main", likeABoss: false });
+    assert.equal(Tasks.eligible(levelUp, chaeldar, custodian, new Set()), false, "the Stalker Den is Varlamore's");
+    levelUpAreas.list = [MISTHALIN, ASGARNIA, KANDARIN, KOUREND, VARLAMORE];
+    assert.equal(Tasks.eligible(levelUp, chaeldar, custodian, new Set()), true, "Varlamore unlocks the den");
+  } finally {
+    custom["level-up:area-profile"] = (custom["level-up:area-profile"] ?? []).filter((handler) => handler !== answerLevelUp);
+  }
+});
+
 test("a spawn on a square no area names is not an area the character may enter", () => {
   const duradel = Data.get().masters.get(5);
   const varlamore = eligibleNames(character("areas-unclaimed", { picks: {}, areas: [VARLAMORE], likeABoss: false }), duradel);

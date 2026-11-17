@@ -239,6 +239,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Ferox Enclave", 3140, 3630, WILDERNESS], ["north of the ditch", 3090, 3525, WILDERNESS], ["the Frozen Waste Plateau", 2970, 3930, WILDERNESS],
     ["Mudskipper Point", 2990, 3110, ASGARNIA], ["Musa Point's dock", 2956, 3146, KARAMJA], ["Ghorrock", 2920, 3900, FREMENNIK],
     ["the Varrock sewers", 3240, 9870, MISTHALIN], ["the Stronghold of Security's second floor", 2020, 5220, MISTHALIN],
+    ["Dorgesh-Kaan", 2740, 5264, MISTHALIN], ["the Dorgesh-Kaan Agility Course's west side", 2710, 5210, MISTHALIN],
     ["Kourend Castle", 1620, 3660, KOUREND], ["Mount Karuulm", 1310, 3830, KOUREND],
     ["Civitas illa Fortis", 1700, 3140, VARLAMORE], ["Aldarin", 1400, 2950, VARLAMORE],
     ["Death's Office", 3176, 5726, null], ["the rune essence mine", 2910, 4830, null], ["Tutorial Island", 3094, 3107, null],
@@ -331,12 +332,13 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   query("player:respawn", { player: league, killer: null, handled: true });
   const home = league.getLocation();
   assert.equal(areaAt(home.getX(), home.getY()), MISTHALIN, "the respawn lands in Misthalin");
-  assert.equal(areaAt(core.WorldDefinition.WORLD_SPAWN.getX(), core.WorldDefinition.WORLD_SPAWN.getY()), MISTHALIN, "(this world's spawn is the league home)");
+  // This world's spawn sits on the Wilderness ditch, so the league home is Lumbridge (docs, Areas).
 
-  // The default respawn into an open spawn is left to the normal handler.
+  // The default respawn lands on this world's spawn, which is on the locked Wilderness ditch:
+  // the respawn rule sends it to the league home and handles it.
   const dead = { player: league, killer: null, handled: false };
   query("player:respawn", dead);
-  assert.equal(dead.handled, false);
+  assert.equal(dead.handled, true);
   assert.equal(areaAt(league.getLocation().getX(), league.getLocation().getY()), MISTHALIN);
 
   // A death flags the player: a respawn handler after ours that lands them in a locked area still goes home.
@@ -834,7 +836,9 @@ test("Death's Office's exit portal: a locked destination leads to the league hom
   const Enforcement = require("../plugins/modes/leagueareas/Enforcement.LeagueAreaUnlocks");
   const homeOf = (player, league) => Enforcement.home(league, player);
   const spawn = core.WorldDefinition.WORLD_SPAWN;
-  assert.equal(areaAt(spawn.getX(), spawn.getY()), MISTHALIN, "(the tutorial's exit, the world's spawn, is in the starting area)");
+  const spawnHome = homeOf(character("spawncheck"), 4);
+  assert.equal(areaAt(spawnHome.getX(), spawnHome.getY()), MISTHALIN,
+    "(the league home, the tutorial's exit when the world spawn is locked, is in the starting area)");
 
   // The first death's tutorial leads to the respawn point: the respawn rule's league home here.
   const tutorial = inDeathsOffice("tutorialexit");

@@ -180,10 +180,15 @@ function titheItem(event) {
     const crop = CROPS.findIndex(c => id === Data.itemId(c.name + " seed"));
     if (crop >= 0 && !plot.plant) {
         if (player.getSkillManager().getCurrentLevel(core.Skill.FARMING) < CROPS[crop].level || !Patches.requireTool(player, "Seed dibber")) return;
-        player.getInventory().deleteNumber(id, 1);
-        plot.plant = { crop, stage: 0, watered: false, dead: false, fertilized: false, nextAt: Date.now() + 60000 };
+        const rules = { player, crop: CROPS[crop].name.toUpperCase(), seedId: id, patch: null, tithe: true,
+            keepSeed: false, grown: false, diseaseFree: false, undying: false, message: null };
+        core.PluginManager.emitCustomEvent("farming:plant-rules", rules);
+        if (rules.keepSeed !== true) player.getInventory().deleteNumber(id, 1);
+        plot.plant = { crop, stage: rules.grown === true ? 3 : 0, watered: false, dead: false, fertilized: false,
+            nextAt: Date.now() + 60000 };
         player.getPacketSender().sendVarbit(4901, crop + 1);
         player.performAnimation(new core.Animation(2291));
+        if (typeof rules.message === "string") player.sendMessage(rules.message);
         if (CROPS[crop].name === "Logavano") {
             core.PluginManager.emitCustomEvent("diary:task", { player, diary: "kourend", task: "plant-some-logavano-seeds-at-the-tithe-farm" });
         }
