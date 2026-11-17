@@ -341,6 +341,7 @@ test("the infernal axe burns a third of its logs for half Firemaking XP and spen
   InfernalAxe.attach({
     core: { ...core, ItemIdentifiers },
     emitCustomEvent: (_name, request) => { request.xp = 100; },
+    persistAttribute() {},
     onItemAction: (name, handlers) => actions.set(name, handlers),
   });
   const axe = {
@@ -354,7 +355,10 @@ test("the infernal axe burns a third of its logs for half Firemaking XP and spen
   const graphics = [];
   const sounds = [];
   const messages = [];
+  const attrs = new Map();
   const player = {
+    getAttribute: (key) => attrs.get(key),
+    setAttribute: (key, value) => attrs.set(key, value),
     getEquipment: () => ({ getItems: () => Object.assign(new Array(14).fill(null), { [Equipment.WEAPON_SLOT]: axe }) }),
     getInventory: () => ({ getItems: () => [] }),
     getSkillManager: () => ({ addExperiences: (skill, amount) => xp.push([skill, amount]) }),
