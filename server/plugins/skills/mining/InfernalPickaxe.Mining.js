@@ -3,12 +3,16 @@
  * mined, granting about half the Smithing experience a bar would give and using one of
  * 5,000 charges. Mining experience is unaffected. An empty pickaxe turns into its
  * uncharged form, which mines like a dragon pickaxe. Created and recharged by
- * using a smouldering stone (or dragon pickaxe) on it at 85 Smithing.
+ * using a smouldering stone (or dragon pickaxe) on it at 85 Smithing. Toggle
+ * (14 October 2026) turns the smelt effect off; ornamented copies keep Toggle under Options.
  */
+const InfernalToolEffect = require("../InfernalToolEffect");
+
 const COMBUST_CHANCE = 3;
 const MAX_CHARGES = 5000;
 const CHARGES_META_KEY = "infernal-pickaxe";
 const SMITHING_LEVEL = 85;
+const ITEM_NAMES = Object.freeze(["Infernal pickaxe", "Infernal pickaxe (or)", "Infernal pickaxe (uncharged)"]);
 
 let api = null;
 let core = null;
@@ -54,6 +58,7 @@ function useCharge(player, item) {
 
 /** Returns true when the ore was incinerated instead of being added. */
 function tryCombustOre(player, pickaxeId, oreId) {
+  if (!InfernalToolEffect.enabled(player, "pickaxe")) return false;
   const xp = oreXp(oreId);
   if (!chargedIds.has(pickaxeId) || !(xp > 0) || Math.floor(Math.random() * COMBUST_CHANCE) !== 0) {
     return false;
@@ -64,6 +69,13 @@ function tryCombustOre(player, pickaxeId, oreId) {
   }
   player.getSkillManager().addExperiences(core.Skill.SMITHING, xp);
   useCharge(player, item);
+  return true;
+}
+
+/** "Check": the charges left as a share of 5,000, to one decimal place. */
+function check({ player, item }) {
+  if (!item || !chargedIds.has(item.getId())) return false;
+  player.sendMessage(`Infernal pickaxe: ${((charges(item) / MAX_CHARGES) * 100).toFixed(1)}% remaining.`);
   return true;
 }
 
@@ -156,6 +168,8 @@ function attach(pluginApi) {
     }
     event.handled = handlePickaxeCreation(event.player, stoneItem, pickaxeItem);
   });
+
+  InfernalToolEffect.attach(api, "pickaxe", ITEM_NAMES, check);
 }
 
 module.exports = {

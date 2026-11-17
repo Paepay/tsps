@@ -23,7 +23,7 @@ function active(player) {
 
 /** Whether the character's league banks the harvest: always, or while the league's toggle is on. */
 function banks(player) {
-  const toggle = effect.bankToggle?.[Common.leagueOf(player)];
+  const toggle = effect.bankToggle?.[Common.effectSource(player, effect)];
   return !toggle || Toggles.on(player, toggle);
 }
 
@@ -38,7 +38,8 @@ function harvested(skill) {
  */
 function gather(request) {
   const { player, itemId, amount, skill, xp } = request;
-  if (!harvested(skill) || !active(player)) return;
+  // Infernal Gathering's burn/smelt/cook takes the doubled yield itself (Wiki).
+  if (request.gatherProcessed || !harvested(skill) || !active(player)) return;
   const left = Math.max(0, amount - request.stored);
   const extra = amount * (effect.multiplier - 1);
   let placed = 0;
@@ -59,7 +60,9 @@ function room(request) {
 
 /** A rock or tree stands while a character of an endless league (Demonic Pacts) gathers from it. */
 function endless(request) {
-  if (!request.handled && effect.endlessLeagues.includes(Common.leagueOf(request.player)) && active(request.player)) request.handled = true;
+  const endlessSource = Common.effectSources(request.player, effect)
+    .some((source) => effect.endlessLeagues.includes(source));
+  if (!request.handled && endlessSource && active(request.player)) request.handled = true;
 }
 
 module.exports = function attach(api) {

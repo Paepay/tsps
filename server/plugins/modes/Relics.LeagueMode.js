@@ -33,6 +33,8 @@ module.exports = {
     require("./leaguerelics/Toggles.LeagueRelics")(api);
     require("./leaguerelics/Hotfoot.LeagueRelics")(api);
     require("./leaguerelics/Woodsman.LeagueRelics")(api);
+    // Infernal Gathering before Endless Harvest so burn/smelt/cook claims the doubled yield.
+    require("./leaguerelics/InfernalGathering.LeagueRelics")(api);
     require("./leaguerelics/EndlessHarvest.LeagueRelics")(api);
     require("./leaguerelics/Trickster.LeagueRelics")(api);
     require("./leaguerelics/PowerMiner.LeagueRelics")(api);

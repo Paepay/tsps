@@ -29,6 +29,9 @@ function caster(t, book) {
   const channel = { kind: "test", remoteAddress: "127.0.0.1", isOpen: () => true, send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
   const p = new Player(new PlayerSession(channel));
   p.setIndex(next++); p.setUsername("apecast" + p.getIndex()); p.setRegistered(true); p.setAttribute("bot-skip-persistence", true);
+  // Ape Atoll is in Kandarin: a Level-Up character without it is teleported home by the area barrier.
+  p.setAttribute("level-up:regions", ["misthalin", "kandarin"]);
+  p.setAttribute("level-up:claimed-region-milestones", [1]);
   p.setLocation(new core.Location(3200, 3200, 0)); p.needsPlacement = false;
   const conn = new ClientConnection(channel); conn.player = p;
   t.after(() => { PM.emitPlayerLogout({ player: p, username: p.getUsername() }); core.TaskManager.cancelTasks(p); core.TaskManager.cancelTasks(p.getIndex()); p.setRegistered(false); });
@@ -47,12 +50,12 @@ async function click(f, widgetId) {
 
 const ARCEUUS_APE_ATOLL = (218 << 16) | 170;
 
-test("the Arceuus Ape Atoll Teleport casts from the Arceuus book: the dungeon, and its runes", async (t) => {
+test("the Arceuus Ape Atoll Teleport casts from the Arceuus book: the southern cave, and its runes", async (t) => {
   assert.equal(core.CacheDefinitions.getSpellName(ARCEUUS_APE_ATOLL, -1), "Ape Atoll Teleport", "the shared name");
   const f = caster(t, core.MagicSpellbook.ARCEUUS);
   for (const [id, n] of [[566, 2], [565, 2], [563, 2]]) f.p.getInventory().add(new core.Item(id, n), false);
   await click(f, ARCEUUS_APE_ATOLL);
-  assert.deepEqual([f.p.getLocation().getX(), f.p.getLocation().getY()], [2770, 9100]);
+  assert.deepEqual([f.p.getLocation().getX(), f.p.getLocation().getY()], [2769, 2703]);
   assert.equal(f.p.getInventory().getAmount(566), 0, "the soul runes went");
 });
 
@@ -60,6 +63,7 @@ test("the standard Ape Atoll Teleport still casts from the standard book", async
   const f = caster(t, core.MagicSpellbook.NORMAL);
   for (const [id, n] of [[563, 2], [555, 2], [554, 2], [1963, 1]]) f.p.getInventory().add(new core.Item(id, n), false);
   await click(f, core.CacheDefinitions.getSpellByName("Ape Atoll Teleport").widgetId);
-  assert.notDeepEqual([f.p.getLocation().getX(), f.p.getLocation().getY()], [3200, 3200]);
+  assert.deepEqual([f.p.getLocation().getX(), f.p.getLocation().getY()], [2798, 2799],
+    "the safe upstairs section of the Temple of Marimbo, not the wall below it");
   assert.equal(f.p.getInventory().getAmount(1963), 0, "the banana went");
 });

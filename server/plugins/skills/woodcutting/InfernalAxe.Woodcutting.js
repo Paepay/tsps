@@ -2,16 +2,20 @@
  * Infernal axe (OSRS Wiki): a 1/3 chance that each log is burnt as it is cut, giving half the
  * Firemaking experience for that log and using one of 5,000 charges. Woodcutting experience is
  * unaffected. An axe with no charges turns into its uncharged form, which cuts like a dragon axe.
- * Axes with no charge data yet are treated as fully charged.
+ * Axes with no charge data yet are treated as fully charged. Toggle (14 October 2026) turns the
+ * burn effect off; ornamented copies keep Toggle under Options.
  * Live (rsprox captures 1637, 3996): a burnt log still gets "You get some logs." (sent by the
  * woodcutting loop), with the smokepuff graphic at height 150 and the fire sound; "Check" says
  * "Infernal axe: 69.2% remaining." as a game message.
  */
+const InfernalToolEffect = require("../InfernalToolEffect");
+
 const BURN_CHANCE = 3;
 const MAX_CHARGES = 5000;
 const CHARGES_META_KEY = "infernal-axe";
 const BURN_GRAPHIC = 86; // smokepuff
 const BURN_GRAPHIC_HEIGHT = 150;
+const ITEM_NAMES = Object.freeze(["Infernal axe", "Infernal axe (or)", "Infernal axe (uncharged)"]);
 
 let api = null;
 let core = null;
@@ -45,6 +49,7 @@ function useCharge(player, item) {
 
 /** Returns true when the log was burnt instead of going to the inventory. */
 function tryBurnLog(player, axeId, logId) {
+  if (!InfernalToolEffect.enabled(player, "axe")) return false;
   if (!unchargedByCharged.has(axeId) || Math.floor(Math.random() * BURN_CHANCE) !== 0) {
     return false;
   }
@@ -80,8 +85,7 @@ function attach(pluginApi) {
     [ids.INFERNAL_AXE_OR_, ids.INFERNAL_AXE_UNCHARGED__2],
     [ids.INFERNAL_AXE_OR__3, ids.INFERNAL_AXE_UNCHARGED__4],
   ]);
-  api.onItemAction("Infernal axe", { Check: check });
-  api.onItemAction("Infernal axe (or)", { Check: check });
+  InfernalToolEffect.attach(api, "axe", ITEM_NAMES, check);
 }
 
 module.exports = { attach, tryBurnLog };

@@ -111,6 +111,8 @@ const PICKAXES = [
   { id: ItemIds.CRYSTAL_PICKAXE_INACTIVE_, key: "crystal", requiredLevel: 71, rank: 61, requiredAgility: 50, attemptIntervalTicks: 3, fastRollChance: 1 / 6, animation: new Animation(8347) },
   // The league's Echo pickaxe (Wiki): a crystal pickaxe with no requirement that always rolls every 2 ticks; `rank` places it above the crystal one.
   { id: ItemIds.ECHO_PICKAXE, key: "crystal", requiredLevel: 1, rank: 72, attemptIntervalTicks: 2, animation: new Animation(8347) },
+  // Trailblazer Reloaded's Infernal Gathering pickaxe (custom item): same pace as the Echo pickaxe.
+  { id: ItemIds.TRAILBLAZER_PICKAXE, key: "crystal", requiredLevel: 1, rank: 72, attemptIntervalTicks: 2, animation: new Animation(8347) },
 ];
 
 /** Best first: by the level they need, a `rank` standing in for a tool whose requirement understates it. */

@@ -40,6 +40,9 @@ function actor(t, name) {
   p.setUsername(name + p.getIndex());
   p.setRegistered(true);
   p.setAttribute("bot-skip-persistence", true);
+  // The Warrior's Guild is in Asgarnia: unlock it so the Level-Up area barrier lets the actor in.
+  p.setAttribute("level-up:regions", ["misthalin", "asgarnia"]);
+  p.setAttribute("level-up:claimed-region-milestones", [1]);
   p.needsPlacement = false;
   const messages = [];
   t.mock.method(p.getPacketSender(), "sendMessage", (message) => { messages.push(message); return p.getPacketSender(); });

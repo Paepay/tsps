@@ -247,9 +247,13 @@ test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher
   choose("Standard");
   choose("Varrock Teleport");
   assert.deepEqual(at(teleports.at(-1)), [3213, 3424, 0]);
+  click("Globetrotter pendant", "Nexus", who.relic);
+  choose("Arceuus");
+  choose("Ape Atoll Teleport");
+  assert.deepEqual(at(teleports.at(-1)), [2769, 2703, 0], "the Arceuus spell's southern cave, not the dungeon");
   click("Globetrotter pendant", "Jewellery", who.relic);
   choose("Castle Wars");
-  assert.equal(teleports.length, 2, "a jewellery box destination");
+  assert.equal(teleports.length, 3, "a jewellery box destination");
 
   // Level 25 Wilderness: the pendant's limit is 20.
   let limit = null;
@@ -258,7 +262,7 @@ test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher
   choose("Standard");
   choose("Lumbridge Teleport");
   assert.equal(limit, 20);
-  assert.equal(teleports.length, 2, "refused from level 25");
+  assert.equal(teleports.length, 3, "refused from level 25");
   click("Globetrotter pendant", "Jewellery", who.relic);
   choose("Edgeville");
   assert.equal(limit, 30, "a glory destination teleports from level 30");
@@ -359,6 +363,56 @@ test("Banker's Note (both leagues): an item used on it is noted or unnoted; Acti
     assert.equal(use.handled, false, player.getUsername());
     assert.equal(player.getInventory().getAmount(I.LOGS), 1);
   }
+});
+
+test("Banker's Note remembers every item used on it, each in the direction it was used", () => {
+  const relic = character("noteall", "league", BANKERS_NOTE_TR, 4);
+  const inventory = relic.getInventory();
+  const notedLogs = core.ItemDefinition.forId(I.LOGS).getNoteId();
+  const notedDagger = core.ItemDefinition.forId(I.BRONZE_DAGGER).getNoteId();
+  inventory.add(new Item(I.BANKERS_NOTE, 1), false);
+  inventory.add(new Item(I.LOGS, 2), false);
+  inventory.add(new Item(notedDagger, 3), false);
+  const note = inventory.getItems().find((item) => item?.getId() === I.BANKERS_NOTE);
+  const useOn = (itemId) => {
+    const item = inventory.getItems().find((entry) => entry?.getId() === itemId);
+    hooks.onItemOnItem({ player: relic, usedItem: item, usedWithItem: note, handled: false });
+  };
+
+  useOn(I.LOGS);
+  inventory.add(new Item(I.LOGS, 2), false);
+  useOn(notedDagger);
+  inventory.add(new Item(notedDagger, 2), false);
+  assert.equal(inventory.getAmount(notedLogs), 2, "the logs were noted");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 3, "the noted daggers were unnoted");
+  assert.deepEqual(relic.getAttribute("league:bankers-note").items,
+    { [I.LOGS]: "note", [I.BRONZE_DAGGER]: "unnote" }, "both items keep their own direction");
+
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 0, "Activate notes the logs it remembered");
+  assert.equal(inventory.getAmount(notedLogs), 4);
+  assert.equal(inventory.getAmount(notedDagger), 0, "and unnotes the daggers it remembered");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 5);
+  assert.ok(relic.messages.includes("You note 2 x Logs."), relic.messages.join(" | "));
+  assert.ok(relic.messages.includes("You unnote 2 x Bronze dagger."), relic.messages.join(" | "));
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(notedDagger), 5, "Toggle makes every remembered item note");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 0);
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 4, "and back makes every remembered item unnote");
+  assert.equal(inventory.getAmount(notedLogs), 0);
+});
+
+test("Banker's Note treats item 0 (Dwarf remains) as a remembered item, not as none", () => {
+  const relic = character("notezero", "league", BANKERS_NOTE_TR, 4);
+  relic.getInventory().add(new Item(I.BANKERS_NOTE, 1), false);
+  relic.setAttribute("league:bankers-note", { itemId: I.DWARF_REMAINS, mode: "note" });
+  click("Banker's note", "Activate", relic);
+  assert.notEqual(relic.messages.at(-1), "Use an item on the banker's note first.");
 });
 
 test("Clue Compass: STASH units and Falo, the last-read clue's step; it is the item Falo asks for", () => {

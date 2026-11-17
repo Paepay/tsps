@@ -180,6 +180,8 @@ function rollInterval(tool) {
 const HARPOONS = Object.freeze([
   // The league's Echo harpoon (Wiki): a crystal harpoon with no requirement and no charges.
   { ids: [ItemIds.ECHO_HARPOON], level: 1, bonus: 135 },
+  // Trailblazer Reloaded's Infernal Gathering harpoon (custom item): same crystal-tier bonus.
+  { ids: [ItemIds.TRAILBLAZER_HARPOON], level: 1, bonus: 135 },
   // Charged crystal harpoons consume one charge per fish (./fishing/CrystalHarpoon.Fishing.js).
   { ids: [ItemIds.CRYSTAL_HARPOON, ItemIds.CRYSTAL_HARPOON_3], level: 71, agility: 50, bonus: 135, crystal: true },
   // Charged infernal harpoons can cook what they catch (./fishing/InfernalHarpoon.Fishing.js).
@@ -694,6 +696,14 @@ function hasToolRequirements(player, tool) {
 
   const variant = findTool(player, tool);
   if (!variant) {
+    // Carrying a harpoon whose own level is too high (an Infernal at 74 Fishing) is not "no tool".
+    const heldTooHigh = tool.variants.find((candidate) =>
+      candidate.level > level && (candidate.ids.length === 0 || candidate.ids.some((id) =>
+        player.getInventory().contains(id) || player.getEquipment?.()?.contains(id))));
+    if (heldTooHigh) {
+      player.sendMessage(`You need a Fishing level of at least ${heldTooHigh.level} to use that harpoon.`);
+      return null;
+    }
     if (tool.noToolStatement) statement(player, tool.noToolStatement);
     else player.sendMessage(tool.noToolMessage ?? "You don't have the right tool to fish there.");
     return null;
@@ -830,7 +840,9 @@ function landExtra(player, variant, fish, amount, flaked) {
   const source = RadasBlessing.rollExtraFish(player, flaked ? SpiritFlakes.EXTRA_FISH_CHANCE : 0);
   if (!source || (source === "blessing" && fish.junk)) return;
   const message = source === "blessing" ? RadasBlessing.EXTRA_FISH_MESSAGE : null;
-  if (variant.infernal && InfernalHarpoon.tryCookFish(player, fish.id)) {
+  // Wiki: big trophy fish are never incinerated; a cooked extra still gets its blessing line.
+  const cooked = variant.infernal && !fish.chance && InfernalHarpoon.tryCookFish(player, fish.id);
+  if (cooked) {
     if (message) spam(player, message);
     return;
   }
@@ -849,13 +861,16 @@ function landCatch(player, tool, variant, caught, spotId = null) {
     if (!hasRoom(player, fish)) break;
     const amount = fish.amount(player);
     landed.push({ fish, kind, amount, flaked: tool !== TOOLS.PARK_NET && SpiritFlakes.consumeFlake(player) });
-    if (!variant.infernal || !InfernalHarpoon.tryCookFish(player, fish.id)) {
+    // Wiki (Mod Ash): big trophy fish are never incinerated. A cooked catch still gets the catch
+    // line (as an infernal axe's burnt log still says "You get some logs.").
+    const cooked = variant.infernal && !fish.chance && InfernalHarpoon.tryCookFish(player, fish.id);
+    if (!cooked) {
       giveCatch(player, fish.id, amount, fish.experience * xpMultiplier);
-      spam(player, fish.message(amount));
       // Junk (a casket, an old boot) is no fish, so it is its own event: "fishing:junk"
       // { player, itemId, amount }, for a league's "Obtain a Casket from Fishing" or an old boot.
       if (fish.junk) pluginApi.emitCustomEvent("fishing:junk", { player, itemId: fish.id, amount });
     }
+    spam(player, fish.message(amount));
     if (variant.crystal) {
       CrystalHarpoon.tryUseCharge(player);
     }
