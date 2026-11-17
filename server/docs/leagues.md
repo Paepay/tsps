@@ -112,7 +112,7 @@ An account can own several characters ([character slots](../../docs/character-sl
 | `league:statistics` | `{ player } -> { counters }` (the summary's rows by name) | LeagueMode (Statistics) |
 | `league:joined` | `{ player, league }` the first time a character joins its league | LeagueMode (Tutorial) listens |
 | `league:area-unlocked` | `{ player, league, area, slot }` when an area is unlocked | Area unlocks (#1352) emits; Tutorial listens |
-| `league:tutorial-stage` | `{ player } -> { stage }` (league_tutorial_completed while a tutorial runs) | LeagueMode (Tutorial) |
+| `league:tutorial-stage` | `{ player } -> { stage }` (league_tutorial_completed; the tutorial is removed and this always answers the league's finished value) | LeagueMode (Tutorial) |
 | `screen-highlight:show` / `:close` / `:finished` | a walkthrough in an interface (see Tutorial) | ScreenHighlight |
 | `interface:opened` | `{ player, groupId, targetUid, type }` whenever a group is mounted (core, PacketSender) | Tutorial listens |
 | `welcome-screen:shown` | `{ player }` when the welcome screen is up | Tutorial, Welcome listen |
@@ -380,68 +380,15 @@ want of a source: echo bosses killed (none here), coins gained and lost, clues c
 completion event), special attacks used (the special flag is cleared before the hit resolves) and
 the highest value item worn.
 
-## Tutorial
+## Tutorial (removed)
 
-`league/Tutorial.LeagueMode.js`, data `league-tutorial.json` (generated from the two recorded runs
-on new characters: osrs-captures 227/00196 Raging Echoes and 237/01098 Demonic Pacts). A new
-league character starts at `league_tutorial_completed` 0; the client draws every page (title,
-body, buttons, picture) from the league struct's param 1033 tutorial struct, with enums keyed by
-that varbit, so the server only moves the varbit and opens the screens. A character that joined
-before the tutorial existed has no stage and counts as finished: the login sends the league's
-finished value, 12 (every Raging Echoes capture's login) or Leagues VI's 14 (243 logins sent it).
-
-- **Screens, as captured before every page:** `league_tutorial` (653) in the toplevel's
-  `overlay_atmosphere` (161:1) with its click blocker 653:1 shown, `mesoverlay` (263) in
-  `chatbox:crmclose` (162:565 in this cache), script 1974 with an empty line, script 2524 (-1, -1)
-  and `league_tutorial_main` (677) as the main modal, closed and reopened at each stage so the
-  client draws the new page. `orbs_disabled` (4084) and `chatoverlay_allowmesoverlap` (10690) are 1
-  while it runs. It opens once the welcome screen's Play is clicked, or the new character's design
-  closes. Not sent, though captured: `minimap_toggle` (no such packet here), `side_journal_tab` = 1
-  with the quest list mounted on Get Started (this client mounts journal tabs on their click).
-  As captured, a login while it runs leaves the orbs (160) closed, and the end opens them again
-  (`settings:restore-data-orbs`, which keeps them closed for a player who hid them).
-- **Stages** (Raging Echoes; Demonic Pacts adds 11-13 and finishes at 14): 0 the welcome page, Get
-  Started (677:9) sets `league_3_has_seen_cutscene` and jumps to 3; 3 flashes the journal stone
-  (`flashside` 3, OP1 armed on stone2 of every gameframe layout: 161:61, 164:54, 548:66) until it is
-  clicked; 4 flashes the journal's Leagues tab (script 3162 on 629:42) until the side panel (656)
-  mounts, which awards "Open the Leagues Menu" (`open-the-leagues-menu`; a mount at stage 3 counts
-  for both steps); 5 / 7 / 9 pulse the Tasks / Areas /
-  Relics buttons (script 3185 on 656:35 / 39 / 43, 3186 stops it) and, when the section's screen
-  opens, run its walkthrough (6 / 8 / 10); Raging Echoes then waits for an area unlock
-  (`league:area-unlocked`) and every league for a relic pick (`league:relic-unlocked`); 11 (13 for
-  Demonic Pacts) is Finishing Up, whose End Tutorial (677:8) awards "Complete the Leagues
-  Tutorial" (`complete-the-leagues-tutorial`), restores the orbs and closes the screens. Both tasks
-  go through the task catalog's `league:complete-task` (its points, list bit and message); with no
-  catalog on the server they pay 10 points each through `league:award-task`. Exit
-  Leagues (677:8 on the first page) logs the character out (ours: never pressed in a recording).
-- **Other plugins' screens:** the task list (657) and the area map (512) belong to their own
-  plugins. The tutorial never handles their buttons; it watches for their screen to open through
-  the core's `interface:opened` (reacting once the opening plugin has finished, a microtask
-  later), and a section whose screen has not opened two ticks after its button was clicked is
-  skipped (on a server without the
-  tasks and areas plugins, 5 goes to 7 and 7 to 9). Demonic Pacts' pacts section (stage 11, the
-  tree 647) runs no walkthrough: its middle step waits for a pact point to be spent in an interface
-  this server does not have, so its button goes straight to 13.
-- **Always finishable:** besides the skip, a relic picked or an area unlocked before its page counts
-  when that page's walkthrough ends (the relics' `league:relic-unlocked` state, the area selection
-  varbit 10663); the page or a section's screen closed half way (Escape, walking away) brings the
-  page back a tick later unless another screen replaced it, and the walkthrough starts again when
-  the screen is reopened (a walkthrough already seen this session is not shown twice); a relog
-  resumes at the page of a walkthrough stage.
-- **Walkthroughs** (`plugins/interface/ScreenHighlight.plugin.js`, usable by any content): the
-  cache's `screenhighlight` (664) in the screen's `tutorial_highlight` layer (657:14, 512:13,
-  655:13) with OP1 on Continue (664:31) and Previous (664:32) slot 9, script 3408, the varbits
-  `hnt_selected_hint` / `hnt_hint_step` / `hnt_hint_max_step`, and per step a box (3409) or a
-  framed component (2463) and its text (3413 or 2465), with the arguments, texts and colour (the
-  league struct's param 1027) each recording shows. The pause button live also arms (664:9) is not:
-  its resume packet reaches this server as a dialogue continue. On this web client the first click
-  after a step redraws can go to the component that was under the pointer before; a second click
-  (or any mouse move first) reaches Continue.
-- **Per league:** Raging Echoes and Demonic Pacts are as recorded. Trailblazer Reloaded and
-  Trailblazer use Leagues V's tutorial struct (747), whose text this cache writes for Leagues V, so
-  they get copies of its title and body enums with their own name through the content payload, and
-  Raging Echoes' walkthroughs with their name. Twisted's struct has no tutorial and Shattered Relics'
-  is a different flow (its class choice), so neither starts one.
+The league tutorial was removed: it was bugged, its click-blocker overlay (653) and screen
+walkthroughs (664) stranded players. `league/Tutorial.LeagueMode.js` now only skips it. The login
+sends `league_tutorial_completed` (10037) as the league's finished value -- 12, or Leagues VI's 14
+(Demonic Pacts) -- and a character saved part way through is finished on its next login. No
+tutorial screen or walkthrough is ever opened, and the two tasks it used to award (Open the Leagues
+Menu, Complete the Leagues Tutorial) are no longer paid by it. The Level-Up world has no league
+profile, so it never ran the tutorial in the first place.
 
 ## Welcome screen
 
@@ -1670,8 +1617,8 @@ and `league:pact-effect` { player, effect } (an effect varbit's gameval name -> 
   catalog's `pactTask`, 79) adds a point on `league:task-completed`, after the task's own line: the
   earned varp, then "Congratulations, you've earned a Demonic Pact! You now have N Demonic Pacts to
   spend." in 229628 ("1 Demonic Pact" for the first point earned, as 237/01098 shows; plural
-  otherwise, even at 1). The tutorial's two points are two of these tasks, Open the Leagues Menu and
-  Complete the Leagues Tutorial, as recorded. A reset task (data `resetTasks`) adds a reset after
+  otherwise, even at 1). The two tutorial tasks, Open the Leagues Menu and Complete the Leagues Tutorial, are no longer
+  awarded: the tutorial that paid them was removed. A reset task (data `resetTasks`) adds a reset after
   its point: `talent_resets_available`, then "Congratulations, you've earned a Full Pact reset! You
   now have N Full Pact resets" (237/01158, Defeat 3 unique Echo Bosses). The Hueycoatl's first kill
   is one since 23 April 2026 (Wiki; it also sets `talent_huey_pact_reset`), and three come from
@@ -1839,8 +1786,8 @@ Ours (neither a capture nor the Wiki):
 `AreaUnlocks.LeagueMode.js` (units in `leagueareas/`), data `plugins/modes/data/league-areas.json`.
 A Trailblazer Reloaded character starts in Misthalin and Karamja (the Wiki's start; live unlocks
 Karamja free during its tutorial, which this server has none of for that league). A Raging Echoes
-character starts in Misthalin alone and picks Karamja free during the league tutorial, whose areas
-page waits for it (`firstPick` at 0 tasks; Wiki Raging_Echoes_League/Areas, recording 227/00196).
+character starts in Misthalin alone and picks Karamja free in the area map (the tutorial that made
+that pick was removed; `firstPick` at 0 tasks; Wiki Raging_Echoes_League/Areas).
 Each then picks up to three more areas as its
 completed tasks reach the league's thresholds: Trailblazer Reloaded 60, 140 and 300 tasks from
 Asgarnia, the Fremennik Province, Kandarin, the Kharidian Desert, Morytania, Tirannwn, the
@@ -1991,8 +1938,8 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
   (no seasonal `league:type`). A square no area names (an instance such as Cerberus' lair)
   does not count. Krystilia's tasks count only Wilderness spawns. A task with no placed monster is left to
   the master (ours).
-- **The tutorial's first unlock** is the Tutorial's areas section (above: Raging Echoes waits on
-  stage 8 for the pick, `areasNeedUnlock`).
+- **The first unlock** is a free pick in the area map, which the removed tutorial used to make
+  (above: Raging Echoes offers it at 0 tasks, `areasNeedUnlock`).
 - **Not covered**: the world map's greying of locked areas, which the client draws itself (the
   recorded world map opens with no league packet, 227/00070 tick 258). Transports that ask
   `TeleportHandler.checkReqs` or `destinationAllowed` on their landing (the ferries, charter ships,
@@ -2443,7 +2390,8 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   sourced bounds (open towns, regions), open groups ("any Dragon weapon"), transport without an
   arrival signal, the minigame steps and interactions whose plugins emit no event (a dialogue's
   trade or service, a quest-only step, house building), and names the cache gives several things
-  (every Chompy bird hat rank's); the Leagues tutorial's tasks are completed by the tutorial itself.
+  (every Chompy bird hat rank's); the Leagues tutorial's tasks went with the tutorial, which was
+  removed.
   A chest with no handler stays unmapped: the Grubby Chests (a loc the cache gives no Open), the
   Zombie Pirate Lockers (the plugin drops loot with no menu-option event), the Ornate Lockbox (a
   "Take", no lockbox handler), the Varlamore Moon Chest and its "moon key" chest (no content); so do
@@ -2495,8 +2443,8 @@ the Wiki names no such shop.
 When Tutorial Island is enabled on the same world, league character profiles use the league's
 onboarding only. The profile is selected before login hooks run; Tutorial Island neither starts
 nor resumes on that profile, including old saves with island progress. Main characters still
-use Tutorial Island normally. This keeps the quest journal mounted for the league tutorial's
-Open the Leagues Menu step, including after the welcome screen rebuilds the gameframe.
+use Tutorial Island normally. This keeps the quest journal mounted for the Leagues tab,
+including after the welcome screen rebuilds the gameframe.
 
 The separate Leagues VI Yama's Lair plays **Sign Here** (Wiki
 [Yama's Lair](https://oldschool.runescape.wiki/w/Yama%27s_Lair), cache song 280).
