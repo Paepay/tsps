@@ -10,6 +10,8 @@ const Common = require("./Common.LeagueRelics");
 
 const RECALL_ATTRIBUTE = "league:last-recall";
 const READY_AT_ATTRIBUTE = "league:crystal-of-memories-ready-at";
+/** Save-memory's switch: false stops new teleports being remembered (issue #17). */
+const SAVE_ATTRIBUTE = "league:crystal-of-memories-save";
 const FROM_TIER = 3;
 
 let effect;
@@ -56,6 +58,21 @@ function holds(player) {
   return retrieval.items.some((entry) => entry && held(entry.itemId, entry.amount));
 }
 
+/**
+ * Whether the crystal is actually on the character (carried or worn). A banked crystal does not
+ * remember teleports: issue #17 was that it did.
+ */
+function carried(player) {
+  const id = itemId();
+  return Number.isInteger(id)
+    && (player.getInventory().contains(id) || player.getEquipment().contains(id));
+}
+
+/** Save-memory's switch; absent means on, so existing characters keep saving. */
+function saving(player) {
+  return player.getAttribute(SAVE_ATTRIBUTE) !== false;
+}
+
 function grantCrystal(player) {
   if (!unlocked(player) || holds(player)) return false;
   const id = itemId();
@@ -74,7 +91,8 @@ function grantCrystal(player) {
 }
 
 function rememberTeleport({ player, from, fromInstance }) {
-  if (!unlocked(player) || fromInstance || !from || (effect.noRecall ?? []).some((box) => inBox(from, box))) return;
+  if (!unlocked(player) || !saving(player) || !carried(player) || fromInstance || !from
+      || (effect.noRecall ?? []).some((box) => inBox(from, box))) return;
   player.setAttribute(RECALL_ATTRIBUTE, { x: from.getX(), y: from.getY(), z: from.getZ() });
 }
 
@@ -128,12 +146,16 @@ function teleportBack(event) {
 function checkMemory(event) {
   if (!unlocked(event.player)) return false;
   event.player.sendMessage(recalled(event.player) ? Common.message("crystalMemory") : Common.message("recallNothing"));
+  if (!saving(event.player)) event.player.sendMessage(Common.message("crystalPaused"));
   return true;
 }
 
+/** Save-memory pauses or resumes remembering new teleports (issue #17). */
 function saveMemory(event) {
   if (!unlocked(event.player)) return false;
-  event.player.sendMessage(Common.message("crystalAutomatic"));
+  const on = !saving(event.player);
+  event.player.setAttribute(SAVE_ATTRIBUTE, on);
+  event.player.sendMessage(Common.message(on ? "crystalSaveOn" : "crystalSaveOff"));
   return true;
 }
 
@@ -151,6 +173,7 @@ module.exports = function attach(api) {
   effect = Common.data.effects.crystalOfMemories;
   api.persistAttribute(RECALL_ATTRIBUTE, null);
   api.persistAttribute(READY_AT_ATTRIBUTE, 0);
+  api.persistAttribute(SAVE_ATTRIBUTE, true);
   api.onCustomEvent("teleport:landed", rememberTeleport);
   api.onCustomEvent("league:relic-unlocked", onRelicUnlocked);
   api.onPlayerLogin(onLogin);
@@ -164,8 +187,11 @@ module.exports = function attach(api) {
 module.exports.unlocked = unlocked;
 module.exports.grantCrystal = grantCrystal;
 module.exports.holds = holds;
+module.exports.carried = carried;
+module.exports.saving = saving;
 module.exports.cooldownMinutes = cooldownMinutes;
 module.exports.cooldownRemainingMs = cooldownRemainingMs;
 module.exports.RECALL_ATTRIBUTE = RECALL_ATTRIBUTE;
 module.exports.READY_AT_ATTRIBUTE = READY_AT_ATTRIBUTE;
+module.exports.SAVE_ATTRIBUTE = SAVE_ATTRIBUTE;
 module.exports.FROM_TIER = FROM_TIER;

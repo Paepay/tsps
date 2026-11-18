@@ -474,7 +474,11 @@ test("Crystal of memories (Trailblazer Reloaded tier 3 passive): granted on logi
     assert.equal(went.length, 1, "cooldown blocks a second Teleport-back");
     assert.match(who.relic.messages.at(-1), /seconds/);
     click("Crystal of Echoes", "Save-memory", who.relic);
-    assert.match(who.relic.messages.at(-1), /on its own/);
+    assert.match(who.relic.messages.at(-1), /will no longer remember/);
+    click("Crystal of Echoes", "Check-memories", who.relic);
+    assert.match(who.relic.messages.at(-1), /Saving is paused/);
+    click("Crystal of Echoes", "Save-memory", who.relic);
+    assert.match(who.relic.messages.at(-1), /will now remember/);
     who.relic.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
     who.relic.getInventory().delete(I.CRYSTAL_OF_ECHOES, 1);
     assert.ok(Collect.owed(who.relic, 4).includes(I.CRYSTAL_OF_ECHOES), "Collect-items reclaims the tier 3 passive crystal");
@@ -487,6 +491,48 @@ test("Crystal of memories (Trailblazer Reloaded tier 3 passive): granted on logi
     click("Crystal of Echoes", "Teleport-back", player);
     assert.equal(player.messages.length, before, `${player.getUsername()}'s crystal does nothing`);
   }
+});
+
+test("Crystal of memories saves only while it is carried and Save-memory is on (issue #17)", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = cases({ 0: 1, 1: 1, 2: 1 }, 4).relic;
+  const land = (x, y) => {
+    for (const handler of custom["teleport:landed"] ?? []) {
+      handler({ player, from: new Location(x, y, 0), fromInstance: false });
+    }
+  };
+  const saved = () => player.getAttribute(Crystal.RECALL_ATTRIBUTE);
+
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  player.getInventory().delete(I.CRYSTAL_OF_ECHOES, 1);
+  assert.equal(Crystal.carried(player), false);
+  land(3200, 3200);
+  assert.equal(saved(), null, "a crystal left behind does not remember the teleport");
+
+  player.getBank(0).add(new Item(I.CRYSTAL_OF_ECHOES, 1), false);
+  land(3201, 3201);
+  assert.equal(saved(), null, "a banked crystal does not remember either");
+  player.getBank(0).delete(I.CRYSTAL_OF_ECHOES, 1);
+
+  player.getInventory().add(new Item(I.CRYSTAL_OF_ECHOES, 1), true);
+  land(3202, 3202);
+  assert.deepEqual(saved(), { x: 3202, y: 3202, z: 0 }, "carried: it remembers");
+
+  click("Crystal of Echoes", "Save-memory", player);
+  assert.equal(Crystal.saving(player), false);
+  assert.match(player.messages.at(-1), /will no longer remember/);
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  land(3203, 3203);
+  assert.equal(saved(), null, "paused: a new teleport is not remembered");
+  click("Crystal of Echoes", "Check-memories", player);
+  assert.match(player.messages.at(-1), /Saving is paused/);
+
+  click("Crystal of Echoes", "Save-memory", player);
+  assert.equal(Crystal.saving(player), true);
+  assert.match(player.messages.at(-1), /will now remember/);
+  land(3204, 3204);
+  assert.deepEqual(saved(), { x: 3204, y: 3204, z: 0 }, "resumed: it remembers again");
+  assert.equal(Crystal.SAVE_ATTRIBUTE, "league:crystal-of-memories-save");
 });
 
 test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memories passive", () => {

@@ -686,7 +686,8 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(levelUpWealth.enabled, false, "Level-Up vetoes wealth transfer on the live world");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10031 && value === 1), "league account varbit");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10032 && value === 4), "league style varbit");
-  assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037), "completed tutorial varbit");
+  assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037 && value === 14),
+    "completed tutorial varbit: script 2449's finished value, so the area screen does not warn (issue #23)");
   assert.ok(fake.packets.configs.some(({ id, value }) => id === 3717 && (value & (1 << 30)) !== 0), "league world map flag");
   assert.ok(fake.packets.configs.some(({ id, value }) => id === 4920 && (value & (1 << 1)) !== 0), "the client's cached league feature flag");
 

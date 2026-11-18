@@ -569,6 +569,30 @@ test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and T
   }
 });
 
+test("Infernal Gathering needs real room for smelted bars and cooked fish: the bank counts only with Endless Harvest (issue #18)", () => {
+  const room = (player, itemId, skill) => emit("storage:room", { player, itemId, skill, room: false }).room;
+  const fill = (player) => {
+    while (player.getInventory().getFreeSlots() > 0) player.getInventory().adds(I.LOGS, 1);
+    assert.equal(player.getInventory().isFull(), true);
+  };
+
+  const noEndless = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_PICKAXE").relic;
+  noEndless.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  noEndless.getInventory().adds(I.TRAILBLAZER_AXE, 1);
+  fill(noEndless);
+  assert.equal(room(noEndless, I.IRON_ORE, Skill.MINING), false,
+    "a bank slot is not room for a smelted bar without Endless Harvest");
+  assert.equal(room(noEndless, I.RAW_SHRIMPS, Skill.FISHING), false,
+    "nor is it room for a cooked fish");
+  assert.equal(room(noEndless, I.LOGS, Skill.WOODCUTTING), true, "a burnt log needs no room");
+
+  const endless = cases(ENDLESS_AND_INFERNAL, 4, "TRAILBLAZER_PICKAXE").relic;
+  endless.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  fill(endless);
+  assert.equal(room(endless, I.IRON_ORE, Skill.MINING), true, "Endless Harvest banks the bar");
+  assert.equal(room(endless, I.RAW_SHRIMPS, Skill.FISHING), true, "and the cooked fish");
+});
+
 test("Infernal Gathering: each Trailblazer tool only drives its own skill; equipped harpoon stands in for any spot", () => {
   const axeOnly = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_AXE").relic;
   assert.equal(gather(axeOnly, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 1, "the axe burns logs");

@@ -1,18 +1,20 @@
 /**
  * The league tutorial is removed (it was bugged): a league character skips it. The login sends the
- * league's finished `league_tutorial_completed` (12, or Leagues VI's 14), and a character saved
- * part way through is finished on its next login. Nothing opens the tutorial's screens or
- * walkthroughs any more; the Level-Up world has no league profile and never ran it.
+ * league's finished `league_tutorial_completed` (14 in cache 242, which script 2449 answers for
+ * every league type), and a character saved part way through is finished on its next login.
+ * Nothing opens the tutorial's screens or walkthroughs any more; the Level-Up world has no league
+ * profile and never ran it.
  *
  *   api.emitCustomEvent("league:tutorial-stage", { player })  -> stage (league_tutorial_completed)
  */
 const Common = require("./Common.LeagueMode");
 
 /**
- * Where the tutorial left every character: Raging Echoes' flow (Leagues II, IV and V) ends at 12,
- * Demonic Pacts' (Leagues VI) at 14; any other league falls back to the data's finished value.
+ * Where the tutorial left every character. Cache 242's script 2449 returns 14 for every league
+ * type, and the area screen compares that value (script 3719), so 12 made it warn that the
+ * tutorial was incomplete while teleporting anyway (issue #23).
  */
-const FINISHED = { 2: 12, 4: 12, 5: 12, 6: 14 };
+const FINISHED = { 2: 14, 4: 14, 5: 14, 6: 14 };
 
 /**
  * The persisted stage. No starting value is declared on purpose: a character from before the

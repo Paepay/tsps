@@ -145,9 +145,12 @@ function handleDepositButton(player, button) {
   return false;
 }
 
+/** Cache names for the deposit furniture: boxes in banks and the Shilo gem mine's chest. */
+const DEPOSIT_NAMES = ["bank deposit box", "bank deposit chest"];
+
 function isDepositBooth(event) {
   const name = event.object?.getDefinition?.()?.getName?.();
-  return typeof name === "string" && name.trim().toLowerCase() === "bank deposit box";
+  return typeof name === "string" && DEPOSIT_NAMES.includes(name.trim().toLowerCase());
 }
 
 function promptItemOnBooth(event) {
@@ -178,8 +181,9 @@ module.exports = {
   description: "Opens the bank deposit box from the Deposit option and handles its deposit buttons and items used on it.",
   register(api) {
     pluginApi = api;
-    api.onObjectInteraction("Bank deposit box", { Deposit: openDepositBox });
-    api.onObjectInteraction("Bank Deposit Box", { Deposit: openDepositBox });
+    for (const name of ["Bank deposit box", "Bank Deposit Box", "Bank deposit chest", "Bank Deposit Chest"]) {
+      api.onObjectInteraction(name, { Deposit: openDepositBox });
+    }
     // Quest-owned deposit boxes can open the same native bank-deposit modal
     // after validating their own scene and progression gates.
     api.onCustomEvent("bank:open-deposit-box", openDepositBox);

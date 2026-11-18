@@ -142,6 +142,10 @@ function gather(request) {
 function room(request) {
   if (request.room || !processing(request.player)) return;
   const { player, itemId, skill } = request;
+  // Endless Harvest is the only thing that banks the processed output: without it, a full
+  // inventory has no room for a bar or cooked fish just because the bank has a free slot (#18).
+  const endless = Common.data.effects.endlessHarvest;
+  const bankRoom = endless !== undefined && Common.effectActive(player, endless);
   if (skill === core.Skill.WOODCUTTING && holdsAxe(player)) {
     const fire = { logId: itemId, xp: null };
     api.emitCustomEvent("firemaking:log-xp", fire);
@@ -151,7 +155,8 @@ function room(request) {
   if (skill === core.Skill.MINING && holdsPickaxe(player) && smeltBars.has(itemId)) {
     const bar = { oreId: itemId, outputId: smeltBars.get(itemId), allowSecondary: true, barId: null, xp: null };
     api.emitCustomEvent("smithing:bar-for-ore", bar);
-    if (bar.barId && (Common.bankHasRoom(player, bar.barId) || player.getInventory().getAddableAmount(new core.Item(bar.barId, 1)) > 0)) {
+    if (bar.barId && ((bankRoom && Common.bankHasRoom(player, bar.barId))
+        || player.getInventory().getAddableAmount(new core.Item(bar.barId, 1)) > 0)) {
       request.room = true;
     }
     return;
@@ -159,7 +164,8 @@ function room(request) {
   if (skill === core.Skill.FISHING && holdsHarpoon(player)) {
     const cooked = { rawId: itemId, cookedId: null, xp: null };
     api.emitCustomEvent("cooking:cooked", cooked);
-    if (cooked.cookedId && (Common.bankHasRoom(player, cooked.cookedId) || player.getInventory().getAddableAmount(new core.Item(cooked.cookedId, 1)) > 0)) {
+    if (cooked.cookedId && ((bankRoom && Common.bankHasRoom(player, cooked.cookedId))
+        || player.getInventory().getAddableAmount(new core.Item(cooked.cookedId, 1)) > 0)) {
       request.room = true;
     }
   }

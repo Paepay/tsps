@@ -92,9 +92,11 @@ module.exports = function registerFrozenDoorQuest(api) {
   const count = (player, key) => Math.max(0, Math.trunc(Number(player.getAttribute(key)) || 0));
   const story = (player) => Math.min(STORY_BANKING, count(player, STORY_ATTRIBUTE));
   const desertTreasureDone = (player) => questNamed?.("Desert Treasure I")?.isComplete?.(player) === true;
-  const inProgress = (player) => stageOf(player) >= STAGE_LETTER_READ && stageOf(player) < STAGE_COMPLETE;
   const holdsLetter = (player) => player.getAttribute(LETTER_ATTRIBUTE) === true;
   const unsealedBefore = (player) => player.getAttribute(UNLOCKED_ATTRIBUTE) === true;
+  /** A key piece in the bank counts as held even though the backpack does not contain it. */
+  const banked = (player, itemId) => player.getBanks?.().some((bank) => bank?.contains?.(itemId)) === true;
+  const holdsPiece = (player, god) => player.getInventory().contains(PIECES[god]) || banked(player, PIECES[god]);
   // A player who opened the door before this quest existed has nothing to be told: they finish at Ashuelot.
   const eligibleForMessenger = (player) => stageOf(player) === 0 && desertTreasureDone(player) && !holdsLetter(player) && !unsealedBefore(player);
 
@@ -107,7 +109,7 @@ module.exports = function registerFrozenDoorQuest(api) {
     const held = player.getAttribute(PIECES_ATTRIBUTE);
     const flags = held && typeof held === "object" ? { ...held } : {};
     for (const god of GODS) {
-      if (player.getInventory().contains(PIECES[god]) || stageOf(player) >= STAGE_KEY) flags[god] = true;
+      if (holdsPiece(player, god) || stageOf(player) >= STAGE_KEY) flags[god] = true;
     }
     return flags;
   }
@@ -259,9 +261,16 @@ module.exports = function registerFrozenDoorQuest(api) {
     sendState(player);
   }
 
-  /** Key pieces drop only during the miniquest (Wiki: "only dropped during The Frozen Door miniquest"). */
+  /**
+   * Key pieces drop only until the player has that piece (Wiki: each general drops its own piece
+   * once). A banked piece counts: banking the Bandos piece used to leave it dropping from every
+   * Bandos kill, which is issue #16.
+   */
   function questItem(request) {
-    if (PIECE_IDS.has(request.itemId) && request.player) request.allowed = inProgress(request.player);
+    const { player, itemId } = request;
+    if (!PIECE_IDS.has(itemId) || !player) return;
+    const god = GODS.find((entry) => PIECES[entry] === itemId);
+    request.allowed = stageOf(player) === STAGE_LETTER_READ && !holdsPiece(player, god);
   }
 
   // --- Ashuelot Reis ---------------------------------------------------------------------------------

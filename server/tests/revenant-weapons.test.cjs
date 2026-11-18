@@ -31,8 +31,9 @@ before(async () => {
   require("../plugins/items/ItemDefinitionLoader.plugin").register({ log() {}, onPlayerLogin() {}, registerContentEndpoint() {} });
   Weapons.register({
     core: { ...core, World: { getProcessCycle: () => cycle }, ItemOnGroundManager: { registerLocation: (owner, item) => ground.push({ owner, item }) } },
-    onItemOnItem: (handler) => { hooks.charge = handler; },
+    onItemOnItem: (handler) => { (hooks.itemOnItem ??= []).push(handler); },
     onItemAction: (name, options) => { actions[name] = options; },
+    onNpcDialogueCondition: () => {},
     onCustomEvent: (name, handler) => { hooks[name] = handler; },
     registerRangedAmmoHandler: (handler) => { hooks.ammo = handler; },
     registerRangedCombatModifier: (handler) => { hooks.ranged = handler; },
@@ -85,11 +86,22 @@ function dismantle(kind, p, item) {
   return result;
 }
 
+function itemOnItem(p, usedItem, usedWithItem) {
+  const request = {
+    player: p, usedItem, usedWithItem,
+    usedItemId: usedItem.getId(), usedWithItemId: usedWithItem.getId(),
+    usedItemSlot: -1, usedWithItemSlot: -1, handled: false,
+  };
+  for (const handler of hooks.itemOnItem) {
+    handler(request);
+    if (request.handled) break;
+  }
+  return request;
+}
+
 function charge(p, item) {
   const ether = p.getInventory().getItems().find((held) => held.getId() === I.REVENANT_ETHER);
-  const request = { player: p, usedItem: ether, usedWithItem: item };
-  hooks.charge(request);
-  return request;
+  return itemOnItem(p, ether, item);
 }
 
 const npc = (wild) => ({ isNpc: () => true, getLocation: () => new core.Location(3090, wild ? 3600 : 3490, 0) });
@@ -380,4 +392,126 @@ test("a preset weapon is not dismantled into ether or parts", () => {
     assert.equal(item.getId(), kind.uncharged);
     assert.equal(p.messages.at(-1), "Preset items cannot be used for this.");
   }
+});
+
+// --------------------------------------------------------------- claws of Callisto (issue #21)
+
+function smithing(p, level) {
+  p.getSkillManager().setCurrentLevels(core.Skill.SMITHING, level);
+  p.getSkillManager().setMaxLevel(core.Skill.SMITHING, level);
+}
+
+function carried(p, id) {
+  return p.getInventory().getItems().find((held) => held.getId() === id);
+}
+
+function andros(p, extra = {}) {
+  return { player: p, npcId: 10388, definition: { getName: () => "Andros Mai" }, kind: "message",
+    text: "Andros Mai combines the items and gives you the Ursine chainmace (u).", handled: false, ...extra };
+}
+
+test("the claws on an uncharged Viggora's chainmace make the Ursine chainmace at 85 Smithing", () => {
+  for (const reversed of [false, true]) {
+    const p = player();
+    smithing(p, W.URSINE_SMITHING_LEVEL);
+    p.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE_U_, 1));
+    p.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+    const heldViggora = carried(p, I.VIGGORAS_CHAINMACE_U_);
+    const heldClaws = carried(p, I.CLAWS_OF_CALLISTO);
+    const request = itemOnItem(p, reversed ? heldClaws : heldViggora, reversed ? heldViggora : heldClaws);
+    assert.equal(request.handled, true, "the pair is claimed");
+    assert.equal(heldViggora.getId(), I.URSINE_CHAINMACE_U_, "the chainmace becomes the Ursine chainmace (u)");
+    assert.equal(p.getInventory().getAmount(I.CLAWS_OF_CALLISTO), 0, "the claws are used up");
+    assert.equal(p.getInventory().getAmount(I.URSINE_CHAINMACE_U_), 1);
+    assert.deepEqual(p.messages, []);
+  }
+});
+
+test("below 85 Smithing the claws are not attached and nothing is used up", () => {
+  const p = player();
+  smithing(p, W.URSINE_SMITHING_LEVEL - 1);
+  p.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE_U_, 1));
+  p.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+  itemOnItem(p, carried(p, I.VIGGORAS_CHAINMACE_U_), carried(p, I.CLAWS_OF_CALLISTO));
+  assert.equal(p.getInventory().getAmount(I.VIGGORAS_CHAINMACE_U_), 1);
+  assert.equal(p.getInventory().getAmount(I.CLAWS_OF_CALLISTO), 1);
+  assert.deepEqual(p.messages, [`You need a Smithing level of ${W.URSINE_SMITHING_LEVEL} to do that.`]);
+});
+
+test("a preset part is refused", () => {
+  for (const preset of ["chainmace", "claws"]) {
+    const p = player();
+    smithing(p, 99);
+    const viggora = new core.Item(I.VIGGORAS_CHAINMACE_U_, 1);
+    const claws = new core.Item(I.CLAWS_OF_CALLISTO, 1);
+    (preset === "chainmace" ? viggora : claws).setMetaValue(core.Item.PRESET_META, true);
+    p.getInventory().addItem(viggora);
+    p.getInventory().addItem(claws);
+    itemOnItem(p, carried(p, I.VIGGORAS_CHAINMACE_U_), carried(p, I.CLAWS_OF_CALLISTO));
+    assert.equal(p.getInventory().getAmount(I.VIGGORAS_CHAINMACE_U_), 1, `${preset}: nothing made`);
+    assert.equal(p.getInventory().getAmount(I.CLAWS_OF_CALLISTO), 1, `${preset}: the claws stay`);
+    assert.equal(p.messages.at(-1), "Preset items cannot be used for this.");
+  }
+});
+
+test("Andros Mai's conditions answer the transcript for the pair, the single items and his fee", () => {
+  const p = player();
+  const condition = (text) => W.androsCondition({ player: p, npcId: 10388, definition: { getName: () => "Andros Mai" }, text });
+  assert.equal(condition("If the player has Viggora's chainmace or the Claws of Callisto:"), false);
+  p.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE_U_, 1));
+  assert.equal(condition("If the player has Viggora's chainmace or the Claws of Callisto:"), true);
+  assert.equal(condition("With only Viggora's chainmace in the inventory:"), true);
+  assert.equal(condition("With only the Claws of Callisto in the inventory:"), false);
+  assert.equal(condition("With both in the inventory:"), false);
+  p.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+  assert.equal(condition("With only Viggora's chainmace in the inventory:"), false);
+  assert.equal(condition("With both in the inventory:"), true);
+  assert.equal(condition("If the player does not have enough coins:"), true);
+  assert.equal(condition("If the player has enough coins:"), false);
+  p.getInventory().addItem(new core.Item(I.COINS, W.ANDROS_FEE));
+  assert.equal(condition("If the player does not have enough coins:"), false);
+  assert.equal(condition("If the player has enough coins:"), true);
+  const charged = player();
+  charged.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE, 1));
+  charged.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+  const onCharged = (text) => W.androsCondition({ player: charged, npcId: 10388, definition: { getName: () => "Andros Mai" }, text });
+  assert.equal(onCharged("If the player has Viggora's chainmace or the Claws of Callisto:"), true);
+  assert.equal(onCharged("With both in the inventory:"), false, "only an uncharged chainmace can take the claws");
+  assert.equal(W.androsCondition({ player: p, npcId: 1, definition: { getName: () => "Someone Else" },
+    text: "If the player has enough coins:" }), null, "other NPCs answer nothing");
+});
+
+test("Andros Mai combines the pair for 500,000 coins and shows the Ursine chainmace", () => {
+  const p = player();
+  p.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE_U_, 1));
+  p.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+  p.getInventory().addItem(new core.Item(I.COINS, W.ANDROS_FEE + 250));
+  const message = andros(p);
+  W.androsAction(message);
+  assert.equal(message.handled, true);
+  assert.equal(p.getInventory().getAmount(I.COINS), 250, "the fee is taken");
+  assert.equal(p.getInventory().getAmount(I.CLAWS_OF_CALLISTO), 0);
+  assert.equal(p.getInventory().getAmount(I.URSINE_CHAINMACE_U_), 1);
+  assert.deepEqual(message.box, { items: [I.URSINE_CHAINMACE_U_] });
+});
+
+test("Andros Mai refuses without enough coins, and takes nothing", () => {
+  const p = player();
+  p.getInventory().addItem(new core.Item(I.VIGGORAS_CHAINMACE_U_, 1));
+  p.getInventory().addItem(new core.Item(I.CLAWS_OF_CALLISTO, 1));
+  p.getInventory().addItem(new core.Item(I.COINS, W.ANDROS_FEE - 1));
+  const message = andros(p);
+  W.androsAction(message);
+  assert.equal(message.handled, true);
+  assert.equal(p.getInventory().getAmount(I.COINS), W.ANDROS_FEE - 1);
+  assert.equal(p.getInventory().getAmount(I.VIGGORAS_CHAINMACE_U_), 1);
+  assert.equal(p.getInventory().getAmount(I.CLAWS_OF_CALLISTO), 1);
+  assert.equal(message.box, undefined);
+  assert.match(p.messages.at(-1), /500,000 coins/);
+});
+
+test("Andros Mai leaves a message from another NPC alone", () => {
+  const message = andros(player(), { npcId: 1, definition: { getName: () => "Someone Else" } });
+  W.androsAction(message);
+  assert.equal(message.handled, false);
 });

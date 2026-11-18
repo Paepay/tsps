@@ -157,3 +157,19 @@ test("opened exits are saved and sent again at login", () => {
   assert.equal(varbit(player, "cata_hole_giants_den"), 1);
   assert.equal(varbit(player, "cata_hole1"), 0);
 });
+
+test("Catacombs dust devils keep their target instead of giving up after a few seconds (issue #22)", () => {
+  const flagged = new Set();
+  const npc = (id, x, y) => ({ getId: () => id, getLocation: () => new core.Location(x, y, 0), setFlag: (flag) => flagged.add(flag) });
+  PluginManager.emitCustomEvent("npc:added", { npc: npc(Catacombs._test.DUST_DEVIL, 1700, 10000) });
+  assert.equal(flagged.has("combat:no-retreat"), true, "a dust devil in the Catacombs never retreats");
+  assert.equal(Catacombs._test.KEEP_TARGET, "combat:no-retreat");
+
+  flagged.clear();
+  PluginManager.emitCustomEvent("npc:added", { npc: npc(Catacombs._test.DUST_DEVIL, 3200, 3200) });
+  assert.equal(flagged.size, 0, "the same NPC outside the Catacombs is untouched");
+  PluginManager.emitCustomEvent("npc:added", { npc: npc(1234, 1700, 10000) });
+  assert.equal(flagged.size, 0, "another Catacombs NPC is untouched");
+  assert.equal(Catacombs._test.inCatacombs(new core.Location(1700, 10000, 0)), true);
+  assert.equal(Catacombs._test.inCatacombs(new core.Location(3200, 3200, 0)), false);
+});

@@ -125,7 +125,9 @@ function sendJournalAvailability(player) {
   sender.sendConfig(MAP_FLAGS_VARP, flags.flags | 0);
   sender.sendVarbit(LEAGUE_ACCOUNT_VARBIT, 1);
   sender.sendVarbit(LEAGUE_TYPE_VARBIT, LEAGUE_STYLE_TYPE);
-  sender.sendVarbit(LEAGUE_TUTORIAL_VARBIT, 12);
+  // Cache 242's script 2449 answers 14 for every league type; the area screen's script 3719
+  // compares against it, so 12 made the client warn that the tutorial was incomplete (#23).
+  sender.sendVarbit(LEAGUE_TUTORIAL_VARBIT, 14);
   sender.sendVarbit(RUNEDAY_VARBIT, runeday());
 }
 
