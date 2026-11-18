@@ -1,7 +1,8 @@
 ﻿// Run after `yarn build`: node --test tests/diary-completion-fallback.test.cjs
 // When the AchievementDiaries plugin switch is off, AchievementDiaryCompletion stands in:
 // every task is complete on login, diary queries answer as finished, and reward NPCs stay
-// available with every tier still claimable so no reward item or perk is lost.
+// available with every unique reward item and perk still claimable. The auto-completed tiers
+// do not hand out their antique lamps.
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test } = require("node:test");
@@ -82,7 +83,7 @@ test("with the real diary plugin loaded it only completes tasks on request and n
   assert.ok(player.varbits.length > 0, "the diary tab receives its varbits");
 });
 
-test("with diaries off every task is done on login, rewards stay claimable and all queries answer", () => {
+test("with diaries off every task is done on login, unique rewards stay claimable and all queries answer", () => {
   const runtime = loadPlugin({ diaryPluginLoaded: false });
   const player = createPlayer();
   login(runtime, player);
@@ -122,8 +123,43 @@ test("with diaries off every task is done on login, rewards stay claimable and a
   const unrestricted = { player, unrestricted: false };
   runtime.api.emitCustomEvent("diary:rewards-unrestricted", unrestricted);
   assert.equal(unrestricted.unrestricted, true, "stat-gated reward tiers can still be claimed");
+  assert.equal(unrestricted.includeXpLamps, false, "the automatic completion withholds its XP lamp");
 
   const missing = { player, diary: "ardougne", task: "not-a-task", done: true };
   runtime.api.emitCustomEvent("diary:has-task", missing);
   assert.equal(missing.done, false, "unknown task keys are not answered as done");
+});
+
+test("automatic completion claims the diary item but filters out its lamp", () => {
+  const runtime = loadPlugin({ diaryPluginLoaded: false });
+  const player = createPlayer();
+  login(runtime, player);
+
+  const diary = Data.BY_KEY.get("ardougne");
+  const policy = { player, unrestricted: false, includeXpLamps: true };
+  runtime.api.emitCustomEvent("diary:rewards-unrestricted", policy);
+
+  assert.deepEqual(Rewards.claimItems(diary, "easy", policy), [diary.tiers.easy.rewardItems[0]],
+    "the unique diary item is still claimable");
+  assert.deepEqual(Rewards.claimItems(diary, "easy"), diary.tiers.easy.rewardItems,
+    "an ordinary earned completion still receives the lamp");
+});
+
+test("automatic completion removes the lamp promise from the claim transcript", () => {
+  const karamja = Data.BY_KEY.get("karamja");
+  const earned = Rewards.claimSteps(karamja.tiers.medium.claim, true);
+  assert.ok(earned.some((step) => /lamp/i.test(String(step.npc ?? ""))),
+    "an ordinary earned completion still hears about the lamp");
+
+  const automatic = Rewards.claimSteps(karamja.tiers.medium.claim, false);
+  assert.ok(!automatic.some((step) => /lamp/i.test(String(step.npc ?? step.player ?? ""))),
+    "the automatic completion does not promise a lamp");
+  assert.ok(automatic.some((step) => /Agility Arena\./.test(String(step.npc ?? ""))),
+    "the tier's non-lamp description remains");
+
+  const hard = Rewards.claimSteps(karamja.tiers.hard.claim, false);
+  assert.ok(!hard.some((step) => /^too\.?$/i.test(String(step.npc ?? "").trim())),
+    "the split 'too.' continuation of the lamp sentence is removed");
+  assert.ok(hard.some((step) => /merchants will give ye discounts\./.test(String(step.npc ?? ""))),
+    "the rest of the hard tier's description remains");
 });

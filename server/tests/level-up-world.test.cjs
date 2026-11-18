@@ -677,6 +677,10 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   login(fake, { player: fake.player, isNewAccount: true });
   assert.ok(fake.events.some(({ name, payload }) => name === "diary:complete-all" && payload?.player === fake.player),
     "Level-Up completes every achievement diary at login");
+  const diaryRewards = { player: fake.player, unrestricted: false, includeXpLamps: true };
+  fake.api.emitCustomEvent("diary:rewards-unrestricted", diaryRewards);
+  assert.equal(diaryRewards.unrestricted, true, "Level-Up still hands out every diary reward tier");
+  assert.equal(diaryRewards.includeXpLamps, true, "Level-Up keeps the diaries' XP lamps");
   const levelUpWealth = { enabled: true };
   fake.api.emitCustomEvent("wealth:enabled", levelUpWealth);
   assert.equal(levelUpWealth.enabled, false, "Level-Up vetoes wealth transfer on the live world");
