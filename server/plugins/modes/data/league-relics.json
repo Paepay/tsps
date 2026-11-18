@@ -177,8 +177,8 @@
     },
     "endlessHarvest": {
       "league": [4, 6], "key": "endless-harvest", "skills": ["MINING", "WOODCUTTING", "FISHING"], "multiplier": 2,
-      "_demonicPacts": "Demonic Pacts' (Wiki, cache text): banking is the relic's toggle (cache row league_relic_endless_harvest_toggle_bank, on by default), and rocks and trees no longer deplete while the relic's owner gathers from them (ours: they stay standing for everyone, as Power Miner's rocks do).",
-      "bankToggle": { "6": "league_relic_endless_harvest_toggle_bank" }, "endlessLeagues": [6]
+      "_endless": "Both leagues' Endless Harvest keeps fishing spots, rocks and trees going while its owner gathers (ours: they stay standing for everyone, as Power Miner's rocks do). Trailblazer Reloaded (4) always banks the doubled yield; Demonic Pacts (6) banks while its toggle is on (cache row league_relic_endless_harvest_toggle_bank, on by default). With Infernal Gathering's matching Trailblazer tool on, the doubled yield is cooked, smelted or burnt instead.",
+      "bankToggle": { "6": "league_relic_endless_harvest_toggle_bank" }, "endlessLeagues": [4, 6]
     },
     "trickster": { "league": 4, "key": "trickster", "pouchLimitMultiplier": 3, "lootMultiplier": 2, "boxTrapMultiplier": 2, "boxTrapLureTicks": 2, "logsPerAction": 9, "tool": "SAGES_GREAVES", "runXpBase": 10, "runXpLevelFraction": [2, 3], "runXpTicks": 10, "runStepTiles": 2, "_runXp": "Wiki, Sage's greaves: 10 + floor(Agility level x 2/3) Agility XP roughly every 10 ticks of running, a tick counting when the player moved 2 squares in it; paid before the league's rates." },
     "powerMiner": {

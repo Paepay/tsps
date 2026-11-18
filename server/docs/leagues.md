@@ -859,7 +859,7 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 
 | Tier | Relic | State |
 | --- | --- | --- |
-| 1 | Endless Harvest | done (Trailblazer Reloaded's unit; banking by toggle, resources never deplete) |
+| 1 | Endless Harvest | done (the shared unit; this league adds the banking toggle; fishing spots, rocks and trees never deplete for either league) |
 | 1 | Barbarian Gathering | partial: second chance, Strength/Agility XP, bare hands that fish without bait (`fishing:tool`) and chop and mine as the crystal axe and pickaxe (`woodcutting:tool`, `mining:tool`); not the Knapsack's storage: its Fill, Check, Open/Close and Dispose (and the bank's Empty) have no recording and no line in the Wiki, and no Leagues VI recording carries the knapsack |
 | 1 | Abundance | done: the +10 is a visible, permanent boost of every non-combat skill's current level with the resting level raised to match, as the Defence pact's (233/246 Leagues VI recordings: base + 10, Slayer and Sailing too, combat skills unboosted, kept through level-ups) |
 | 2 | Hotfoot | partial: cooked fish, smelted ore, running XP in the boots (10 + floor(Agility x 2/3) every 10 ticks of 2-tile moves, Wiki: Searing boots), laps counted twice with +25% XP, no failures, a 33% mark chance on the nine rooftop courses (`agility:mark-chance`; the mark cooldown still runs), a picked-up course mark or Colossal Wyrm termites finishing the lap with 10,000 coins (`agility:mark-taken`, `agility:course-find-taken`), Prifddinas's portal shards tenfold and the Wyrm courses' termites twofold (`agility:course-item`; the portal's own shard and line, 237/01149, are new to the course), the Brimhaven arena's tickets and vouchers twofold (`minigame:points`) |
@@ -1018,7 +1018,10 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   container such as a coal bag keeps what it took and the rest goes to the bank; when the bank
   has no room the extra goes to the inventory if it fits), the extra pays the resource's XP again
   only when it was placed, and `storage:room` says the bank's room counts so a full inventory
-  keeps gathering.
+  keeps gathering. It also keeps fishing spots, rocks and trees going (`fishing:continue`,
+  `mining:deplete-rock`, `woodcutting:deplete-tree`) in both leagues. With Infernal Gathering's
+  matching Trailblazer tool on, the doubled result is cooked, smelted or burnt instead of gathered
+  raw.
   Forestry bark, Volcanic Mine fragments and sulliusceps never pass through `storage:gather`, so
   the Wiki's exclusions hold by construction.
 - **Trickster** (tier 1): pickpockets always land and the pouch limit is tripled

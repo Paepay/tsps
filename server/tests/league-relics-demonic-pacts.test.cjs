@@ -270,10 +270,10 @@ test("Endless Harvest (Demonic Pacts): doubled with XP, banked while the toggle 
     assert.equal(gather(player, I.IRON_ORE, 1, Skill.MINING, 35).stored, 0);
     assert.equal(emit("mining:deplete-rock", { player, handled: false }).handled, false);
   }
-  const trailblazer = character("trailblazer", "league", { 0: 2 }, 4);
-  if (Common.hasRelic(trailblazer, "endless-harvest")) {
-    assert.equal(emit("mining:deplete-rock", { player: trailblazer, handled: false }).handled, false, "Trailblazer Reloaded's rocks deplete");
-  }
+  const trailblazer = character("trailblazer", "league", { 0: 1 }, 4);
+  assert.equal(Common.hasRelic(trailblazer, "endless-harvest"), true);
+  assert.equal(emit("mining:deplete-rock", { player: trailblazer, handled: false }).handled, true,
+    "Trailblazer Reloaded's Endless Harvest keeps rocks standing too");
 });
 
 test("Barbarian Gathering: a second 50% chance, 10% Strength and Agility XP, and bare hands that fish", () => {

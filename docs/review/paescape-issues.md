@@ -13,7 +13,7 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 | [#26](https://github.com/Paepay/PaeScape_Issues/issues/26) | `confirmed bug` | Tai Bwo Wannai Trio / world objects | Before quest completion, object `779` (Bamboo Door) is blocked by the quest. After completion the quest handler falls through, but the generic door plugin does not register `Bamboo Door`; a click moved the player without opening or toggling the door. | Add the missing open/close handling for object `779` (or its cache-derived partner) and test both sides of the door before and after completion. |
 | [#27](https://github.com/Paepay/PaeScape_Issues/issues/27) | `fixed locally` | Chatbox / settings persistence | The game-chat Filter toggle is varbit `26` on varp `1055` (`chat_filter_assist`). The client did not transmit that varp and the server did not save or restore the bit, so every login reset it to On. | Verify on the local client: set Game chat to Filter, relog, and confirm it stays filtered. |
 | [#28](https://github.com/Paepay/PaeScape_Issues/issues/28) | `fixed locally` | Dragon Slayer I / Duke Horacio | The quest flow works on the current build when Duke is approached on `z=1`. The reproducible defect was a full inventory: the quest announced the hand-over and showed the shield box while adding nothing. It now uses `giveItem`, reports the missing space, and ends without a false item box. | Retest with both a free slot and a full inventory. If the reporter had free slots, ask for their exact location and Dragon Slayer stage. |
-| [#29](https://github.com/Paepay/PaeScape_Issues/issues/29) | `ready to close` | Leagues / Trailblazer harpoon | Working as intended. The Trailblazer harpoon is a crystal-harpoon equivalent that cooks catches; it has no endless-fishing effect. Trailblazer Reloaded's Endless Harvest doubles and banks resources, while only Demonic Pacts' Endless Harvest keeps fishing spots, trees and rocks from depleting. | Close as not a bug; ask the reporter to confirm which league and relic they had active if they still disagree. |
+| [#29](https://github.com/Paepay/PaeScape_Issues/issues/29) | `fixed locally` | Leagues / Trailblazer harpoon | Endless Harvest now keeps fishing spots, rocks and trees from depleting in Trailblazer Reloaded as well as Demonic Pacts. With Infernal Gathering on and the matching Trailblazer tool, the endless gather delivers processed output: cooked fish from the harpoon, bars from the pickaxe, and burnt logs/Firemaking XP from the axe. | Verify on the local server with Endless Harvest plus Infernal Gathering: fish with the harpoon, chop with the axe and mine with the pickaxe; each should continue without depleting and bank the doubled processed result. |
 | [#30](https://github.com/Paepay/PaeScape_Issues/issues/30) | `ready to close` | Equipment / Ava's attractor | Working as intended. Ava's attractor is the sub-50 Ranged Animal Magnetism reward and has no Ranged equip requirement; Ava's accumulator is the 50 Ranged upgrade. The reported level-30 requirement belongs to neither item. | Close as not a bug and point the reporter to Ava's accumulator's level-50 requirement. |
 | [#31](https://github.com/Paepay/PaeScape_Issues/issues/31) | `ready to close` | Farming / Farmer's Fortune | Working as intended. Farmer's Fortune grows farming patches instantly and never lets them catch disease. A seedling in a plant pot is not a farming patch, so its sapling timer is unchanged by the relic. | Close as not a bug; no seedling-specific change without a different source for that behavior. |
 
@@ -54,10 +54,9 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 
 ## #29 - Trailblazer harpoon and endless fishing
 
-- The Trailblazer harpoon is a crystal-harpoon equivalent whose catches are cooked; it has no infinite-fishing effect.
-- Trailblazer Reloaded's tier-1 Endless Harvest doubles resources and banks them. Its Wiki notes do not grant endless gathering.
-- Demonic Pacts' Endless Harvest is the version that keeps fishing spots, trees and rocks going. `EndlessHarvest.LeagueRelics.js` and `league-relics.json` already restrict depletion prevention to league `6`.
-- No change: the bug report describes a Trailblazer Reloaded expectation that the relic does not provide.
+- Trailblazer Reloaded's Endless Harvest now keeps fishing spots, rocks and trees going, as Demonic Pacts' does. `league-relics.json` lists both leagues in `endlessLeagues`; the shared `EndlessHarvest.LeagueRelics.js` answers `fishing:continue`, `mining:deplete-rock` and `woodcutting:deplete-tree`.
+- With Infernal Gathering on and the matching Trailblazer tool carried, the endless gather produces the processed output: the harpoon cooks fish (endless cooked fish), the pickaxe smelts ore into bars, and the axe burns logs for Firemaking XP. The doubled yield applies to the processed result, and Endless Harvest banks it.
+- Regression coverage: `league-relic-effects-gathering.test.cjs` (processed output and depletion), `league-relic-endless-harvest-trees.test.cjs` (real fishing and woodcutting), and `league-relics-demonic-pacts.test.cjs` (both leagues' depletion behaviour).
 
 ## #30 - Ava's attractor at 1 Ranged
 
@@ -76,5 +75,5 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 
 1. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
 2. Verify `#28` with a free slot and again with a full inventory.
-3. Close `#29`, `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
+3. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
 4. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.
