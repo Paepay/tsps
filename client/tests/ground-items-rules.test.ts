@@ -1,7 +1,13 @@
 import { strict as assert } from "node:assert";
 import { ConfigManager, parseConfigValue, serializeConfigValue } from "@runelite/client/config/ConfigManager";
 import { Keybind } from "@runelite/client/config/Keybind";
-import { GroundItemsConfig } from "../game/plugins/grounditems/GroundItemsConfig";
+import {
+    GROUND_ITEM_TEXT_SIZE_DEFAULT,
+    GROUND_ITEM_TEXT_SIZE_MAX,
+    GROUND_ITEM_TEXT_SIZE_MIN,
+    GroundItemsConfig,
+    groundItemTextScale,
+} from "../game/plugins/grounditems/GroundItemsConfig";
 import {
     EXACT,
     type GroundItem,
@@ -117,6 +123,12 @@ assert.equal(shouldDisplayItem("ALL", 2, 1), true);
     assert.equal(items.showLootbeamTier.default, "HIGH");
     assert.equal(items.highlightedColor.default, 0xffaa00ff);
     assert.ok(items.hotkey.default.equals(Keybind.ALT));
+    assert.equal(items.textSize.default, GROUND_ITEM_TEXT_SIZE_DEFAULT);
+    assert.deepEqual(items.textSize.range, { min: GROUND_ITEM_TEXT_SIZE_MIN, max: GROUND_ITEM_TEXT_SIZE_MAX });
+    assert.equal(groundItemTextScale(125), 1.25);
+    assert.equal(groundItemTextScale(1), GROUND_ITEM_TEXT_SIZE_MIN / 100, "below the range: clamped");
+    assert.equal(groundItemTextScale(999), GROUND_ITEM_TEXT_SIZE_MAX / 100, "above the range: clamped");
+    assert.equal(groundItemTextScale(Number.NaN), 1, "unreadable: the default");
 
     assert.equal(serializeConfigValue(items.hotkey, Keybind.ALT), "0:512");
     assert.ok((parseConfigValue(items.hotkey, "88:128") as Keybind).equals(new Keybind(88, 128)));

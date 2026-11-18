@@ -10,6 +10,16 @@ export type DespawnTimerMode = "OFF" | "PIE" | "TICKS" | "SECONDS";
 export type HighlightTier = "OFF" | "LOW" | "MEDIUM" | "HIGH" | "INSANE";
 export type LootbeamStyle = "LIGHT" | "MODERN";
 
+export const GROUND_ITEM_TEXT_SIZE_MIN = 50;
+export const GROUND_ITEM_TEXT_SIZE_MAX = 200;
+export const GROUND_ITEM_TEXT_SIZE_DEFAULT = 100;
+
+/** The ground-item label font scale, as a fraction of the dynamic overlay font's size. */
+export function groundItemTextScale(size: number): number {
+    const percent = Number.isFinite(size) ? Math.round(size) : GROUND_ITEM_TEXT_SIZE_DEFAULT;
+    return Math.max(GROUND_ITEM_TEXT_SIZE_MIN, Math.min(GROUND_ITEM_TEXT_SIZE_MAX, percent)) / 100;
+}
+
 const names = <T extends string>(...values: T[]) => Object.fromEntries(values.map((v) => [v, v])) as Record<T, T>;
 const TIERS = names<HighlightTier>("OFF", "LOW", "MEDIUM", "HIGH", "INSANE");
 const opaque = (rgb: number) => (0xff000000 | rgb) >>> 0;
@@ -266,6 +276,15 @@ export const GroundItemsConfig = ConfigGroup(
             position: 33,
             keybind: true,
             default: Keybind.ALT,
+        }),
+        textSize: ConfigItem({
+            name: "Label text size",
+            description: "Scales ground item labels relative to the Dynamic overlay font size.",
+            position: 34,
+            units: "%",
+            range: { min: GROUND_ITEM_TEXT_SIZE_MIN, max: GROUND_ITEM_TEXT_SIZE_MAX },
+            step: 1,
+            default: GROUND_ITEM_TEXT_SIZE_DEFAULT,
         }),
     },
     {
