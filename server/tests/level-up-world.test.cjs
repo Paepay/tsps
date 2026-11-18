@@ -248,6 +248,46 @@ test("Level-Up lists only working mastery challenges and never caps the point ba
   }
 });
 
+test("the mastery screen's two extra Level-Up rows have task completion bits", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Tasks = require("../plugins/modes/leaguetasks/Common.LeagueTasks");
+  const Complete = require("../plugins/modes/leaguetasks/Complete.LeagueTasks");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  Common.init(fake.api);
+  Tasks.init(fake.api);
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    Complete(fake.api);
+    fake.player.setAttribute(Common.POINTS_ATTRIBUTE, {
+      giant: 1, "high-level-kills": 1, "scurrius-solo": 1, "slayer-55": 1, jad: 1, "combat-100": 1,
+      "deal-50-in-one-hit": 1,
+    });
+    assert.equal(Common.earned(fake.player), 7);
+    assert.equal(Common.completedChallenges(fake.player), 7, "seven points are seven completed challenges");
+
+    fake.packets.configs.length = 0;
+    fake.api.emitCustomEvent("league:points-changed", { player: fake.player });
+    const varp = fake.packets.configs.find(({ id }) => id === 2616)?.value;
+    assert.ok(varp !== undefined, "the task completion varp goes to the client");
+    assert.notEqual(varp & (1 << 10), 0, "bit 10 is deal-50-in-one-hit, the screen's eleventh row");
+    assert.equal(varp & (1 << 11), 0, "combat-skill-99 is still open");
+
+    fake.player.setAttribute(Common.POINTS_ATTRIBUTE, {
+      ...Common.pointsEarned(fake.player), "combat-skill-99": 1,
+    });
+    fake.packets.configs.length = 0;
+    fake.api.emitCustomEvent("league:points-changed", { player: fake.player });
+    const withNinetyNine = fake.packets.configs.find(({ id }) => id === 2616)?.value;
+    assert.notEqual(withNinetyNine & (1 << 11), 0, "bit 11 is combat-skill-99, the twelfth row");
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
 test("the five Level-Up additions use authoritative events, thresholds and one-time persistence", () => {
   const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
   const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");

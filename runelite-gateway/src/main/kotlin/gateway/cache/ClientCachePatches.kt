@@ -15,6 +15,17 @@ object ClientCachePatches {
     private val groupingWorlds =
         FilePatch.of(EnumTypes.CONFIG_ARCHIVE, EnumTypes.ENUM_GROUP, GROUPING_WORLDS_ENUM) { EnumTypes.withIntValues(it, NO_WORLD) }
 
+    /**
+     * Script 7656's ten-case challenge lookup learns Level-Up's eleventh and twelfth challenge
+     * rows; see [ClientScriptPatches.masteryChallengeRows].
+     */
+    private val combatMasteryRows = FilePatch.of(
+        ClientScriptPatches.CLIENT_SCRIPT_ARCHIVE,
+        ClientScriptPatches.MASTERY_CHALLENGE_GROUP,
+        0,
+        ClientScriptPatches::masteryChallengeRows,
+    )
+
     /** Every world's patches; a league world's content data comes on top ([ServedCache]). */
-    val ALL: List<FilePatch> = listOf(groupingWorlds)
+    val ALL: List<FilePatch> = listOf(groupingWorlds, combatMasteryRows)
 }
