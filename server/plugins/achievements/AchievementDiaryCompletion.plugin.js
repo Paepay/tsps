@@ -8,11 +8,12 @@
  *
  * - every task is marked done on login, so the diary tab shows each tier complete;
  * - the diary:* queries other content uses for perks are answered;
- * - the journal, reward NPCs, lamps, Twiggy's cape and noted drops stay available, so
- *   every reward item and perk can still be obtained.
+ * - the journal, reward NPCs, Twiggy's cape and noted drops stay available, so every
+ *   unique reward item and perk can still be obtained.
  *
  * Rewards are deliberately left unclaimed: each diary's reward NPC can then hand out
- * that tier's item and lamp, including the reward varbit and daily item effects.
+ * that tier's unique item, reward varbit and daily effects. The tier's antique lamp is
+ * withheld because the task was auto-completed rather than earned.
  */
 const { TIERS, DIARIES, BY_KEY } = require("./diaries/Data.AchievementDiaries");
 const Progress = require("./diaries/Progress.AchievementDiaries");
@@ -74,10 +75,14 @@ function onIsRewardClaimed(request) {
   }
 }
 
-/** Every tier is complete, so the reward NPC must not refuse it for the tier's stat requirement. */
+/**
+ * Every tier is complete, so the reward NPC must not refuse it for the tier's stat
+ * requirement. The lamp is withheld because the completion was automatic.
+ */
 function onRewardsUnrestricted(request) {
   if (!standalone) return;
   request.unrestricted = true;
+  request.includeXpLamps = false;
 }
 
 function onAllComplete(request) {
