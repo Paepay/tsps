@@ -27,6 +27,8 @@ export interface DisplayNameEntry {
  */
 export class DisplayNames {
     static readonly FILE_ENV = "TSPS_DISPLAY_NAMES_FILE";
+    /** Names reserved for runtime-owned chat channels: no account or display name may use one. */
+    private static readonly RESERVED_NAMES = new Set(["help"]);
     private static entries: Map<string, DisplayNameEntry> | null = null;
     /** Name key -> account key, for current and held names (held ones may have expired; check `until`). */
     private static owners = new Map<string, { account: string; until: number }>();
@@ -34,6 +36,11 @@ export class DisplayNames {
     /** The key two names share when they are the same name: case, underscores and extra spaces don't count. */
     public static key(name: string): string {
         return String(name ?? "").replace(/_/g, " ").trim().replace(/\s+/g, " ").toLowerCase();
+    }
+
+    /** Whether this name is reserved for a runtime-owned chat channel rather than a player. */
+    public static isReserved(name: string): boolean {
+        return this.RESERVED_NAMES.has(this.key(name));
     }
 
     private static file(): string {
@@ -127,6 +134,7 @@ export class DisplayNames {
     public static refusal(username: string, name: string, now = Date.now()): string | null {
         const account = this.key(username);
         const key = this.key(name);
+        if (this.isReserved(key)) return "That name is not available.";
         if (key === account) return null;
         const owner = this.ownerOf(key, now);
         if (owner && owner !== account) return "That name is not available.";
@@ -175,6 +183,7 @@ export class DisplayNames {
      * takes back stops being held. Throws, changing nothing, when the file can't be written.
      */
     public static set(username: string, name: string, now: number, holdMs: number): void {
+        if (this.isReserved(name)) throw new Error("That name is not available.");
         const entries = this.load();
         const account = this.key(username);
         const before = entries.get(account);

@@ -1593,6 +1593,11 @@ export class ClientConnection {
 
     // A new account can't take a name another account shows or still holds (DisplayNames).
     if (!credentials) {
+      if (DisplayNames.isReserved(typedName)) {
+        this.releasePendingName();
+        this.failLogin(3, "That name is not available. Please choose another.");
+        return;
+      }
       let owner: string | undefined;
       try {
         owner = DisplayNames.ownerOf(typedName);

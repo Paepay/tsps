@@ -569,6 +569,7 @@ function validateName(name) {
   const trimmed = String(name ?? "").trim();
   if (trimmed.length < 1 || trimmed.length > 12) return "Character names must be 1-12 characters.";
   if (!api.core.Misc.isValidName(trimmed)) return "Character names may only use letters, numbers and spaces.";
+  if (api.core.DisplayNames.isReserved(trimmed)) return "That name is not available.";
   if (Accounts.accountOf(trimmed)) return "That name is already taken on this world.";
   if (Accounts.isDeleted(trimmed)) return "That name belonged to a deleted character and can't be used again.";
   return null;

@@ -151,7 +151,10 @@ class FriendsChatManager {
     static systemProfiles = new Map();
     /**
      * Registers or updates a system channel: { ownerName, channelName, entryRank, talkRank, kickRank,
-     * admits(player), rankOf(player) }. rankOf, when given, is each member's rank (else Unranked).
+     * admits(player), rankOf(player), capacity, default, broadcastMembers }. rankOf, when given, is
+     * each member's rank (else Unranked). capacity defaults to the normal 500 members. default marks
+     * the channel a login joins when the player has no saved channel. broadcastMembers false still
+     * shows a joining player the roster but stops every membership change resending it to everyone.
      */
     static registerSystemChannel(rawKey, fields) {
         const key = DisplayNames.key(rawKey);
@@ -168,6 +171,9 @@ class FriendsChatManager {
             friendRanks: new Map(),
             admits: fields.admits,
             rankOf: fields.rankOf,
+            capacity: Number.isInteger(fields.capacity) && fields.capacity > 0 ? fields.capacity : MAX_CHANNEL_MEMBERS,
+            default: fields.default === true,
+            broadcastMembers: fields.broadcastMembers !== false,
         };
         this.systemProfiles.set(key, profile);
         const channel = this.channels.get(key);
@@ -206,6 +212,13 @@ class FriendsChatManager {
         if (lastOwner) {
             this.notification(player, "Attempting to join chat-channel...");
             this.join(player, lastOwner, true, { rejoin: true });
+        }
+        // A world-owned default channel (the Help chat) takes a player who has no channel of their
+        // own. A saved activity or group channel is never taken away on login.
+        if (!this.membershipByPlayer.has(player.getIndex())) {
+            const defaultKey = Array.from(this.systemProfiles).find(([, profile]) => profile.default)?.[0];
+            if (defaultKey)
+                this.join(player, defaultKey, true, { rejoin: true });
         }
     }
     static onLogout(player) {
@@ -536,7 +549,7 @@ class FriendsChatManager {
             channel = { ownerKey: ownerName.key, profile, members: new Map() };
             this.channels.set(ownerName.key, channel);
         }
-        if (channel.members.size >= MAX_CHANNEL_MEMBERS) {
+        if (channel.members.size >= (profile.capacity ?? MAX_CHANNEL_MEMBERS)) {
             const candidate = Array.from(channel.members.values())
                 .filter((member) => this.memberRank(profile, member) < rank)
                 .sort((a, b) => this.memberRank(profile, a) - this.memberRank(profile, b))[0];
@@ -560,7 +573,12 @@ class FriendsChatManager {
             this.notification(player, `Now talking in chat-channel ${profile.channelName}`);
             this.notification(player, "To talk, start each line of chat with the / symbol.");
         }
-        this.broadcastChannel(ownerName.key);
+        // A global channel still shows the joining player its roster, but its membership changes do
+        // not resend every member's full snapshot to every other member.
+        if (profile.broadcastMembers === false)
+            this.sendSnapshot(player);
+        else
+            this.broadcastChannel(ownerName.key);
         this.memberAdded?.(player, ownerName.key, { rejoin });
         return true;
     }

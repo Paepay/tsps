@@ -270,6 +270,67 @@ test('a system channel admits only whom it says, is rejoined at login, and its e
   }
 });
 
+const HelpChat = require('../plugins/interface/HelpChat.plugin');
+
+/** Registers the real Help plugin through the same event FriendsList listens to. */
+function registerHelp() {
+  const startup = [];
+  HelpChat.register({
+    onServerStartup: (hook) => startup.push(hook),
+    emitCustomEvent: (event, payload) => {
+      if (event === 'friends-chat:system-channel') Manager.registerSystemChannel(payload.key, payload.channel);
+    },
+  });
+  for (const hook of startup) hook({ timestamp: Date.now() });
+  return Manager.systemProfiles.get(HelpChat._test.HELP_CHANNEL_KEY);
+}
+
+test('Help is an ownerless default channel every login joins and talks in with /', () => {
+  const profile = registerHelp();
+  assert.equal(profile.system, true);
+  assert.equal(profile.ownerName, 'Help');
+  assert.equal(profile.channelName, 'Help');
+  assert.equal(profile.default, true);
+  assert.equal(profile.broadcastMembers, false, 'a global roster is not resent to everyone on every join');
+  assert.ok(profile.capacity > 500, 'Help is not capped at the normal chat-channel size');
+
+  const newcomer = player('Newcomer');
+  Manager.onLogin(newcomer);
+  assert.equal(Manager.channelOf(newcomer)?.key, 'help');
+  assert.equal(Manager.channelOf(newcomer)?.name, 'Help');
+  assert.equal(Manager.channelOf(newcomer).rankOf(newcomer), FriendsChatRank.Unranked, 'nobody owns Help');
+  assert.equal(newcomer.getRelations().getFriendsChatLastOwner(), 'help', 'rejoined by the system key');
+  assert.match(newcomer.texts(), /Now talking in chat-channel Help/);
+  assert.match(newcomer.texts(), /To talk, start each line of chat with the \/ symbol\./);
+
+  const typing = player('Typing');
+  Manager.handleAction(typing, { action: 'join', name: 'HeLp' });
+  runTicks(2);
+  assert.equal(Manager.channelOf(typing)?.key, 'help', 'Help is joined by typing its name without an account');
+});
+
+test('login keeps a saved Grouping channel instead of moving the player to Help', () => {
+  registerHelp();
+  Manager.registerSystemChannel('#group-1', { ownerName: 'Grouping', channelName: 'Group', admits: () => true });
+  const grouped = player('Grouped');
+  grouped.getRelations().setFriendsChatLastOwner('#group-1');
+  Manager.onLogin(grouped);
+  assert.equal(Manager.channelOf(grouped)?.key, '#group-1');
+  assert.equal(Manager.channelOf(grouped)?.name, 'Group');
+});
+
+test('a player who leaves Help joins it again on the next login', () => {
+  registerHelp();
+  const member = player('Member');
+  Manager.onLogin(member);
+  assert.equal(Manager.channelOf(member)?.key, 'help');
+  Manager.leave(member, true);
+  assert.equal(Manager.channelOf(member), null);
+  assert.equal(member.getRelations().getFriendsChatLastOwner(), '');
+  Manager.onLogin(member);
+  assert.equal(Manager.channelOf(member)?.key, 'help');
+});
+
 test('the social tab mounts side_channels with the chat-channel inside it', () => {
   const opens = (packets) => packets.map((packet) => packet.toString('hex'));
   const bootstrap = opens(encodeGameframeBootstrap('Someone', 161));

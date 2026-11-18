@@ -4,6 +4,25 @@ The newer Clan system is separate: see [clans.md](clans.md).
 
 The [OSRS chat-channel page](https://oldschool.runescape.wiki/w/Chat-channel) documents the slash-prefixed channel messages, owner-controlled entry/talk/kick ranks, ignore-based entry blocking, temporary 60-minute kick bans, and 500-member capacity. It also says a channel reset when empty clears those bans. The implementation follows those rules in `FriendsChatManager`; its saved player fields retain the channel name, three access ranks, friend ranks, and last joined owner. `player-save.test.cjs` covers that save/load round-trip, which also supplies the offline-owner profile path used on automatic rejoin.
 
+## Help
+
+`HelpChat.plugin.js` registers an ownerless system channel named **Help**. A login joins it
+when the player has no saved activity or group channel, which leaves Grouping's activity
+rooms and group chats in charge of a player already using one. A player who leaves Help
+joins it again at the next login. It uses the ordinary chat-channel interface: the player
+talks in it with a `/` prefix, like any friends chat. The world cap is the packet's 16-bit
+member count rather than the normal 500-member limit, so the whole server can be in it.
+Because a full roster snapshot to every member on each join would grow quadratically, a
+joining player receives the current roster but membership changes are not broadcast to
+every other member's list.
+
+`Help` is reserved in `DisplayNames`: new accounts, characters and display names are
+refused with "That name is not available." The system channel also wins over any legacy
+account or channel with the same name. `tests/chat-channel.test.cjs`,
+`tests/display-name.test.cjs`, `tests/character-slots-login.test.cjs` and
+`tests/paescape-character-primary.test.cjs` cover the join, reservation and hosted-world
+creation paths.
+
 The [player page](https://oldschool.runescape.wiki/w/New_character) lists Follow among a player's right-click options. It does not describe follow movement or teleport/logout cleanup. In this server, follow is a transient `Mobile` reference: ordinary movement interactions clear it through `MovementQueue.walkToReset`, known player actions clear it as they dispatch, logout clears the departing player's reference, and `Mobile` clears follow-owned interaction/facing state before a player relocation. These cleanup paths are implementation behavior covered by local tests; they are not independently verified against live OSRS. The movement tick also drops a follow when its target is no longer registered or is in another private area.
 
 Presence is single-world: friend snapshots resolve currently registered players in this server's `World` and send world 1 for visible online friends. Cross-world presence and the live OSRS behavior of the right-click Follow action's edge cases remain outside this implementation.
