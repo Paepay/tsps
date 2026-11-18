@@ -2,9 +2,10 @@
  * Which area a map square (64 x 64 tiles, the cache's map archive) belongs to, built once per
  * league from the data's rectangles and squares over the cache's own map list
  * (CacheMaps.getRegionIds). The rules (data `regionRules`): the lowest-numbered area that names a
- * square owns it, a league's overrides reassign squares, an unnamed underground square (map y >=
- * 100) follows its surface square, and a square nobody names is open to everyone. Tile overrides
- * (`tileOverrides`, world-tile rects) win over the square for `areaAt`.
+ * square owns it; a league's overrides reassign whole squares and outrank tile assignments; an
+ * unnamed underground square (map y >= 100) follows its surface square; and a square nobody names
+ * is open to everyone. `tileOverrides` (world-tile rects) win over the area's squares for
+ * `areaAt`; the 2026-11-18 editor export carries the exact plane-0 assignments of eight areas there.
  */
 const Common = require("./Common.LeagueAreaUnlocks");
 
@@ -12,8 +13,10 @@ const UNDERGROUND_ROWS = 100;
 
 /** league type -> map square id -> area id. */
 const byLeague = new Map();
-/** Flattened tile overrides: { minX, minY, maxX, maxY, area }[]. */
-let tileOverrides = null;
+/** league type -> map square ids its `overrides` set explicitly (including open squares). */
+const leagueOverrideSquares = new Map();
+/** map square id -> flattened tile overrides that can cover it, built once. */
+let tileOverridesBySquare = null;
 
 function squareId(mapX, mapY) {
   return ((mapX & 0xff) << 8) | (mapY & 0xff);
@@ -42,16 +45,39 @@ function loadTileOverrides() {
       list.push({ minX, minY, maxX, maxY, area: entry.area });
     }
   }
-  tileOverrides = list;
+  // Fail closed on hand-edited overlaps: the editor's export is conflict-free, but a stale file
+  // must not silently make the winner depend on array order.
+  for (let left = 0; left < list.length; left++) {
+    for (let right = left + 1; right < list.length; right++) {
+      const a = list[left];
+      const b = list[right];
+      if (a.area === b.area) continue;
+      if (a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY) {
+        throw new Error(`league areas: tile overrides disagree at ${Math.max(a.minX, b.minX)},${Math.max(a.minY, b.minY)} (areas ${a.area} and ${b.area})`);
+      }
+    }
+  }
+  // Bucket by map square so a walk step checks only the few rects near it.
+  const bySquare = new Map();
+  for (const entry of list) {
+    for (let mapX = entry.minX >> 6; mapX <= entry.maxX >> 6; mapX++) {
+      for (let mapY = entry.minY >> 6; mapY <= entry.maxY >> 6; mapY++) {
+        const id = squareId(mapX, mapY);
+        const bucket = bySquare.get(id);
+        if (bucket) bucket.push(entry);
+        else bySquare.set(id, [entry]);
+      }
+    }
+  }
+  tileOverridesBySquare = bySquare;
   return list;
 }
 
-function tileOverridesList() {
-  return tileOverrides ?? loadTileOverrides();
-}
-
 function tileOverrideAt(x, y) {
-  for (const entry of tileOverridesList()) {
+  if (!tileOverridesBySquare) loadTileOverrides();
+  const entries = tileOverridesBySquare.get(squareOf(x, y));
+  if (!entries) return undefined;
+  for (const entry of entries) {
     if (x >= entry.minX && x <= entry.maxX && y >= entry.minY && y <= entry.maxY) return entry.area;
   }
   return undefined;
@@ -68,16 +94,24 @@ function build(type) {
     for (const rect of area.rects) claimRect(own, rect, id, cacheSquares);
     for (const [square, owner] of own) if (!index.has(square)) index.set(square, owner);
   }
+  const overridden = new Set();
   for (const override of Common.league(type)?.overrides ?? []) {
     const own = new Map();
     claimRect(own, override.rect, override.area, cacheSquares);
-    for (const [square, owner] of own) index.set(square, owner);
+    for (const [square, owner] of own) {
+      index.set(square, owner);
+      overridden.add(square);
+    }
   }
+  leagueOverrideSquares.set(type, overridden);
   for (const square of cacheSquares) {
     const mapY = square & 0xff;
     if (mapY < UNDERGROUND_ROWS || index.has(square)) continue;
     const surface = squareId(square >> 8, mapY - UNDERGROUND_ROWS);
-    if (index.has(surface)) index.set(square, index.get(surface));
+    if (index.has(surface)) {
+      index.set(square, index.get(surface));
+      if (overridden.has(surface)) overridden.add(square);
+    }
   }
   byLeague.set(type, index);
   return index;
@@ -89,9 +123,14 @@ function indexFor(type) {
 
 /** The area id owning the tile, or null when it is open to everyone. */
 function areaAt(type, x, y) {
+  const index = indexFor(type);
+  const square = squareOf(x, y);
+  // A league's explicit square override (including `null` for open) is a league rule and wins
+  // over the shared exact-tile map.
+  if (leagueOverrideSquares.get(type)?.has(square)) return index.get(square) ?? null;
   const tile = tileOverrideAt(x, y);
   if (tile !== undefined) return tile;
-  return indexFor(type).get(squareOf(x, y)) ?? null;
+  return index.get(square) ?? null;
 }
 
 /** Whether the character may stand on the tile: open ground, or an area it unlocked in a league that offers it. */
