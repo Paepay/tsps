@@ -1796,6 +1796,14 @@ slot can be filled, a pick is permanent, and the unlocks live in `league:areas` 
 unlock order). An area the league does not offer (Varlamore on a Trailblazer Reloaded world) stays
 locked for good.
 
+The 2026-11-18 region-editor export replaces the old 64-tile approximations for Misthalin,
+Karamja, Asgarnia, Kandarin, Morytania, the Kharidian Desert, Tirannwn and the Wilderness with
+exact plane-0 world tiles in `league-areas.json`'s `tileOverrides`. Enforcement uses those tiles before the area's
+map squares; a league's own square `overrides` (including `area: null` for open) still win on
+their squares, so Raging Echoes' Lithkren Vault and Demonic Pacts' Zanaris and Abyssal Area keep
+their league rules. TSPS's access lookup has no plane dimension, so a plane-0 rectangle also
+governs the same tile on planes 1-3, as the old map-square rule did.
+
 **Demonic Pacts** (Wiki Demonic_Pacts_League/Areas, recordings 237/01098, 01102, 01104, 01107,
 01149) starts in Varlamore alone; Misthalin is never open, while Zanaris and the Abyssal Area are
 open from everywhere (overrides with `area: null`). Its first unlock, at 80 tasks, must be Karamja

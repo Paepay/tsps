@@ -265,33 +265,45 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
   assert.equal(areaAt(3000, 3000, { league: 99 }), null, "no league, no areas");
 });
 
-test("tile overrides: Harry's Fishing Shop is Kandarin; the Lumbridge-Varrock path west of Al Kharid mine is Misthalin", () => {
+test("the 2026-11-18 exact tiles: Catherby is Kandarin; the Al Kharid road and mine are the desert", () => {
   // Eastern Catherby sits in map square 44,53 (Asgarnia's White Wolf Mountain). Wiki leagueRegion
   // for Harry's Fishing Shop, Hickton and the fruit tree is Kandarin.
   assert.equal(areaAt(2834, 3445), KANDARIN, "Harry's Fishing Shop");
   assert.equal(areaAt(2822, 3442), KANDARIN, "Hickton's Archery Emporium");
   assert.equal(areaAt(2861, 3432), KANDARIN, "Catherby's fruit tree");
   assert.equal(areaAt(2870, 3438), ASGARNIA, "White Wolf Mountain stays Asgarnia");
-  // Road through map square 51,51: Misthalin west of the mine, desert on the mine itself.
-  assert.equal(areaAt(3280, 3300), MISTHALIN, "path NE of Lumbridge toward Varrock");
-  assert.equal(areaAt(3284, 3320), MISTHALIN, "road south of Varrock before the mine");
-  assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan) stays desert");
-  assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine stay desert");
+  // The exported boundary: Misthalin ends just east of the Lumbridge path; the desert begins at
+  // x 3268 on the road and x 3267 by the mine.
+  assert.equal(areaAt(3267, 3300), MISTHALIN, "path NE of Lumbridge, west of the new boundary");
+  assert.equal(areaAt(3268, 3300), DESERT, "the road's desert side");
+  assert.equal(areaAt(3266, 3320), MISTHALIN, "road south of Varrock, west of the new boundary");
+  assert.equal(areaAt(3267, 3320), DESERT, "the road's desert side by the mine");
+  assert.equal(areaAt(3268, 3300, { base: true }), DESERT, "Level-Up's base map has the exact boundary");
+  assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan)");
+  assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine");
 });
 
-test("the Citharede Abbey's square (53,49) is the desert; the Abandoned Mine in the square below stays Morytania", () => {
+test("the 2026-11-18 exact tiles put the Edgeville ditch's south bank in Misthalin", () => {
+  assert.equal(areaAt(3090, 3520), MISTHALIN, "the ditch's south bank at Edgeville");
+  assert.equal(areaAt(3090, 3521), WILDERNESS, "north of the ditch");
+});
+
+test("the Citharede Abbey and the land south of the plateau are desert; the Abandoned Mine entrance stays Morytania", () => {
   // Wiki (Citharede Abbey, leagueRegion = Desert): the abbey and the Giants' Plateau east of Al
   // Kharid, map square 53,49, tiles 3392-3455 by 3136-3199. That square's cabbage field is the
   // abbey task's own "in the Citharede Abbey", so the whole square must be the desert.
   for (const [x, y] of [[3413, 3178], [3400, 3140], [3392, 3136], [3455, 3199]]) {
     assert.equal(areaAt(x, y), DESERT, `the Giants' Plateau square (${x}, ${y})`);
   }
-  // The Abandoned Mine is in the surface square below (53,50; its entrance 3451, 3233, the Wiki's
-  // shooting-star pin) and stays Morytania, as do its underground levels: map y + 6400 takes the
-  // surface square (3422, 9625 is Haunted Mine's upper level, square 53,150 -> surface 53,50).
+  // The Abandoned Mine's entrance (3451, 3233, the Wiki's shooting-star pin) is in the surface
+  // square below (53,50) and stays Morytania, as do its underground levels: map y + 6400 takes
+  // the surface square (3422, 9625 is Haunted Mine's upper level, square 53,150 -> surface 53,50).
   assert.equal(areaAt(3451, 3233), MORYTANIA, "the Abandoned Mine's entrance square");
   assert.equal(areaAt(3422, 9625), MORYTANIA, "the Haunted Mine's levels under that square");
-  assert.equal(areaAt(3413, 3240), MORYTANIA, "the square just south of the plateau");
+  // The editor's exact boundary runs at x 3423: the plateau's south side is desert west of it and
+  // Morytania east of it, inside the old square 53,50 approximation.
+  assert.equal(areaAt(3422, 3240), DESERT, "the desert's east edge south of the plateau");
+  assert.equal(areaAt(3423, 3240), MORYTANIA, "the Abandoned Mine's side of the new boundary");
   // Every league moves it: it was Morytania before this square was reassigned.
   for (const league of [4, 5, 6]) {
     assert.equal(areaAt(3413, 3178, { league }), DESERT, `league ${league}: the abbey`);
