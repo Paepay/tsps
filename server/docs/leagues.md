@@ -1456,6 +1456,14 @@ progress in `league:mastery-progress`.
   207000, so these occupy offset 800-804 between the relic band 0-199 and the rank band
   900-901) and the same payload sends their param 2028 text; their task ids are the stable ids
   the platform mirrors.
+  The mastery screen's challenge list (script 7656) finds each row in enum 5695 and switches
+  on its position, but the cache only gives it cases for the ten point-unlock varbits, so
+  positions 11 and 12 (`deal-50-in-one-hit`, `combat-skill-99`) fell through to "incomplete"
+  after their point was awarded. The browser client (`client/rs/cs2/masteryChallengeRows.ts`)
+  and the gateway (`runelite-gateway/src/main/kotlin/gateway/cache/ClientScriptPatches.kt`)
+  append two cases reading varp 2616 bits 10 and 11, the same completion bits
+  `Complete.LeagueTasks` sends, so the task list and the mastery list agree. Each patch is
+  guarded by the script's SHA-256, leaving another cache revision's script untouched.
 - **The interface, as captured.** The league side panel's mastery button (656:32) opens
   `league_combat_mastery` (311) as the main modal with `if_setevents` on its clickzones (311:36,
   0-18), menu frame (311:78, 10-18) and style tabs (311:73, 0-26), then runs 3186 on the panel's
