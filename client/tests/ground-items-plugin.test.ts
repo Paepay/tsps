@@ -163,8 +163,28 @@ async function main(): Promise<void> {
     const bigCoinY = frame[1].find((t: any[]) => t[0].startsWith("Coins"))![2];
     const bigScimY = frame[1].find((t: any[]) => t[0].startsWith("Rune"))![2];
     assert.equal(bigCoinY - bigScimY, 2 * STRING_GAP, "the gap grows with the font");
+    set("textSize", 150);
+    changed();
+    frame = JSON.parse(plugin.widgetOverlay.signature());
+    assert.deepEqual(frame[frame.length - 1], [FONT_PLAIN_11, 3], "label text size scales the dynamic font");
+    const scaledCoinY = frame[1].find((t: any[]) => t[0].startsWith("Coins"))![2];
+    const scaledScimY = frame[1].find((t: any[]) => t[0].startsWith("Rune"))![2];
+    assert.equal(scaledCoinY - scaledScimY, 3 * STRING_GAP, "the gap follows the plugin text size too");
+    set("textSize", 100);
+    changed();
     fonts.unsetConfiguration(RuneLiteConfig.group, "fontType");
     unbindFonts();
+    set("textSize", 200);
+    changed();
+    frame = JSON.parse(plugin.widgetOverlay.signature());
+    assert.deepEqual(frame[frame.length - 1], [FONT_PLAIN_11, 2], "200% doubles the default overlay font");
+    assert.deepEqual(
+        overlay.coverage(),
+        frame[1].map((t: any[]) => ({ x: t[1] - 2, y: t[2] - 32, w: t[0].length * 12 + 12, h: 44 })),
+        "coverage measurements and padding scale with the label text size",
+    );
+    set("textSize", 100);
+    changed();
     assert.equal(messages.length, 1);
     assert.equal(messages[0], "<col=ff0000>You received a highlighted drop: Rune scimitar</col>");
 

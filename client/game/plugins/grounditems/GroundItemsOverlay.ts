@@ -6,6 +6,7 @@ import { drawTextGL } from "../../../widgets/components/TextRenderer";
 import type { WidgetOverlay, WidgetOverlayDrawContext } from "../ClientPluginManager";
 import type { GroundItemsPlugin, ItemBox } from "./GroundItemsPlugin";
 import { tileKey } from "./GroundItemsPlugin";
+import { groundItemTextScale } from "./GroundItemsConfig";
 import { type GroundItem, itemLabel } from "./groundItemRules";
 
 type Rgba = [number, number, number, number];
@@ -180,8 +181,10 @@ export class GroundItemsOverlay implements WidgetOverlay {
     }
 
     private build(): Frame {
-        const frame: Frame = { tiles: [], backgrounds: [], boxes: [], pies: [], texts: [], font: overlayFont("dynamic"), signature: "" };
         const plugin = this.plugin;
+        const dynamicFont = overlayFont("dynamic");
+        const frameFont = { ...dynamicFont, scale: dynamicFont.scale * groundItemTextScale(plugin.config.textSize()) };
+        const frame: Frame = { tiles: [], backgrounds: [], boxes: [], pies: [], texts: [], font: frameFont, signature: "" };
         if (!plugin.isStarted()) return frame;
         const client: any = plugin.getClient();
         if (toRuneLiteGameState(client?.gameState) !== GameState.LOGGED_IN) return frame;

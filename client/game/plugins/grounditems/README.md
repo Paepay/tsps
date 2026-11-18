@@ -7,7 +7,8 @@ A port of RuneLite 1.13.3's Ground Items. It is off by default to avoid ground i
 Every item within about 19 tiles gets a label: its name, the quantity (`Coins (1.5M)`) and,
 by "Price display mode", the stack's Grand Exchange and High Alchemy value. Coins have no
 price. Stacks of the same item on one tile are merged into one label. Labels on a tile stack
-upwards 15 px apart, with a text shadow, or an outline with "Text outline".
+upwards 15 px apart, with a text shadow, or an outline with "Text outline". "Label text size"
+scales the labels from 50% to 200% of the Dynamic overlay font size; 100% leaves them unchanged.
 
 Colours, in order:
 
