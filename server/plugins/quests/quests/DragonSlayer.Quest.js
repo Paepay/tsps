@@ -828,7 +828,11 @@ module.exports = function registerDragonSlayerQuest(api) {
     const handOver = npcId === GUILDMASTER_NPC_ID && stepId === MELZAR_KEY_STEP ? ITEM.mazeKey
       : npcId === DUKE_HORACIO_NPC_ID && DUKE_SHIELD_STEPS.has(stepId) ? ITEM.antiDragonShield : null;
     if (handOver !== null) {
-      if (!hasItem(player, handOver) && !player.getInventory().isFull()) player.getInventory().adds(handOver, 1);
+      if (!hasItem(player, handOver) && !giveItem(player, handOver)) {
+        event.handled = true;
+        event.end = true;
+        return;
+      }
       event.box = { items: [handOver] };
       return;
     }

@@ -198,6 +198,18 @@ test('Dragon Slayer hands over the maze key and the anti-dragon shield in item b
   }
 });
 
+test('Dragon Slayer hand-overs do not show an item box when a full inventory blocks them', () => {
+  const h = harness('DragonSlayer'), p = player();
+  h.quest.setStage(p, 2);
+  p.full = true;
+  const event = h.action(p, N.DUKE_HORACIO, 'KoKING');
+  assert.equal(p.items.get(I.ANTI_DRAGON_SHIELD), undefined);
+  assert.equal(event.box, undefined, 'the Duke does not pretend to hand over the shield');
+  assert.equal(event.handled, true);
+  assert.equal(event.end, true);
+  assert.match(p.messages.at(-1), /free inventory space/i);
+});
+
 test("Dragon Slayer's Guildmaster offers the captured follow-up menus after each answer (rev242 ticks 1141-1756)", () => {
   const h = harness('DragonSlayer'), p = player(); h.quest.setStage(p, 2); p.attrs.set('quest.points', 32);
   const MELZAR = "Where is Melzar's map piece?", THALZAR = "Where is Thalzar's map piece?", LOZAR = "Where is Lozar's map piece?";

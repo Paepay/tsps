@@ -1,0 +1,80 @@
+# PaeScape Issue Review Queue
+
+Last reviewed: 2026-11-18
+
+Repository: [`Paepay/PaeScape_Issues`](https://github.com/Paepay/PaeScape_Issues)
+
+Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close`, `fixed locally`.
+
+| Issue | Status | Area | Finding | Next action |
+| --- | --- | --- | --- | --- |
+| [#24](https://github.com/Paepay/PaeScape_Issues/issues/24) | `needs reporter info` | Teleports / Sins of the Father | Could not reproduce on the current local build. After completing Sins of the Father, both inventory Teleport and the worn Darkmeyer option reached `3592,3337`. | Ask for build, quest-journal state and whether they used inventory Teleport or the worn option. Retest against the build they used. |
+| [#25](https://github.com/Paepay/PaeScape_Issues/issues/25) | `needs repro` | Leagues / area map | Server-side area state and the existing login/unlock tests look correct. The symptom points to stale client varbits, an interrupted delayed unlock, or a mismatch between the saved area and the map state. | Reproduce on a league character and capture `league:areas`, varbits `10662`-`10667`, and the map state after login and after reopening View Areas. |
+| [#26](https://github.com/Paepay/PaeScape_Issues/issues/26) | `confirmed bug` | Tai Bwo Wannai Trio / world objects | Before quest completion, object `779` (Bamboo Door) is blocked by the quest. After completion the quest handler falls through, but the generic door plugin does not register `Bamboo Door`; a click moved the player without opening or toggling the door. | Add the missing open/close handling for object `779` (or its cache-derived partner) and test both sides of the door before and after completion. |
+| [#27](https://github.com/Paepay/PaeScape_Issues/issues/27) | `fixed locally` | Chatbox / settings persistence | The game-chat Filter toggle is varbit `26` on varp `1055` (`chat_filter_assist`). The client did not transmit that varp and the server did not save or restore the bit, so every login reset it to On. | Verify on the local client: set Game chat to Filter, relog, and confirm it stays filtered. |
+| [#28](https://github.com/Paepay/PaeScape_Issues/issues/28) | `fixed locally` | Dragon Slayer I / Duke Horacio | The quest flow works on the current build when Duke is approached on `z=1`. The reproducible defect was a full inventory: the quest announced the hand-over and showed the shield box while adding nothing. It now uses `giveItem`, reports the missing space, and ends without a false item box. | Retest with both a free slot and a full inventory. If the reporter had free slots, ask for their exact location and Dragon Slayer stage. |
+| [#29](https://github.com/Paepay/PaeScape_Issues/issues/29) | `ready to close` | Leagues / Trailblazer harpoon | Working as intended. The Trailblazer harpoon is a crystal-harpoon equivalent that cooks catches; it has no endless-fishing effect. Trailblazer Reloaded's Endless Harvest doubles and banks resources, while only Demonic Pacts' Endless Harvest keeps fishing spots, trees and rocks from depleting. | Close as not a bug; ask the reporter to confirm which league and relic they had active if they still disagree. |
+| [#30](https://github.com/Paepay/PaeScape_Issues/issues/30) | `ready to close` | Equipment / Ava's attractor | Working as intended. Ava's attractor is the sub-50 Ranged Animal Magnetism reward and has no Ranged equip requirement; Ava's accumulator is the 50 Ranged upgrade. The reported level-30 requirement belongs to neither item. | Close as not a bug and point the reporter to Ava's accumulator's level-50 requirement. |
+| [#31](https://github.com/Paepay/PaeScape_Issues/issues/31) | `ready to close` | Farming / Farmer's Fortune | Working as intended. Farmer's Fortune grows farming patches instantly and never lets them catch disease. A seedling in a plant pot is not a farming patch, so its sapling timer is unchanged by the relic. | Close as not a bug; no seedling-specific change without a different source for that behavior. |
+
+## #24 - Drakan's medallion cannot reach Darkmeyer
+
+- Current local build, with Sins of the Father complete: inventory `Teleport` listed `Ver Sinhaza` and `Darkmeyer`; choosing Darkmeyer landed at `3592,3337`.
+- The worn option also worked in the same test.
+- Relevant code: `server/plugins/items/DrakansMedallion.plugin.js:51`, `server/plugins/quests/quests/SinsOfTheFather.Quest.js:3691`, and `server/tests/quest-item-teleport-rules.test.cjs:106`.
+- No fix is justified yet: identify the reporter's build and exact interaction path first.
+
+## #25 - Karamja still shown as locked on the area map
+
+- Login resends every selection varbit from the saved `league:areas` list (`server/plugins/modes/leagueareas/Unlock.LeagueAreaUnlocks.js:13` and `:26`).
+- An unlock saves immediately, then sends the new slot varbit fourteen ticks later (`Unlock.LeagueAreaUnlocks.js:119` and `:142`; delay at `server/plugins/modes/data/league-areas.json:37`).
+- Existing tests cover defaults and the Karamja selection varbit, so reproduce with a real league character before changing the mapping or client state.
+- Suggested capture points: `league:areas`; selection varbits `10662`-`10667`; last-viewed `11693`; available `11695`; and the map before/after a relog and reopening View Areas.
+
+## #26 - Tiadeche's hut door will not open
+
+- The quest explicitly handles only the locked case: `server/plugins/quests/quests/TaiBwoWannaiTrio.Quest.js:1181`.
+- The generic door plugin registers its known door names at `server/plugins/objects/Doors.plugin.js:2221`; `Bamboo Door` is not in `DOOR_NAMES` at `Doors.plugin.js:30`.
+- Live check on the current local build: before completion the click was refused; after completion the click moved the player to `2783,3057` but no door-open state or message appeared.
+- Confirm whether object `779` has an open/closed cache partner around ids `778`-`781`; otherwise add explicit scene-door handling for this hut door.
+
+## #27 - Game chat filter resets to On
+
+- The social chat filters (`chat.filters`) already persist. This report is the separate chatbox Game chat toggle: varbit `26`, base varp `1055` (`chat_filter_assist`), bit 6.
+- The client now includes varp `1055` in `client/common/vars.ts` `TRANSMIT_VARPS`, so changing the toggle sends the whole varp to the server.
+- `server/plugins/interface/Settings.plugin.js` now saves only bit 6 under the existing persisted `settings:values` attribute and restores it at login with `sendVarbit(26, value)`.
+- Regression coverage: `server/tests/settings-client-saves.test.cjs` and `client/tests/game-filter-varp.test.ts`.
+
+## #28 - Anti-dragon shield from Duke Horacio
+
+- Live reproduction on the current build succeeded on Duke's first floor at `3212,3220,1`: Dragon Slayer stage 1, talk to Duke, follow the shield conversation, receive item `1540`.
+- The previously silent failure was full inventory. The hand-over branch only added the item when a slot was free but still showed the item box and the Duke's line.
+- `DragonSlayer.Quest.js` now calls its `giveItem` helper. On a full inventory it shows `You need more free inventory space.` and ends the action without the false item box.
+- Regression coverage: `server/tests/f2p-adventure-parity.test.cjs`, "Dragon Slayer hand-overs do not show an item box when a full inventory blocks them".
+
+## #29 - Trailblazer harpoon and endless fishing
+
+- The Trailblazer harpoon is a crystal-harpoon equivalent whose catches are cooked; it has no infinite-fishing effect.
+- Trailblazer Reloaded's tier-1 Endless Harvest doubles resources and banks them. Its Wiki notes do not grant endless gathering.
+- Demonic Pacts' Endless Harvest is the version that keeps fishing spots, trees and rocks going. `EndlessHarvest.LeagueRelics.js` and `league-relics.json` already restrict depletion prevention to league `6`.
+- No change: the bug report describes a Trailblazer Reloaded expectation that the relic does not provide.
+
+## #30 - Ava's attractor at 1 Ranged
+
+- OSRS awards Ava's attractor from Animal Magnetism to players below 50 Ranged and Ava's accumulator to players at 50 or above.
+- Ava's attractor has no Ranged equip requirement. Ava's accumulator is the item with the level-50 requirement already present in `item-gameplay.json`.
+- A player can therefore have 1 Ranged on this server if quest requirements are relaxed, but that does not make the attractor a level-30 item.
+- No change.
+
+## #31 - Seedlings in pots and Farmer's Fortune
+
+- Farmer's Fortune grows **farming patches** instantly and prevents patch disease. It also saves planted seeds/saplings 20% of the time.
+- A seedling in a plant pot is not a farming patch; its `farming:sapling-at` timer is a separate plant-pot mechanic. The relic's patch rule does not apply.
+- No change: making potted seedlings instant would extend the relic beyond its documented behavior.
+
+## Suggested Review Order
+
+1. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
+2. Verify `#28` with a free slot and again with a full inventory.
+3. Close `#29`, `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
+4. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.
