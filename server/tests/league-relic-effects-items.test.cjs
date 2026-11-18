@@ -515,6 +515,56 @@ test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memorie
   }
 });
 
+test("Crystal of memories: the cooldown follows the listed total-level tiers, is capped while recharging, and clears at 1,800", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = cases({ 0: 1, 1: 1, 2: 1 }, 4).relic;
+  const originalManager = player.getSkillManager;
+  const originalNow = Date.now;
+  const previousTeleport = core.TeleportHandler.teleport;
+  const now = 1_800_000_000_000;
+  const tiers = [
+    [32, 6], [299, 6],
+    [300, 5], [599, 5],
+    [600, 4], [899, 4],
+    [900, 3], [1199, 3],
+    [1200, 2], [1499, 2],
+    [1500, 1], [1799, 1],
+    [1800, 0], [2400, 0],
+  ];
+  let teleported = 0;
+  Date.now = () => now;
+  core.TeleportHandler.teleport = (target, location, type, warning, onArrival) => {
+    teleported++;
+    onArrival?.();
+  };
+  try {
+    player.setAttribute(Crystal.RECALL_ATTRIBUTE, { x: 3222, y: 3218, z: 0 });
+    for (const [total, minutes] of tiers) {
+      player.getSkillManager = () => ({ getTotalLevel: () => total, getCurrentLevel: () => 10 });
+      player.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
+      click("Crystal of Echoes", "Teleport-back", player);
+      assert.equal(Crystal.cooldownMinutes(player), minutes, `${total} total levels`);
+      assert.equal(player.getAttribute(Crystal.READY_AT_ATTRIBUTE), minutes > 0 ? now + minutes * 60_000 : 0,
+        `${total} total levels: ${minutes} minute cooldown`);
+    }
+    assert.equal(teleported, tiers.length, "every use without a current cooldown teleports");
+
+    // An existing cooldown cannot outlast the tier the character has reached.
+    player.getSkillManager = () => ({ getTotalLevel: () => 600, getCurrentLevel: () => 10 });
+    player.setAttribute(Crystal.READY_AT_ATTRIBUTE, now + 6 * 60_000);
+    assert.equal(Crystal.cooldownRemainingMs(player, now), 4 * 60_000, "600 total levels cap the running cooldown at four minutes");
+    player.getSkillManager = () => ({ getTotalLevel: () => 1800, getCurrentLevel: () => 10 });
+    assert.equal(Crystal.cooldownRemainingMs(player, now), 0, "1,800 total levels clear the running cooldown");
+    click("Crystal of Echoes", "Teleport-back", player);
+    assert.equal(teleported, tiers.length + 1, "the cleared cooldown lets the teleport through");
+    assert.equal(player.getAttribute(Crystal.READY_AT_ATTRIBUTE), 0, "no new cooldown at 1,800 total levels");
+  } finally {
+    Date.now = originalNow;
+    core.TeleportHandler.teleport = previousTeleport;
+    player.getSkillManager = originalManager;
+  }
+});
+
 test("Total Recall: Save-memory keeps the place, Hitpoints (up to 127), Prayer and special; Teleport-back sets them back; not in an instance", () => {
   const who = cases(TOTAL_RECALL, 5);
   const relic = who.relic;

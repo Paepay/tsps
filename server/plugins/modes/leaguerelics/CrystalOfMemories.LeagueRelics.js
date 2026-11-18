@@ -92,7 +92,10 @@ function cooldownMinutes(player) {
 
 function cooldownRemainingMs(player, now = Date.now()) {
   const readyAt = Number(player.getAttribute(READY_AT_ATTRIBUTE) ?? 0);
-  return Math.max(0, readyAt - now);
+  const remaining = Math.max(0, readyAt - now);
+  // A character who passes a total-level threshold while the crystal recharges gets the shorter
+  // cooldown their new total level earns, including none at 1,800.
+  return Math.min(remaining, cooldownMinutes(player) * 60_000);
 }
 
 function teleport(player, location) {
@@ -162,6 +165,7 @@ module.exports.unlocked = unlocked;
 module.exports.grantCrystal = grantCrystal;
 module.exports.holds = holds;
 module.exports.cooldownMinutes = cooldownMinutes;
+module.exports.cooldownRemainingMs = cooldownRemainingMs;
 module.exports.RECALL_ATTRIBUTE = RECALL_ATTRIBUTE;
 module.exports.READY_AT_ATTRIBUTE = READY_AT_ATTRIBUTE;
 module.exports.FROM_TIER = FROM_TIER;

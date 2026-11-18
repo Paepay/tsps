@@ -1411,7 +1411,8 @@ Level-Up uses its own skill-unlock XP tiers. Tier 1 counts once the character ch
   character holds none; Collect-items reclaims it. Teleport-back returns to where the last
   teleport began (`teleport:landed`), skipping instances and the Wiki exclusions this server has
   (`noRecall` in the effect data); cooldown six minutes, cut by one per 300 total levels, none at
-  1,800. Level-Up characters unlocking the Trailblazer Reloaded catalog receive the same grant.
+  1,800. A cooldown already running is capped by the current total level, so crossing 1,800 ends
+  it. Level-Up characters unlocking the Trailblazer Reloaded catalog receive the same grant.
 
 Demonic Pacts' passives are Raging Echoes' but for the combat XP, from the tier structs' text in
 this cache (struct 6436's tier enum, param 1020). Its boosted drops rest on the drop tables this
