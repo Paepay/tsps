@@ -13,7 +13,7 @@ const { World } = require('../dist/game/World');
 const { GameConstants } = require('../dist/game/GameConstants');
 const { TaskManager } = require('../dist/game/task/TaskManager');
 const { encodeGameframeBootstrap, encodeGameframeTabSetup } = require('../dist/net/protocol/ClientProtocol');
-const { FriendsChatManager: Manager, FriendsChatRank } = require('../plugins/interface/FriendsChatManager');
+const { FriendsChatManager: Manager, FriendsChatRank, HELP_CHANNEL_KEY } = require('../plugins/interface/FriendsChatManager');
 const { PlayerRelations } = require('../dist/game/model/PlayerRelations');
 
 const CHAT_MESSAGE = 120;
@@ -270,19 +270,10 @@ test('a system channel admits only whom it says, is rejoined at login, and its e
   }
 });
 
-const HelpChat = require('../plugins/interface/HelpChat.plugin');
-
-/** Registers the real Help plugin through the same event FriendsList listens to. */
+/** Registers the built-in Help channel the chat system installs on every world. */
 function registerHelp() {
-  const startup = [];
-  HelpChat.register({
-    onServerStartup: (hook) => startup.push(hook),
-    emitCustomEvent: (event, payload) => {
-      if (event === 'friends-chat:system-channel') Manager.registerSystemChannel(payload.key, payload.channel);
-    },
-  });
-  for (const hook of startup) hook({ timestamp: Date.now() });
-  return Manager.systemProfiles.get(HelpChat._test.HELP_CHANNEL_KEY);
+  Manager.ensureBuiltinChannels();
+  return Manager.systemProfiles.get(HELP_CHANNEL_KEY);
 }
 
 test('Help is an ownerless default channel every login joins and talks in with /', () => {
