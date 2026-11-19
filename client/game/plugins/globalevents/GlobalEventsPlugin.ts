@@ -2,6 +2,7 @@ import { GameState } from "@runelite/api/GameState";
 import type { GameStateChanged, PluginMessage } from "@runelite/api/events";
 import { Plugin, type PluginDescriptor } from "@runelite/client/plugins/Plugin";
 import { CLIENT_TOKEN, inject } from "@runelite/client/plugins/PluginInjector";
+import { OverlayPosition } from "@runelite/client/ui/overlay/OverlayPosition";
 import { getMousePos } from "../../InputManager";
 import type { OsrsClient } from "../../OsrsClient";
 import { sendChat } from "../../../network/ServerConnection";
@@ -51,6 +52,7 @@ export class GlobalEventsPlugin extends Plugin {
         super();
         this.osrsClient = osrsClient ?? inject<OsrsClient>(CLIENT_TOKEN);
         this.widgetOverlay = {
+            movable: { name: "GlobalEvents", position: OverlayPosition.BELOW_MINIMAP },
             signature: () => this.signature(),
             draw: (context) => this.draw(context),
             menuEntries: () => this.menuEntries(),
@@ -97,7 +99,14 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     onGameStateChanged(event: GameStateChanged): void {
-        if (event.getGameState() === GameState.LOGGED_IN) return;
+        // Login sends the world's event state before the client finishes loading (CONNECTING ->
+        // LOADING_GAME -> LOGGED_IN), so those transitions must keep it. Only forget the events
+        // once the player has actually left the world; a hop or reconnect re-sends them.
+        const state = event.getGameState();
+        if (state !== GameState.LOGIN_SCREEN && state !== GameState.CONNECTION_LOST
+            && state !== GameState.STARTING && state !== GameState.UNKNOWN && state !== GameState.HOPPING) {
+            return;
+        }
         this.activeKey = "";
         this.seenKey = "";
         this.iconItemId = -1;
