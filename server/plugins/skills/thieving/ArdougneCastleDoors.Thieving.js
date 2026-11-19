@@ -26,6 +26,13 @@ function roll(low, high, level) {
   return Math.floor(Math.random() * 256) < chanceNumerator(low, high, level);
 }
 
+/** The lock roll, which Trickster may guarantee; the separate trap roll still applies. */
+function lockSucceeds(player, low, high, level) {
+  const success = { player, chance: chanceNumerator(low, high, level) / 256, alwaysSucceeds: false };
+  pluginApi?.emitCustomEvent?.("thieving:lock-success", success);
+  return success.alwaysSucceeds || roll(low, high, level);
+}
+
 function locationOf(event) {
   const location = event.location ?? event.object?.getLocation?.();
   if (!location) return null;
@@ -75,7 +82,7 @@ function tryPickLock(event) {
     return;
   }
 
-  if (!roll(LOCK_LOW, LOCK_HIGH, level)) {
+  if (!lockSucceeds(player, LOCK_LOW, LOCK_HIGH, level)) {
     player.sendMessage("You fail to pick the lock.");
     return;
   }

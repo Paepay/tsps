@@ -35,6 +35,9 @@ function findChargedAxe(player, axeId) {
 }
 
 function useCharge(player, item) {
+  const consume = { player, item, skip: false };
+  api?.emitCustomEvent?.("skilling:consume-charge", consume);
+  if (consume.skip) return;
   const left = charges(item) - 1;
   if (left > 0) {
     item.setMetaValue(CHARGES_META_KEY, { charges: left });

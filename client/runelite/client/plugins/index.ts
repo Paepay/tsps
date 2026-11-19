@@ -16,6 +16,7 @@ import { RegenMeterPlugin } from "../../../game/plugins/regenmeter/RegenMeterPlu
 import { RunEnergyPlugin } from "../../../game/plugins/runenergy/RunEnergyPlugin";
 import { TimestampPlugin } from "../../../game/plugins/timestamp/TimestampPlugin";
 import { TickCounterPlugin } from "../../../game/plugins/tickcounter/TickCounterPlugin";
+import { GlobalEventsPlugin } from "../../../game/plugins/globalevents/GlobalEventsPlugin";
 import { WikiPlugin } from "../../../game/plugins/wiki/WikiPlugin";
 import { CombatLevelPlugin } from "../../../game/plugins/combatlevel/CombatLevelPlugin";
 import { CameraPlugin } from "../../../game/plugins/camera/CameraPlugin";
@@ -130,6 +131,7 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     RegenMeterPlugin,
     RunEnergyPlugin,
     TickCounterPlugin,
+    GlobalEventsPlugin,
     IdleNotifierPlugin,
     OpponentInfoPlugin,
     SpellbookPlugin,
