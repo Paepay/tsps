@@ -119,13 +119,12 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     private signature(): string {
-        if (this.iconItemId < 0 || this.activeCount <= 0) return "";
         const phase = this.flashing ? Math.floor(Date.now() / FLASH_MS) % 2 : 0;
         return `${this.activeKey}:${this.seenKey}:${this.iconItemId}:${this.activeCount}:${phase}`;
     }
 
     private menuEntries(): OverlayMenuEntry[] {
-        if (!this.isLoggedIn() || this.iconItemId < 0) return [];
+        if (!this.isLoggedIn()) return [];
         return [{ option: "Open", target: "Global Events", onClick: () => this.open() }];
     }
 
@@ -134,7 +133,9 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     private draw(context: WidgetOverlayDrawContext): Rect[] {
-        if (!this.isLoggedIn() || this.iconItemId < 0 || this.activeCount <= 0) {
+        // The button stays on the HUD after login even while no event is running, so the
+        // Events interface is always one click away.
+        if (!this.isLoggedIn()) {
             this.iconBounds = undefined;
             return [];
         }

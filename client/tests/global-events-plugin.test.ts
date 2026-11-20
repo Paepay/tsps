@@ -4,7 +4,8 @@ import { GameStateChanged, PluginMessage } from "@runelite/api/events";
 import { OverlayPosition } from "@runelite/client/ui/overlay/OverlayPosition";
 import { GlobalEventsPlugin, HUD_ITEM_ID } from "../game/plugins/globalevents/GlobalEventsPlugin";
 
-const client: any = { isLoggedIn: () => true };
+let loggedIn = true;
+const client: any = { isLoggedIn: () => loggedIn };
 const plugin = new GlobalEventsPlugin(client);
 
 // OverlayRenderer.placeOverlay() ignores an overlay without `movable`, so the icon would never
@@ -53,7 +54,17 @@ assert.equal((plugin as any).flashing, false);
 plugin.onGameStateChanged(new GameStateChanged(GameState.LOGIN_SCREEN));
 assert.equal((plugin as any).activeKey, "");
 assert.equal((plugin as any).iconItemId, -1);
+loggedIn = false;
 assert.deepEqual(overlay.draw(context), []);
+loggedIn = true;
+
+// The button stays on the HUD after login even with no event running, so the Events
+// interface is always one click away.
+const idle = new GlobalEventsPlugin({ isLoggedIn: () => true } as any);
+const idleOverlay = (idle as any).widgetOverlay;
+assert.deepEqual(idleOverlay.draw(context), [{ x: 10, y: 20, w: 24, h: 24 }]);
+assert.notEqual(idleOverlay.signature(), "");
+assert.deepEqual(idleOverlay.menuEntries().map((entry: any) => entry.option), ["Open"]);
 
 console.log("global-events-plugin: ok");
 
