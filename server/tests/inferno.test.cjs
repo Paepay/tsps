@@ -221,7 +221,7 @@ function createWorld() {
   };
   for (const name of ['onNpcDialogueCondition', 'onCustomEvent', 'onObjectFirstClick', 'onObjectSecondClick', 'onObjectRoute', 'onPlayerLogin', 'onPlayerLogout', 'onPlayerProcess',
     'onPlayerBeforeDeath', 'onPlayerDeath', 'onShouldDropItemsOnDeath', 'onCanTeleport', 'onCanAttack', 'onNpcBeforeDeath', 'onCombatHitResolved',
-    'onPlayerDealtDamage', 'onNpcDeath',
+    'onPlayerDealtDamage', 'onNpcDeath', 'onNpcHitModify',
     'registerCommand']) {
     api[name] = hook(name);
   }
@@ -411,7 +411,7 @@ test('the Jad waves call healers at half health, then hand over to TzKal-Zuk', (
   assert.equal(session.supports.length, 0);
   tick(player, 10);
   const jad = [...session.npcs].find((npc) => npc.id === Npcs.JALTOK_JAD);
-  assert.equal(jad.attackDelay, 4);
+  assert.equal(jad.attackDelay, 8);
   jad.setHitpoints(170);
   tick(player);
   assert.equal(living(Npcs.YT_HURKOT_2).length, 5);
@@ -421,7 +421,7 @@ test('the Jad waves call healers at half health, then hand over to TzKal-Zuk', (
   assert.equal(player.getAttribute(run.ATTR_WAVE), 68);
   tick(player, 8);
   const jads = [...session.npcs].filter((npc) => npc.id === Npcs.JALTOK_JAD);
-  assert.deepEqual(jads.map((npc) => npc.attackDelay), [4, 7, 10]);
+  assert.deepEqual(jads.map((npc) => npc.attackDelay), [8, 11, 14]);
   killWave(session);
   tick(player);
   assert.equal(player.getAttribute(run.ATTR_WAVE), 69);
@@ -448,6 +448,23 @@ test('Inferno Yt-HurKot heal JalTok-Jad 15-24 every 4 ticks (Wiki)', () => {
   tick(player, 4);
   assert.equal(jad.getHitpoints() - top, 5 * 24, 'at most 24');
   world.random = 0;
+  run.leave(player);
+});
+
+test('an attacked Yt-HurKot stops healing the Jad (#65)', () => {
+  const { player, session } = startAt(67);
+  world.random = 0;
+  tick(player, 10);
+  const jad = [...session.npcs].find((npc) => npc.id === Npcs.JALTOK_JAD);
+  jad.setHitpoints(170);
+  tick(player);
+  const healers = world.npcs.filter((npc) => npc.id === Npcs.YT_HURKOT_2 && npc.registered && npc.hitpoints > 0).slice(-5);
+  assert.equal(healers.length, 5);
+  healers.forEach((healer) => healer.moveTo(jad.getLocation().transform(-1, 0)));
+  world.hooks.onNpcHitModify.forEach((handler) => handler({ npc: healers[0], hit: {} }));
+  const before = jad.getHitpoints();
+  tick(player, 8);
+  assert.equal(jad.getHitpoints() - before, 4 * 15 * 2, 'only the four untagged healers heal, twice in 8 ticks');
   run.leave(player);
 });
 
