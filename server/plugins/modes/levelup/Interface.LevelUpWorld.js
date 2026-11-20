@@ -282,7 +282,12 @@ function journalTabMounted({ player, groupId }) {
 function restoreJournal({ player }) {
   if (!player || !active()) return;
   sendJournalAvailability(player);
-  if (player.getAttribute("level-up:journal-open") !== true) return;
+  const tab = Number(player.getPacketSender().getVarbit?.(JOURNAL_TAB_VARBIT)) || 0;
+  // The quest tab opens on this world's Leagues panel. Mount it after a login or a rebuilt
+  // gameframe when no other tab was chosen (0 is the cache's Character Summary default) or
+  // when the client is still on Leagues: the bootstrap's summary mount would otherwise sit
+  // under a highlighted Leagues tab.
+  if (player.getAttribute("level-up:journal-open") !== true && tab !== 0 && tab !== JOURNAL.tabIndex) return;
   openJournal({ player });
 }
 
@@ -777,6 +782,6 @@ module.exports = {
   refreshPanel,
   _test: {
     STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas,
-    openRelics, relicClose, relicConfirm, slotToRelic, RELIC_CLOSE,
+    openRelics, relicClose, relicConfirm, restoreJournal, slotToRelic, RELIC_CLOSE,
   },
 };

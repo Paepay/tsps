@@ -105,6 +105,14 @@ test("login replaces the native summary, preserves the name, and fills every req
   }
 });
 
+test("a journal restored on a plugin-owned tab asks that tab to mount, not the summary", () => {
+  const f = fixture(), p = player();
+  p.getPacketSender().sendVarbit(8168, 4);
+  mount(f, p);
+  const restore = f.emitted.filter(entry => entry.name === "side-journal:restore-tab").at(-1);
+  assert.equal(restore?.event.tabIndex, 4);
+  assert.equal(p.mounts.length, 0, "the character summary is not mounted under the Leagues tab");
+});
 test("dismissing the real welcome screen restores the custom summary after its second gameframe bootstrap", async () => {
   const f = fixture(), p = player();
   const contentUid = (629 << 16) | 43;

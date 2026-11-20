@@ -107,9 +107,23 @@ function mountRequested(event) {
 // Restore the selected journal through the same resolver used by normal tab clicks.
 function restoreSelectedJournal({ player }) {
   if (player.isPlayerBot?.()) return;
-  const tabIndex = player.getPacketSender().getVarbit(VARBIT_SIDE_JOURNAL_SELECTED_TAB);
+  let tabIndex = player.getPacketSender().getVarbit(VARBIT_SIDE_JOURNAL_SELECTED_TAB);
+  if (tabIndex === SIDE_JOURNAL_CHARACTER_SUMMARY_TAB) {
+    // A league character's journal opens on its Leagues tab (the client keeps that tab
+    // selected), so let the tab's owner say what the summary default becomes before the
+    // cache's first content mount is replaced.
+    const request = { player, tabIndex };
+    pluginApi?.emitCustomEvent("side-journal:default-tab", request);
+    tabIndex = request.tabIndex;
+  }
   const groupId = DEFAULT_CONTENT_GROUP_BY_TAB[tabIndex];
-  if (groupId !== undefined) mountSideJournalContent(player, groupId, tabIndex);
+  if (groupId !== undefined) {
+    mountSideJournalContent(player, groupId, tabIndex);
+    return;
+  }
+  // Custom tabs (the Leagues panel) mount their own content; otherwise the summary the
+  // gameframe bootstrap left in place would stay under a highlighted tab.
+  pluginApi?.emitCustomEvent("side-journal:restore-tab", { player, tabIndex });
 }
 
 /**
