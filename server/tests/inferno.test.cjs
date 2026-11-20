@@ -509,6 +509,7 @@ test('TzKal-Zuk: the glyph shields, summons arrive on cue and his death wins the
   world.random = 100;
   tick(player, 15 + 2);
   assert.equal(player.getHitpoints(), before, 'shielded behind the glyph');
+  assert.equal(glyph.getHitpoints(), 600, 'Zuk never damages the shield himself (#64)');
   player.moveTo(new Location(2280, 5350, 0));
   tick(player, 10 + 2);
   assert.ok(player.getHitpoints() < before, 'struck when out in the open');
