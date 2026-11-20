@@ -244,6 +244,11 @@ function sing(player, run, recipe, amount) {
   }
   if (changedSlot >= 0) refreshGear(player, changedSlot);
   player.sendMessage("With the help of the crystal bowl, you sing a beautiful song and shape the crystals.");
+  // The bowl's interface stays open between songs, so a set and its weapons can be made in one go.
+  if (Run.runInside(player) === run) {
+    const remaining = Items.bowlRecipes(run.mode, (id) => has(player, id));
+    if (remaining.length > 0) openBowl(player, run);
+  }
 }
 
 /** Whether one more of `recipe` has somewhere to go: a free slot, the worn piece it upgrades, or a slot its inputs free. */
