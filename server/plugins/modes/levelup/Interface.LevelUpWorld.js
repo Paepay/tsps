@@ -477,6 +477,7 @@ function areaTeleport(event) {
 }
 
 function relicCommon() {
+  RelicCommon ??= require("../leaguerelics/Common.LeagueRelics");
   if (!RelicCommon.data) RelicCommon.init(api);
   return RelicCommon;
 }
@@ -485,17 +486,39 @@ function relicCommon() {
  * The cache gives tier 1 a zero point cost, so the client treats it as available on every
  * character. Level-Up spends no points: only the tier matching the pending skill milestone
  * may look available, and every other tier stays visibly locked.
+ *
+ * The tier tracker (cache script 3182) scales every tier's cost by the top tier's, so the top
+ * tier may not cost 0: an earned pick there divides by zero, aborts that script and leaves the
+ * whole panel blank. When the earned tier is the top one it costs one point and each locked
+ * tier costs two, so the single claimed point below still marks only the earned tier.
  */
-function relicCostOverrides(player) {
-  const catalog = relicCommon().catalog(LEAGUE_STYLE_TYPE);
-  if (!catalog) return [];
-  const ids = relicCommon().ids(LEAGUE_STYLE_TYPE);
+function relicPendingTier(player) {
   const state = progress(player);
-  const pending = state.pendingRelicMilestone === null ? -1 : state.pendingRelicTier;
+  return state.pendingRelicMilestone === null ? -1 : state.pendingRelicTier;
+}
+
+function relicCostOverrides(player) {
+  const Common = relicCommon();
+  const catalog = Common.catalog(LEAGUE_STYLE_TYPE);
+  if (!catalog) return [];
+  const ids = Common.ids(LEAGUE_STYLE_TYPE);
+  const pending = relicPendingTier(player);
+  const topPending = pending >= 0 && pending === catalog.tiers.length - 1;
   return catalog.tiers.map((tier, index) => ({
     structId: ids.tierStruct(index),
-    params: { [RelicData.params.tierCost]: index === pending ? 0 : 1 },
+    params: {
+      [Common.data.params.tierCost]: index === pending
+        ? (topPending ? 1 : 0)
+        : (topPending ? 2 : 1),
+    },
   }));
+}
+
+/** Claimed points the relic panel reads: one only while the top tier is the earned one. */
+function relicClaimedPoints(player) {
+  const catalog = relicCommon().catalog(LEAGUE_STYLE_TYPE);
+  if (!catalog || catalog.tiers.length === 0) return 0;
+  return relicPendingTier(player) === catalog.tiers.length - 1 ? 1 : 0;
 }
 
 function sendRelicContent(player) {
@@ -533,7 +556,7 @@ function openRelics(event) {
   const { player } = event;
   sendRelicContent(player);
   player.getPacketSender().sendVarbit(LEAGUE_TYPE_VARBIT, LEAGUE_STYLE_TYPE);
-  player.getPacketSender().sendConfig(CLAIMED_POINTS_VARP, 0);
+  player.getPacketSender().sendConfig(CLAIMED_POINTS_VARP, relicClaimedPoints(player));
   sendRelicSelections(player);
   api.emitCustomEvent("league:modal-opening", { player, group: RELIC_GROUP });
   const sender = player.getPacketSender();
@@ -627,7 +650,10 @@ function relicClose(event) {
 }
 
 function relicClosed({ player, interfaceId }) {
-  if (interfaceId === RELIC_GROUP) relicViewing.delete(player);
+  if (interfaceId !== RELIC_GROUP) return;
+  relicViewing.delete(player);
+  // The panel claims one point to mark an earned top tier; the rest of Level-Up shows none.
+  player.getPacketSender().sendConfig(CLAIMED_POINTS_VARP, 0);
 }
 
 function relicConfirm(event) {
@@ -777,6 +803,6 @@ module.exports = {
   refreshPanel,
   _test: {
     STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas,
-    openRelics, relicClose, relicConfirm, slotToRelic, RELIC_CLOSE,
+    openRelics, relicCostOverrides, relicClaimedPoints, relicClose, relicConfirm, slotToRelic, RELIC_CLOSE,
   },
 };

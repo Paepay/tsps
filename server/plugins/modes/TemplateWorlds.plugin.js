@@ -600,10 +600,32 @@ function resetAreas(player) {
   return true;
 }
 
+function masterSkills(player) {
+  const unlocked = Rules.SKILLS.map(({ index }) => index);
+  const level = 99;
+  const experience = api.getSkillManager().getExperienceForLevel(level);
+  const manager = player.getSkillManager();
+  for (const index of unlocked) {
+    const skill = runtimeSkill(index);
+    if (!skill) continue;
+    manager.setSkillLocked(skill, false);
+    manager.setExperiences(skill, experience, false);
+    manager.setMaxLevels(skill, level, false);
+    manager.setCurrentLevels(skill, level, true);
+  }
+  player.setAttribute(ATTR.skills, unlocked);
+  api.core.WeaponInterfaceManager?.assign?.(player);
+  player.getUpdateFlag?.().flag?.(api.core.Flag?.APPEARANCE);
+  sendLockState(player);
+  player.sendMessage(`Level-Up: all ${unlocked.length} skills unlocked at level ${level}.`);
+  return true;
+}
+
 function command({ player, parts }) {
   if (!active()) return false;
   const action = String(parts[1] ?? "").toLowerCase();
   const value = parts.slice(2).join(" ").trim();
+  if (action === "master") return masterSkills(player);
   if (action === "skill" && value) return unlockSkill(player, value);
   if (action === "region" && value) return unlockRegion(player, value);
   if (action === "relic" && value) return unlockRelic(player, value);
@@ -612,7 +634,7 @@ function command({ player, parts }) {
   player.sendMessage(`Regions: ${state.regions.map((region) => region.name).join(", ")}. Relics chosen: ${state.relics.length}.`);
   if (state.pendingRegionMilestone) player.sendMessage(`Region reward pending at ${state.pendingRegionMilestone} skills.`);
   if (state.pendingRelicMilestone) player.sendMessage(`Relic reward pending at ${state.pendingRelicMilestone} skills.`);
-  player.sendMessage("Choices: ::levelup skill <name> | ::levelup region <id/name> | ::levelup relic <1-3>.");
+  player.sendMessage("Choices: ::levelup skill <name> | ::levelup region <id/name> | ::levelup relic <1-3> | ::levelup master.");
   return true;
 }
 

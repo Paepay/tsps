@@ -521,6 +521,51 @@ test("removed catalog relics reopen their earned Level-Up tiers for a replacemen
   }
 });
 
+test("the relic panel keeps the top tier's cost nonzero so its tracker cannot divide by zero", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.api.core.CacheDefinitions = { getSpriteId: () => 1000 };
+  Common.init(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    const tierCost = Common.data.params.tierCost;
+    const costs = () => Interface._test.relicCostOverrides(fake.player).map((row) => row.params[tierCost]);
+    const pick = (tiers) => fake.attributes.set("league:relics",
+      Object.fromEntries(tiers.map((tier) => [tier, 1])));
+
+    fake.attributes.set("level-up:unlocked-skills", Array.from({ length: 24 }, (_value, index) => index));
+    fake.attributes.set("level-up:claimed-relic-milestones", [2, 5, 8, 11, 14, 17, 20]);
+    pick([0, 1, 2, 3, 4, 5, 6]);
+    assert.equal(plugin.progress(fake.player).pendingRelicMilestone, 23);
+    assert.equal(plugin.progress(fake.player).pendingRelicTier, 7);
+
+    const top = costs();
+    assert.equal(top.length, 8);
+    assert.equal(top[7], 1, "the earned top tier costs one point, never zero");
+    assert.deepEqual(top.slice(0, 7), Array(7).fill(2), "every locked tier costs two points");
+    assert.equal(Interface._test.relicClaimedPoints(fake.player), 1,
+      "one claimed point still marks only the earned tier");
+
+    fake.attributes.set("level-up:claimed-relic-milestones", [2]);
+    pick([0]);
+    assert.equal(plugin.progress(fake.player).pendingRelicTier, 1);
+    const lower = costs();
+    assert.equal(lower[1], 0, "an earned mid tier keeps the cache's free-tier look");
+    assert.deepEqual(lower.filter((_cost, tier) => tier !== 1), Array(7).fill(1));
+    assert.equal(Interface._test.relicClaimedPoints(fake.player), 0);
+
+    fake.attributes.set("level-up:claimed-relic-milestones", [2, 5, 8, 11, 14, 17, 20, 23]);
+    pick([0, 1, 2, 3, 4, 5, 6, 7]);
+    assert.equal(plugin.progress(fake.player).pendingRelicMilestone, null);
+    assert.deepEqual(costs(), Array(8).fill(1), "with nothing pending every tier stays locked");
+    assert.equal(Interface._test.relicClaimedPoints(fake.player), 0);
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
 test("Level-Up relic passive text drops league and combat XP modifier lines", () => {
   assert.equal(
     Rules.stripXpPassiveLines("- League XP multiplier is 5x.<br><br>- Run energy is never drained whilst running."),
@@ -880,4 +925,37 @@ test("unlocking Herblore starts it at level 3 while other skills still start at 
   assert.equal(fake.locked.has(herblore.getIndex()), false);
 
   plugin._test.configure("", null);
+});
+
+test("::levelup master unlocks all skills at level 99", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    login(fake, { player: fake.player, isNewAccount: true });
+    assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [Rules.HITPOINTS_INDEX]);
+
+    assert.equal(
+      fake.handlers["command:levelup"][0]({ player: fake.player, parts: ["levelup", "master"] }),
+      true,
+    );
+
+    const allSkills = Rules.SKILLS.map(({ index }) => index);
+    assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), allSkills);
+    for (const { name, runtimeName } of Rules.SKILLS) {
+      const runtime = fake.byName(runtimeName ?? name);
+      assert.equal(fake.locked.has(runtime.getIndex()), false, `${name} is unlocked`);
+      assert.equal(fake.manager.getMaxLevel(runtime), 99, `${name} is level 99`);
+      assert.equal(fake.manager.getCurrentLevel(runtime), 99, `${name} has 99 current`);
+      assert.equal(fake.manager.getExperience(runtime), 9900, `${name} has level-99 experience`);
+    }
+    assert.deepEqual(fake.contentData.at(-1)?.datasets?.[0]?.rows, [], "the locked-skill overlay is cleared");
+    assert.equal(plugin._test.progress(fake.player).unlockedCount, 24);
+    assert.equal(plugin._test.progress(fake.player).requiredLevel, 99);
+    assert.match(fake.player.messages.at(-1), /all 24 skills unlocked at level 99/i);
+  } finally {
+    plugin._test.configure("", null);
+  }
 });
