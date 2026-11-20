@@ -462,6 +462,16 @@ test("Level-Up unlocks relics from Trailblazer Reloaded's catalog", () => {
     ["Banker's Note", "Fire Sale"], "tier 3 has the Wiki's two relics");
 });
 
+test("the relic screen never maps an unselected slot to a real relic", () => {
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const catalog = { tiers: [{ relics: [{}, {}] }, { relics: [{}] }] };
+  assert.deepEqual(Interface._test.slotToRelic(catalog, 0), { tier: 0, slot: 1 });
+  assert.deepEqual(Interface._test.slotToRelic(catalog, 2), { tier: 1, slot: 1 });
+  assert.equal(Interface._test.slotToRelic(catalog, -1), null, "the open screen's -1 means nothing selected");
+  assert.equal(Interface._test.slotToRelic(catalog, 1.5), null);
+  assert.equal(Interface._test.slotToRelic(catalog, 3), null);
+});
+
 test("removed catalog relics reopen their earned Level-Up tiers for a replacement pick", () => {
   const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
   const plugin = require("../plugins/modes/TemplateWorlds.plugin");

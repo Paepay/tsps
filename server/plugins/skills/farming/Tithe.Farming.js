@@ -35,8 +35,12 @@ function sync(player) {
     player.getPacketSender().sendVarbit(4893, score.points).sendVarbit(4900, score.score);
 }
 function showOverlay(player) {
-    const crop = CROPS.findIndex(c => player.getInventory().contains(Data.itemId(c.name + " seed"))
-        || player.getInventory().contains(Data.itemId(c.name + " fruit")));
+    const crop = CROPS.findIndex(c => {
+        const fruit = Data.itemId(c.name + " fruit");
+        const noted = core.ItemDefinition.forId(fruit)?.getNoteId?.() ?? -1;
+        return player.getInventory().contains(Data.itemId(c.name + " seed"))
+            || player.getInventory().contains(fruit) || (noted > 0 && player.getInventory().contains(noted));
+    });
     const sender = player.getPacketSender();
     // Cache script1195 renders the fruit icon and existing batch/points varbits.
     sender.sendVarbit(4901, crop + 1);
@@ -137,11 +141,20 @@ function titheObject(event) {
     if (!game) return;
     if ([core.ObjectIdentifiers.SACK_16, core.ObjectIdentifiers.SACK_17].includes(id)) {
         event.handled = true;
-        const crop = CROPS.find(c => player.getInventory().contains(Data.itemId(c.name + " fruit")));
+        const crop = CROPS.find(c => {
+            const fruit = Data.itemId(c.name + " fruit");
+            const noted = core.ItemDefinition.forId(fruit)?.getNoteId?.() ?? -1;
+            return player.getInventory().contains(fruit) || (noted > 0 && player.getInventory().contains(noted));
+        });
         if (!crop) { player.sendMessage("You have no fruit to deposit."); return; }
         const score = scoreFor(player), fruit = Data.itemId(crop.name + " fruit");
-        const result = Model.titheDeposit(score.score, player.getInventory().getAmount(fruit), crop.xp);
-        player.getInventory().deleteNumber(fruit, result.count);
+        // Farmer's Fortune notes the fruit; the sack counts and takes both forms.
+        const notedFruit = core.ItemDefinition.forId(fruit)?.getNoteId?.() ?? -1;
+        const held = player.getInventory().getAmount(fruit) + (notedFruit > 0 ? player.getInventory().getAmount(notedFruit) : 0);
+        const result = Model.titheDeposit(score.score, held, crop.xp);
+        const fromPlain = Math.min(result.count, player.getInventory().getAmount(fruit));
+        if (fromPlain > 0) player.getInventory().deleteNumber(fruit, fromPlain);
+        if (result.count > fromPlain && notedFruit > 0) player.getInventory().deleteNumber(notedFruit, result.count - fromPlain);
         score.score = result.score;
         const award = { player, minigame: "tithe-farm", points: result.points };
         core.PluginManager.emitCustomEvent("minigame:points", award);
@@ -160,8 +173,20 @@ function titheObject(event) {
     if (!plant) return;
     if (plant.dead) { if (Patches.requireTool(player, "Spade")) { plot.plant = undefined; player.performAnimation(new core.Animation(830)); } }
     else if (plant.stage === 3) {
-        if (Patches.give(player, Data.itemId(CROPS[plant.crop].name + " fruit"))) {
-            Patches.award(player, CROPS[plant.crop].xp);
+        const crop = CROPS[plant.crop];
+        const fruit = Data.itemId(crop.name + " fruit");
+        // The minigame multiplier (a league's minigame points passive) and then the relic's
+        // farming:pick rules (Farmer's Fortune's triple, noted fruit) scale one seed's harvest.
+        const yieldRequest = { player, minigame: "tithe-farm", amount: 1 };
+        core.PluginManager.emitCustomEvent("minigame:yield", yieldRequest);
+        const amount = Number.isSafeInteger(yieldRequest.amount) && yieldRequest.amount > 0 ? yieldRequest.amount : 1;
+        const pick = { player, crop: crop.name.toUpperCase(), patch: null, itemId: fruit, amount, experience: crop.xp, stored: 0, tithe: true };
+        core.PluginManager.emitCustomEvent("farming:pick", pick);
+        const picked = Number.isInteger(pick.itemId) && pick.itemId > 0 ? pick.itemId : fruit;
+        const pickedAmount = Number.isSafeInteger(pick.amount) && pick.amount > 0 ? pick.amount : amount;
+        if (Patches.give(player, picked, pickedAmount)) {
+            Patches.award(player, Number.isFinite(pick.experience) && pick.experience >= 0 ? pick.experience : crop.xp);
+            core.PluginManager.emitCustomEvent("farming:harvested", { player, crop: pick.crop, patch: null, itemId: picked, amount: pickedAmount });
             core.PluginManager.emitCustomEvent("farming:success", { player, petBase: TANGLEROOT_BASE_DENOMINATOR });
             player.performAnimation(new core.Animation(2282));
             plot.plant = undefined;

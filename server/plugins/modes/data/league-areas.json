@@ -6,6 +6,10 @@
     "lastViewed": 11693,
     "available": 11695
   },
+  "varps": {
+    "_comment": "A plain varp carries the real area count to cache script 3658, which otherwise hardcodes a five-area total; the six selection varbits cannot represent Level-Up's nine areas.",
+    "unlockedCount": 7998
+  },
   "maxUnlocked": 5,
   "thresholds": {
     "_comment": "Script 3682 reads the unlock slots from enum 5677 -> structs 5971-5975, param 1010 = tasks needed; the cache holds a later league's numbers, so a league's own go to the client as structOverrides (GamemodeContentStore) through LeagueMode's `league:send-content`.",

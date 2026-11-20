@@ -8,6 +8,8 @@ Server.installProductionPathResolver();
 const { Equipment } = require("../dist/game/model/container/impl/Equipment");
 const { CombatType } = require("../dist/game/content/combat/CombatType");
 const { ItemIds } = require("../dist/util/IdEnums");
+const { Skill } = require("../dist/game/model/Skill");
+const { Animation } = require("../dist/game/model/Animation");
 
 const SerpentineHelm = require("../plugins/items/SerpentineHelm.plugin");
 const { ItemAliases } = require("../dist/game/model/ItemAliases");
@@ -38,6 +40,7 @@ SerpentineHelm.register({
     ItemIdentifiers: ItemIds,
     Equipment, CombatType,
     Item: require("../dist/game/model/Item").Item,
+    Animation, Skill,
     ItemAliases,
     World: { getProcessCycle: () => cycle },
     ItemDefinition: { forId: (id) => ({ getName: () => weaponNames.get(id) ?? "" }) },
@@ -319,4 +322,54 @@ test('the registered protection query observes positive worn charges without upk
     const query = { player: { getEquipment: () => ({ get: () => helm }) }, active: true };
     protectionQuery(query); assert.equal(query.active, false);
   }
+});
+
+test("a chisel turns a serpentine visage into an uncharged helm for 120 Crafting XP", () => {
+  const inventoryItems = new Map([[ItemIds.SERPENTINE_VISAGE, 1], [ItemIds.CHISEL, 1]]);
+  let xp = 0;
+  let animation = null;
+  const messages = [];
+  const player = {
+    getInventory: () => ({
+      getAmount: (id) => inventoryItems.get(id) ?? 0,
+      deleteNumber: (id, amount) => inventoryItems.set(id, (inventoryItems.get(id) ?? 0) - amount),
+      getAddableAmount: () => 1,
+      adds: (id, amount) => inventoryItems.set(id, (inventoryItems.get(id) ?? 0) + amount),
+    }),
+    getSkillManager: () => ({
+      getCurrentLevel: (skill) => skill === Skill.CRAFTING ? 52 : 1,
+      addExperiences: (skill, amount) => { assert.equal(skill, Skill.CRAFTING); xp += amount; },
+    }),
+    performAnimation: (next) => { animation = next.getId(); },
+    sendMessage: (message) => messages.push(message),
+  };
+  const event = { player, usedItemId: ItemIds.CHISEL, usedWithItemId: ItemIds.SERPENTINE_VISAGE, handled: false };
+  SerpentineHelm._test.craftUncharged(event);
+  assert.equal(event.handled, true);
+  assert.equal(inventoryItems.get(ItemIds.SERPENTINE_VISAGE), 0);
+  assert.equal(inventoryItems.get(ItemIds.CHISEL), 1, "the chisel is kept");
+  assert.equal(inventoryItems.get(ItemIds.SERPENTINE_HELM_UNCHARGED_), 1);
+  assert.equal(xp, 120);
+  assert.equal(animation, 3102);
+  assert.match(messages.at(-1), /serpentine helm/);
+});
+
+test("chiselling a visage requires level 52 Crafting and keeps the visage", () => {
+  const inventoryItems = new Map([[ItemIds.SERPENTINE_VISAGE, 1]]);
+  const messages = [];
+  const player = {
+    getInventory: () => ({
+      getAmount: (id) => inventoryItems.get(id) ?? 0,
+      deleteNumber: (id, amount) => inventoryItems.set(id, (inventoryItems.get(id) ?? 0) - amount),
+      getAddableAmount: () => 1,
+      adds: (id, amount) => inventoryItems.set(id, (inventoryItems.get(id) ?? 0) + amount),
+    }),
+    getSkillManager: () => ({ getCurrentLevel: () => 51, addExperiences: () => assert.fail("no XP") }),
+    sendMessage: (message) => messages.push(message),
+  };
+  const event = { player, usedItemId: ItemIds.SERPENTINE_VISAGE, usedWithItemId: ItemIds.CHISEL, handled: false };
+  SerpentineHelm._test.craftUncharged(event);
+  assert.equal(event.handled, true);
+  assert.equal(inventoryItems.get(ItemIds.SERPENTINE_VISAGE), 1);
+  assert.match(messages.at(-1), /Crafting level of 52/);
 });
