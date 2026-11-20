@@ -3,7 +3,8 @@ const CameraShake = require("../../interface/CameraShake.plugin");
 
 module.exports = function registerDemonSlayerQuest(api) {
   const { Item, Location, World, Area, PrivateArea, Boundary, Animation, Graphic, NpcDialogue, PlayerDialogue, DialogueChainBuilder, ActionDialogue, ForceMovement, ForceMovementTask, Task, TaskManager, StatementDialogue, ItemStatementDialogue, GameObject, ObjectManager, Music, ItemIdentifiers, NpcIdentifiers, ObjectIdentifiers } = api.core;
-  const { registerQuest, refreshQuestList, startTranscript, startDialogue, questStartMessage } = require("../QuestRuntime");
+  const QuestRuntime = require("../QuestRuntime");
+  const { registerQuest, refreshQuestList, startTranscript, startDialogue, questStartMessage } = QuestRuntime;
 
   const ARIS_NPC_ID = NpcIdentifiers.ARIS;
   /** Aris' legacy cache id 5082 has no generated NpcIdentifiers member. */
@@ -298,6 +299,12 @@ module.exports = function registerDemonSlayerQuest(api) {
 
   /** Sir Prysin replaces Silverlight only when the player has it in no form. */
   const ownsSilverlight = (player) => SILVERLIGHT_FORMS.some((itemId) => ownsItem(player, itemId));
+
+  /** After Shadow of the Storm he re-issues the Darklight, which replaced the player's Silverlight. */
+  function replacementSword(player) {
+    const shadow = QuestRuntime.getRegisteredQuests().find((entry) => entry.name === "ShadowOfTheStorm");
+    return shadow && shadow.isComplete(player) ? ItemIdentifiers.DARKLIGHT : SILVERLIGHT_ITEM_ID;
+  }
 
   function incantationOrder(player) {
     let order = player.getAttribute(INCANTATION_ATTRIBUTE);
@@ -939,14 +946,15 @@ module.exports = function registerDemonSlayerQuest(api) {
           takeKey(player, TRAIBORN_KEY_ITEM_ID);
           takeKey(player, ROVIN_KEY_ITEM_ID);
           takeKey(player, PRYSIN_KEY_ITEM_ID);
-          player.getInventory().adds(SILVERLIGHT_ITEM_ID, 1);
+          const reward = replacementSword(player);
+          player.getInventory().adds(reward, 1);
           quest.setStage(player, STAGE_SILVERLIGHT);
           player.getPacketSender().sendVarbit(VARBIT_SILVERLIGHT_CASE, 1);
           player.performAnimation(new Animation(ANIMATION.sword));
           player.performGraphic(new Graphic(GRAPHIC.glint));
           player.getPacketSender().sendSound(SOUND.glint, 1, 0);
           setDrainState(player, 3);
-          event.box = { items: [SILVERLIGHT_ITEM_ID] };
+          event.box = { items: [reward] };
         }
         return; // leave the transcript's own message to play
       }
@@ -957,7 +965,7 @@ module.exports = function registerDemonSlayerQuest(api) {
           !player.getInventory().isFull()
         ) {
           player.getInventory().deleteNumber(COINS_ITEM_ID, 500);
-          player.getInventory().adds(SILVERLIGHT_ITEM_ID, 1);
+          player.getInventory().adds(replacementSword(player), 1);
         }
         event.handled = true;
         return;
