@@ -6,6 +6,7 @@ import { Opcodes } from "../../rs/cs2/Opcodes";
 import { loadRuneliteScript } from "../../rs/cs2/runeliteScripts";
 import { applyMinimapZoomToggleFix } from "../../rs/cs2/minimapZoomToggle";
 import { applyMasteryChallengeRows } from "../../rs/cs2/masteryChallengeRows";
+import { applyLeagueAreaCount } from "../../rs/cs2/leagueAreaCount";
 import { type Script as Cs2Script, parseScriptFromBytes } from "../../rs/cs2/Script";
 import { applySortCallbacks } from "../../rs/cs2/sortCallbacks";
 import { applyZoomCallbacks } from "../../rs/cs2/zoomCallbacks";
@@ -133,6 +134,7 @@ export class ClientScriptLoader {
         applyZoomCallbacks(script);
         applyMinimapZoomToggleFix(script);
         applyMasteryChallengeRows(script);
+        applyLeagueAreaCount(script);
         if (this.cache.has(scriptId)) {
             this.cache.delete(scriptId);
         }

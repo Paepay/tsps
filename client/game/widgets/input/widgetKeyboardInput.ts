@@ -9,6 +9,8 @@ import type { WidgetManager } from "../../../widgets/WidgetManager";
 
 /** chatbox:0, whose key listener (script 73) types into the chat line and sends it. */
 const CHATBOX_TYPING_UID = (162 << 16) | 0;
+/** The world map overlay (worldmap), mounted at 161:18 with interface-parent type 1. */
+const WORLD_MAP_GROUP_ID = 595;
 
 /** The construction build menu (458) is open: it owns every key. */
 function isConstructionOpen(widgetManager: WidgetManager): boolean {
@@ -20,6 +22,7 @@ export function processConstructionKeyboardInput(
     deps: WidgetInputControllerDeps,
     input: WidgetInputFrame["input"],
     widgetManager: WidgetManager,
+    frame?: Pick<WidgetInputFrame, "allRoots" | "visibleMap" | "getStaticChildren" | "mx" | "my"> | null,
 ): boolean {
     if (isConstructionOpen(widgetManager)) {
         // Script 73 rejects hidden chat layers before touching VarC 335.
@@ -33,6 +36,9 @@ export function processConstructionKeyboardInput(
         deps.setPendingInputDialogAction(null);
         deps.setPendingTradeQuantityAction(null);
         for (const keyEvent of input.keyEvents) {
+            // The build menu's furniture rows install onKey handlers (script 228 binds
+            // 8184) that choose a piece of furniture from the number/letter hotkey.
+            if (frame) dispatchConstructionKey(deps, frame, widgetManager, keyEvent);
             const text = vars.getVarcString(335) ?? "";
             if (keyEvent.keyTyped === 13) {
                 queuePacket(createPacket(ClientPacket.IF_CLOSE));
@@ -64,7 +70,7 @@ export function processWidgetKeyboardInput(
     const { input, mx, my } = frame;
     processWidgetKeyDownUpInput(deps, frame, widgetManager);
     if (input.keyEvents.length > 0) {
-        if (processConstructionKeyboardInput(deps, input, widgetManager)) return;
+        if (processConstructionKeyboardInput(deps, input, widgetManager, frame)) return;
         const dialogActive = (
             deps.getCs2Vm().inputDialogType > 1 ||
             deps.getPendingInputDialogAction() !== null ||
@@ -273,9 +279,31 @@ function processWidgetKeyDownUpInput(
 /** Whether a modal interface (bank, shop, ...) is open: what Esc and the B button would close. */
 export function hasOpenModal(widgetManager: Pick<WidgetManager, "interfaceParents">): boolean {
     for (const parent of widgetManager.interfaceParents.values()) {
-        if (parent && (parent.type === 0 || parent.type === 3)) return true;
+        if (parent && (parent.type === 0 || parent.type === 3 || (parent.group | 0) === WORLD_MAP_GROUP_ID)) return true;
     }
     return false;
+}
+
+/** Dynamic build-menu rows live in group 458; keep chat and unrelated listeners out. */
+function dispatchConstructionKey(
+    deps: WidgetInputControllerDeps,
+    frame: Pick<WidgetInputFrame, "allRoots" | "visibleMap" | "getStaticChildren" | "mx" | "my">,
+    widgetManager: WidgetManager,
+    keyEvent: WidgetInputFrame["input"]["keyEvents"][number],
+): void {
+    if (!Array.isArray(frame.allRoots) || typeof frame.getStaticChildren !== "function") return;
+    const widgets = collectVisibleKeyWidgets(frame as WidgetInputFrame, widgetManager);
+    for (const w of widgets.values()) {
+        if (((w?.uid ?? 0) >>> 16) !== 458) continue;
+        const keyCtx: Partial<ScriptEvent> = {
+            mouseX: frame.mx - (w._absX ?? w.x ?? 0),
+            mouseY: frame.my - (w._absY ?? w.y ?? 0),
+            keyTyped: keyEvent.keyTyped,
+            keyPressed: keyEvent.keyPressed,
+        };
+        if (w.eventHandlers?.onKey) deps.getCs2Vm().invokeEventHandler(w, "onKey", keyCtx);
+        else if (w.onKey) deps.executeScriptListener(w, w.onKey, keyCtx);
+    }
 }
 
 /**

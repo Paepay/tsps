@@ -974,11 +974,18 @@ export class PacketSender {
   }
 
   public hasInterruptibleInterface(): boolean {
-    return this.chatboxGroupId >= 0 || [...this.subInterfaceTargets.values()]
+    return this.isWorldMapOpen() || this.chatboxGroupId >= 0 || [...this.subInterfaceTargets.values()]
       .some((entry) => entry.type === 0 || entry.type === 3);
   }
 
   closeInterruptibleInterfaces(): this {
+    // The world map is an overlay (type 1), so IF_CLOSE used to miss it and then close the
+    // main interface underneath instead. Dismiss the map on its own, leaving e.g. the bank open.
+    if (this.isWorldMapOpen()) {
+      this.closeWorldMap();
+      this.emitInterfaceClosed(WORLD_MAP_GROUP_ID);
+      return this;
+    }
     const interfaceId = this.resetInterfaceState();
     const closed = this.closeTrackedInterfaces();
     this.endBankSearch(interfaceId);

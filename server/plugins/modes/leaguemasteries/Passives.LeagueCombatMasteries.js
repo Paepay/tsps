@@ -61,8 +61,21 @@ function restore(event) {
   if (passive) event.amount = Math.floor(event.amount * passive.prayerGainMultiplier);
 }
 
+/** The Gauntlet's Hunllef changes prayer by script rather than activating a real prayer. */
+function scriptedPrayerAgainst(target, combatType) {
+  const protecting = target?.__gauntletHunllef?.protecting;
+  if (protecting === undefined || protecting === null) return false;
+  const style = combatType === core.CombatType.MAGIC ? "magic"
+    : combatType === core.CombatType.RANGED ? "ranged"
+      : combatType === core.CombatType.MELEE ? "melee" : null;
+  return style !== null && protecting === style;
+}
+
 function praysAgainst(target, combatType) {
-  return !!target && core.PrayerHandler.isActivated(target, core.PrayerHandler.getProtectingPrayer(combatType));
+  return !!target && (
+    scriptedPrayerAgainst(target, combatType) ||
+    core.PrayerHandler.isActivated(target, core.PrayerHandler.getProtectingPrayer(combatType))
+  );
 }
 
 /**

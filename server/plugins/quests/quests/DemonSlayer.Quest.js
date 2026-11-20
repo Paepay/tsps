@@ -318,10 +318,36 @@ module.exports = function registerDemonSlayerQuest(api) {
       player.getPacketSender().sendVarbit(VARBIT_INCANTATION_FIRST + index, word));
   }
 
+  /**
+   * Keys count wherever the player keeps them. Sir Prysin accepts the three keys from the
+   * bank as well as the inventory (a banked key used to start the sword cutscene and then
+   * leave the hand-over with nothing to give).
+   */
+  const ownsKey = (player, itemId) => hasItem(player, itemId) || bankHasItem(player, itemId);
+
   const hasAllKeys = (player) =>
-    hasItem(player, TRAIBORN_KEY_ITEM_ID) &&
-    hasItem(player, ROVIN_KEY_ITEM_ID) &&
-    hasItem(player, PRYSIN_KEY_ITEM_ID);
+    ownsKey(player, TRAIBORN_KEY_ITEM_ID) &&
+    ownsKey(player, ROVIN_KEY_ITEM_ID) &&
+    ownsKey(player, PRYSIN_KEY_ITEM_ID);
+
+  /** Take one key from the inventory first, otherwise from the bank. */
+  function takeKey(player, itemId) {
+    if (hasItem(player, itemId)) {
+      player.getInventory().deleteNumber(itemId, 1);
+      return true;
+    }
+    const searchTab = api.core.Bank?.BANK_SEARCH_TAB_INDEX;
+    const banks = player.getBanks?.() ?? [];
+    for (let tab = 0; tab < banks.length; tab++) {
+      if (tab === searchTab) continue;
+      const bank = banks[tab];
+      if (!bank || Number(bank.getAmount?.(itemId) ?? 0) <= 0) continue;
+      if (typeof bank.delete === "function") bank.delete(itemId, 1);
+      else bank.deleteNumber?.(itemId, 1);
+      return true;
+    }
+    return false;
+  }
 
   const carriedKeyCount = (player) =>
     [TRAIBORN_KEY_ITEM_ID, ROVIN_KEY_ITEM_ID, PRYSIN_KEY_ITEM_ID].filter((id) =>
@@ -777,7 +803,7 @@ module.exports = function registerDemonSlayerQuest(api) {
   /** Prysin walks to the case, opens it and presents the sword (capture 1843, 10049-10066). */
   function playSilverlightCase(event) {
     const { player, npc, npcId } = event;
-    if (!npc || !hasAllKeys(player) || ownsItem(player, SILVERLIGHT_ITEM_ID) || prysinsAtCase.has(npc)) return false;
+    if (!npc || !hasAllKeys(player) || ownsSilverlight(player) || prysinsAtCase.has(npc)) return false;
     prysinsAtCase.add(npc);
     const sender = player.getPacketSender();
     const scene = {};
@@ -896,10 +922,23 @@ module.exports = function registerDemonSlayerQuest(api) {
         return;
       }
       if (stepId === SILVERLIGHT_MESSAGE_ID) {
-        if (!ownsSilverlight(player) && hasAllKeys(player)) {
-          player.getInventory().deleteNumber(TRAIBORN_KEY_ITEM_ID, 1);
-          player.getInventory().deleteNumber(ROVIN_KEY_ITEM_ID, 1);
-          player.getInventory().deleteNumber(PRYSIN_KEY_ITEM_ID, 1);
+        if (ownsSilverlight(player)) {
+          event.text = "You already have Silverlight.";
+          event.box = { statement: true };
+          event.handled = true;
+        } else if (!hasAllKeys(player)) {
+          event.text = "You need all three of Sir Prysin's keys first.";
+          event.box = { statement: true };
+          event.handled = true;
+        } else if (player.getInventory().isFull?.() === true) {
+          // Never consume the keys before there is somewhere to put the sword.
+          event.text = "You need a free inventory slot to take Silverlight.";
+          event.box = { statement: true };
+          event.handled = true;
+        } else {
+          takeKey(player, TRAIBORN_KEY_ITEM_ID);
+          takeKey(player, ROVIN_KEY_ITEM_ID);
+          takeKey(player, PRYSIN_KEY_ITEM_ID);
           player.getInventory().adds(SILVERLIGHT_ITEM_ID, 1);
           quest.setStage(player, STAGE_SILVERLIGHT);
           player.getPacketSender().sendVarbit(VARBIT_SILVERLIGHT_CASE, 1);
