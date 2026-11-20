@@ -866,8 +866,8 @@ varp `league_relic_effect_toggle_1` with the recorded "Relic - ..." lines (237/0
 | 2 | Friendly Forager | partial: Raging Echoes' unit, plus Herblore at once and 100 of each herb (Wiki, 15 April 2026); the recorded lines, the Withdraw menu and the bank's Empty. Not the worn Withdraw-all and Withdraw-last (their behaviour is in no source), nor the herb sack's shared store (Wiki: it shares the silklined herb sack's) |
 | 2 | Woodsman | partial: Fletching batches, log burning, Hunter catches, impling loot doubled and noted (`hunter:impling-loot`), double rumour XP and sack loot rolls (`hunter:rumour-reward`, `hunter:sack-rolls`), whistles that keep their charges (`quetzals:whistle-charge`); not the trap's herb or tree seed: the Wiki says only "a random herb seed or tree seed", and no Leagues VI recording has a Woodsman holder (every trapper in them chose Friendly Forager) |
 | 3 | Bank Heist | done |
-| 3 | Evil Eye | partial: the Wiki's 60 bosses and raids by area, each on the entrance tile the server's own data gives (`league-evil-eye.json`), with the eye's recorded cast (evil_eye_cast01, leagues_6_evil_eye, the move 4 ticks on, varp league_default_teleport_last_destination; 237/04057) and live's menus (interface 187 "Select a region", locked areas struck through, "Evil Eye teleports - <region>" with Back; live's labels for the five recorded areas); not the strike-through of bosses whose own requirements are unmet |
-| 3 | Map of Alacrity | partial: 73 of the Wiki map's 141 shortcuts, those the server has with a side the pin and the data agree on, or that the shortcut's Wiki page names (`league-map-of-alacrity.json`, which lists the rest and why), no Agility level to teleport (Wiki: the shortcut keeps its own), the Wiki's "to use the teleport" quest notes, interface 187's menus as Evil Eye's; its own cast (hotfoot_grace_teleport, leagues_6_hotfoot; inferred, unrecorded) |
+| 3 | Evil Eye | partial: the Wiki's 60 bosses and raids by area, each on the entrance tile the server's own data gives (`league-evil-eye.json`), with the eye's recorded cast (evil_eye_cast01, leagues_6_evil_eye, the move 4 ticks on, varp league_default_teleport_last_destination; 237/04057) and the browser teleport menu ("Select a region" first, locked areas labelled with their reason, then "Evil Eye teleports - <region>" with Back; live's labels for the five recorded areas); not the strike-through of bosses whose own requirements are unmet |
+| 3 | Map of Alacrity | partial: 73 of the Wiki map's 141 shortcuts, those the server has with a side the pin and the data agree on, or that the shortcut's Wiki page names (`league-map-of-alacrity.json`, which lists the rest and why), no Agility level to teleport (Wiki: the shortcut keeps its own), the Wiki's "to use the teleport" quest notes, the browser teleport menu as Evil Eye's; its own cast (hotfoot_grace_teleport, leagues_6_hotfoot; inferred, unrecorded) |
 | 4 | Transmute | done: Alchemic Divergence and Convergence (218:199, 218:200) move up to 10 of an item a tier along the cache's `transmutation` table, 10 Magic XP each, no level or runes, every 5 ticks, a stack cast on again while its slot holds it, noted stays noted, to the bank by toggle, loose items in place, 10 or fewer held with no free slot, more held only with a slot for each of the 10 (237/01102, 01106, 238/04211); the alchemy spell while toggled off; the ledger's endless nature runes and its scroll for an item used on it; not Divergence on a top tier (unrecorded), the ledger's Read (nothing says what it shows), or which skilling pauses the casts |
 | 4 | Conniving Clues | done |
 | 4 | Butler's Bell | done but for the bell's Check (its line is in no source): Ring summons the Demon butler beside its owner (not in an instance; in view, he asks to be spoken to), one job of the cache's butlers_bell_actions at its rate a minute or half that processed, rolled on the Wiki's weighted tables, reckoned from the clock (offline too), 10 XP a processed item in the row's skill; Talk-to and Collect as the Wiki transcript, the collection shown on 954. Ours, unsourced: the job menu (the cache's nouns), where he stands and when he leaves, the collection banked (`league-butlers-bell.json` `_ours`) |
@@ -1230,7 +1230,17 @@ hotfoot_grace_teleport with spotanim leagues_6_hotfoot, inferred from the Wiki's
 cache's names; the Evil eye: its own recorded cast), their item's Wilderness limit, and the league's
 areas: a destination in an area the character has not unlocked is refused (`league:area-at`
 and `league:areas`, answered by the league's area unlocks; with nobody answering, everywhere is
-open). Each item remembers its last destination. The menus' grouping and wording are ours.
+open). Each item remembers its last destination. The browser teleport menu's grouping and
+wording are ours.
+
+Every relic item that lists destinations opens the browser's teleport menu, over the
+`teleport-menu` plugin channel: regions first, then the exact destinations of the chosen region.
+The server sends only the current page (twelve entries), owns the full tree, validates the
+session and indices, and runs the chosen destination through the item's existing `go`. Locked
+entries stay visible with their reason and never activate. The client assigns
+`ASDFQWERZXCV` (right-handed) or `;LKJPOIU.M,N` (left-handed) by physical key position, resets
+the sequence on each screen, and provides arrow keys + Enter, Backspace for Back, Escape to
+close, mouse clicks, and paging for longer lists. A plugin setting stores the handedness.
 
 - **Fairy's Flight** (Trailblazer Reloaded tier 2, Raging Echoes tier 3): the fairy mushroom's
   Teleport (or, worn, Fairy-Ring, Spirit-tree, Tool-leprechauns) goes to any fairy ring by its
@@ -1239,7 +1249,8 @@ open). Each item remembers its last destination. The menus' grouping and wording
   20, Wiki). Not here: the Tree Gnome Village autocompletion (the quest's own).
 - **Globetrotter** (Trailblazer Reloaded tier 2): the pendant's Nexus goes to the spellbooks'
   teleports (standard, ancient, lunar, Arceuus, and the house when the character owns one: not
-  a Last-destination, which could not enter it), its
+  a Last-destination, which could not enter it), grouped by their base region on every world
+  (the league area map, not the source spellbook; a repeated name adds the book), its
   Jewellery to the ornate jewellery box's 27 destinations, up to level 20 Wilderness, 30 for a
   dragonstone piece's destination and its last destination (Wiki, 6 December 2023). No runes.
 - **Banker's Note** (Trailblazer Reloaded tier 3, Raging Echoes tier 6): an item used on the note
@@ -1276,14 +1287,14 @@ open). Each item remembers its last destination. The menus' grouping and wording
   requirements (kill counts, keys, tasks) are met or refused at its entrance. The cast is the
   eye's own, as 237/04057 records it: evil_eye_cast01 and spotanim leagues_6_evil_eye a tick after
   the pick, the move four ticks later, and varp league_default_teleport_last_destination set to the
-  tile (packed z << 28 | x << 14 | y). Live's menus are interface 187's (script 217): "Select a
-  region" with locked areas struck through, then "Evil Eye teleports - <area>" with live's own
+  tile (packed z << 28 | x << 14 | y). The browser menu's first screen is "Select a region",
+  with locked areas labelled by reason, then "Evil Eye teleports - <area>" with live's own
   labels ("Barrows Chest", "Fight Caves", "TzHaar-Ket-Rak", ...) and Back; only five areas' lists
   are recorded (237/04057, 04070, 1104, 1107, 1159), so the other areas keep the Wiki's names.
-  The menu closes before the pick runs (a teleport is refused while an interface is open); a
-  region or Back opens the next menu in its place.
+  A destination closes the menu and starts the existing teleport path; a region, a page or Back
+  replaces the current screen.
 - **Map of Alacrity** (Demonic Pacts tier 3): the Map of alacrity's Read (an area submenu) lists
-  an area's Agility shortcuts in interface 187's menu (as Evil Eye's; the map's own titles are
+  an area's Agility shortcuts in the browser menu (as Evil Eye's; the map's own titles are
   unrecorded, ours), Last-destination repeats the last; from any Wilderness level, in unlocked
   areas, with no Agility level (Wiki: "teleporting to a shortcut does not require you to have the
   Agility level to use it") and only the Wiki's "to use the teleport" quest notes (Shadows of
