@@ -3,7 +3,7 @@
  * standard animation, or the league's area-teleport cast for an item that asks for it; the
  * Wilderness limit of the item, and only to areas the league character has unlocked), the item's
  * last destination, and the destinations listed by league area that Demonic Pacts' items share
- * (`areaTeleports`, in the menu interface as live lists Evil Eye's: `listMenu`).
+ * (`areaTeleports`, in the browser client's two-stage teleport menu).
  *
  * Areas: `league:area-at` { player, x, y } -> area (null when open) and `league:areas` { player } ->
  * unlocked, from the league's area unlocks; with nobody answering, every area is open. The cast:
@@ -13,10 +13,15 @@
 const Common = require("./Common.LeagueRelics");
 const { startHomeTeleport, castOf } = require("../../combat/HomeTeleportSequence");
 
-/** Four destinations a page and "More...", as the jewellery's own menus. */
-const PAGE_SIZE = 5;
 /** "Ignores Wilderness teleport restrictions" (Wiki): no level stops it. */
 const ANY_WILDERNESS_LEVEL = 60;
+/** The browser client's teleport menu, with at most twelve shortcuts on a page. */
+const TELEPORT_MENU_CHANNEL = "teleport-menu";
+const MENU_PAGE_SIZE = 12;
+/** The server's menu for each player: { id, key, title, regions, stage, regionIndex, page, regionPage, back }. */
+const teleportMenus = new WeakMap();
+const menuApis = new WeakSet();
+let nextMenuId = 1;
 
 function lastAttribute(key) {
   return `league:last-destination:${key}`;
@@ -26,7 +31,13 @@ function lastAttribute(key) {
 function unlockedAreas(player) {
   const areas = { player, unlocked: null };
   Common.api.emitCustomEvent("league:areas", areas);
-  return Array.isArray(areas.unlocked) ? areas.unlocked : null;
+  // A seasonal character identifies its league. A Level-Up character answers with league null and
+  // an empty list, which must fall through to its own region profile instead of locking every area.
+  if (areas.league !== null && Array.isArray(areas.unlocked)) return areas.unlocked;
+  // Level-Up uses the same region map and its own progression, without a seasonal league profile.
+  const levelUp = { player, active: false, unlocked: [] };
+  Common.api.emitCustomEvent("level-up:area-profile", levelUp);
+  return levelUp.active === true && Array.isArray(levelUp.unlocked) ? levelUp.unlocked.map(Number) : null;
 }
 
 /** Whether the tile is in an area the league character has unlocked (or no area at all). */
@@ -162,117 +173,232 @@ function goLast(player, key) {
 }
 
 /**
- * The cache's generic option menu (interface `menu`, 187), as live opens Evil Eye's (237/04057,
- * 01133): the modal on toplevel mainmodal, pause-button events on menu:lj_layer1 slots 0-512,
- * toplevel_mainmodal_open [-1, -1], then script `menu` [title, "a|b|c", true]. A pick is a
- * resume_pausebutton on menu:lj_layer1, its sub the entry's index; the modal closes and
- * chatdefault_restoreinput runs, as live.
+ * The browser client's teleport menu. The server owns the two-stage region -> destination tree,
+ * sends only the current page (twelve entries, so a shortcut always fits), and validates every
+ * index and session. The relic's existing `go` remains the only teleport path.
  */
-const MENU_INTERFACE = "menu";
-const MENU_CHOICES = "menu:lj_layer1";
-const SCRIPT_MAINMODAL_OPEN = 2524;
-const SCRIPT_MENU = 217;
-/** chatdefault_restoreinput: the chatbox's input back after the menu. */
-const SCRIPT_RESTORE_INPUT = 2158;
-const MAINMODAL_OPEN_ARGS = [-1, -1];
-const MENU_NUMBERED = 1;
-const PAUSE_BUTTON = 1;
-const MENU_SLOTS = 512;
-/** An entry the character can't take, struck through as live lists a locked area or boss. */
-const struck = (label) => `<str>${label}</str>`;
-
-/** The area menu's last entry, back to the regions (live's, 237/01104, 01107, 01159). */
-const BACK = "Back";
-
-/** A menu on screen, by player: { entries }. */
-const pendingMenus = new WeakMap();
-const menuAttached = new WeakSet();
-
-let ids = null;
-
-/** The menu's group and choices component, by the cache's names (looked up once). */
-function menuIds() {
-  const { CacheDefinitions } = Common.core;
-  ids ??= { group: CacheDefinitions.getInterfaceId(MENU_INTERFACE), choices: CacheDefinitions.getComponentId(MENU_CHOICES) };
-  return ids;
+function menuPageCount(length) {
+  return Math.max(1, Math.ceil(length / MENU_PAGE_SIZE));
 }
 
-/**
- * The menu interface with `entries` [{ label, locked, choose, next? }] under `title`; a locked
- * entry is struck through and still picked (its `choose` gives the refusal); `next` marks one that
- * opens another menu.
- */
-function listMenu(player, title, entries) {
-  const { group, choices } = menuIds();
-  const sender = player.getPacketSender();
-  // One menu to the next (a region's, Back) replaces it in place, as live does (237/04070).
-  if (player.getInterfaceId() !== group) sender.sendInterfaceRemoval();
-  sender.sendInterface(group);
-  sender.sendInterfaceFlagsRange(choices, 0, MENU_SLOTS, PAUSE_BUTTON);
-  sender.sendInterfaceScript(SCRIPT_MAINMODAL_OPEN, MAINMODAL_OPEN_ARGS);
-  sender.sendClientScript(SCRIPT_MENU, title, entries.map(({ label, locked }) => (locked ? struck(label) : label)).join("|"), MENU_NUMBERED);
-  pendingMenus.set(player, { entries });
-}
-
-/**
- * A pick from `listMenu`: the menu closes (a teleport needs it shut), then the entry's action runs;
- * an entry that opens another menu (`next`) leaves it open for that one to replace.
- */
-function chooseFromMenu(event) {
-  const { group, choices } = menuIds();
-  const buttonId = Number(event.buttonId ?? 0);
-  if ((event.groupId ?? (buttonId >>> 16)) !== group || (event.childId ?? (buttonId & 0xffff)) !== (choices & 0xffff)) return;
-  const { player } = event;
-  const pending = pendingMenus.get(player);
-  if (!pending) return;
-  event.handled = true;
-  pendingMenus.delete(player);
-  const entry = pending.entries[Number(event.slot ?? event.action)];
-  if (!entry?.next) {
-    const sender = player.getPacketSender();
-    sender.sendInterfaceRemoval();
-    sender.sendInterfaceScript(SCRIPT_RESTORE_INPUT);
+function sendMenuPacket(player, packet) {
+  const encode = Common.api?.encodePluginMessage ?? Common.api?.core?.encodePluginMessage;
+  if (typeof encode !== "function") return;
+  try {
+    player.getSession?.()?.sendClientPacket(encode(TELEPORT_MENU_CHANNEL, packet));
+  } catch (error) {
+    Common.api?.log?.(`[league-teleports] could not send the teleport menu: ${error.message}`);
   }
-  entry?.choose();
 }
 
-/** The menu closed another way (walking off, another interface): nothing pending. */
-function menuClosed({ player, interfaceId }) {
-  if (interfaceId !== menuIds().group || !pendingMenus.has(player)) return;
-  pendingMenus.delete(player);
-  player.getPacketSender().sendInterfaceScript(SCRIPT_RESTORE_INPUT);
+function menuLocked(entry) {
+  return entry?.locked === true;
 }
 
-/** The menu's handlers, once per api (each relic that lists by area attaches it). */
+function menuReason(entry) {
+  return typeof entry?.reason === "string" && entry.reason.length > 0
+    ? entry.reason
+    : "That teleport is unavailable.";
+}
+
+function selectedRegion(state) {
+  return state.stage === "destinations" && Number.isInteger(state.regionIndex)
+    ? state.regions[state.regionIndex]
+    : null;
+}
+
+/** The page the client should draw for the menu's current stage. */
+function sendMenuScreen(player, state) {
+  const region = selectedRegion(state);
+  const list = region ? region.destinations : state.regions;
+  const pages = menuPageCount(list.length);
+  state.page = Math.max(0, Math.min(pages - 1, Number.isInteger(state.page) ? state.page : 0));
+  const start = state.page * MENU_PAGE_SIZE;
+  const entries = list.slice(start, start + MENU_PAGE_SIZE).map((entry, offset) => {
+    const locked = menuLocked(entry);
+    return {
+      index: start + offset,
+      label: String(entry.label ?? "Teleport"),
+      locked,
+      ...(locked ? { reason: menuReason(entry) } : {}),
+    };
+  });
+  sendMenuPacket(player, {
+    type: "screen",
+    session: state.id,
+    stage: state.stage,
+    title: region ? (region.destinationTitle ?? region.label) : state.title,
+    page: state.page,
+    pages,
+    total: list.length,
+    canBack: region !== null && state.back === true,
+    ...(region ? { region: { index: state.regionIndex, name: region.label } } : {}),
+    entries,
+  });
+}
+
+function menuError(player, state, message) {
+  sendMenuPacket(player, { type: "error", session: state.id, message });
+}
+
+/**
+ * Opens a menu with `regions` [{ label, locked?, reason?, destinationTitle?, destinations:
+ * [{ label, locked?, reason?, choose }] }]. `regionIndex` opens one region's destination list
+ * directly (an item's own submenu); Back returns to the regions unless `back` is false.
+ */
+function openMenu(player, spec, { regionIndex = null, back = true } = {}) {
+  const source = Array.isArray(spec?.regions) ? spec.regions : [];
+  const regions = [];
+  const sourceToMenu = new Map();
+  source.forEach((region, index) => {
+    if (!region || !Array.isArray(region.destinations) || region.destinations.length === 0) return;
+    sourceToMenu.set(index, regions.length);
+    regions.push(region);
+  });
+  if (regions.length === 0) {
+    player.sendMessage(Common.message("noDestinations"));
+    return false;
+  }
+  const direct = Number.isInteger(regionIndex);
+  const menuRegionIndex = direct ? sourceToMenu.get(regionIndex) : null;
+  if (direct && menuRegionIndex === undefined) {
+    player.sendMessage(Common.message("noDestinations"));
+    return false;
+  }
+  const id = nextMenuId++;
+  if (nextMenuId > 2_147_483_647) nextMenuId = 1;
+  const state = {
+    id,
+    key: typeof spec.key === "string" ? spec.key : null,
+    title: typeof spec.title === "string" ? spec.title : "Teleport",
+    regions,
+    stage: direct ? "destinations" : "regions",
+    regionIndex: direct ? menuRegionIndex : null,
+    page: 0,
+    regionPage: 0,
+    back: back === true,
+  };
+  teleportMenus.set(player, state);
+  sendMenuScreen(player, state);
+  return true;
+}
+
+/** A list of exact destinations with no region stage (an item option that already names its list). */
+function openDestinations(player, { key = null, title, destinations: list, back = false }) {
+  return openMenu(player, {
+    key,
+    title,
+    regions: [{ label: title, destinationTitle: title, destinations: Array.isArray(list) ? list : [] }],
+  }, { regionIndex: 0, back });
+}
+
+function requestMenuPage(player, state, page) {
+  const list = selectedRegion(state)?.destinations ?? state.regions;
+  const pages = menuPageCount(list.length);
+  if (!Number.isInteger(page) || page < 0 || page >= pages) {
+    menuError(player, state, "That page is not available.");
+    return;
+  }
+  state.page = page;
+  sendMenuScreen(player, state);
+}
+
+function requestMenuRegion(player, state, index) {
+  if (state.stage !== "regions" || !Number.isInteger(index) || !state.regions[index]) {
+    menuError(player, state, "That region is not available.");
+    return;
+  }
+  const region = state.regions[index];
+  if (menuLocked(region)) {
+    menuError(player, state, menuReason(region));
+    return;
+  }
+  state.regionPage = state.page;
+  state.stage = "destinations";
+  state.regionIndex = index;
+  state.page = 0;
+  sendMenuScreen(player, state);
+}
+
+function requestMenuDestination(player, state, index) {
+  const region = selectedRegion(state);
+  if (!region || !Number.isInteger(index) || !region.destinations[index]) {
+    menuError(player, state, "That teleport is not available.");
+    return;
+  }
+  const destination = region.destinations[index];
+  if (menuLocked(destination)) {
+    menuError(player, state, menuReason(destination));
+    return;
+  }
+  if (typeof destination.choose !== "function") {
+    menuError(player, state, "That teleport is not available.");
+    return;
+  }
+  if (destination.choose() === false) {
+    menuError(player, state, "That teleport could not be completed. See chat for details.");
+    return;
+  }
+  teleportMenus.delete(player);
+  sendMenuPacket(player, { type: "close", session: state.id });
+}
+
+function receiveMenuMessage(event) {
+  if (event?.channel !== TELEPORT_MENU_CHANNEL) return;
+  // Every teleport relic attaches the shared handler to its own plugin API.
+  if (event.handled) return;
+  event.handled = true;
+  const { player } = event;
+  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data) ? event.data : {};
+  const state = teleportMenus.get(player);
+  if (data.type === "close") {
+    const session = Number.isInteger(data.session) ? data.session : state?.id ?? 0;
+    if (!state || data.session === state.id) {
+      teleportMenus.delete(player);
+      sendMenuPacket(player, { type: "close", session });
+    }
+    return;
+  }
+  if (!state || !Number.isInteger(data.session) || data.session !== state.id) {
+    if (state) sendMenuScreen(player, state);
+    return;
+  }
+  if (data.type === "region") requestMenuRegion(player, state, data.index);
+  else if (data.type === "destination") requestMenuDestination(player, state, data.index);
+  else if (data.type === "page") requestMenuPage(player, state, data.page);
+  else if (data.type === "back") {
+    if (state.stage !== "destinations" || state.back !== true) {
+      menuError(player, state, "There is no previous menu.");
+      return;
+    }
+    state.stage = "regions";
+    state.regionIndex = null;
+    state.page = state.regionPage;
+    sendMenuScreen(player, state);
+  } else {
+    menuError(player, state, "That menu action is not available.");
+  }
+}
+
+/** The menu's plugin-message handler, once per api (every teleport relic attaches it). */
 function attachMenu(api) {
-  if (menuAttached.has(api)) return;
-  menuAttached.add(api);
-  api.onInterfaceActionClick(chooseFromMenu);
-  api.onCustomEvent("interface:closed", menuClosed);
+  if (menuApis.has(api)) return;
+  menuApis.add(api);
+  api.onCustomEvent("network:plugin-message", receiveMenuMessage);
+  api.onCustomEvent("interface:opened", closeMenuForInterface);
   api.onPlayerLogout(forgetMenu);
 }
 
 function forgetMenu({ player }) {
-  pendingMenus.delete(player);
+  teleportMenus.delete(player);
 }
 
-/** A paged chatbox menu of [label, action] entries. */
-function menu(player, title, entries) {
-  if (entries.length === 0) {
-    player.sendMessage(Common.message("noDestinations"));
-    return;
-  }
-  let page = entries;
-  if (entries.length > PAGE_SIZE) {
-    const rest = entries.slice(PAGE_SIZE - 1);
-    page = [...entries.slice(0, PAGE_SIZE - 1), ["More...", () => menu(player, title, rest)]];
-  }
-  Common.api.sendMultiChatboxPrompt(player, title, ...page.flat());
-}
-
-/** A menu of destinations, each teleporting with `options`. */
-function destinations(player, key, title, list, options = {}) {
-  menu(player, title, list.map((destination) => [destination.label, () => go(player, key, destination, options)]));
+/** Another interface taking the screen ends the menu, so its keys and clicks do not keep it open. */
+function closeMenuForInterface({ player }) {
+  const state = teleportMenus.get(player);
+  if (!state) return;
+  teleportMenus.delete(player);
+  sendMenuPacket(player, { type: "close", session: state.id });
 }
 
 /** Asks an owner for a list (`{ ...request, list: [] }`) and returns it. */
@@ -322,11 +448,11 @@ function subOption(event) {
  * A Demonic Pacts item's destinations by league area (data `areas`: [{ name, region?, area,
  * destinations: [{ name, label?, x, y, z, level?, quest? }] }], `name` the item's submenu entry,
  * `region` the area's name on the menu and `label` the destination's where live's differs, `area`
- * the league's area id), in the menu
- * interface (`listMenu`): Teleport lists the areas under `title` (or its area submenu, the cache's
- * subops, goes straight to one), an area lists its destinations under `areaTitle(name)` with Back,
- * and Last-destination repeats the last. An area not unlocked, or a destination the character
- * can't take, is struck through, and picking it gives the refusal. A destination needs its area
+ * the league's area id), in the browser menu: Teleport lists the areas under `title` (or its area
+ * submenu, the cache's subops,
+ * goes straight to one), an area lists its destinations under `areaTitle(name)` with Back, and
+ * Last-destination repeats the last. An area not unlocked, or a destination the character can't
+ * take, is locked with its reason, and picking it gives the refusal. A destination needs its area
  * unlocked (and its tile's: `areaOpen`) and its `quest` completed (`quest:is-complete` by name;
  * unanswered, no bar); its Agility `level` is the shortcut's own, not the teleport's (Wiki:
  * "teleporting to a shortcut does not require you to have the Agility level to use it"). Any
@@ -360,32 +486,43 @@ function areaTeleports({ key, title, areaTitle = (name) => name, areas, cast = t
     return go(player, key, { label: destination.name, location }, { cast, onStart: remember });
   }
 
-  function regionMenu(player) {
-    listMenu(player, title, areas.map((area) => {
-      const locked = refusal(player, area, null) !== null;
-      return { label: regionName(area), locked, next: !locked, choose: () => areaMenu(player, area) };
-    }));
-  }
-
-  function areaMenu(player, area) {
-    const refused = refusal(player, area, null);
-    if (refused) {
-      player.sendMessage(refused);
-      return;
-    }
-    listMenu(player, areaTitle(regionName(area)), [
-      ...area.destinations.map((destination) => ({
-        label: destination.label ?? destination.name, locked: refusal(player, area, destination) !== null, choose: () => choose(player, area, destination),
-      })),
-      { label: BACK, locked: false, next: true, choose: () => regionMenu(player) },
-    ]);
+  function menuSpec(player) {
+    return {
+      key,
+      title,
+      regions: areas.map((area) => {
+        const regionRefusal = refusal(player, area, null);
+        return {
+          label: regionName(area),
+          destinationTitle: areaTitle(regionName(area)),
+          locked: regionRefusal !== null,
+          ...(regionRefusal !== null ? { reason: regionRefusal } : {}),
+          destinations: area.destinations.map((destination) => {
+            const reason = refusal(player, area, destination);
+            return {
+              label: destination.label ?? destination.name,
+              locked: reason !== null,
+              ...(reason !== null ? { reason } : {}),
+              choose: () => choose(player, area, destination),
+            };
+          }),
+        };
+      }),
+    };
   }
 
   function teleport(event) {
     const picked = subOption(event);
     const area = picked === null ? null : areas.find((entry) => entry.name === picked);
-    if (area) areaMenu(event.player, area);
-    else regionMenu(event.player);
+    if (area) {
+      const refused = refusal(event.player, area, null);
+      if (refused) {
+        event.player.sendMessage(refused);
+        return false;
+      }
+      return openMenu(event.player, menuSpec(event.player), { regionIndex: areas.indexOf(area), back: true });
+    }
+    return openMenu(event.player, menuSpec(event.player));
   }
 
   function last(event) {
@@ -403,6 +540,7 @@ function areaTeleports({ key, title, areaTitle = (name) => name, areas, cast = t
 }
 
 module.exports = {
-  areaOpen, areaUnlocked, landing, reach, go, goLast, itemCast, menu, listMenu, attachMenu, destinations, ask, spawnsNamed, lastAttribute, subOption, areaTeleports,
+  unlockedAreas, areaOpen, areaUnlocked, landing, reach, go, goLast, itemCast, openMenu, openDestinations, attachMenu, ask, spawnsNamed, lastAttribute, subOption, areaTeleports,
+  TELEPORT_MENU_CHANNEL, MENU_PAGE_SIZE,
   ANY_WILDERNESS_LEVEL,
 };

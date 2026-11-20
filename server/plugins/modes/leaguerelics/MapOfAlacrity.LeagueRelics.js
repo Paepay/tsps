@@ -5,8 +5,8 @@
  * shortcut (its area unlocked, the Wiki's quest notes "to use the teleport"), from any Wilderness
  * level, whatever the Agility level (Wiki: "teleporting to a shortcut does not require you to
  * have the Agility level to use it"); the shortcut keeps its own requirements. Read (or its area
- * submenu, the cache's subops) lists an area's shortcuts in the menu interface, as Evil Eye's
- * (Teleports' `listMenu`; no recording of the map's, so its titles are ours); Last-destination
+ * submenu, the cache's subops) lists an area's shortcuts in the browser menu, as Evil Eye's
+ * (no recording of the map's, so its titles are ours); Last-destination
  * repeats the last (through the same pick, so with the same cast). The cast is the map's own:
  * hotfoot_grace_teleport with spotanim leagues_6_hotfoot, the move as the seq ends. No recording
  * of the map in use; inferred from the Wiki's video and the cache's names (data `_cast`).

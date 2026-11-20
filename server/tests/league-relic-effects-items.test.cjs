@@ -28,6 +28,7 @@ const realRandom = Math.random;
 let I;
 let prompts = [];
 let teleports = [];
+let menuPlayer = null;
 let realTeleport;
 let realCheckReqs;
 let Unlock;
@@ -85,6 +86,7 @@ before(async () => {
       for (let i = 0; i < pairs.length; i += 2) options.push([pairs[i], pairs[i + 1]]);
       prompts.push({ player, title, options });
     },
+    encodePluginMessage: (channel, data) => ({ channel, data }),
     onInterfaceActionButton: (ids, handler) => {
       for (const id of [].concat(ids)) on(`button:${id}`)(handler);
     },
@@ -96,6 +98,14 @@ before(async () => {
   require("../plugins/modes/Base.LeagueMode").register(api);
   require("../plugins/modes/Points.LeagueMode").register(api);
   require("../plugins/modes/Relics.LeagueMode").register(api);
+  const AreaCommon = require("../plugins/modes/leagueareas/Common.LeagueAreaUnlocks");
+  const Regions = require("../plugins/modes/leagueareas/Regions.LeagueAreaUnlocks");
+  AreaCommon.init(api);
+  custom["league:area-at"] = [(query) => {
+    if (query.base !== true || query.area !== null) return;
+    query.area = Regions.areaAt(null, query.x, query.y);
+    query.name = query.area === null ? null : AreaCommon.area(query.area).name;
+  }];
   require("../plugins/world/FairyRings.plugin").register(api);
   require("../plugins/world/SpiritTrees.plugin").register(api);
   require("../plugins/treasuretrails/TreasureTrails.plugin").register(api);
@@ -117,6 +127,7 @@ before(async () => {
 beforeEach(() => {
   prompts = [];
   teleports = [];
+  menuPlayer = null;
 });
 
 afterEach(() => {
@@ -138,7 +149,14 @@ function character(name, profile, picks = {}, leagueType = 4) {
   player.setNeedsPlacement(false);
   const sender = new Proxy({}, { get: () => () => sender });
   player.getPacketSender = () => sender;
-  player.getSession = () => ({ sendClientPacket: () => true });
+  player.sent = { packets: [] };
+  player.getSession = () => ({
+    sendClientPacket: (packet) => {
+      player.sent.packets.push(packet);
+      menuPlayer = player;
+      return true;
+    },
+  });
   player.messages = [];
   player.sendMessage = (message) => player.messages.push(message);
   if (profile === "league") {
@@ -168,17 +186,60 @@ function click(itemName, option, player) {
   return event;
 }
 
-/** Picks a menu option by its label (exact, or the start of it), following "More..." pages. */
-function choose(label) {
-  for (;;) {
-    const prompt = prompts.at(-1);
-    assert.ok(prompt, `a menu with ${label}`);
-    const found = prompt.options.find(([text]) => text === label || text.startsWith(label));
-    if (found) return found[1]();
-    const more = prompt.options.find(([text]) => text === "More...");
-    assert.ok(more, `${label} in ${prompt.options.map(([text]) => text).join(", ")}`);
-    more[1]();
+const TELEPORT_MENU_CHANNEL = "teleport-menu";
+
+/** The player's open teleport-menu screen, or null after the menu closed. */
+function menuOf(player) {
+  const packets = player.sent.packets.filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL);
+  for (let index = packets.length - 1; index >= 0; index--) {
+    if (packets[index].data.type === "close") return null;
+    if (packets[index].data.type === "screen") return packets[index].data;
   }
+  return null;
+}
+
+/** A screen as the old prompt assertions saw it: locked entries struck and Back appended. */
+function menuView(player) {
+  const screen = menuOf(player);
+  if (!screen) return null;
+  const labels = screen.entries.map((entry) => (entry.locked ? `<str>${entry.label}</str>` : entry.label));
+  if (screen.canBack) labels.push("Back");
+  return { ...screen, labels };
+}
+
+/** Sends a client teleport-menu action as the browser does. */
+function menuMessage(player, data) {
+  const event = { player, channel: TELEPORT_MENU_CHANNEL, data, handled: false };
+  for (const handler of custom["network:plugin-message"] ?? []) handler(event);
+  assert.equal(event.handled, true, "the teleport menu's message");
+  return event;
+}
+
+/** Picks a region or destination by its label (exact, or the start of it), paging when needed. */
+function choose(label, player = menuPlayer) {
+  assert.ok(player, `a player with a menu for ${label}`);
+  let screen = menuView(player);
+  assert.ok(screen, `a menu with ${label}`);
+  let found = screen.entries.find((entry) => entry.label === label)
+    ?? screen.entries.find((entry) => entry.label.startsWith(label));
+  for (let page = 0; !found && page < screen.pages; page++) {
+    if (page === screen.page) continue;
+    menuMessage(player, { type: "page", session: screen.session, page });
+    screen = menuView(player);
+    found = screen.entries.find((entry) => entry.label === label)
+      ?? screen.entries.find((entry) => entry.label.startsWith(label));
+  }
+  if (label === "Back") {
+    assert.ok(screen.canBack, "Back on the menu");
+    menuMessage(player, { type: "back", session: screen.session });
+    return;
+  }
+  assert.ok(found, `${label} on the menu "${screen.title}": ${screen.labels.join(", ")}`);
+  menuMessage(player, {
+    type: screen.stage === "regions" ? "region" : "destination",
+    session: screen.session,
+    index: found.index,
+  });
 }
 
 const FAIRYS_FLIGHT_TR = { 1: 1 };
@@ -203,9 +264,13 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
     teleports = [];
     const relic = character(`flight${league}`, "league", picks, league);
     click("Fairy mushroom", "Teleport", relic);
-    assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Fairy rings", "Spirit trees", "Tool leprechauns"]);
-    choose("Fairy rings");
-    choose("A...");
+    const regions = menuView(relic);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin", "regions first, not fairy ring codes");
+    assert.equal(regions.labels.some((label) => /^Fairy ring [A-Z]$/.test(label)), false, "no ring-letter groups");
+    assert.equal(regions.labels.includes("Spirit trees"), false, "no standalone category");
+    assert.equal(regions.labels.includes("Tool leprechauns"), false, "no standalone category");
+    choose("Fremennik Province");
     choose("AJR");
     assert.deepEqual(at(teleports.at(-1)), [ajr.location.getX(), ajr.location.getY(), ajr.location.getZ()], `league ${league}: AJR`);
     click("Fairy mushroom", "Last-destination", relic);
@@ -216,15 +281,19 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
   const who = cases(FAIRYS_FLIGHT_TR, 4);
   teleports = [];
   click("Fairy mushroom", "Spirit-tree", who.relic);
-  assert.ok(prompts.at(-1).options.some(([text]) => /Grand Exchange/.test(text)), "the Grand Exchange tree");
+  assert.equal(menuView(who.relic).stage, "regions", "spirit trees are grouped by region");
+  choose("Misthalin");
+  assert.ok(menuView(who.relic).entries.some((entry) => /Grand Exchange/.test(entry.label)), "the Grand Exchange tree");
   choose("Grand Exchange");
   assert.ok(teleports.length === 1);
   click("Fairy mushroom", "Tool-leprechauns", who.relic);
-  assert.ok(prompts.at(-1).options.every(([text]) => /^Near |^More/.test(text)), "named after their fairy rings");
+  assert.equal(menuView(who.relic).stage, "regions", "tool leprechauns are grouped by region");
+  choose(menuView(who.relic).entries[0].label);
+  assert.ok(menuView(who.relic).entries.every((entry) => /^Near /.test(entry.label)), "named after their fairy rings");
   for (const player of [who.without, who.main]) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Fairy mushroom", "Teleport", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s mushroom does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s mushroom does nothing`);
   }
 
   // An area the character has not unlocked (as league-areas would answer).
@@ -243,13 +312,20 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
 test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher than level 20 Wilderness", () => {
   const who = cases(GLOBETROTTER, 4);
   click("Globetrotter pendant", "Nexus", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text).slice(0, 4), ["Standard", "Ancient", "Lunar", "Arceuus"]);
-  choose("Standard");
+  const regions = menuView(who.relic);
+  const labels = regions.entries.map((entry) => entry.label);
+  assert.equal(labels[0], "Misthalin", "the first region, not the first spellbook");
+  assert.ok(labels.indexOf("Misthalin") < labels.indexOf("Kandarin"));
+  assert.equal(labels.includes("Standard"), false, "no spellbook heading");
+  assert.equal(labels.includes("Ancient"), false, "no spellbook heading");
+  assert.equal(labels.includes("Lunar"), false, "no spellbook heading");
+  assert.equal(labels.includes("Arceuus"), false, "no spellbook heading");
+  choose("Misthalin");
   choose("Varrock Teleport");
   assert.deepEqual(at(teleports.at(-1)), [3213, 3424, 0]);
   click("Globetrotter pendant", "Nexus", who.relic);
-  choose("Arceuus");
-  choose("Ape Atoll Teleport");
+  choose("Kandarin");
+  choose("Ape Atoll Teleport (Arceuus)");
   assert.deepEqual(at(teleports.at(-1)), [2769, 2703, 0], "the Arceuus spell's southern cave, not the dungeon");
   click("Globetrotter pendant", "Jewellery", who.relic);
   choose("Castle Wars");
@@ -259,7 +335,7 @@ test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher
   let limit = null;
   core.TeleportHandler.checkReqs = (player, location, level) => { limit = level; return level >= 25; };
   click("Globetrotter pendant", "Nexus", who.relic);
-  choose("Standard");
+  choose("Misthalin");
   choose("Lumbridge Teleport");
   assert.equal(limit, 20);
   assert.equal(teleports.length, 3, "refused from level 25");
@@ -267,9 +343,89 @@ test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher
   choose("Edgeville");
   assert.equal(limit, 30, "a glory destination teleports from level 30");
   for (const player of others(who)) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Globetrotter pendant", "Nexus", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s pendant does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s pendant does nothing`);
+  }
+});
+
+test("Globetrotter on a Level-Up world: the Nexus uses the base region map, not a seasonal profile", () => {
+  const player = character("levelupglobetrotter", "main");
+  const seasonal = (query) => {
+    if (query.player !== player) return;
+    query.league = null;
+    query.unlocked = [];
+  };
+  const answer = (query) => {
+    if (query.player !== player) return;
+    query.league = 4;
+    query.active = true;
+  };
+  const areas = (query) => {
+    if (query.player !== player) return;
+    query.active = true;
+    query.unlocked = [1];
+  };
+  custom["league:areas"] = [seasonal, ...(custom["league:areas"] ?? [])];
+  custom["level-up:relic-profile"] = [answer, ...(custom["level-up:relic-profile"] ?? [])];
+  custom["level-up:area-profile"] = [areas, ...(custom["level-up:area-profile"] ?? [])];
+  try {
+    player.setAttribute("league:relics", GLOBETROTTER);
+    click("Globetrotter pendant", "Nexus", player);
+    const regions = menuView(player);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin");
+    assert.equal(regions.entries[0].locked, false, "Misthalin is unlocked");
+    assert.equal(regions.entries.find((entry) => entry.label === "Kandarin").locked, true,
+      "a Level-Up region the player has not unlocked is struck through");
+    choose("Kandarin");
+    const error = player.sent.packets.filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL
+      && packet.data.type === "error").at(-1);
+    assert.match(error.data.message, /haven't unlocked/, "the locked region explains itself");
+    assert.equal(menuView(player).stage, "regions", "a locked region cannot be entered");
+    choose("Misthalin");
+    choose("Lumbridge Teleport");
+    assert.deepEqual(at(teleports.at(-1)), [3221, 3218, 0]);
+  } finally {
+    custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== seasonal);
+    custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+    custom["level-up:area-profile"] = custom["level-up:area-profile"].filter((handler) => handler !== areas);
+  }
+});
+
+test("Fairy's Flight on a Level-Up world: destinations are grouped by region and locked by the Level-Up profile", () => {
+  const player = character("levelupfairy", "main");
+  const seasonal = (query) => {
+    if (query.player !== player) return;
+    query.league = null;
+    query.unlocked = [];
+  };
+  const answer = (query) => {
+    if (query.player !== player) return;
+    query.league = 4;
+    query.active = true;
+  };
+  const areas = (query) => {
+    if (query.player !== player) return;
+    query.active = true;
+    query.unlocked = [1];
+  };
+  custom["league:areas"] = [seasonal, ...(custom["league:areas"] ?? [])];
+  custom["level-up:relic-profile"] = [answer, ...(custom["level-up:relic-profile"] ?? [])];
+  custom["level-up:area-profile"] = [areas, ...(custom["level-up:area-profile"] ?? [])];
+  try {
+    player.setAttribute("league:relics", FAIRYS_FLIGHT_TR);
+    click("Fairy mushroom", "Teleport", player);
+    const regions = menuView(player);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin");
+    assert.equal(regions.entries[0].locked, false, "the default Level-Up region is open");
+    assert.equal(regions.entries.find((entry) => entry.label === "Kandarin").locked, true,
+      "a Level-Up region the player has not unlocked is struck through");
+  } finally {
+    custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== seasonal);
+    custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+    custom["level-up:area-profile"] = custom["level-up:area-profile"].filter((handler) => handler !== areas);
   }
 });
 
@@ -418,8 +574,9 @@ test("Banker's Note treats item 0 (Dwarf remains) as a remembered item, not as n
 test("Clue Compass: STASH units and Falo, the last-read clue's step; it is the item Falo asks for", () => {
   const who = cases(CLUE_COMPASS, 5);
   click("Clue compass", "Teleport", who.relic);
-  const labels = prompts.at(-1).options.map(([text]) => text);
+  const labels = menuView(who.relic).entries.map((entry) => entry.label);
   assert.ok(labels.some((text) => /STASH units/.test(text)), labels.join(", "));
+  choose("Falo the Bard");
   choose("Falo the Bard");
   assert.deepEqual(at(teleports.at(-1)), [2689, 3550, 0]);
 
@@ -698,7 +855,7 @@ test("Bank Heist: every bank, bank chest and deposit box in the cache's map, nam
   assert.equal(tiles.size, DATA.banks.length, "no bank twice");
   const who = cases(BANK_HEIST, 5);
   click("Banker's briefcase", "Teleport", who.relic);
-  const runs = prompts.at(-1).options.map(([text]) => text);
+  const runs = menuView(who.relic).entries.map((entry) => entry.label);
   assert.ok(runs.length >= 2, runs.join(", "));
   const Heist = require("../plugins/modes/leaguerelics/BankHeist.LeagueRelics");
   const list = Heist._test.banks(who.relic);
@@ -730,16 +887,16 @@ test("Bank Heist: every bank, bank chest and deposit box in the cache's map, nam
   };
   custom["league:area-at"] = [area, ...(custom["league:area-at"] ?? [])];
   click("Banker's briefcase", "Teleport", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Kandarin", "Misthalin", "Other"]);
+  assert.deepEqual(menuView(who.relic).entries.map((entry) => entry.label), ["Kandarin", "Misthalin", "Other"]);
   const locked = (query) => { query.unlocked = ["misthalin"]; };
   custom["league:areas"] = [locked, ...(custom["league:areas"] ?? [])];
   click("Banker's briefcase", "Teleport", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Misthalin", "Other"], "a locked area's banks are not offered");
+  assert.deepEqual(menuView(who.relic).entries.map((entry) => entry.label), ["Misthalin", "Other"], "a locked area's banks are not offered");
   custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== locked);
   custom["league:area-at"] = custom["league:area-at"].filter((handler) => handler !== area);
   for (const player of others(who)) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Banker's briefcase", "Teleport", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s briefcase does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s briefcase does nothing`);
   }
 });

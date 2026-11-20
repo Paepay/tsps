@@ -171,6 +171,7 @@ export class InputManager {
     // When true, double-click may request Pointer Lock (hides cursor).
     enablePointerLock: boolean = false;
     private readonly keyHandlers = new Set<InputKeyHandler>();
+    private readonly preRemapKeyHandlers = new Set<InputKeyHandler>();
     private readonly mouseHandlers = new Set<InputMouseHandler>();
     private readonly inputFilters = new Set<(type: string, event: MouseEvent | KeyboardEvent) => boolean>();
 
@@ -583,6 +584,15 @@ export class InputManager {
     addKeyHandler(handler: InputKeyHandler): () => void {
         this.keyHandlers.add(handler);
         return () => this.keyHandlers.delete(handler);
+    }
+
+    /**
+     * A key-down handler that sees physical keys before KeyRemapper rewrites or drops them. A
+     * keyboard-first dialog uses this so WASD camera cannot turn its shortcuts into camera input.
+     */
+    addPreRemapKeyHandler(handler: InputKeyHandler): () => void {
+        this.preRemapKeyHandlers.add(handler);
+        return () => this.preRemapKeyHandlers.delete(handler);
     }
 
     /** The key to process in place of `event`, or null when the remapper dropped it. */
@@ -1189,6 +1199,17 @@ export class InputManager {
         // Read before remapping, so the Enter that ends typing still reaches the chat it sends.
         // The construction build menu (prioritizeChat) owns every key: nothing is remapped there.
         const chatBlocked = !prioritizeChat && this.keyRemapper?.isChatInputBlocked() === true;
+        if (!prioritizeChat) {
+            for (const handler of this.preRemapKeyHandlers) {
+                if (handler.onKeyDown?.(event)) {
+                    event.preventDefault();
+                    this.idleTime = 0;
+                    this.lastInputTimeMs = this.nowMs();
+                    this.lastKeyTimeMs = this.lastInputTimeMs;
+                    return;
+                }
+            }
+        }
         const remapped = prioritizeChat ? event : this.remapKey(event, true);
         if (!remapped) {
             event.preventDefault();
