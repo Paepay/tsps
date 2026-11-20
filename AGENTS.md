@@ -14,6 +14,18 @@ On `Paepay/tsps`, land work through `local` before `prod`:
 If they say only “merge and push”, target **`local`**, not `prod`. Promote to
 `prod` only when they explicitly ask to ship, deploy, or promote.
 
+## Live world restarts (VPS)
+
+A restart of a live world is a user-approved action, never a side effect:
+
+- A push to `prod` only updates and builds the shared checkout. It must not
+  restart `paescape-official`, `paescape-level-up`, `tsps` or any other world.
+- That covers `systemctl --user restart`, the platform's five-minute counted
+  restart and `Deploy prod` with `mode=restart`.
+- Name the world you intend to restart and ask for an explicit yes first. Do
+  not restart one merely to pick up a build, to finish a deploy, or to verify
+  or clean up your own change.
+
 ## Linear integration (PaeScape)
 
 `Paepay/tsps` `prod` and `Paepay/PaeScape_Realms` `main` must grow with time on
