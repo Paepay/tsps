@@ -15,6 +15,7 @@ const State = require("../plugins/npcs/demonicgorillas/State.DemonicGorillas");
 
 const core = PluginManager.getCoreApi();
 const providers = [];
+const customEvents = new Map();
 
 before(() => {
   const api = {
@@ -24,6 +25,10 @@ before(() => {
     onNpcHitModify: () => {},
     registerArea: () => {},
     emitCustomEvent: () => {},
+    onCustomEvent: (name, handler) => {
+      if (!customEvents.has(name)) customEvents.set(name, []);
+      customEvents.get(name).push(handler);
+    },
   };
   Combat(api);
   Prayer(api);
@@ -146,4 +151,22 @@ test("in Melee with a target it can't reach, it changes style after 10 ticks", (
   state.style = "melee";
   for (let i = 0; i < 20; i++) Cavern.ageMelee(npc);
   assert.equal(state.style, "melee", "no target, no count");
+});
+test("a demonic gorilla reports the style its id prays against to league masteries", () => {
+  const answers = customEvents.get("combat:scripted-protection") ?? [];
+  assert.ok(answers.length > 0, "the damage passives' query is answered");
+  const cases = [[7144, "melee"], [7145, "ranged"], [7146, "magic"], [7147, "melee"], [7148, "ranged"], [7149, "magic"]];
+  const typeOf = { melee: core.CombatType.MELEE, ranged: core.CombatType.RANGED, magic: core.CombatType.MAGIC };
+  for (const [id, style] of cases) {
+    const npc = gorilla(id);
+    for (const [combatType, name] of Object.entries(typeOf)) {
+      const query = { target: npc, combatType, protecting: false };
+      for (const answer of answers) answer(query);
+      assert.equal(query.protecting, style === name, `${id} ${name}`);
+    }
+  }
+  const tortured = gorilla(7150);
+  const query = { target: tortured, combatType: core.CombatType.MELEE, protecting: false };
+  for (const answer of answers) answer(query);
+  assert.equal(query.protecting, false, "tortured gorillas do not pray");
 });

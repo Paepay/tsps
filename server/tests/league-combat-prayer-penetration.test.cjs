@@ -25,6 +25,12 @@ function attachPassives() {
     onCombatHitDamage: (handler) => on('hit-damage', handler),
     emitCustomEvent: (name, payload) => {
       if (name === 'level-up:mastery-profile' && payload) payload.active = true;
+      if (name === 'combat:scripted-protection' && payload) {
+        const style = payload.combatType === core.CombatType.MELEE ? 'melee'
+          : payload.combatType === core.CombatType.RANGED ? 'ranged'
+            : payload.combatType === core.CombatType.MAGIC ? 'magic' : null;
+        payload.protecting = style !== null && payload.target?.__scriptedPrayer === style;
+      }
     },
   };
   const Common = require('../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries');
@@ -67,4 +73,15 @@ test('the Hunllef does not count as praying against another style', () => {
   const roll = { attacker: player, target, combatType: core.CombatType.MAGIC, bypassProtectionPrayer: false };
   for (const handler of handlers.get('hit-roll') ?? []) handler(roll);
   assert.equal(roll.bypassProtectionPrayer, false);
+});
+test('prayer penetration recognises a protection prayer another plugin reports by script', () => {
+  const handlers = attachPassives();
+  const target = { isPlayer: () => false, isNpc: () => true, getPrayerActive: () => [], __scriptedPrayer: 'melee' };
+  const roll = { attacker: player, target, combatType: core.CombatType.MELEE, bypassProtectionPrayer: false };
+  for (const handler of handlers.get('hit-roll') ?? []) handler(roll);
+  assert.equal(roll.bypassProtectionPrayer, true, 'the reported melee prayer is bypassed');
+
+  const miss = { attacker: player, target, combatType: core.CombatType.MAGIC, bypassProtectionPrayer: false };
+  for (const handler of handlers.get('hit-roll') ?? []) handler(miss);
+  assert.equal(miss.bypassProtectionPrayer, false, 'a magic hit sees no melee prayer');
 });

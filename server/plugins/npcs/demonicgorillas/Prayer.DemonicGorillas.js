@@ -62,6 +62,13 @@ function blockQueuedHit({ target, hit }) {
   if (isDemonic(target) && blocks(target, hit)) nullify(hit);
 }
 
+/** A league mastery's protection query: the gorilla's id is its overhead prayer. */
+function answerScriptedProtection(query) {
+  if (!query || query.protecting || !isDemonic(query.target)) return;
+  const style = styleOf(query.combatType);
+  if (style !== null && style === State.protecting(query.target)) query.protecting = true;
+}
+
 /** As any hit lands (thralls and allies included). */
 function landHit({ npc, hit }) {
   if (!isDemonic(npc)) return;
@@ -76,6 +83,7 @@ module.exports = function attachPrayer(api) {
   core = api.core;
   api.onPlayerDealtDamage(blockQueuedHit);
   api.onNpcHitModify(landHit);
+  api.onCustomEvent("combat:scripted-protection", answerScriptedProtection);
 };
 
 Object.assign(module.exports, { blocks, countOffPrayer, styleOf });
