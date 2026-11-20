@@ -68,6 +68,12 @@ function refresh(player) {
 }
 
 function useCharge(player, item) {
+  // The league Charge Reduction mastery asks every charge-bearing piece; a kept charge
+  // leaves the piece untouched, and extra charges come back on top.
+  const consume = { player, itemId: item.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
+  if (consume.extra > 0) item.setMetaValue(CHARGES_META_KEY, { charges: Math.min(MAX_CHARGES, charges(item) + Math.floor(consume.extra)) });
+  if (consume.skip) return;
   const left = charges(item) - 1;
   if (left > 0) {
     item.setMetaValue(CHARGES_META_KEY, { charges: left });

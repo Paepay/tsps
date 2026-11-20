@@ -37,6 +37,7 @@ const STANDARD = { ANIMATION: 15139, FEMALE_ANIMATION: 15146, START: 4433, FEMAL
 const SPECIAL = { ANIMATION: 15140, FEMALE_ANIMATION: 15147, START: 4432, FEMALE_START: 4434, PROJECTILE: 4428, END: 4430 };
 
 let core = null;
+let pluginApi = null;
 let TomeCombatMethod = null;
 const spells = new WeakMap();
 const spellKinds = new WeakMap();
@@ -104,6 +105,15 @@ function spellFor(player) {
 function useCharge(player) {
   const { Flag } = core;
   const tome = weaponOf(player);
+  // The league Charge Reduction mastery asks every spell-charged item; a kept charge
+  // leaves the tome untouched, and extra charges come back on top.
+  const consume = { player, itemId: tome.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
+  if (consume.extra > 0) {
+    tome.setMetaValue(CHARGES_META_KEY, Math.min(MAX_CHARGES, chargesOf(tome) + Math.floor(consume.extra)));
+    return;
+  }
+  if (consume.skip) return;
   const left = chargesOf(tome) - 1;
   tome.setMetaValue(CHARGES_META_KEY, Math.max(0, left));
   if (left > 0) return;
@@ -315,6 +325,7 @@ module.exports = {
   members: true,
   register(api) {
     core = api.core;
+    pluginApi = api;
     api.onItemAction("Zorya's tome", { Check: checkCharges, Charge: chargeOption, Uncharge: uncharge });
     api.onItemAction("Zorya's tome (uncharged)", { Charge: chargeOption });
     api.onItemOnItem(chargeTome, { noted: false });

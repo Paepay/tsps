@@ -18,6 +18,7 @@ const CRAFTING_XP = 120;
 const CHISEL_ANIMATION = 3102;
 
 let core = null;
+let pluginApi = null;
 let chargedIds = new Set();
 let chargedByUncharged = new Map();
 let chargedFromUncharged = new Map();
@@ -57,6 +58,13 @@ function deactivate(player, item) {
   player.sendMessage("Your serpentine helm has run out of scales.");
 }
 
+/** The league passive's save (`combat:consume-charge`), as a powered staff asks it. */
+function chargeSaved(player, helm) {
+  const consume = { player, itemId: helm.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
+  return consume;
+}
+
 function processUpkeep(player) {
   const helm = wornHelm(player);
   if (!helm) {
@@ -77,13 +85,15 @@ function processUpkeep(player) {
   if (Number.isFinite(chargedAt) && chargedAt > 0 && cycle - chargedAt < COMBAT_CHARGE_TICKS) {
     return;
   }
-  const left = charges(helm) - COMBAT_CHARGE;
+  player.setAttribute(COMBAT_CHARGE_TICK_ATTRIBUTE, cycle);
+  const consume = chargeSaved(player, helm);
+  if (consume.skip) return;
+  const left = charges(helm) - COMBAT_CHARGE + (Number(consume.extra) || 0);
   if (left <= 0) {
     deactivate(player, helm);
   } else {
-    helm.setMetaValue(CHARGES_META_KEY, left);
+    helm.setMetaValue(CHARGES_META_KEY, Math.min(MAX_CHARGES, left));
   }
-  player.setAttribute(COMBAT_CHARGE_TICK_ATTRIBUTE, cycle);
 }
 
 function itemName(itemId) {
@@ -214,6 +224,7 @@ function processPlayer({ player }) {
 
 function attach(api) {
   core = api.core;
+  pluginApi = api;
   const I = core.ItemIdentifiers;
   const families = [
     [I.SERPENTINE_HELM, I.SERPENTINE_HELM_2, I.SERPENTINE_HELM_UNCHARGED_],

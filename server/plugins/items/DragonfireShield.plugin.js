@@ -69,6 +69,7 @@ const WYVERN_GLOW_MESSAGE = "Your ancient wyvern shield glows more brightly."; /
 const CHARGES_PER_GRAPHIC = 10;
 
 let core = null;
+let pluginApi = null;
 let blastMethod = null;
 const rechargeTasks = new WeakMap();
 
@@ -341,7 +342,11 @@ function createBlastMethod() {
       setRechargeSteps(player, RECHARGE_STEPS, shield ? shieldOf(shield) : null);
       startRecharge(player);
       if (shield) {
-        setCharges(shield, charges(shield) - 1);
+        // The league Charge Reduction mastery asks every charge-bearing weapon/armour piece.
+        const consume = { player, itemId: shield.getId(), skip: false, extra: 0 };
+        pluginApi?.emitCustomEvent?.('combat:consume-charge', consume);
+        if (consume.extra > 0) setCharges(shield, Math.min(MAX_CHARGES, charges(shield) + Math.floor(consume.extra)));
+        if (!consume.skip) setCharges(shield, charges(shield) - 1);
         refresh(player);
       }
       const end = projectileEnd(player, target);
@@ -468,6 +473,7 @@ function gameframeReady({ player }) {
 
 function attach(api) {
   core = api.core;
+  pluginApi = api;
   createShields(core.ItemIdentifiers);
   blastMethod = createBlastMethod();
 }

@@ -599,6 +599,10 @@ function spendCharge({ attacker, hit }) {
   if (hit?.getCombatType?.() !== core().CombatType.RANGED) return;
   if (activeAmmoId(player) <= 0) return;
   if (core().Misc.getRandom(2) !== 0) return;
+  const consume = { player, itemId: quiver.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.(combat:consume-charge, consume);
+  if (consume.extra > 0) setItemCharges(quiver, itemCharges(quiver) + Math.floor(consume.extra));
+  if (consume.skip) return;
   const left = itemCharges(quiver) - 1;
   if (left > 0) {
     setItemCharges(quiver, left);

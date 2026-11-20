@@ -47,6 +47,7 @@ const SMASH_ANIMATION = { male: 15122, female: 15130 };
 const THRUST_GRAPHIC = { charged: { male: 4423, female: 4425 }, uncharged: { male: 4424, female: 4426 } };
 
 let core;
+let pluginApi;
 let method = null;
 let chargedId = -1;
 let unchargedId = -1;
@@ -189,6 +190,10 @@ function createMethod() {
     }
 
     useCharge(player, item) {
+      const consume = { player, itemId: item.getId(), skip: false, extra: 0 };
+      pluginApi?.emitCustomEvent?.('combat:consume-charge', consume);
+      if (consume.extra > 0) setCharges(player, item, Math.min(MAX_CHARGES, charges(item) + Math.floor(consume.extra)));
+      if (consume.skip) return;
       const left = charges(item) - 1;
       if (left > 0) {
         item.setMetaValue(CHARGES_META_KEY, left);
@@ -302,6 +307,7 @@ module.exports = {
   description: "Adds the Obligator chain mace's multi-roll Thrust with reach behind the target and single-target Smash, plus charging with shards and runes.",
   members: true,
   register(api) {
+    pluginApi = api;
     core = api.core;
     api.onServerStartup(initializeIds);
     api.onItemAction("Obligator", { Check: checkCharges, Charge: chargeOption, Uncharge: uncharge });

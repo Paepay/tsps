@@ -16,6 +16,7 @@ const LEGACY_CHARGES_META_KEY = "ring-of-suffering";
 const DISABLED_ATTRIBUTE = "ring-of-suffering:recoil-disabled";
 
 let core = null;
+let pluginApi = null;
 let recoilIds = new Set();
 let baseByRecoil = new Map();
 let recoilByBase = new Map();
@@ -42,6 +43,15 @@ function refresh(player) {
 }
 
 function useCharges(player, item, spent) {
+  // The league Charge Reduction mastery asks every charge-bearing piece; a kept charge
+  // leaves the ring untouched, and `extra` charges come back on top.
+  const consume = { player, itemId: item.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.('combat:consume-charge', consume);
+  if (consume.extra > 0) setCharges(item, Math.min(MAX_CHARGES, charges(item) + Math.floor(consume.extra)));
+  if (consume.skip) {
+    if (consume.extra > 0) refresh(player);
+    return;
+  }
   const left = charges(item) - spent;
   if (left > 0) {
     setCharges(item, left);
@@ -145,6 +155,7 @@ function discharge({ player, item }) {
 }
 
 function attach(api) {
+  pluginApi = api;
   core = api.core;
   const I = core.ItemIdentifiers;
   baseByRecoil = new Map([

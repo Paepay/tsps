@@ -141,7 +141,7 @@ relics are the first askers; nothing changes when nobody answers):
 | Event | Owner | Payload |
 | --- | --- | --- |
 | `ranged:ammo-saving` | core `CombatFactory.decrementAmmo`, the blowpipe, chinchompa and Dizana's quiver handlers | `{ player, itemId, amount, saved, extra }`: `saved` shots are neither broken nor dropped; `extra` shots are given back on top |
-| `combat:consume-charge` | the powered staves, the crystal and venator bows, scythe, crystal halberd, Arclight, warped sceptre, bone staff, revenant weapons, Webweaver bow, Tonalztics of Ralos and the abyssal tentacle | `{ player, itemId, skip, extra }`: `skip` keeps the charge; `extra` charges are given back on top |
+| `combat:consume-charge` | the powered staves, the crystal and venator bows, scythe, crystal halberd, Arclight, warped sceptre, bone staff, revenant weapons, Webweaver bow, Tonalztics of Ralos, the abyssal tentacle, the serpentine helm, toxic staff of the dead, amulet of blood fury, dragonfire shield, ring of suffering, obligator, Dizana's quiver, Iban's staff, slayer's staff (e), Zorya's tome, the elemental tomes and crystal armour | `{ player, itemId, skip, extra }`: `skip` keeps the charge; `extra` charges are given back on top |
 | `combat:bolt-proc-chance` | EnchantedBolts | `{ player, target, itemId, chance }` after the gear's and the special's multipliers |
 | `combat:status-apply` | core `CombatFactory.poisonEntity` (poison, venom), DragonfireProtection (dragonfire) | `{ target, kind, allow }`; `allow = false` and the status never takes |
 | `combat-special:cost` | core `CombatSpecial` (the energy check and the drain) | `{ player, specialId, cost, available, allow, phase }`; `phase` is "check" or "drain"; `allow` lets a short player use it |
@@ -903,7 +903,7 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   magic damage (the equipment-effect modifiers), a 90% roll a cast that keeps the runes (the
   existing `magic:rune-saving`, asked once the cast has checked the player has them, so they are
   required but not spent) or the staff's charge (`combat:consume-charge`, asked by the trident in
-  core and by the Sanguinesti staff and Tumeken's shadow before a charge is spent), in multicombat
+  core, by the Sanguinesti staff and Tumeken's shadow, and by every other modelled charge item (the serpentine helm, toxic staff of the dead, amulet of blood fury, dragonfire shield, ring of suffering, obligator, Dizana's quiver, Iban's staff, slayer's staff (e), Zorya's tome, the elemental tomes and crystal armour), in multicombat
   a landed spell also hits up to five attackable targets within a tile of its target for 0 to 25%
   of its damage (fixed-damage hits that pay no XP, never splash themselves and are not scaled
   again by Berserker, since the hit they derive from already was), and the standard

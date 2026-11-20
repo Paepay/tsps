@@ -1,6 +1,7 @@
 // Inventory creation/recharging: https://oldschool.runescape.wiki/w/Transcript:Blood_shard
 // Check, the 500-hit countdown and the proc graphic: rsprox captures (docs/blood-fury.md).
 let core;
+let pluginApi;
 let CombatType, Equipment, Flag, Misc;
 let AMULET_OF_FURY_ID, AMULET_OF_BLOOD_FURY_ID, BLOOD_SHARD_ID;
 
@@ -177,10 +178,17 @@ function applyBloodFuryEffect(player, target, hit) {
       continue;
     }
 
-    charges -= 1;
-    chargedHits.set(resolvedHit, amuletItem);
-    if (charges > 0 && charges % BLOOD_FURY_COUNTDOWN_STEP === 0) {
-      player.sendMessage(`Your Amulet of blood fury can perform ${charges.toLocaleString("en-US")} more hits.`);
+    // The league Charge Reduction mastery saves weapon charges 95% of the time; a saved hit
+    // keeps its charge (and is not given back again by a zero-damage hit below).
+    const consume = { player, itemId: amuletItem.getId(), skip: false, extra: 0 };
+    pluginApi?.emitCustomEvent?.('combat:consume-charge', consume);
+    if (consume.extra > 0) charges = Math.min(BLOOD_FURY_MAX_CHARGES, charges + Math.floor(consume.extra));
+    if (!consume.skip) {
+      charges -= 1;
+      chargedHits.set(resolvedHit, amuletItem);
+      if (charges > 0 && charges % BLOOD_FURY_COUNTDOWN_STEP === 0) {
+        player.sendMessage(`Your Amulet of blood fury can perform ${charges.toLocaleString("en-US")} more hits.`);
+      }
     }
     if (Misc.getRandom(4) !== 0) continue;
     // One graphic per attack: a second proc in a multi-hit swing would only replace it.
@@ -259,6 +267,7 @@ module.exports = {
   description: "Amulet of blood fury: made from a Blood shard and amulet of fury, 30,000 charges, heals from damage dealt with its proc graphic, counts down every 500 hits, with Check and Revert.",
   members: true,
   register(api) {
+    pluginApi = api;
     api.onServerStartup(initialize.bind(null, api.core));
     api.onItemOnItem("Blood shard", "Amulet of fury", createFromShard, { noted: false });
     api.onItemOnItem("Blood shard", "Amulet of blood fury", chargeFromShard, { noted: false });
