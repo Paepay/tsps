@@ -864,6 +864,30 @@ test('every taken name refuses a create with code 1', async (t) => {
   assert.equal(lastResult(c.channel).code, 0, 'a free name is accepted');
 });
 
+test('Help is reserved for the chat-channel when logging in or creating a character', async (t) => {
+  t.mock.method(PluginManager, 'getPluginConfig', (key, fallback) => (key === 'characters:maxPerAccount' ? 6 : fallback));
+  seedSave('Zezima', { passwordHash: hashOf('pw') });
+  Accounts.ensure('Zezima', 1);
+
+  const fresh = await connect('Help', 'new password', 0);
+  assert.deepEqual(
+    [fresh.response.success, fresh.response.code, fresh.response.error],
+    [false, 3, 'That name is not available. Please choose another.'],
+  );
+  assert.equal(net.ClientConnection.isLoginPending('Help'), false);
+  assert.equal(Accounts.entryOf('help'), undefined, 'no Help account was made');
+
+  const c = await connect('Zezima', 'pw', LOGIN_FLAG_CHARACTER_SELECT);
+  for (const name of ['Help', 'hElP']) {
+    await create(c, name);
+    assert.deepEqual(lastResult(c.channel), { ok: false, code: 1, message: 'That name is not available.' });
+  }
+  assert.deepEqual(Accounts.charactersOf('zezima').map((entry) => entry.name), ['Zezima']);
+
+  assert.throws(() => Accounts.ensure('Help'), /That name is not available/);
+  assert.throws(() => Accounts.addCharacter('zezima', 'Help'), /That name is not available/);
+});
+
 test('a display name whose hold ran out no longer blocks a create', async () => {
   seedSave('Zezima', { passwordHash: hashOf('pw') });
   seedSave('Owner', { passwordHash: hashOf('pw') });

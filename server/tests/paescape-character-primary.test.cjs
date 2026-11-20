@@ -195,6 +195,13 @@ test("the primary is refused even when it is the account's only character, and t
   assert.equal(alt.body.character.primary, false);
 });
 
+test("Help is reserved for the chat-channel and cannot be created as a character", async () => {
+  const refused = await create("Help", "u_help_reserved");
+  assert.equal(refused.status, 400, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, "That name is not available.");
+  assert.equal((await summary("Help")).status, 404, "no character or account was registered");
+});
+
 test("a control token scoped to another action is refused", async () => {
   const wrongAction = await control("POST", "/api/platform/characters/Tester", { action: "character:summary", body: { confirmName: "Tester" } });
   assert.equal(wrongAction.status, 401, "a token minted for a different action must not authorise a delete");

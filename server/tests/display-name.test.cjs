@@ -288,6 +288,14 @@ test('names are the same name whatever their case, underscores or spaces', () =>
   }
 });
 
+test('Help is reserved for the help chat-channel', () => {
+  const now = Date.now();
+  const taken = 'That name is not available.';
+  assert.equal(DisplayNames.isReserved('hElP'), true, 'case and underscores do not get around it');
+  assert.equal(DisplayNames.refusal('Alice', 'Help', now), taken);
+  assert.throws(() => DisplayNames.set('Alice', 'Help', now, HOLD), /That name is not available\./);
+});
+
 test("nobody takes another account's login name, display name or held name, online or not", () => {
   const now = Date.now();
   DisplayNames.set('Bob', 'Zed', now, HOLD);

@@ -262,11 +262,14 @@ function sound(player, id, delay = 0) {
   player.getPacketSender().sendSound(id, 1, delay);
 }
 
-/** The chat-channel a player is in, from the friends chat plugin (or null). */
+/**
+ * The chat-channel a player is in, from the friends chat plugin (or null). The built-in
+ * default channel (Help) is nobody's party, so it counts as being in no channel.
+ */
 function channelOf(player) {
   const request = { player, channel: null, ranks: null };
   api().emitCustomEvent("friends-chat:channel", request);
-  return request.channel ? { ...request.channel, ranks: request.ranks } : null;
+  return request.channel && request.channel.default !== true ? { ...request.channel, ranks: request.ranks } : null;
 }
 
 /** A chat-channel by its key (its owner's name), or null if no one is in it. */

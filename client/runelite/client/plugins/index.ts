@@ -16,6 +16,7 @@ import { RegenMeterPlugin } from "../../../game/plugins/regenmeter/RegenMeterPlu
 import { RunEnergyPlugin } from "../../../game/plugins/runenergy/RunEnergyPlugin";
 import { TimestampPlugin } from "../../../game/plugins/timestamp/TimestampPlugin";
 import { TickCounterPlugin } from "../../../game/plugins/tickcounter/TickCounterPlugin";
+import { GlobalEventsPlugin } from "../../../game/plugins/globalevents/GlobalEventsPlugin";
 import { WikiPlugin } from "../../../game/plugins/wiki/WikiPlugin";
 import { CombatLevelPlugin } from "../../../game/plugins/combatlevel/CombatLevelPlugin";
 import { CameraPlugin } from "../../../game/plugins/camera/CameraPlugin";
@@ -59,6 +60,7 @@ import { PuzzleSolverPlugin } from "../../../game/plugins/puzzlesolver/PuzzleSol
 import { PestControlPlugin } from "../../../game/plugins/pestcontrol/PestControlPlugin";
 import { SpellbookPlugin } from "../../../game/plugins/tabreorder/SpellbookPlugin";
 import { TimersPlugin } from "../../../game/plugins/statustimer/TimersPlugin";
+import { TeleportMenuPlugin } from "../../../game/plugins/teleportmenu/TeleportMenuPlugin";
 import { LegacyTileMarkersConfig } from "../../../game/plugins/tilemarkers/migrateTileMarkers";
 import { TileMarkersPlugin } from "../../../game/plugins/tilemarkers/TileMarkersPlugin";
 import { TilePacksPlugin } from "../../../game/plugins/tilepacks/TilePacksPlugin";
@@ -82,6 +84,8 @@ import type { PluginClass } from "./Plugin";
 /** Static core plugin list (RuneLite's `PluginManager.loadCorePlugins`). */
 export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     ConfigPlugin,
+    // Early: while its menu is open, it owns the keyboard before camera and game hotkeys.
+    TeleportMenuPlugin,
     VoiceChatPlugin,
     HdPlugin,
     FirstPersonPlugin,
@@ -130,6 +134,7 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     RegenMeterPlugin,
     RunEnergyPlugin,
     TickCounterPlugin,
+    GlobalEventsPlugin,
     IdleNotifierPlugin,
     OpponentInfoPlugin,
     SpellbookPlugin,

@@ -230,6 +230,7 @@ const OVERRIDE_FIELDS = {
   value: amount, grandExchangeValue: amount, highAlch: amount, lowAlch: amount, dropValue: amount,
   tradeable: (value) => typeof value === "boolean",
   sellable: (value) => typeof value === "boolean",
+  stackable: (value) => typeof value === "boolean",
   attackSpeed: (value) => Number.isInteger(value) && value >= 1 && value <= 20,
   bonuses: (value) => Array.isArray(value) && value.length === 14 && value.every((n) => Number.isInteger(n) && Math.abs(n) <= 10000),
   requirements: (value) => Array.isArray(value) && value.length === 23 && value.every((n) => Number.isInteger(n) && n >= 0 && n <= 99),

@@ -106,12 +106,17 @@ function join(player, key) {
   return request.joined === true;
 }
 
+/** True when the player is in no channel, or only the built-in default one (Help). */
+function channelIsFree(player) {
+  const current = channelOf(player);
+  return !current || current.default === true;
+}
+
 /** Puts a member in the group's channel if they're in no other; otherwise says how to switch. */
 function joinIfFree(player, group) {
   if (!player) return;
-  const current = channelOf(player)?.key;
-  if (current === groupKey(group)) return;
-  if (current == null) join(player, groupKey(group));
+  if (channelOf(player)?.key === groupKey(group)) return;
+  if (channelIsFree(player)) join(player, groupKey(group));
   else Actions.tell(player, MESSAGE.SWITCH);
 }
 
@@ -154,9 +159,9 @@ function onChannelJoined({ player, channelKey, rejoin }) {
   for (const account of group.members) {
     if (account === me.account) continue;
     const member = Members.onlinePlayer(group.profile, account);
-    const current = member && channelOf(member)?.key;
-    if (!member || current === channelKey) continue;
-    if (current == null || current === groupKey(group)) {
+    const current = member ? channelOf(member) : null;
+    if (!member || current?.key === channelKey) continue;
+    if (!current || current.default === true || current.key === groupKey(group)) {
       if (join(member, channelKey)) Actions.tell(member, MESSAGE.BROUGHT);
     } else {
       Actions.tell(member, `${Members.nameOf(me.account)} has taken the group to the ${channelName} chat-channel. You can join it from the Grouping tab.`);

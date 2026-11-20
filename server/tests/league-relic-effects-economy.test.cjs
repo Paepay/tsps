@@ -35,6 +35,7 @@ let I;
 let Data;
 let Model;
 let Patches;
+let Tithe;
 let Guild;
 let Vault;
 let Kingdom;
@@ -117,6 +118,7 @@ before(async () => {
   Data = require("../plugins/skills/farming/Data.Farming");
   Model = require("../plugins/skills/farming/Model.Farming");
   Patches = require("../plugins/skills/farming/Patches.Farming");
+  Tithe = require("../plugins/skills/farming/Tithe.Farming");
   Guild = require("../plugins/skills/farming/Guild.Farming");
   Vault = require("../plugins/skills/farming/Vault.Farming");
   Data.initializeFarmingData();
@@ -227,7 +229,7 @@ test("Fire Sale: coin shops sell for nothing, noted when they can be; they buy n
   assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 5, "five steel axes, noted, with no coins at all");
   assert.equal(amount(who.relic, I.STEEL_AXE), 0);
   buy(who.relic, COIN_SHOP, 0, I.STEEL_AXE);
-  assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 5, "the stock still limits it: none left");
+  assert.equal(amount(who.relic, notedOf(I.STEEL_AXE)), 6, "keep-stock leagues sell up to the shown stock on every buy");
   buy(who.relic, COIN_SHOP, 1, I.FIRE_RUNE, "Buy 50");
   assert.equal(amount(who.relic, I.FIRE_RUNE), 50, "runes have no note: they come as they are");
   buy(who.relic, TOKKUL_SHOP, 0, I.STEEL_AXE);
@@ -529,6 +531,41 @@ test("Farmer's Fortune: a 20% chance to keep the seed, grown at once and free of
     assert.equal(amount(player, notedOf(grimy)), 0);
     assert.equal(grown.lives, 2);
   }
+});
+
+test("Farmer's Fortune grows a Tithe Farm plot at once and can keep its seed", (t) => {
+  mockScenery(t);
+  t.mock.method(core.ObjectManager, "register", () => {});
+  t.mock.method(core.ObjectManager, "deregister", () => {});
+  const plot = Data.CACHE.scenery.find((entry) => entry.id === core.ObjectIdentifiers.TITHE_PATCH && entry.y >= 3485);
+  assert.ok(plot, "a Tithe Farm plot");
+  const seed = Data.itemId("Golovanova seed"), fruit = Data.itemId("Golovanova fruit");
+  const location = { x: plot.x, y: plot.y, z: plot.z };
+  const who = cases(FARMERS_FORTUNE);
+
+  const prepare = (player) => {
+    player.getInventory().resetItems();
+    player.setAttribute(Patches.FARM_ATTRIBUTE, { offset: 0, patches: {}, tools: {}, tithe: { score: 0, points: 0 } });
+    player.getSkillManager().setMaxLevels(Skill.FARMING, 99, false).setCurrentLevel(Skill.FARMING, 99, false);
+    player.getInventory().add(new Item(seed, 1), false).add(new Item(Data.itemId("Seed dibber")), false);
+    player.moveTo(new Location(1806, 3501, 0));
+    Tithe.titheLogin({ player });
+    t.after(() => Tithe.titheLogout({ player }));
+    return player.getInventory().getSlotForItemId(seed);
+  };
+
+  Math.random = () => 0.1;
+  const slot = prepare(who.relic);
+  Tithe.titheItem({ player: who.relic, itemId: seed, itemSlot: slot, location });
+  assert.equal(amount(who.relic, seed), 1, "a 10 keeps the seed (20%)");
+  Tithe.titheObject({ player: who.relic, object: { getId: () => core.ObjectIdentifiers.TITHE_PATCH }, location });
+  assert.equal(amount(who.relic, fruit), 1, "the plot is ripe without a growth tick");
+
+  const otherSlot = prepare(who.without);
+  Tithe.titheItem({ player: who.without, itemId: seed, itemSlot: otherSlot, location });
+  assert.equal(amount(who.without, seed), 0, "without the relic the seed is planted as usual");
+  Tithe.titheObject({ player: who.without, object: { getId: () => core.ObjectIdentifiers.TITHE_PATCH }, location });
+  assert.equal(amount(who.without, fruit), 0, "and the plot is not grown at once");
 });
 
 test("Overgrown: 75% to keep the seed, crops never die; the vault opens the seed vault anywhere", (t) => {

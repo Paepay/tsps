@@ -41,7 +41,7 @@ const ammo = {
 function execute(event) {
   const { attacker, target, combatType, damage } = event;
   if (Common.isBuildingDerivedHit() || combatType !== core.CombatType.RANGED || !target?.isNpc?.() || !wieldsAxe(attacker) || !active(attacker)) return;
-  const spared = effect.spared?.[Common.leagueOf(attacker)] ?? [];
+  const spared = effect.spared?.[Common.effectSource(attacker, effect)] ?? [];
   if (spared.includes(target.getDefinition?.()?.getName?.())) return;
   const hitpoints = target.getHitpointsAfterPendingDamage?.() ?? target.getHitpoints();
   if (hitpoints <= 0 || hitpoints >= target.getMaxHitpoints() * effect.executeBelowFraction) return;
@@ -53,7 +53,7 @@ function execute(event) {
 function reach(event) {
   const { attacker, combatType } = event;
   if (combatType !== core.CombatType.RANGED || !wieldsAxe(attacker) || !active(attacker)) return;
-  const tiles = effect.reach?.[Common.leagueOf(attacker)];
+  const tiles = effect.reach?.[Common.effectSource(attacker, effect)];
   if (Number.isInteger(tiles)) event.distance = Math.min(MAX_REACH, event.distance + tiles - effect.attackDistance);
 }
 

@@ -131,6 +131,25 @@ test("wealth transfer off makes PvP loot the victim's", () => {
   });
 });
 
+test("a template can veto wealth transfer on the live world", () => {
+  wealthEnabled = true;
+  const previous = custom["wealth:enabled"];
+  custom["wealth:enabled"] = (request) => { request.enabled = false; };
+  try {
+    const player = account("level-up");
+    const request = { player, target: account("other"), handled: false };
+    hooks.onTradeRequest(request);
+    assert.deepEqual([request.handled, player.messages],
+      [true, ["Wealth transfer is disabled on this world."]], "the live policy overrides the config default");
+    const window = { player, target: account("other"), allow: null };
+    hooks.onCanTrade(window);
+    assert.equal(window.allow, false);
+  } finally {
+    if (previous) custom["wealth:enabled"] = previous;
+    else delete custom["wealth:enabled"];
+  }
+});
+
 test("does not set an Ironman mode", () => {
   withWealthOff(() => {
     const player = account("normal");

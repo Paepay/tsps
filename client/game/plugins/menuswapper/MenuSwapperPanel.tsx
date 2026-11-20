@@ -9,6 +9,7 @@ const PRESET_LABELS: ReadonlyArray<[keyof MenuSwapperPresets, string]> = [
     ["bank", "Bank: bankers and bank booths"],
     ["trade", "Trade: shopkeepers"],
     ["pickpocket", "Pickpocket"],
+    ["shopSell", "Shop sell: Sell 1 while a shop is open"],
     ["shiftDrop", "Shift-click drop, every item"],
 ];
 
@@ -30,8 +31,8 @@ export function MenuSwapperPanel({ plugin }: { plugin: MenuSwapperPlugin }): JSX
     return (
         <div className="rl-sidebar-panel-content rl-sidebar-scrollable">
             <p className="rl-sidebar-panel-copy">
-                Hold Shift and right-click an NPC, object or item, then pick "Swap left click" or
-                "Swap shift click".
+                Hold Shift and right-click an NPC, object, inventory item or shop item, then pick
+                "Swap left click" or "Swap shift click".
             </p>
 
             {PRESET_LABELS.map(([preset, label]) => (

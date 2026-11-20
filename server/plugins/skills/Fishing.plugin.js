@@ -664,13 +664,25 @@ function storageRoom(player, itemId) {
   return request.room;
 }
 
-/** An open container takes the catch first ("storage:gather"); the rest goes to the inventory. */
+/**
+ * An open container takes the catch first ("storage:gather"); the rest goes to the inventory.
+ * Returns how many were actually stored: a full inventory takes none, so the caller must not
+ * announce or award a catch that vanished (issue #18).
+ */
 function giveCatch(player, itemId, amount, xp = 0) {
+  if (!(amount > 0)) return 0;
   const request = { player, itemId, amount, stored: 0, skill: Skill.FISHING, xp };
   pluginApi?.emitCustomEvent("storage:gather", request);
-  if (amount > request.stored) {
-    player.getInventory().addItem(new Item(itemId, amount - request.stored));
-  }
+  const stored = Math.max(0, Math.min(amount, Number(request.stored) || 0));
+  const remaining = amount - stored;
+  if (remaining <= 0) return stored;
+  const inventory = player.getInventory();
+  const item = new Item(itemId, remaining);
+  // Test stand-ins without a container's capacity API keep the old addItem behavior.
+  const addable = typeof inventory.getAddableAmount === "function" ? inventory.getAddableAmount(item) : remaining;
+  const accepted = Math.max(0, Math.min(remaining, addable));
+  if (accepted > 0) inventory.addItem(item.clone().setAmount(accepted));
+  return stored + accepted;
 }
 
 /** Messages and returns null when the player can't fish with this tool, else the variant. */
@@ -846,8 +858,7 @@ function landExtra(player, variant, fish, amount, flaked) {
     if (message) spam(player, message);
     return;
   }
-  if (!hasRoom(player, fish)) return;
-  giveCatch(player, fish.id, amount);
+  if (!hasRoom(player, fish) || giveCatch(player, fish.id, amount) <= 0) return;
   if (message) spam(player, message);
 }
 
@@ -860,12 +871,13 @@ function landCatch(player, tool, variant, caught, spotId = null) {
     const fish = bigOrFish(kind);
     if (!hasRoom(player, fish)) break;
     const amount = fish.amount(player);
-    landed.push({ fish, kind, amount, flaked: tool !== TOOLS.PARK_NET && SpiritFlakes.consumeFlake(player) });
+    const flaked = tool !== TOOLS.PARK_NET && SpiritFlakes.consumeFlake(player);
     // Wiki (Mod Ash): big trophy fish are never incinerated. A cooked catch still gets the catch
     // line (as an infernal axe's burnt log still says "You get some logs.").
     const cooked = variant.infernal && !fish.chance && InfernalHarpoon.tryCookFish(player, fish.id);
+    if (!cooked && giveCatch(player, fish.id, amount, fish.experience * xpMultiplier) <= 0) break;
+    landed.push({ fish, kind, amount, flaked });
     if (!cooked) {
-      giveCatch(player, fish.id, amount, fish.experience * xpMultiplier);
       // Junk (a casket, an old boot) is no fish, so it is its own event: "fishing:junk"
       // { player, itemId, amount }, for a league's "Obtain a Casket from Fishing" or an old boot.
       if (fish.junk) pluginApi.emitCustomEvent("fishing:junk", { player, itemId: fish.id, amount });
@@ -1153,6 +1165,7 @@ module.exports = {
   isFishingActive,
   FISHING_SPOT_NAMES,
   hasToolRequirements,
+  giveCatch,
   landCatch,
   anglerXpMultiplier: (player) => AnglerOutfit.xpMultiplier(player),
 };

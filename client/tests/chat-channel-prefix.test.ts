@@ -261,7 +261,11 @@ for (const [key, code] of [["h", 72], ["i", 73], [" ", 32], ["1", 49], ["!", 49]
 }
 let buffer = "";
 let closed = 0;
-const inputVm = { inputDialogType: 3, inputDialogWidgetId: 458 << 16, inputDialogString: "old", deferIfClose: () => closed++ };
+const constructionKeys: any[] = [];
+const inputVm = {
+    inputDialogType: 3, inputDialogWidgetId: 458 << 16, inputDialogString: "old", deferIfClose: () => closed++,
+    invokeEventHandler: (_widget: any, event: string, context: any) => constructionKeys.push({ event, ...context }),
+};
 const keyboardDeps = {
     getVarManager: () => ({ getVarcString: () => buffer, setVarcString: (_id: number, text: string) => buffer = text }),
     getCs2Vm: () => inputVm,
@@ -270,7 +274,14 @@ const keyboardDeps = {
     getCustomInterfaces: () => assert.fail("construction must not reach search input"),
     executeScriptListener: (_widget: unknown, listener: number[]) => assert.deepEqual(listener, [223], "only the chat redraw script may run"),
 } as any;
-const widgetManager = { rootInterface: 161, interfaceParents: new Map([[1, { group: 458, type: 0 }]]), findWidget: () => ({ hidden: true }) } as any;
+const buildKeyWidget = {
+    uid: (458 << 16) | 42, x: 0, y: 0, hidden: false, eventHandlers: { onKey: true },
+};
+const widgetManager = {
+    rootInterface: 161, interfaceParents: new Map([[1, { group: 458, type: 0 }]]), findWidget: () => ({ hidden: true }),
+    getInputRoots: () => [buildKeyWidget], getStaticChildrenByParentUid: () => [],
+    getAllGroupRoots: () => [buildKeyWidget], isEffectivelyHidden: () => false,
+} as any;
 const dispatch = () => {
     processWidgetKeyboardInput(keyboardDeps, { input } as any, widgetManager);
     input.keyEvents.length = 0;
@@ -308,6 +319,8 @@ const controller = new WidgetInputController({
 input.onKeyDown(rawKey("z", 90), true);
 controller.handleConstructionKeyboardInput();
 assert.equal(buffer, "z", "the raw key must reach the buffer immediately");
+assert.deepEqual(constructionKeys, [{ event: "onKey", mouseX: -1, mouseY: -1, keyTyped: -1, keyPressed: 122 }],
+    "the build menu's furniture hotkey listener receives the same key");
 assert.equal(input.keyEvents.length, 0, "the frame dispatcher must not repeat raw input");
 dispatch();
 assert.equal(buffer, "z");

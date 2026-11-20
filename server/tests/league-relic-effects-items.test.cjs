@@ -28,6 +28,7 @@ const realRandom = Math.random;
 let I;
 let prompts = [];
 let teleports = [];
+let menuPlayer = null;
 let realTeleport;
 let realCheckReqs;
 let Unlock;
@@ -85,6 +86,7 @@ before(async () => {
       for (let i = 0; i < pairs.length; i += 2) options.push([pairs[i], pairs[i + 1]]);
       prompts.push({ player, title, options });
     },
+    encodePluginMessage: (channel, data) => ({ channel, data }),
     onInterfaceActionButton: (ids, handler) => {
       for (const id of [].concat(ids)) on(`button:${id}`)(handler);
     },
@@ -96,6 +98,14 @@ before(async () => {
   require("../plugins/modes/Base.LeagueMode").register(api);
   require("../plugins/modes/Points.LeagueMode").register(api);
   require("../plugins/modes/Relics.LeagueMode").register(api);
+  const AreaCommon = require("../plugins/modes/leagueareas/Common.LeagueAreaUnlocks");
+  const Regions = require("../plugins/modes/leagueareas/Regions.LeagueAreaUnlocks");
+  AreaCommon.init(api);
+  custom["league:area-at"] = [(query) => {
+    if (query.base !== true || query.area !== null) return;
+    query.area = Regions.areaAt(null, query.x, query.y);
+    query.name = query.area === null ? null : AreaCommon.area(query.area).name;
+  }];
   require("../plugins/world/FairyRings.plugin").register(api);
   require("../plugins/world/SpiritTrees.plugin").register(api);
   require("../plugins/treasuretrails/TreasureTrails.plugin").register(api);
@@ -117,6 +127,7 @@ before(async () => {
 beforeEach(() => {
   prompts = [];
   teleports = [];
+  menuPlayer = null;
 });
 
 afterEach(() => {
@@ -138,7 +149,14 @@ function character(name, profile, picks = {}, leagueType = 4) {
   player.setNeedsPlacement(false);
   const sender = new Proxy({}, { get: () => () => sender });
   player.getPacketSender = () => sender;
-  player.getSession = () => ({ sendClientPacket: () => true });
+  player.sent = { packets: [] };
+  player.getSession = () => ({
+    sendClientPacket: (packet) => {
+      player.sent.packets.push(packet);
+      menuPlayer = player;
+      return true;
+    },
+  });
   player.messages = [];
   player.sendMessage = (message) => player.messages.push(message);
   if (profile === "league") {
@@ -168,17 +186,60 @@ function click(itemName, option, player) {
   return event;
 }
 
-/** Picks a menu option by its label (exact, or the start of it), following "More..." pages. */
-function choose(label) {
-  for (;;) {
-    const prompt = prompts.at(-1);
-    assert.ok(prompt, `a menu with ${label}`);
-    const found = prompt.options.find(([text]) => text === label || text.startsWith(label));
-    if (found) return found[1]();
-    const more = prompt.options.find(([text]) => text === "More...");
-    assert.ok(more, `${label} in ${prompt.options.map(([text]) => text).join(", ")}`);
-    more[1]();
+const TELEPORT_MENU_CHANNEL = "teleport-menu";
+
+/** The player's open teleport-menu screen, or null after the menu closed. */
+function menuOf(player) {
+  const packets = player.sent.packets.filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL);
+  for (let index = packets.length - 1; index >= 0; index--) {
+    if (packets[index].data.type === "close") return null;
+    if (packets[index].data.type === "screen") return packets[index].data;
   }
+  return null;
+}
+
+/** A screen as the old prompt assertions saw it: locked entries struck and Back appended. */
+function menuView(player) {
+  const screen = menuOf(player);
+  if (!screen) return null;
+  const labels = screen.entries.map((entry) => (entry.locked ? `<str>${entry.label}</str>` : entry.label));
+  if (screen.canBack) labels.push("Back");
+  return { ...screen, labels };
+}
+
+/** Sends a client teleport-menu action as the browser does. */
+function menuMessage(player, data) {
+  const event = { player, channel: TELEPORT_MENU_CHANNEL, data, handled: false };
+  for (const handler of custom["network:plugin-message"] ?? []) handler(event);
+  assert.equal(event.handled, true, "the teleport menu's message");
+  return event;
+}
+
+/** Picks a region or destination by its label (exact, or the start of it), paging when needed. */
+function choose(label, player = menuPlayer) {
+  assert.ok(player, `a player with a menu for ${label}`);
+  let screen = menuView(player);
+  assert.ok(screen, `a menu with ${label}`);
+  let found = screen.entries.find((entry) => entry.label === label)
+    ?? screen.entries.find((entry) => entry.label.startsWith(label));
+  for (let page = 0; !found && page < screen.pages; page++) {
+    if (page === screen.page) continue;
+    menuMessage(player, { type: "page", session: screen.session, page });
+    screen = menuView(player);
+    found = screen.entries.find((entry) => entry.label === label)
+      ?? screen.entries.find((entry) => entry.label.startsWith(label));
+  }
+  if (label === "Back") {
+    assert.ok(screen.canBack, "Back on the menu");
+    menuMessage(player, { type: "back", session: screen.session });
+    return;
+  }
+  assert.ok(found, `${label} on the menu "${screen.title}": ${screen.labels.join(", ")}`);
+  menuMessage(player, {
+    type: screen.stage === "regions" ? "region" : "destination",
+    session: screen.session,
+    index: found.index,
+  });
 }
 
 const FAIRYS_FLIGHT_TR = { 1: 1 };
@@ -203,9 +264,13 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
     teleports = [];
     const relic = character(`flight${league}`, "league", picks, league);
     click("Fairy mushroom", "Teleport", relic);
-    assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Fairy rings", "Spirit trees", "Tool leprechauns"]);
-    choose("Fairy rings");
-    choose("A...");
+    const regions = menuView(relic);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin", "regions first, not fairy ring codes");
+    assert.equal(regions.labels.some((label) => /^Fairy ring [A-Z]$/.test(label)), false, "no ring-letter groups");
+    assert.equal(regions.labels.includes("Spirit trees"), false, "no standalone category");
+    assert.equal(regions.labels.includes("Tool leprechauns"), false, "no standalone category");
+    choose("Fremennik Province");
     choose("AJR");
     assert.deepEqual(at(teleports.at(-1)), [ajr.location.getX(), ajr.location.getY(), ajr.location.getZ()], `league ${league}: AJR`);
     click("Fairy mushroom", "Last-destination", relic);
@@ -216,15 +281,19 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
   const who = cases(FAIRYS_FLIGHT_TR, 4);
   teleports = [];
   click("Fairy mushroom", "Spirit-tree", who.relic);
-  assert.ok(prompts.at(-1).options.some(([text]) => /Grand Exchange/.test(text)), "the Grand Exchange tree");
+  assert.equal(menuView(who.relic).stage, "regions", "spirit trees are grouped by region");
+  choose("Misthalin");
+  assert.ok(menuView(who.relic).entries.some((entry) => /Grand Exchange/.test(entry.label)), "the Grand Exchange tree");
   choose("Grand Exchange");
   assert.ok(teleports.length === 1);
   click("Fairy mushroom", "Tool-leprechauns", who.relic);
-  assert.ok(prompts.at(-1).options.every(([text]) => /^Near |^More/.test(text)), "named after their fairy rings");
+  assert.equal(menuView(who.relic).stage, "regions", "tool leprechauns are grouped by region");
+  choose(menuView(who.relic).entries[0].label);
+  assert.ok(menuView(who.relic).entries.every((entry) => /^Near /.test(entry.label)), "named after their fairy rings");
   for (const player of [who.without, who.main]) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Fairy mushroom", "Teleport", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s mushroom does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s mushroom does nothing`);
   }
 
   // An area the character has not unlocked (as league-areas would answer).
@@ -243,29 +312,120 @@ test("Fairy's Flight (both leagues): fairy rings by code, spirit trees, tool lep
 test("Globetrotter: the spellbooks' teleports and the jewellery box's, no higher than level 20 Wilderness", () => {
   const who = cases(GLOBETROTTER, 4);
   click("Globetrotter pendant", "Nexus", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text).slice(0, 4), ["Standard", "Ancient", "Lunar", "Arceuus"]);
-  choose("Standard");
+  const regions = menuView(who.relic);
+  const labels = regions.entries.map((entry) => entry.label);
+  assert.equal(labels[0], "Misthalin", "the first region, not the first spellbook");
+  assert.ok(labels.indexOf("Misthalin") < labels.indexOf("Kandarin"));
+  assert.equal(labels.includes("Standard"), false, "no spellbook heading");
+  assert.equal(labels.includes("Ancient"), false, "no spellbook heading");
+  assert.equal(labels.includes("Lunar"), false, "no spellbook heading");
+  assert.equal(labels.includes("Arceuus"), false, "no spellbook heading");
+  choose("Misthalin");
   choose("Varrock Teleport");
   assert.deepEqual(at(teleports.at(-1)), [3213, 3424, 0]);
+  click("Globetrotter pendant", "Nexus", who.relic);
+  choose("Kandarin");
+  choose("Ape Atoll Teleport (Arceuus)");
+  assert.deepEqual(at(teleports.at(-1)), [2769, 2703, 0], "the Arceuus spell's southern cave, not the dungeon");
   click("Globetrotter pendant", "Jewellery", who.relic);
   choose("Castle Wars");
-  assert.equal(teleports.length, 2, "a jewellery box destination");
+  assert.equal(teleports.length, 3, "a jewellery box destination");
 
   // Level 25 Wilderness: the pendant's limit is 20.
   let limit = null;
   core.TeleportHandler.checkReqs = (player, location, level) => { limit = level; return level >= 25; };
   click("Globetrotter pendant", "Nexus", who.relic);
-  choose("Standard");
+  choose("Misthalin");
   choose("Lumbridge Teleport");
   assert.equal(limit, 20);
-  assert.equal(teleports.length, 2, "refused from level 25");
+  assert.equal(teleports.length, 3, "refused from level 25");
   click("Globetrotter pendant", "Jewellery", who.relic);
   choose("Edgeville");
   assert.equal(limit, 30, "a glory destination teleports from level 30");
   for (const player of others(who)) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Globetrotter pendant", "Nexus", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s pendant does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s pendant does nothing`);
+  }
+});
+
+test("Globetrotter on a Level-Up world: the Nexus uses the base region map, not a seasonal profile", () => {
+  const player = character("levelupglobetrotter", "main");
+  const seasonal = (query) => {
+    if (query.player !== player) return;
+    query.league = null;
+    query.unlocked = [];
+  };
+  const answer = (query) => {
+    if (query.player !== player) return;
+    query.league = 4;
+    query.active = true;
+  };
+  const areas = (query) => {
+    if (query.player !== player) return;
+    query.active = true;
+    query.unlocked = [1];
+  };
+  custom["league:areas"] = [seasonal, ...(custom["league:areas"] ?? [])];
+  custom["level-up:relic-profile"] = [answer, ...(custom["level-up:relic-profile"] ?? [])];
+  custom["level-up:area-profile"] = [areas, ...(custom["level-up:area-profile"] ?? [])];
+  try {
+    player.setAttribute("league:relics", GLOBETROTTER);
+    click("Globetrotter pendant", "Nexus", player);
+    const regions = menuView(player);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin");
+    assert.equal(regions.entries[0].locked, false, "Misthalin is unlocked");
+    assert.equal(regions.entries.find((entry) => entry.label === "Kandarin").locked, true,
+      "a Level-Up region the player has not unlocked is struck through");
+    choose("Kandarin");
+    const error = player.sent.packets.filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL
+      && packet.data.type === "error").at(-1);
+    assert.match(error.data.message, /haven't unlocked/, "the locked region explains itself");
+    assert.equal(menuView(player).stage, "regions", "a locked region cannot be entered");
+    choose("Misthalin");
+    choose("Lumbridge Teleport");
+    assert.deepEqual(at(teleports.at(-1)), [3221, 3218, 0]);
+  } finally {
+    custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== seasonal);
+    custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+    custom["level-up:area-profile"] = custom["level-up:area-profile"].filter((handler) => handler !== areas);
+  }
+});
+
+test("Fairy's Flight on a Level-Up world: destinations are grouped by region and locked by the Level-Up profile", () => {
+  const player = character("levelupfairy", "main");
+  const seasonal = (query) => {
+    if (query.player !== player) return;
+    query.league = null;
+    query.unlocked = [];
+  };
+  const answer = (query) => {
+    if (query.player !== player) return;
+    query.league = 4;
+    query.active = true;
+  };
+  const areas = (query) => {
+    if (query.player !== player) return;
+    query.active = true;
+    query.unlocked = [1];
+  };
+  custom["league:areas"] = [seasonal, ...(custom["league:areas"] ?? [])];
+  custom["level-up:relic-profile"] = [answer, ...(custom["level-up:relic-profile"] ?? [])];
+  custom["level-up:area-profile"] = [areas, ...(custom["level-up:area-profile"] ?? [])];
+  try {
+    player.setAttribute("league:relics", FAIRYS_FLIGHT_TR);
+    click("Fairy mushroom", "Teleport", player);
+    const regions = menuView(player);
+    assert.equal(regions.stage, "regions");
+    assert.equal(regions.entries[0].label, "Misthalin");
+    assert.equal(regions.entries[0].locked, false, "the default Level-Up region is open");
+    assert.equal(regions.entries.find((entry) => entry.label === "Kandarin").locked, true,
+      "a Level-Up region the player has not unlocked is struck through");
+  } finally {
+    custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== seasonal);
+    custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+    custom["level-up:area-profile"] = custom["level-up:area-profile"].filter((handler) => handler !== areas);
   }
 });
 
@@ -361,11 +521,62 @@ test("Banker's Note (both leagues): an item used on it is noted or unnoted; Acti
   }
 });
 
+test("Banker's Note remembers every item used on it, each in the direction it was used", () => {
+  const relic = character("noteall", "league", BANKERS_NOTE_TR, 4);
+  const inventory = relic.getInventory();
+  const notedLogs = core.ItemDefinition.forId(I.LOGS).getNoteId();
+  const notedDagger = core.ItemDefinition.forId(I.BRONZE_DAGGER).getNoteId();
+  inventory.add(new Item(I.BANKERS_NOTE, 1), false);
+  inventory.add(new Item(I.LOGS, 2), false);
+  inventory.add(new Item(notedDagger, 3), false);
+  const note = inventory.getItems().find((item) => item?.getId() === I.BANKERS_NOTE);
+  const useOn = (itemId) => {
+    const item = inventory.getItems().find((entry) => entry?.getId() === itemId);
+    hooks.onItemOnItem({ player: relic, usedItem: item, usedWithItem: note, handled: false });
+  };
+
+  useOn(I.LOGS);
+  inventory.add(new Item(I.LOGS, 2), false);
+  useOn(notedDagger);
+  inventory.add(new Item(notedDagger, 2), false);
+  assert.equal(inventory.getAmount(notedLogs), 2, "the logs were noted");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 3, "the noted daggers were unnoted");
+  assert.deepEqual(relic.getAttribute("league:bankers-note").items,
+    { [I.LOGS]: "note", [I.BRONZE_DAGGER]: "unnote" }, "both items keep their own direction");
+
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 0, "Activate notes the logs it remembered");
+  assert.equal(inventory.getAmount(notedLogs), 4);
+  assert.equal(inventory.getAmount(notedDagger), 0, "and unnotes the daggers it remembered");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 5);
+  assert.ok(relic.messages.includes("You note 2 x Logs."), relic.messages.join(" | "));
+  assert.ok(relic.messages.includes("You unnote 2 x Bronze dagger."), relic.messages.join(" | "));
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(notedDagger), 5, "Toggle makes every remembered item note");
+  assert.equal(inventory.getAmount(I.BRONZE_DAGGER), 0);
+
+  click("Banker's note", "Toggle", relic);
+  click("Banker's note", "Activate", relic);
+  assert.equal(inventory.getAmount(I.LOGS), 4, "and back makes every remembered item unnote");
+  assert.equal(inventory.getAmount(notedLogs), 0);
+});
+
+test("Banker's Note treats item 0 (Dwarf remains) as a remembered item, not as none", () => {
+  const relic = character("notezero", "league", BANKERS_NOTE_TR, 4);
+  relic.getInventory().add(new Item(I.BANKERS_NOTE, 1), false);
+  relic.setAttribute("league:bankers-note", { itemId: I.DWARF_REMAINS, mode: "note" });
+  click("Banker's note", "Activate", relic);
+  assert.notEqual(relic.messages.at(-1), "Use an item on the banker's note first.");
+});
+
 test("Clue Compass: STASH units and Falo, the last-read clue's step; it is the item Falo asks for", () => {
   const who = cases(CLUE_COMPASS, 5);
   click("Clue compass", "Teleport", who.relic);
-  const labels = prompts.at(-1).options.map(([text]) => text);
+  const labels = menuView(who.relic).entries.map((entry) => entry.label);
   assert.ok(labels.some((text) => /STASH units/.test(text)), labels.join(", "));
+  choose("Falo the Bard");
   choose("Falo the Bard");
   assert.deepEqual(at(teleports.at(-1)), [2689, 3550, 0]);
 
@@ -420,7 +631,11 @@ test("Crystal of memories (Trailblazer Reloaded tier 3 passive): granted on logi
     assert.equal(went.length, 1, "cooldown blocks a second Teleport-back");
     assert.match(who.relic.messages.at(-1), /seconds/);
     click("Crystal of Echoes", "Save-memory", who.relic);
-    assert.match(who.relic.messages.at(-1), /on its own/);
+    assert.match(who.relic.messages.at(-1), /will no longer remember/);
+    click("Crystal of Echoes", "Check-memories", who.relic);
+    assert.match(who.relic.messages.at(-1), /Saving is paused/);
+    click("Crystal of Echoes", "Save-memory", who.relic);
+    assert.match(who.relic.messages.at(-1), /will now remember/);
     who.relic.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
     who.relic.getInventory().delete(I.CRYSTAL_OF_ECHOES, 1);
     assert.ok(Collect.owed(who.relic, 4).includes(I.CRYSTAL_OF_ECHOES), "Collect-items reclaims the tier 3 passive crystal");
@@ -433,6 +648,48 @@ test("Crystal of memories (Trailblazer Reloaded tier 3 passive): granted on logi
     click("Crystal of Echoes", "Teleport-back", player);
     assert.equal(player.messages.length, before, `${player.getUsername()}'s crystal does nothing`);
   }
+});
+
+test("Crystal of memories saves only while it is carried and Save-memory is on (issue #17)", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = cases({ 0: 1, 1: 1, 2: 1 }, 4).relic;
+  const land = (x, y) => {
+    for (const handler of custom["teleport:landed"] ?? []) {
+      handler({ player, from: new Location(x, y, 0), fromInstance: false });
+    }
+  };
+  const saved = () => player.getAttribute(Crystal.RECALL_ATTRIBUTE);
+
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  player.getInventory().delete(I.CRYSTAL_OF_ECHOES, 1);
+  assert.equal(Crystal.carried(player), false);
+  land(3200, 3200);
+  assert.equal(saved(), null, "a crystal left behind does not remember the teleport");
+
+  player.getBank(0).add(new Item(I.CRYSTAL_OF_ECHOES, 1), false);
+  land(3201, 3201);
+  assert.equal(saved(), null, "a banked crystal does not remember either");
+  player.getBank(0).delete(I.CRYSTAL_OF_ECHOES, 1);
+
+  player.getInventory().add(new Item(I.CRYSTAL_OF_ECHOES, 1), true);
+  land(3202, 3202);
+  assert.deepEqual(saved(), { x: 3202, y: 3202, z: 0 }, "carried: it remembers");
+
+  click("Crystal of Echoes", "Save-memory", player);
+  assert.equal(Crystal.saving(player), false);
+  assert.match(player.messages.at(-1), /will no longer remember/);
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  land(3203, 3203);
+  assert.equal(saved(), null, "paused: a new teleport is not remembered");
+  click("Crystal of Echoes", "Check-memories", player);
+  assert.match(player.messages.at(-1), /Saving is paused/);
+
+  click("Crystal of Echoes", "Save-memory", player);
+  assert.equal(Crystal.saving(player), true);
+  assert.match(player.messages.at(-1), /will now remember/);
+  land(3204, 3204);
+  assert.deepEqual(saved(), { x: 3204, y: 3204, z: 0 }, "resumed: it remembers again");
+  assert.equal(Crystal.SAVE_ATTRIBUTE, "league:crystal-of-memories-save");
 });
 
 test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memories passive", () => {
@@ -458,6 +715,56 @@ test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memorie
     assert.equal(player.getInventory().getAmount(I.CRYSTAL_OF_ECHOES), 1, "already held: unlock does not duplicate");
   } finally {
     custom["level-up:relic-profile"] = custom["level-up:relic-profile"].filter((handler) => handler !== answer);
+  }
+});
+
+test("Crystal of memories: the cooldown follows the listed total-level tiers, is capped while recharging, and clears at 1,800", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = cases({ 0: 1, 1: 1, 2: 1 }, 4).relic;
+  const originalManager = player.getSkillManager;
+  const originalNow = Date.now;
+  const previousTeleport = core.TeleportHandler.teleport;
+  const now = 1_800_000_000_000;
+  const tiers = [
+    [32, 6], [299, 6],
+    [300, 5], [599, 5],
+    [600, 4], [899, 4],
+    [900, 3], [1199, 3],
+    [1200, 2], [1499, 2],
+    [1500, 1], [1799, 1],
+    [1800, 0], [2400, 0],
+  ];
+  let teleported = 0;
+  Date.now = () => now;
+  core.TeleportHandler.teleport = (target, location, type, warning, onArrival) => {
+    teleported++;
+    onArrival?.();
+  };
+  try {
+    player.setAttribute(Crystal.RECALL_ATTRIBUTE, { x: 3222, y: 3218, z: 0 });
+    for (const [total, minutes] of tiers) {
+      player.getSkillManager = () => ({ getTotalLevel: () => total, getCurrentLevel: () => 10 });
+      player.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
+      click("Crystal of Echoes", "Teleport-back", player);
+      assert.equal(Crystal.cooldownMinutes(player), minutes, `${total} total levels`);
+      assert.equal(player.getAttribute(Crystal.READY_AT_ATTRIBUTE), minutes > 0 ? now + minutes * 60_000 : 0,
+        `${total} total levels: ${minutes} minute cooldown`);
+    }
+    assert.equal(teleported, tiers.length, "every use without a current cooldown teleports");
+
+    // An existing cooldown cannot outlast the tier the character has reached.
+    player.getSkillManager = () => ({ getTotalLevel: () => 600, getCurrentLevel: () => 10 });
+    player.setAttribute(Crystal.READY_AT_ATTRIBUTE, now + 6 * 60_000);
+    assert.equal(Crystal.cooldownRemainingMs(player, now), 4 * 60_000, "600 total levels cap the running cooldown at four minutes");
+    player.getSkillManager = () => ({ getTotalLevel: () => 1800, getCurrentLevel: () => 10 });
+    assert.equal(Crystal.cooldownRemainingMs(player, now), 0, "1,800 total levels clear the running cooldown");
+    click("Crystal of Echoes", "Teleport-back", player);
+    assert.equal(teleported, tiers.length + 1, "the cleared cooldown lets the teleport through");
+    assert.equal(player.getAttribute(Crystal.READY_AT_ATTRIBUTE), 0, "no new cooldown at 1,800 total levels");
+  } finally {
+    Date.now = originalNow;
+    core.TeleportHandler.teleport = previousTeleport;
+    player.getSkillManager = originalManager;
   }
 });
 
@@ -548,7 +855,7 @@ test("Bank Heist: every bank, bank chest and deposit box in the cache's map, nam
   assert.equal(tiles.size, DATA.banks.length, "no bank twice");
   const who = cases(BANK_HEIST, 5);
   click("Banker's briefcase", "Teleport", who.relic);
-  const runs = prompts.at(-1).options.map(([text]) => text);
+  const runs = menuView(who.relic).entries.map((entry) => entry.label);
   assert.ok(runs.length >= 2, runs.join(", "));
   const Heist = require("../plugins/modes/leaguerelics/BankHeist.LeagueRelics");
   const list = Heist._test.banks(who.relic);
@@ -580,16 +887,16 @@ test("Bank Heist: every bank, bank chest and deposit box in the cache's map, nam
   };
   custom["league:area-at"] = [area, ...(custom["league:area-at"] ?? [])];
   click("Banker's briefcase", "Teleport", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Kandarin", "Misthalin", "Other"]);
+  assert.deepEqual(menuView(who.relic).entries.map((entry) => entry.label), ["Kandarin", "Misthalin", "Other"]);
   const locked = (query) => { query.unlocked = ["misthalin"]; };
   custom["league:areas"] = [locked, ...(custom["league:areas"] ?? [])];
   click("Banker's briefcase", "Teleport", who.relic);
-  assert.deepEqual(prompts.at(-1).options.map(([text]) => text), ["Misthalin", "Other"], "a locked area's banks are not offered");
+  assert.deepEqual(menuView(who.relic).entries.map((entry) => entry.label), ["Misthalin", "Other"], "a locked area's banks are not offered");
   custom["league:areas"] = custom["league:areas"].filter((handler) => handler !== locked);
   custom["league:area-at"] = custom["league:area-at"].filter((handler) => handler !== area);
   for (const player of others(who)) {
-    const before = prompts.length;
+    const before = player.sent.packets.length;
     click("Banker's briefcase", "Teleport", player);
-    assert.equal(prompts.length, before, `${player.getUsername()}'s briefcase does nothing`);
+    assert.equal(player.sent.packets.length, before, `${player.getUsername()}'s briefcase does nothing`);
   }
 });

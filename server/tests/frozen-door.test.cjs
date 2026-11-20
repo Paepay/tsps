@@ -164,7 +164,7 @@ test('Ashuelot is two multi-NPCs on varbit 13182: outer (11295) at 0, inner (112
   assert.equal(api.core.RegionManager.blocked(new api.core.Location(outer[0].x, outer[0].y, outer[0].level ?? 0), null), false, 'the outer Ashuelot stands on a free tile');
 });
 
-test('key piece drops follow the miniquest: only while it is started and not complete, through the real drop roll', (t) => {
+test('key piece drops stop once that piece is held, in the inventory or the bank, through the real drop roll', (t) => {
   const rolls = (player, tableId) => {
     const table = [...drops.tablesByNpc.values()].flat().find((candidate) => candidate.table_id === tableId);
     assert.ok(table, tableId);
@@ -183,8 +183,15 @@ test('key piece drops follow the miniquest: only while it is started and not com
     const label = `${table} (${piece})`;
     assert.equal(rolls(makePlayer(t, { stage: 0 }), table).includes(piece), false, `${label}: not started`);
     assert.equal(rolls(makePlayer(t, { stage: 1 }), table).includes(piece), true, `${label}: started`);
-    assert.equal(rolls(makePlayer(t, { stage: 3 }), table).includes(piece), true, `${label}: door unsealed, not complete`);
+    // Once the key is assembled the miniquest no longer needs any piece, and a held piece never drops again.
+    assert.equal(rolls(makePlayer(t, { stage: 3 }), table).includes(piece), false, `${label}: key assembled`);
     assert.equal(rolls(makePlayer(t, { stage: COMPLETE }), table).includes(piece), false, `${label}: complete`);
+    const holder = makePlayer(t, { stage: 1 });
+    holder.getInventory().adds(piece, 1);
+    assert.equal(rolls(holder, table).includes(piece), false, `${label}: carried piece`);
+    const banker = makePlayer(t, { stage: 1 });
+    banker.getBank(0).add(new api.core.Item(piece, 1), false);
+    assert.equal(rolls(banker, table).includes(piece), false, `${label}: banked piece (issue #16)`);
   }
 });
 

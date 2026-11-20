@@ -22,7 +22,7 @@
     "_comment": "The world flags the client caches in varp map_flags_cached (3717; the Wilderness plugin sends it and asks `world:map-flags` for extra bits). Script 206, the client's 'is a league account' check behind the journal's Leagues tab, the summary and the trophies, wants bit 30 set and bit 29 clear: every Leagues V login (227/00070 ...) carried flags 1073741825 (bits 30 and 0).",
     "leagueWorld": 1073741824
   },
-  "tutorialCompletedValue": 12,
+  "tutorialCompletedValue": 14,
   "ironmanMode": "ironman",
   "journal": {
     "_comment": "The side journal's Leagues tab (side_journal 629:34) mounts the league side panel (656) in the journal's content container (629:43), as the other tabs do on this client; live mounted it in its own tab slot. Script 3226 fills the panel's points bar (656:23) after every award, as captured.",

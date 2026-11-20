@@ -7,11 +7,11 @@
  * and Destroy are the game's own. The cast is the eye's own, as 237/04057 records it: the pick,
  * evil_eye_cast01 with spotanim leagues_6_evil_eye a tick on, the move four ticks after that, and
  * the destination's tile in varp league_default_teleport_last_destination (sent with the pick; live, a
- * tick later with the cast). The menus are live's, interface 187 (237/04057, 01104, 01107, 01133):
- * "Select a region" with the areas not unlocked struck through, then "Evil Eye teleports -
- * <region>" with its bosses and Back; the recordings list five areas' labels (the data's `label`),
- * the rest keep the Wiki's names. Live strikes some bosses in an unlocked area too (Amoxliatl,
- * Inferno: their own requirements, not recorded); here only an area not unlocked is.
+ * tick later with the cast). The browser menu opens on "Select a region" with the areas not
+ * unlocked locked and explained, then "Evil Eye teleports - <region>" with its bosses and Back;
+ * the recordings list five areas' labels (the data's `label`), the rest keep the Wiki's names.
+ * Live strikes some bosses in an unlocked area too (Amoxliatl, Inferno: their own requirements,
+ * not recorded); here only an area not unlocked is.
  *
  * The destinations (data/league-evil-eye.json) are the Wiki's "Teleports by Area" rows, each on
  * a tile the server's own data gives for the boss's entrance; the data lists the rows left out

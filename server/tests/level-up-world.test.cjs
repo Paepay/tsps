@@ -248,6 +248,46 @@ test("Level-Up lists only working mastery challenges and never caps the point ba
   }
 });
 
+test("the mastery screen's two extra Level-Up rows have task completion bits", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Tasks = require("../plugins/modes/leaguetasks/Common.LeagueTasks");
+  const Complete = require("../plugins/modes/leaguetasks/Complete.LeagueTasks");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  Common.init(fake.api);
+  Tasks.init(fake.api);
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    Complete(fake.api);
+    fake.player.setAttribute(Common.POINTS_ATTRIBUTE, {
+      giant: 1, "high-level-kills": 1, "scurrius-solo": 1, "slayer-55": 1, jad: 1, "combat-100": 1,
+      "deal-50-in-one-hit": 1,
+    });
+    assert.equal(Common.earned(fake.player), 7);
+    assert.equal(Common.completedChallenges(fake.player), 7, "seven points are seven completed challenges");
+
+    fake.packets.configs.length = 0;
+    fake.api.emitCustomEvent("league:points-changed", { player: fake.player });
+    const varp = fake.packets.configs.find(({ id }) => id === 2616)?.value;
+    assert.ok(varp !== undefined, "the task completion varp goes to the client");
+    assert.notEqual(varp & (1 << 10), 0, "bit 10 is deal-50-in-one-hit, the screen's eleventh row");
+    assert.equal(varp & (1 << 11), 0, "combat-skill-99 is still open");
+
+    fake.player.setAttribute(Common.POINTS_ATTRIBUTE, {
+      ...Common.pointsEarned(fake.player), "combat-skill-99": 1,
+    });
+    fake.packets.configs.length = 0;
+    fake.api.emitCustomEvent("league:points-changed", { player: fake.player });
+    const withNinetyNine = fake.packets.configs.find(({ id }) => id === 2616)?.value;
+    assert.notEqual(withNinetyNine & (1 << 11), 0, "bit 11 is combat-skill-99, the twelfth row");
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
 test("the five Level-Up additions use authoritative events, thresholds and one-time persistence", () => {
   const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
   const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");
@@ -420,6 +460,16 @@ test("Level-Up unlocks relics from Trailblazer Reloaded's catalog", () => {
     ["Fairy's Flight", "Globetrotter"], "tier 2 has the Wiki's two relics");
   assert.deepEqual(tiers[2].relics.map((relic) => relic.name),
     ["Banker's Note", "Fire Sale"], "tier 3 has the Wiki's two relics");
+});
+
+test("the relic screen never maps an unselected slot to a real relic", () => {
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const catalog = { tiers: [{ relics: [{}, {}] }, { relics: [{}] }] };
+  assert.deepEqual(Interface._test.slotToRelic(catalog, 0), { tier: 0, slot: 1 });
+  assert.deepEqual(Interface._test.slotToRelic(catalog, 2), { tier: 1, slot: 1 });
+  assert.equal(Interface._test.slotToRelic(catalog, -1), null, "the open screen's -1 means nothing selected");
+  assert.equal(Interface._test.slotToRelic(catalog, 1.5), null);
+  assert.equal(Interface._test.slotToRelic(catalog, 3), null);
 });
 
 test("removed catalog relics reopen their earned Level-Up tiers for a replacement pick", () => {
@@ -636,6 +686,9 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   login(fake, { player: fake.player });
   assert.equal(fake.attributes.has("level-up:unlocked-skills"), false, "plain templates are untouched");
   assert.deepEqual(fake.contentData.at(-1)?.datasets?.[0]?.rows, [], "plain templates send no locked-skill overlay");
+  const plainWealth = { enabled: true };
+  fake.api.emitCustomEvent("wealth:enabled", plainWealth);
+  assert.equal(plainWealth.enabled, true, "other templates keep wealth transfer on");
   const plainProtection = { player: fake.player, protected: true };
   fake.api.emitCustomEvent("combat:developer-protection", plainProtection);
   assert.equal(plainProtection.protected, true, "plain templates keep staff damage protection");
@@ -675,10 +728,21 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   fake.attributes.set("level-up:unlocked-skills", [7]);
   fake.packets.varbits.length = 0;
   fake.packets.configs.length = 0;
+  fake.events.length = 0;
   login(fake, { player: fake.player, isNewAccount: true });
+  assert.ok(fake.events.some(({ name, payload }) => name === "diary:complete-all" && payload?.player === fake.player),
+    "Level-Up completes every achievement diary at login");
+  const diaryRewards = { player: fake.player, unrestricted: false, includeXpLamps: true };
+  fake.api.emitCustomEvent("diary:rewards-unrestricted", diaryRewards);
+  assert.equal(diaryRewards.unrestricted, true, "Level-Up still hands out every diary reward tier");
+  assert.equal(diaryRewards.includeXpLamps, true, "Level-Up keeps the diaries' XP lamps");
+  const levelUpWealth = { enabled: true };
+  fake.api.emitCustomEvent("wealth:enabled", levelUpWealth);
+  assert.equal(levelUpWealth.enabled, false, "Level-Up vetoes wealth transfer on the live world");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10031 && value === 1), "league account varbit");
   assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10032 && value === 4), "league style varbit");
-  assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037), "completed tutorial varbit");
+  assert.ok(fake.packets.varbits.some(({ id, value }) => id === 10037 && value === 14),
+    "completed tutorial varbit: script 2449's finished value, so the area screen does not warn (issue #23)");
   assert.ok(fake.packets.configs.some(({ id, value }) => id === 3717 && (value & (1 << 30)) !== 0), "league world map flag");
   assert.ok(fake.packets.configs.some(({ id, value }) => id === 4920 && (value & (1 << 1)) !== 0), "the client's cached league feature flag");
 
@@ -871,4 +935,27 @@ test("::levelup master unlocks all skills at level 99", () => {
   } finally {
     plugin._test.configure("", null);
   }
+});
+
+test("unlocking Herblore starts it at level 3 while other skills still start at 1", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  plugin._test.configure("level_up", JSON.stringify(validContract()));
+  login(fake, { player: fake.player, isNewAccount: true });
+
+  assert.equal(Rules.startingLevel(9), 3, "Herblore's canonical index opens at 3");
+  assert.equal(Rules.startingLevel(0), 1);
+  assert.equal(Rules.startingLevel(20), 1);
+  assert.equal(plugin.unlockSkill(fake.player, "Herblore"), true);
+
+  const herblore = fake.byName("Herblore");
+  assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [7, 9]);
+  assert.equal(fake.manager.getMaxLevel(herblore), 3);
+  assert.equal(fake.manager.getCurrentLevel(herblore), 3);
+  assert.equal(fake.manager.getExperience(herblore), 300, "XP matches getExperienceForLevel(3)");
+  assert.equal(fake.locked.has(herblore.getIndex()), false);
+
+  plugin._test.configure("", null);
 });

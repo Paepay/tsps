@@ -171,12 +171,25 @@ export class InputManager {
     // When true, double-click may request Pointer Lock (hides cursor).
     enablePointerLock: boolean = false;
     private readonly keyHandlers = new Set<InputKeyHandler>();
+    private readonly preRemapKeyHandlers = new Set<InputKeyHandler>();
     private readonly mouseHandlers = new Set<InputMouseHandler>();
     private readonly inputFilters = new Set<(type: string, event: MouseEvent | KeyboardEvent) => boolean>();
+    private readonly touchTapHandlers = new Set<(x: number, y: number) => boolean | void>();
 
     addInputFilter(filter: (type: string, event: MouseEvent | KeyboardEvent) => boolean): () => void {
         this.inputFilters.add(filter);
         return () => { this.inputFilters.delete(filter); };
+    }
+
+    /**
+     * A tap handler for HUD overlays that are not widgets (the global-events icon). Returning
+     * true consumes the tap so it does not also reach the scene. There is one
+     * onCanvasTouchTap callback already used by the chat keyboard; this set lets overlays add
+     * themselves without replacing it.
+     */
+    addTouchTapHandler(handler: (x: number, y: number) => boolean | void): () => void {
+        this.touchTapHandlers.add(handler);
+        return () => { this.touchTapHandlers.delete(handler); };
     }
 
     private filterInput(type: string, event: MouseEvent | KeyboardEvent): boolean {
@@ -451,6 +464,15 @@ export class InputManager {
 
     applyTouchTap(x: number, y: number): void {
         this.onCanvasTouchTap?.(x, y);
+        let consumed = false;
+        for (const handler of [...this.touchTapHandlers]) {
+            try {
+                if (handler(x, y) === true) consumed = true;
+            } catch {
+                // An overlay must never break input.
+            }
+        }
+        if (consumed) return;
         this.clickX = x;
         this.clickY = y;
         this.clickTime = Date.now();
@@ -583,6 +605,15 @@ export class InputManager {
     addKeyHandler(handler: InputKeyHandler): () => void {
         this.keyHandlers.add(handler);
         return () => this.keyHandlers.delete(handler);
+    }
+
+    /**
+     * A key-down handler that sees physical keys before KeyRemapper rewrites or drops them. A
+     * keyboard-first dialog uses this so WASD camera cannot turn its shortcuts into camera input.
+     */
+    addPreRemapKeyHandler(handler: InputKeyHandler): () => void {
+        this.preRemapKeyHandlers.add(handler);
+        return () => this.preRemapKeyHandlers.delete(handler);
     }
 
     /** The key to process in place of `event`, or null when the remapper dropped it. */
@@ -1189,6 +1220,17 @@ export class InputManager {
         // Read before remapping, so the Enter that ends typing still reaches the chat it sends.
         // The construction build menu (prioritizeChat) owns every key: nothing is remapped there.
         const chatBlocked = !prioritizeChat && this.keyRemapper?.isChatInputBlocked() === true;
+        if (!prioritizeChat) {
+            for (const handler of this.preRemapKeyHandlers) {
+                if (handler.onKeyDown?.(event)) {
+                    event.preventDefault();
+                    this.idleTime = 0;
+                    this.lastInputTimeMs = this.nowMs();
+                    this.lastKeyTimeMs = this.lastInputTimeMs;
+                    return;
+                }
+            }
+        }
         const remapped = prioritizeChat ? event : this.remapKey(event, true);
         if (!remapped) {
             event.preventDefault();

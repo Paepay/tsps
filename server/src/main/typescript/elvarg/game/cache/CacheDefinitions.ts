@@ -672,6 +672,13 @@ export class CacheDefinitions {
                 }
             }
             Object.assign(type, item.objType);
+            // Custom items have no cache row of their own. Give them their base item's
+            // placeholder so a banked stack leaves one behind, exactly as the base family does.
+            if (base && type.placeholderTemplate === -1 && !(type.placeholder >= 0)
+                && base.placeholderTemplate === -1 && base.placeholder >= 0) {
+                type.placeholder = base.placeholder;
+                item.objType.placeholder = base.placeholder;
+            }
             Object.assign(type, { id });
             for (const [from, to] of [[type.recolorFrom, type.recolorTo], [type.retextureFrom, type.retextureTo]]) {
                 if ((from?.length ?? 0) !== (to?.length ?? 0)) throw new Error(`[custom-items] ${id} has mismatched recolour/retexture arrays`);

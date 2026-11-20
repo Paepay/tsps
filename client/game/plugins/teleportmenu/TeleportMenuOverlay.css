@@ -1,0 +1,300 @@
+.teleport-menu-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    /* Clicks outside the panel close the menu and continue to the world as movement or combat. */
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    box-sizing: border-box;
+    background:
+        radial-gradient(circle at 50% 45%, rgba(34, 22, 8, 0.18), rgba(0, 0, 0, 0.52) 78%);
+    font-family: Georgia, "Times New Roman", serif;
+    color: #2d1c0c;
+    user-select: none;
+}
+
+.teleport-menu {
+    position: relative;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 2px solid #3c2713;
+    border-radius: 5px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 24%),
+        repeating-linear-gradient(0deg, rgba(92, 61, 22, 0.035) 0 2px, transparent 2px 5px),
+        linear-gradient(155deg, #ecdcb2 0%, #ddc795 58%, #ceb37c 100%);
+    box-shadow:
+        0 14px 42px rgba(0, 0, 0, 0.7),
+        inset 0 0 0 1px rgba(255, 249, 225, 0.55),
+        inset 0 0 34px rgba(116, 76, 26, 0.28);
+    animation: teleport-menu-in 120ms ease-out;
+}
+
+.teleport-menu-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid rgba(72, 47, 19, 0.55);
+    box-shadow: 0 1px 0 rgba(255, 248, 222, 0.55);
+}
+
+.teleport-menu-heading { min-width: 0; }
+
+.teleport-menu-kicker {
+    margin-bottom: 2px;
+    color: #6b451d;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.teleport-menu h2 {
+    margin: 0;
+    overflow: hidden;
+    color: #2a1808;
+    font-size: clamp(17px, 2.2vh, 22px);
+    font-weight: bold;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 0 rgba(255, 248, 222, 0.65);
+    white-space: nowrap;
+}
+
+.teleport-menu-header-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.teleport-menu-back,
+.teleport-menu-close,
+.teleport-menu-page {
+    box-sizing: border-box;
+    border: 1px solid #58391b;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #e5cd9c, #c9a96c);
+    color: #2b1909;
+    font: bold 12px Georgia, "Times New Roman", serif;
+    box-shadow: inset 0 1px 0 rgba(255, 250, 226, 0.7), 0 1px 2px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+
+.teleport-menu-back { padding: 5px 8px; }
+
+.teleport-menu-inline-key {
+    margin-left: 4px;
+    padding: 1px 4px;
+    border: 1px solid rgba(75, 48, 19, 0.45);
+    border-radius: 2px;
+    background: rgba(255, 249, 226, 0.45);
+    font-size: 10px;
+    font-weight: normal;
+}
+
+.teleport-menu-close {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 22px;
+}
+
+.teleport-menu-back:hover,
+.teleport-menu-close:hover,
+.teleport-menu-page:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f4e2b6, #d9ba7d);
+}
+
+.teleport-menu-page:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.teleport-menu-subhead {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 15px 5px;
+    color: #553616;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+}
+
+.teleport-menu-count { color: #76562e; }
+
+.teleport-menu-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    padding: 4px 9px 6px;
+    overflow-y: auto;
+    list-style: none;
+    scrollbar-color: #8a6432 rgba(91, 60, 24, 0.12);
+    scrollbar-width: thin;
+}
+
+.teleport-menu-item { margin: 0; padding: 0; }
+
+.teleport-menu-option {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    width: 100%;
+    min-height: 31px;
+    box-sizing: border-box;
+    margin: 1px 0;
+    padding: 3px 8px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: #2c1b0b;
+    font: 15px/1.2 Georgia, "Times New Roman", serif;
+    text-align: left;
+    cursor: pointer;
+}
+
+.teleport-menu-option:hover,
+.teleport-menu-option.is-selected {
+    border-color: rgba(96, 62, 24, 0.55);
+    background: linear-gradient(180deg, rgba(255, 246, 211, 0.75), rgba(235, 207, 151, 0.6));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 240, 0.65);
+}
+
+.teleport-menu-option.is-selected {
+    outline: 1px solid rgba(90, 56, 18, 0.55);
+    outline-offset: 1px;
+}
+
+.teleport-menu-option.is-locked {
+    color: #624324;
+    cursor: not-allowed;
+}
+
+.teleport-menu-option.is-locked .teleport-menu-label { text-decoration: line-through; }
+
+.teleport-menu-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 22px;
+    box-sizing: border-box;
+    border: 1px solid #3c2713;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #6b4a25, #4a2f14);
+    color: #fff4d2;
+    font: bold 12px/1 "Courier New", monospace;
+    text-transform: uppercase;
+    box-shadow: inset 0 1px 0 rgba(255, 236, 190, 0.28), 0 1px 1px rgba(0, 0, 0, 0.45);
+}
+
+.teleport-menu-option.is-locked .teleport-menu-key {
+    background: linear-gradient(180deg, #736450, #554736);
+}
+
+.teleport-menu-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.teleport-menu-lock {
+    padding: 1px 6px;
+    border: 1px solid rgba(105, 57, 22, 0.5);
+    border-radius: 8px;
+    background: rgba(117, 73, 31, 0.14);
+    color: #673d18;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.teleport-menu-reason {
+    margin: 0 8px 4px 45px;
+    color: #6c3b18;
+    font-size: 11px;
+    font-style: italic;
+    line-height: 1.25;
+}
+
+.teleport-menu-message {
+    margin: 4px 12px 6px;
+    padding: 6px 9px;
+    border: 1px solid rgba(111, 43, 24, 0.55);
+    border-radius: 3px;
+    background: rgba(165, 67, 38, 0.14);
+    color: #61240f;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.teleport-menu-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 13px 9px;
+    border-top: 1px solid rgba(72, 47, 19, 0.45);
+    box-shadow: inset 0 1px 0 rgba(255, 248, 222, 0.5);
+    color: #5a3b1c;
+    font-size: 11px;
+}
+
+.teleport-menu-pager {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.teleport-menu-page { padding: 3px 7px; }
+
+.teleport-menu-page-indicator { white-space: nowrap; }
+
+.teleport-menu-hints {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 10px;
+}
+
+.teleport-menu-hints kbd {
+    display: inline-block;
+    min-width: 13px;
+    margin-right: 2px;
+    padding: 0 3px;
+    border: 1px solid rgba(79, 51, 21, 0.55);
+    border-radius: 2px;
+    background: rgba(255, 249, 226, 0.52);
+    color: #3a240d;
+    font: bold 10px/15px "Courier New", monospace;
+    text-align: center;
+}
+
+@keyframes teleport-menu-in {
+    from { opacity: 0; transform: translateY(3px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 520px) {
+    .teleport-menu-backdrop { padding: 6px; }
+    .teleport-menu-option { grid-template-columns: 26px minmax(0, 1fr) auto; font-size: 14px; }
+    .teleport-menu-hints { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .teleport-menu { animation: none; }
+}

@@ -167,6 +167,10 @@ const SELECTED_SETTING_ATTRIBUTE = "settings:selected";
 // The values the player chose for the rows in data/settings.json, and the category shown
 // ({ "varbit:<id>": value, "varp:<id>": value }), restored on login as live does.
 const SETTINGS_VALUES_ATTRIBUTE = "settings:values";
+// The chatbox's game-chat Filter toggle: varbit 26, the sixth bit of chat_filter_assist (1055).
+// It is not an All Settings row, but it is saved with the same per-account settings values.
+const GAME_FILTER_VARBIT = 26;
+const GAME_FILTER_KEY = `varbit:${GAME_FILTER_VARBIT}`;
 // The varps the browser client transmits whole when a row changes its varbit in the client: the
 // cache's toggle script (3965) flips Anti Drag (115), precise timing (82) and Esc closes (57)
 // there before the click is sent, and the buff bar's relic op (script 3231) flips Display Relics
@@ -1174,6 +1178,17 @@ function saveTransmittedSettings(transmission) {
 function handleSettingsVarpTransmit(transmission) {
   saveTransmittedSettings(transmission);
   transmitXpDropsSetup(transmission);
+  saveGameFilter(transmission);
+}
+
+/** The chatbox flipped game_filter itself and transmitted the whole varp: keep just that bit. */
+function saveGameFilter(transmission) {
+  const { player, varpId, value } = transmission;
+  const { baseVar, startBit, endBit } = CacheDefinitions.getVarbit(GAME_FILTER_VARBIT);
+  if (!player || varpId !== baseVar) return;
+  const filter = (value >>> startBit) & (2 ** (endBit - startBit + 1) - 1);
+  setSettingVar(player, GAME_FILTER_KEY, filter);
+  transmission.handled = true;
 }
 
 /**

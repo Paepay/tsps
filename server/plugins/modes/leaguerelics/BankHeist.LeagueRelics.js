@@ -123,9 +123,18 @@ function groups(player, list) {
 
 function teleport(player) {
   const list = banks(player).filter((bank) => Teleports.areaOpen(player, bank.location));
-  Teleports.menu(player, Common.message("bankHeistTitle"), groups(player, list).map(([label, run]) => [label, () => {
-    Teleports.destinations(player, KEY, Common.message("bankHeistTitle"), run);
-  }]));
+  Teleports.openMenu(player, {
+    key: KEY,
+    title: Common.message("bankHeistTitle"),
+    regions: groups(player, list).map(([label, run]) => ({
+      label,
+      destinationTitle: Common.message("bankHeistTitle"),
+      destinations: run.map((bank) => ({
+        label: bank.label,
+        choose: () => Teleports.go(player, KEY, bank),
+      })),
+    })),
+  });
 }
 
 /** An option's handler for the relic's owner; anyone else's click goes on to the game's own (false). */
@@ -139,6 +148,7 @@ function only(fn) {
 
 module.exports = function attach(api) {
   effect = Common.data.effects.bankHeist;
+  Teleports.attachMenu(api);
   api.persistAttribute(Teleports.lastAttribute(KEY), null);
   api.onItemAction(effect.toolName, {
     Teleport: only(teleport),

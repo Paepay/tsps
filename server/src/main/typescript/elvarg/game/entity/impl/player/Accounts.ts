@@ -249,6 +249,7 @@ export class Accounts {
         const account = this.key(primaryName);
         const existing = entries.get(account);
         if (existing) return existing;
+        if (DisplayNames.isReserved(primaryName)) throw new Error("That name is not available");
         if (this.deleted.has(account)) throw new Error("That name belonged to a deleted character");
         const entry: AccountEntry = { createdAt: now, characters: [{ name: primaryName, createdAt: now, lastPlayedAt: 0 }] };
         entries.set(account, entry);
@@ -270,6 +271,7 @@ export class Accounts {
     public static addCharacter(accountKey: string, name: string, now = Date.now()): AccountCharacter {
         const entry = this.entryOf(accountKey);
         if (!entry) throw new Error("No such account");
+        if (DisplayNames.isReserved(name)) throw new Error("That name is not available");
         if (this.accountOf(name)) throw new Error("That name is owned by an account");
         const nameKey = this.key(name);
         const tombstone = this.deleted.get(nameKey);

@@ -1,6 +1,6 @@
-// Demonic Pacts' Endless Harvest through the real Woodcutting: a tree the relic keeps standing is
-// chopped on, not left mid-swing (docs/leagues.md, Demonic Pacts' relics); without the relic the
-// same tree falls after its log and the chopping stops.
+// Endless Harvest through the real Woodcutting and Fishing: a tree or spot the relic keeps going is
+// harvested on, not left mid-swing (docs/leagues.md); without the relic the same tree falls after
+// its log and fishing stops.
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { before, after, test } = require("node:test");
@@ -26,7 +26,7 @@ before(async () => {
 });
 after(() => PM.emitServerShutdown({}));
 
-/** A new Demonic Pacts character, logged in through the real hooks, its tutorial done, `relics` picked. */
+/** A new league character, logged in through the real hooks, its tutorial done, `relics` picked. */
 function pactsCharacter(t, relics) {
   const channel = { kind: "test", remoteAddress: "127.0.0.1", isOpen: () => true, send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
   const player = new Player(new PlayerSession(channel));
@@ -95,6 +95,15 @@ test("Endless Harvest: the tree it keeps standing is chopped on, two logs a log"
   assert.equal(logs(f) % 2, 0, "each log is doubled");
 });
 
+test("Trailblazer Reloaded's Endless Harvest keeps the same tree standing", async (t) => {
+  const f = pactsCharacter(t, { 0: 1 });
+  f.player.setAttribute("league:type", 4);
+  const tree = await chop(t, f, 20);
+  assert.equal(Woodcutting().isWoodcuttingActive(f.player), true, "still chopping");
+  assert.ok(core.ObjectManager.objectsAt(tree.getLocation()).some((o) => o.getId() === tree.getId()), "the tree stands, no stump");
+  assert.ok(logs(f) >= 6, `logs keep coming: ${logs(f)}`);
+});
+
 test("without the relic: the same tree falls after its log and the chopping stops", async (t) => {
   const f = pactsCharacter(t, {});
   const tree = await chop(t, f, 20);
@@ -137,8 +146,8 @@ function catches(f, item) {
   return f.player.getInventory().getAmount(item) + f.player.getBank(0).getAmount(item);
 }
 
-test("Demonic Endless Harvest fishes through forced random stops; ordinary and Reloaded fishing stop", async (t) => {
-  for (const [league, relics, expected] of [[6, { 0: 1 }, true], [6, {}, false], [4, { 0: 1 }, false]]) {
+test("Endless Harvest fishes through forced random stops; ordinary fishing stops", async (t) => {
+  for (const [league, relics, expected] of [[6, { 0: 1 }, true], [6, {}, false], [4, { 0: 1 }, true], [4, {}, false]]) {
     const f = pactsCharacter(t, relics);
     f.player.setAttribute("league:type", league);
     const { item } = await fish(t, f);

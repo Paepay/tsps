@@ -174,7 +174,13 @@ function chase({ player, npc, npcId }) {
       || !C.available(npc) || !C.nearby(player, npc, 5) || !permitted(player)) return;
     const I = H.core.ItemIdentifiers;
     const weapon = player.getEquipment().get(H.core.Equipment.WEAPON_SLOT).getId();
-    if (Math.random() >= ([I.MERFOLK_TRIDENT, I.TRIDENT_OF_THE_SEAS, I.TRIDENT_OF_THE_SWAMP, I.DRAGON_HARPOON].includes(weapon) ? 0.8 : 0.5)) {
+    const catchRoll = {
+      player,
+      npcId: H.core.NpcIdentifiers.FISH_SHOAL,
+      chance: [I.MERFOLK_TRIDENT, I.TRIDENT_OF_THE_SEAS, I.TRIDENT_OF_THE_SWAMP, I.DRAGON_HARPOON].includes(weapon) ? 0.8 : 0.5,
+    };
+    H.api?.emitCustomEvent?.("hunter:catch-chance", catchRoll);
+    if (Math.random() >= catchRoll.chance) {
       player.sendMessage("The fish shoal evades you.");
       return;
     }

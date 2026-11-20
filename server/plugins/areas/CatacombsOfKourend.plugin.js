@@ -27,6 +27,10 @@ const VINE_LADDER = { x: 1666, y: 10051, z: 0 };
 const STATUE_EAST_SIDE = [1639, 3673, 0];
 /** The Catacombs below Kourend Castle, as bounded for their totem drops (plugins/bosses/data/skotizo.json). */
 const CATACOMBS = { minX: 1600, minY: 9984, maxX: 1791, maxY: 10111 };
+/** The Catacombs' dust devil (issue #22). */
+const DUST_DEVIL = 7249;
+/** Their leash made them give up after a few seconds; the Catacombs are their home and they keep the fight. */
+const KEEP_TARGET = "combat:no-retreat";
 
 /**
  * The vines out and their ways back in (Wiki "Catacombs of Kourend"; loc placements and varbits
@@ -253,6 +257,15 @@ function boneRestore(event) {
   if (inCatacombs(event.player.getLocation())) event.restore = Math.max(event.restore, event.points);
 }
 
+/**
+ * Catacombs dust devils never abandon a target for wandering past the open-world leash: issue #22
+ * was that they lost aggro a few seconds after being attacked.
+ */
+function keepDustDevilTarget({ npc }) {
+  if (npc?.getId?.() !== DUST_DEVIL || !inCatacombs(npc.getLocation())) return;
+  npc.setFlag?.(KEEP_TARGET);
+}
+
 module.exports = {
   name: "CatacombsOfKourend",
   description: "Catacombs of Kourend access: King Rada's statue, the vine ladder back up, the corner vines and the surface holes they open, and bones restoring Prayer points while buried or crushed there.",
@@ -268,5 +281,7 @@ module.exports = {
     api.onCustomEvent("loc-teleports:arrived", climbedGiantsDenVine);
     api.onPlayerLogin(sendOpenedExits);
     api.onCustomEvent("prayer:bone-restore", boneRestore);
+    api.onCustomEvent("npc:added", keepDustDevilTarget);
   },
+  _test: { CATACOMBS, DUST_DEVIL, KEEP_TARGET, inCatacombs, keepDustDevilTarget },
 };

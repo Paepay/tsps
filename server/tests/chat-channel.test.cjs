@@ -13,7 +13,7 @@ const { World } = require('../dist/game/World');
 const { GameConstants } = require('../dist/game/GameConstants');
 const { TaskManager } = require('../dist/game/task/TaskManager');
 const { encodeGameframeBootstrap, encodeGameframeTabSetup } = require('../dist/net/protocol/ClientProtocol');
-const { FriendsChatManager: Manager, FriendsChatRank } = require('../plugins/interface/FriendsChatManager');
+const { FriendsChatManager: Manager, FriendsChatRank, HELP_CHANNEL_KEY } = require('../plugins/interface/FriendsChatManager');
 const { PlayerRelations } = require('../dist/game/model/PlayerRelations');
 
 const CHAT_MESSAGE = 120;
@@ -268,6 +268,58 @@ test('a system channel admits only whom it says, is rejoined at login, and its e
   } finally {
     Manager.memberAdded = announce;
   }
+});
+
+/** Registers the built-in Help channel the chat system installs on every world. */
+function registerHelp() {
+  Manager.ensureBuiltinChannels();
+  return Manager.systemProfiles.get(HELP_CHANNEL_KEY);
+}
+
+test('Help is an ownerless default channel every login joins and talks in with /', () => {
+  const profile = registerHelp();
+  assert.equal(profile.system, true);
+  assert.equal(profile.ownerName, 'Help');
+  assert.equal(profile.channelName, 'Help');
+  assert.equal(profile.default, true);
+  assert.equal(profile.broadcastMembers, false, 'a global roster is not resent to everyone on every join');
+  assert.ok(profile.capacity > 500, 'Help is not capped at the normal chat-channel size');
+
+  const newcomer = player('Newcomer');
+  Manager.onLogin(newcomer);
+  assert.equal(Manager.channelOf(newcomer)?.key, 'help');
+  assert.equal(Manager.channelOf(newcomer)?.name, 'Help');
+  assert.equal(Manager.channelOf(newcomer).rankOf(newcomer), FriendsChatRank.Unranked, 'nobody owns Help');
+  assert.equal(newcomer.getRelations().getFriendsChatLastOwner(), 'help', 'rejoined by the system key');
+  assert.match(newcomer.texts(), /Now talking in chat-channel Help/);
+  assert.match(newcomer.texts(), /To talk, start each line of chat with the \/ symbol\./);
+
+  const typing = player('Typing');
+  Manager.handleAction(typing, { action: 'join', name: 'HeLp' });
+  runTicks(2);
+  assert.equal(Manager.channelOf(typing)?.key, 'help', 'Help is joined by typing its name without an account');
+});
+
+test('login keeps a saved Grouping channel instead of moving the player to Help', () => {
+  registerHelp();
+  Manager.registerSystemChannel('#group-1', { ownerName: 'Grouping', channelName: 'Group', admits: () => true });
+  const grouped = player('Grouped');
+  grouped.getRelations().setFriendsChatLastOwner('#group-1');
+  Manager.onLogin(grouped);
+  assert.equal(Manager.channelOf(grouped)?.key, '#group-1');
+  assert.equal(Manager.channelOf(grouped)?.name, 'Group');
+});
+
+test('a player who leaves Help joins it again on the next login', () => {
+  registerHelp();
+  const member = player('Member');
+  Manager.onLogin(member);
+  assert.equal(Manager.channelOf(member)?.key, 'help');
+  Manager.leave(member, true);
+  assert.equal(Manager.channelOf(member), null);
+  assert.equal(member.getRelations().getFriendsChatLastOwner(), '');
+  Manager.onLogin(member);
+  assert.equal(Manager.channelOf(member)?.key, 'help');
 });
 
 test('the social tab mounts side_channels with the chat-channel inside it', () => {

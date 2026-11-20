@@ -28,16 +28,24 @@ function falo() {
 function stashes(player) {
   const units = Teleports.ask("treasure-trails:stashes");
   const byTier = TIERS.map((tier) => [tier, units.filter((unit) => unit.tier === tier)]).filter(([, list]) => list.length > 0);
-  const entries = byTier.map(([tier, list]) => [`${tier[0].toUpperCase()}${tier.slice(1)} STASH units`, () => {
-    const destinations = list.map((unit, index) => ({
-      label: Common.message("stashUnit", { tier, number: index + 1, x: unit.location.x, y: unit.location.y }),
-      location: new core.Location(unit.location.x, unit.location.y, unit.location.z ?? 0),
-    }));
-    Teleports.destinations(player, KEY, Common.message("stashTitle"), destinations);
-  }]);
+  const regions = byTier.map(([tier, list]) => ({
+    label: `${tier[0].toUpperCase()}${tier.slice(1)} STASH units`,
+    destinationTitle: Common.message("stashTitle"),
+    destinations: list.map((unit, index) => {
+      const destination = {
+        label: Common.message("stashUnit", { tier, number: index + 1, x: unit.location.x, y: unit.location.y }),
+        location: new core.Location(unit.location.x, unit.location.y, unit.location.z ?? 0),
+      };
+      return { label: destination.label, choose: () => Teleports.go(player, KEY, destination) };
+    }),
+  }));
   const bard = falo();
-  if (bard) entries.push([bard.label, () => Teleports.go(player, KEY, bard)]);
-  Teleports.menu(player, Common.message("clueCompassTitle"), entries);
+  if (bard) regions.push({
+    label: bard.label,
+    destinationTitle: Common.message("clueCompassTitle"),
+    destinations: [{ label: bard.label, choose: () => Teleports.go(player, KEY, bard) }],
+  });
+  Teleports.openMenu(player, { key: KEY, title: Common.message("clueCompassTitle"), regions });
 }
 
 function currentStep(player) {
@@ -72,6 +80,7 @@ function only(fn) {
 module.exports = function attach(api) {
   core = api.core;
   effect = Common.data.effects.clueCompass;
+  Teleports.attachMenu(api);
   api.persistAttribute(Teleports.lastAttribute(KEY), null);
   api.onItemAction(effect.toolName, {
     Teleport: only(stashes),

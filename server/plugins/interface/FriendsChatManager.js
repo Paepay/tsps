@@ -19,6 +19,14 @@ const FriendsChatRank = {
     JagexModerator: 127,
 };
 const MAX_CHANNEL_MEMBERS = 500;
+/**
+ * The built-in Help channel. It belongs to the chat system rather than to a plugin, so every
+ * world has it whatever its plugin switches say. A server holds at most 2048 players and the
+ * snapshot's member count is a 16-bit field, so 0xffff covers a full world.
+ */
+const HELP_CHANNEL_KEY = "help";
+const HELP_CHANNEL_NAME = "Help";
+const HELP_CHANNEL_CAPACITY = 0xffff;
 const KICK_BAN_MS = 60 * 60 * 1000;
 const FRIENDS_CHAT_MESSAGE_TYPE = 9;
 /** [public, private, trade] chat filter modes, saved so they survive a relog. */
@@ -151,7 +159,10 @@ class FriendsChatManager {
     static systemProfiles = new Map();
     /**
      * Registers or updates a system channel: { ownerName, channelName, entryRank, talkRank, kickRank,
-     * admits(player), rankOf(player) }. rankOf, when given, is each member's rank (else Unranked).
+     * admits(player), rankOf(player), capacity, default, broadcastMembers }. rankOf, when given, is
+     * each member's rank (else Unranked). capacity defaults to the normal 500 members. default marks
+     * the channel a login joins when the player has no saved channel. broadcastMembers false still
+     * shows a joining player the roster but stops every membership change resending it to everyone.
      */
     static registerSystemChannel(rawKey, fields) {
         const key = DisplayNames.key(rawKey);
@@ -168,6 +179,9 @@ class FriendsChatManager {
             friendRanks: new Map(),
             admits: fields.admits,
             rankOf: fields.rankOf,
+            capacity: Number.isInteger(fields.capacity) && fields.capacity > 0 ? fields.capacity : MAX_CHANNEL_MEMBERS,
+            default: fields.default === true,
+            broadcastMembers: fields.broadcastMembers !== false,
         };
         this.systemProfiles.set(key, profile);
         const channel = this.channels.get(key);
@@ -184,6 +198,20 @@ class FriendsChatManager {
         if (channel)
             this.closeChannel({ key }, channel);
     }
+    /** Registers the channels the chat system itself provides; every world has them. */
+    static ensureBuiltinChannels() {
+        if (this.systemProfiles.has(HELP_CHANNEL_KEY))
+            return;
+        this.registerSystemChannel(HELP_CHANNEL_KEY, {
+            ownerName: HELP_CHANNEL_NAME,
+            channelName: HELP_CHANNEL_NAME,
+            capacity: HELP_CHANNEL_CAPACITY,
+            default: true,
+            // Help is global: a joining player still receives the roster, but membership changes
+            // do not resend every member's full snapshot to everyone else.
+            broadcastMembers: false,
+        });
+    }
     /** The system channel a typed or stored name means, if any. */
     static systemOwner(raw) {
         const key = DisplayNames.key(String(raw ?? ""));
@@ -191,6 +219,7 @@ class FriendsChatManager {
         return profile ? { key, display: profile.ownerName, system: true } : undefined;
     }
     static onLogin(player) {
+        this.ensureBuiltinChannels();
         // encodeGameframeBootstrap mounts Friends429 on every login; restorePanel swaps in the
         // ignore list after it when that was the last one shown.
         player.getPacketSender().sendVarbit(FRIENDS_PANEL_VARBIT, 0);
@@ -206,6 +235,13 @@ class FriendsChatManager {
         if (lastOwner) {
             this.notification(player, "Attempting to join chat-channel...");
             this.join(player, lastOwner, true, { rejoin: true });
+        }
+        // A world-owned default channel (the Help chat) takes a player who has no channel of their
+        // own. A saved activity or group channel is never taken away on login.
+        if (!this.membershipByPlayer.has(player.getIndex())) {
+            const defaultKey = Array.from(this.systemProfiles).find(([, profile]) => profile.default)?.[0];
+            if (defaultKey)
+                this.join(player, defaultKey, true, { rejoin: true });
         }
     }
     static onLogout(player) {
@@ -536,7 +572,7 @@ class FriendsChatManager {
             channel = { ownerKey: ownerName.key, profile, members: new Map() };
             this.channels.set(ownerName.key, channel);
         }
-        if (channel.members.size >= MAX_CHANNEL_MEMBERS) {
+        if (channel.members.size >= (profile.capacity ?? MAX_CHANNEL_MEMBERS)) {
             const candidate = Array.from(channel.members.values())
                 .filter((member) => this.memberRank(profile, member) < rank)
                 .sort((a, b) => this.memberRank(profile, a) - this.memberRank(profile, b))[0];
@@ -560,7 +596,12 @@ class FriendsChatManager {
             this.notification(player, `Now talking in chat-channel ${profile.channelName}`);
             this.notification(player, "To talk, start each line of chat with the / symbol.");
         }
-        this.broadcastChannel(ownerName.key);
+        // A global channel still shows the joining player its roster, but its membership changes do
+        // not resend every member's full snapshot to every other member.
+        if (profile.broadcastMembers === false)
+            this.sendSnapshot(player);
+        else
+            this.broadcastChannel(ownerName.key);
         this.memberAdded?.(player, ownerName.key, { rejoin });
         return true;
     }
@@ -644,6 +685,8 @@ class FriendsChatManager {
             ownerName: channel.profile.ownerName,
             name: channel.profile.channelName,
             members: Array.from(channel.members.values()),
+            // A world-owned default channel (Help) is where a player lands without choosing one.
+            default: channel.profile.default === true,
             kickRank: Math.max(FriendsChatRank.Corporal, channel.profile.kickRank),
             rankOf: (member) => this.memberRank(channel.profile, member),
         };
@@ -912,4 +955,7 @@ class FriendsChatManager {
     }
 }
 
-module.exports = { FriendsChatManager, FriendsChatRank, CHAT_FILTERS_ATTRIBUTE, CLAN_CHAT_ATTRIBUTE, accountName, typedAccount, FRIENDS_PANEL_ATTRIBUTE };
+// Installed as the module loads, before any world's plugin switches are consulted.
+FriendsChatManager.ensureBuiltinChannels();
+
+module.exports = { FriendsChatManager, FriendsChatRank, CHAT_FILTERS_ATTRIBUTE, CLAN_CHAT_ATTRIBUTE, HELP_CHANNEL_KEY, accountName, typedAccount, FRIENDS_PANEL_ATTRIBUTE };

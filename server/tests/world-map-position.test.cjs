@@ -137,3 +137,28 @@ test('world map closes from its Escape-bound control as well as the frame X', as
         assert.equal(p.getInterfaceId(), 12, 'closing the map leaves another interface alone');
     }
 });
+
+test('client IF_CLOSE (Escape) closes only the world map, not the interface beneath it', async (t) => {
+    const path = require('node:path');
+    const { CachePipeline } = require('../dist/game/cache/CachePipeline');
+    const { Player } = require('../dist/game/entity/impl/player/Player');
+    const { ClientConnection } = require('../dist/net/NetworkBuilder');
+    await CachePipeline.initialize(path.resolve(__dirname, '..'));
+
+    const p = new Player(null);
+    p.getSession = () => ({ sendClientPacket: () => true, write: () => true });
+    p.setUsername('mapesc');
+    p.setRegistered(true);
+    t.after(() => p.setRegistered(false));
+    const channel = { isOpen: () => true, send: () => true, onData() {}, onError() {}, onClose() {}, close() {} };
+    const connection = new ClientConnection(channel);
+    connection.player = p;
+
+    p.setInterfaceId(12);
+    p.getPacketSender().toggleWorldMap();
+    assert.equal(p.getPacketSender().hasInterruptibleInterface(), true, 'the map counts as interruptible');
+    await connection.dispatch([{ type: 'interface_close' }]);
+    connection.processTurnPackets();
+    assert.equal(p.getPacketSender().isWorldMapOpen(), false, 'Escape dismisses the map');
+    assert.equal(p.getInterfaceId(), 12, 'the interface under the map stays open');
+});

@@ -79,7 +79,11 @@ function player() {
   packet = new Proxy({}, { get: (_, method) => (...args) => { packets.push([method, ...args]); return packet; } });
   const p = { attributes, items, bank, equipment, packets, messages,
     getAttribute: (key) => attributes.get(key), setAttribute: (key, value) => attributes.set(key, value),
-    getInventory: () => inventory, getBanks: () => [{ getAmount: (id) => bank.get(id) || 0 }],
+    getInventory: () => inventory, getBanks: () => [{
+      getAmount: (id) => bank.get(id) || 0,
+      delete: (id, amount) => bank.set(id, Math.max(0, (bank.get(id) || 0) - amount)),
+      deleteNumber: (id, amount) => bank.set(id, Math.max(0, (bank.get(id) || 0) - amount)),
+    }],
     getEquipment: () => ({ getItems: () => equipment }), getLocation: () => location,
     getPrivateArea: () => area instanceof core.PrivateArea ? area : null, getUsername: () => 'QuestTester', getDisplayName: () => 'QuestTester', getPacketSender: () => packet,
     getFrameUpdater: () => ({ clear() {} }),
@@ -134,6 +138,23 @@ test('Demon Slayer checks banked keys and counts partial bone deliveries', () =>
   assert.equal(q.quest.getStage(p), 13); assert.equal(p.items.get(526), 0);
   const line = { player: p, npcId: core.NpcIdentifiers.WIZARD_TRAIBORN, text: 'I still need [25-X] more sets.' };
   q.emit('npc-dialogue:line', line); assert.equal(line.text, 'I still need 15 more sets.');
+});
+
+test('Sir Prysin hands over Silverlight when all three keys are banked', () => {
+  const q = register('DemonSlayer', 'demon_slayer'), p = player();
+  q.quest.setStage(p, 3);
+  p.bank.set(core.ItemIdentifiers.SILVERLIGHT_KEY, 1);
+  p.bank.set(core.ItemIdentifiers.SILVERLIGHT_KEY_2, 1);
+  p.bank.set(core.ItemIdentifiers.SILVERLIGHT_KEY_3, 1);
+  q.emit('npc-dialogue:action', {
+    player: p, npcId: core.NpcIdentifiers.SIR_PRYSIN, stepId: 'AFDEAH', kind: 'message',
+  });
+  assert.equal(q.quest.getStage(p), 29);
+  assert.equal(p.items.get(core.ItemIdentifiers.SILVERLIGHT), 1, 'the sword reaches the inventory');
+  for (const id of [core.ItemIdentifiers.SILVERLIGHT_KEY, core.ItemIdentifiers.SILVERLIGHT_KEY_2,
+    core.ItemIdentifiers.SILVERLIGHT_KEY_3]) {
+    assert.equal(p.bank.get(id), 0, `banked key ${id} is consumed`);
+  }
 });
 
 test('Delrith needs five word choices; failure resets him and the learned order completes the quest', () => {

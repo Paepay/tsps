@@ -143,7 +143,9 @@ function pickLock({ player, object }) {
   const sequence = core.CacheDefinitions.getSeqId(PICK_ANIMATION);
   if (sequence != null) player.performAnimation(new core.Animation(sequence));
   springTrap(player, door, level);
-  if (random() >= successChance(door, level)) {
+  const success = { player, chance: successChance(door, level), alwaysSucceeds: false };
+  api?.emitCustomEvent?.("thieving:lock-success", success);
+  if (!success.alwaysSucceeds && random() >= success.chance) {
     player.sendMessage(MESSAGE.FAIL);
     return true;
   }

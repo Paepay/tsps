@@ -13,7 +13,7 @@
     { "name": "Bryophyta", "npcs": ["Bryophyta"], "items": ["Bryophyta's essence"], "leagues": [4, 5] },
     { "name": "Ore pack (Volcanic Mine)", "items": ["/^Dragon pickaxe/"], "leagues": [4, 5] },
     { "name": "Tormented Demon", "npcs": ["Tormented Demon"], "items": ["Tormented synapse", "Burning claw"], "leagues": [5] },
-    { "name": "Scurrius", "npcs": ["Scurrius"], "items": ["Scurrius' spine"], "leagues": [5] },
+    { "name": "Scurrius", "npcs": ["Scurrius"], "items": ["Scurrius' spine"], "leagues": [4, 5] },
     { "name": "Armoured Zombies", "npcs": ["/^Armoured zombie/"], "items": ["Broken zombie axe"], "leagues": [5] },
     { "name": "TzHaar-Ket", "npcs": ["TzHaar-Ket"], "items": ["Obsidian helmet", "Obsidian platebody", "Obsidian platelegs"] },
     { "name": "TzHaar-Ket and TzHaar-Xil", "npcs": ["TzHaar-Ket", "TzHaar-Xil"], "items": ["/^(Toktz|Tzhaar)-(xil|ket)-/"] },

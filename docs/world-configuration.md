@@ -357,8 +357,8 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `GrandExchange:simulatedData` | boolean | `true` | **Simulated GE data.** When on, offers fill from OSRS price and volume data. When off, only buy and sell offers from players on this world match each other. Requires the Grand Exchange plugin. Wealth transfer off blocks the Grand Exchange entirely. |
 | `GrandExchange:maxTradeDelay` | number (integer, >= 5000, <= 2147483647) | `3600000` | **Longest offer wait (ms).** Upper limit, in milliseconds, on how long a simulated offer takes to complete. Ignored when Simulated GE data is off. Applies to newly placed offers. |
+| `GrandExchange:simulatedData` | boolean | `true` | **Simulated GE data.** When on, offers fill from OSRS price and volume data. When off, only buy and sell offers from players on this world match each other. Requires the Grand Exchange plugin. Wealth transfer off blocks the Grand Exchange entirely. |
 | `SkillLevelUp:interruptActions` | boolean | `true` | **Level-ups interrupt actions.** Follows each player's pop-up preference. Turn off to keep skilling and fighting through level-ups: the blocking pop-ups are skipped, chat messages, sounds and graphics stay. |
 | `WelcomeScreen:messageOfTheWeek` | string | *Welcome to <world name>!* | **Message of the week.** Text on the scroll at the bottom of the welcome screen. Takes <col=rrggbb> and <br> tags. League worlds show their own message instead. |
 
@@ -382,6 +382,10 @@ After changing a plugin's `description` or `config`, run `yarn --cwd server worl
 | --- | --- | --- | --- |
 | `WealthTransfer:enabled` | boolean | `true` | **Wealth transfer.** When off, players cannot gain items another player owned: no trades, drop trades, PvP loot, party room donations, shared raid storage, bond gifts, shop player-stock or Grand Exchange. Does not make accounts Ironmen or show the Ironman symbol. |
 | `league:end` | date | *Not set* | **League end date.** When the league ends, as YYYY-MM-DD. The welcome message then shows how many days remain. |
+| `league:passive-tiers` | json | *The league's own tier passives* | **Tier passives.** Individual passive ids granted automatically by each tier, such as "league-4:t1:run-energy". Any number per tier; ids come from GET /api/league-passives. An invalid list is refused whole and the league's own passives stay. Restart to change. |
+| `league:relic-league` | enum: `0` (Follow league world / template), `1` (Leagues I - Twisted), `2` (Leagues II - Trailblazer), `3` (Leagues III - Shattered Relics), `4` (Leagues IV - Trailblazer Reloaded), `5` (Leagues V - Raging Echoes), `6` (Leagues VI - Demonic Pacts) | `0` | **Relic source league.** The base catalog whose tier costs, presentation and defaults a non-seasonal PaeScape/Level-Up world uses. A custom relic/passive catalog can mix all three source leagues. Restart to change. |
+| `league:relic-tiers` | json | *The league's own relic catalog* | **Relic tiers.** A world-configured mixed-league catalog: 1-8 tiers, each 2 or 3 source-qualified relic ids such as "4:endless-harvest". Tier costs and passives stay the base league's. An invalid catalog is refused whole and the league's own catalog stays. Restart to change. |
+| `league:relics` | boolean | `true` | **Relics.** League relics: the relic interface, choices and their effects. On for existing worlds; turn off to run the league without relics. Restart to change. |
 | `league:start` | date | *Not set* | **League start date.** When the league began, as YYYY-MM-DD. Sets the client's league clock. |
 | `league:type` | enum: `0` (Not a league world), `1` (Leagues I - Twisted), `2` (Leagues II - Trailblazer), `3` (Leagues III - Shattered Relics), `4` (Leagues IV - Trailblazer Reloaded), `5` (Leagues V - Raging Echoes), `6` (Leagues VI - Demonic Pacts) | `0` | **League.** Runs this world as a league: every login is the account's league character, kept apart from its main save. Not a league world is a normal world. The list follows data/leagues.json. Restart to change. |
 
@@ -423,6 +427,7 @@ This table lists bundled plugins that have a description. The world config page 
 | --- | --- | --- | --- | --- |
 | `Characters` | Characters | accounts | no | Lets one account hold several characters and choose between them at login. Off unless the world turns it on. |
 | `AchievementDiaries` | AchievementDiaries | achievements | yes | Achievement diaries: task lists, progress, tier reward claims and lamps, plus the ::diary command to inspect, complete or reset tiers. (members only) |
+| `AchievementDiaryCompletion` | AchievementDiaryCompletion | achievements | yes | Marks achievement diaries complete when AchievementDiaries is off, and completes them for every Level-Up account. (members only) |
 | `AdventurePaths` | AdventurePaths | achievements | yes | Adventure Paths with Adventurer Jon: the Combat and Gatherer paths, task claims, starter kits, the Combat voucher and the Lamp of the Gatherer. |
 | `CollectionLog` | CollectionLog | achievements | yes | Collection log: records items obtained from drops and other sources, with the log and overview interfaces, new-item popups and a ::clog command. |
 | `CombatAchievements` | CombatAchievements | achievements | yes | Combat Achievements: 655 tasks in six tiers with points, Ghommal's tier rewards, the five interfaces and boss kill counts. |
@@ -897,6 +902,7 @@ This table lists bundled plugins that have a description. The world config page 
 | `RogueTrader` | RogueTrader | npcs | yes | Ali Morrisane's Rogue Trader errands after The Feud (runes, blackjacks, clothes) that unlock his stock and cheaper magic carpets. (members only) |
 | `RuniteGolem` | RuniteGolem | npcs | yes | Runite Golems in the Resource Area: a killed golem leaves a runite rock mineable for a minute, then respawns after five minutes. (members only) |
 | `Sawmill` | Sawmill | npcs | yes | Sawmill operators: Buy-plank turns logs and coins into planks, with the amount menu and the Wiki's refusal messages. (members only) |
+| `SheepShearing` | SheepShearing | npcs | yes | Shearing sheep and alpacas for wool with a pair of shears. |
 | `Shopkeepers` | Shopkeepers | npcs | yes | Opens shops from NPC Trade options using the shop data, with default and custom NPC-to-shop bindings. |
 | `SilkMerchant` | SilkMerchant | npcs | yes | Silk merchant in Ardougne: haggling dialogue buys every un-noted silk in the inventory at the agreed price. (members only) |
 | `SirRenitee` | SirRenitee | npcs | yes | Sir Renitee, Falador's herald: reports a player's family crest and repaints it for a fee. (members only) |
@@ -923,6 +929,7 @@ This table lists bundled plugins that have a description. The world config page 
 | `BankDepositBooth` | BankDepositBooth | objects | yes | Opens the bank deposit box from the Deposit option and handles its deposit buttons and items used on it. |
 | `BerryBushes` | BerryBushes | objects | yes | Wild redberry and cadava bushes near Varrock: Pick-from takes a berry, and bushes regrow one berry at a time. |
 | `Chests` | Chests | objects | yes | Generic household chests: Open and Shut swap between the closed and open locs, and searching an open one finds nothing. |
+| `CulinaromancersChest` | CulinaromancersChest | objects | yes | Culinaromancer's Chest: bank and food/item shops in the Lumbridge cellar, including when Quests is off. (members only) |
 | `DairyCow` | DairyCow | objects | yes | Dairy cows: Milk fills an empty bucket, and Steal-cowbell is a 15 Thieving action unlocked once Cold War is started. |
 | `Doors` | Doors | objects | yes | Opens and closes doors, gates and double doors, swapping between closed and open locs, with route handling and reapplied state on region load. |
 | `KeyChests` | KeyChests | objects | yes | Key-opened chests: Taverley crystal chest, Mount Karuulm brimstone chest, Larran's Wilderness chests, Prifddinas' Elven chest, Forthos' Grubby Chest and the Zombie Pirate's Locker, plus crystal key crafting. (members only) |

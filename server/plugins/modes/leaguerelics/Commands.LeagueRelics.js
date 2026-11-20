@@ -13,6 +13,10 @@ function relicCommand({ player, parts }) {
     player.sendMessage(Common.message("notLeague"));
     return true;
   }
+  if (!Common.relicsEnabled()) {
+    player.sendMessage("Relics are disabled on this world.");
+    return true;
+  }
   if (String(parts[1] ?? "").toLowerCase() === "reset") {
     Unlock.reset(player);
     player.sendMessage("Your relics have been reset; every tier can be chosen again.");
@@ -30,7 +34,9 @@ function relicCommand({ player, parts }) {
   }
   const tier = Number(parts[1]);
   const slot = Number(parts[2]);
-  if (!Number.isInteger(tier) || tier < 1 || tier > 8 || !Number.isInteger(slot) || slot < 1 || slot > 3) {
+  const tiers = Common.catalog(type)?.tiers ?? [];
+  const choices = tiers[tier - 1]?.relics.length ?? 0;
+  if (!Number.isInteger(tier) || tier < 1 || tier > tiers.length || !Number.isInteger(slot) || slot < 1 || slot > choices) {
     player.sendMessage(Common.message("relicUsage"));
     return true;
   }

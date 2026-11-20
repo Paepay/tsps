@@ -27,6 +27,13 @@ const UNPAID_META = "revenant-weapon:unpaid";
 const ACTIVATION_ETHER = 1000;
 const MAX_CHARGES = 16000;
 const DISMANTLE_ETHER = 7500;
+/** Wiki (Ursine chainmace): attaching the claws yourself needs 85 Smithing; Andros Mai charges 500,000 coins. */
+const URSINE_SMITHING_LEVEL = 85;
+const ANDROS_FEE = 500000;
+const ANDROS = "Andros Mai";
+/** Cache npc 10388, the Andros Mai at Ferox Enclave. */
+const ANDROS_NPC = 10388;
+const ANDROS_UPGRADE = /^Andros Mai combines the items and gives you the Ursine chainmace \(u\)\.$/i;
 const WILDERNESS_MULTIPLIER = 1.5;
 const BUSY_VARBIT = 12393; // cache gameval busy; the revenant-weapon amount prompt
 const MELEE = "melee";
@@ -40,6 +47,23 @@ const weaponsById = new Map();
 const paidOn = new WeakMap();
 
 const format = (amount) => amount.toLocaleString("en-US");
+const I = () => core.ItemIdentifiers;
+/** The actual id carried for a family of cache variants (noted, placeholder), or null. */
+function heldId(container, candidates) {
+  return candidates.find((id) => container?.contains?.(id)) ?? null;
+}
+function viggoraUnchargedIds() {
+  const ids = I();
+  return [ids.VIGGORAS_CHAINMACE_U_, ids.VIGGORAS_CHAINMACE_U__2, ids.VIGGORAS_CHAINMACE_U__3];
+}
+function viggoraIds() {
+  const ids = I();
+  return [ids.VIGGORAS_CHAINMACE, ids.VIGGORAS_CHAINMACE_2];
+}
+function clawsIds() {
+  const ids = I();
+  return [ids.CLAWS_OF_CALLISTO, ids.CLAWS_OF_CALLISTO_2, ids.CLAWS_OF_CALLISTO_3];
+}
 const weaponOf = (player) => player.getEquipment().get(core.Equipment.WEAPON_SLOT);
 const weaponFor = (item) => weaponsById.get(item?.getId?.());
 const activated = (item) => weaponFor(item)?.charged === item.getId();
@@ -208,6 +232,105 @@ function dismantleNow(player, item) {
   inventory.refreshItems();
 }
 
+// ------------------------------------------------------------------ claws of Callisto
+
+/** The Ursine chainmace (u) that keeps the Viggora variant's own id family. */
+function ursineFor(viggora) {
+  const index = viggoraUnchargedIds().indexOf(viggora.getId());
+  const ids = I();
+  return [ids.URSINE_CHAINMACE_U_, ids.URSINE_CHAINMACE_U__2, ids.URSINE_CHAINMACE_U__3][index] ?? ids.URSINE_CHAINMACE_U_;
+}
+
+/** The first carried item of a family, as the item itself (an id finds nothing to change). */
+function heldItem(container, candidates) {
+  return container?.getItems?.().find((held) => candidates.includes(held?.getId?.())) ?? null;
+}
+
+/** The upgradeable pair: an uncharged Viggora's chainmace and the Claws of Callisto. */
+function pieces(player) {
+  const inventory = player.getInventory();
+  return { inventory, viggora: heldItem(inventory, viggoraUnchargedIds()), claws: heldItem(inventory, clawsIds()) };
+}
+
+/** Wiki: 85 Smithing attaches the claws to the chainmace; Andros Mai does it for 500,000 coins instead. */
+function attachClaws(player, viggora, claws) {
+  if (restricted(viggora) || restricted(claws)) {
+    player.sendMessage(PRESET_TEXT);
+    return false;
+  }
+  if (player.getSkillManager().getCurrentLevel(core.Skill.SMITHING) < URSINE_SMITHING_LEVEL) {
+    player.sendMessage(`You need a Smithing level of ${URSINE_SMITHING_LEVEL} to do that.`);
+    return false;
+  }
+  const inventory = player.getInventory();
+  inventory.deleteNumber(claws.getId(), 1);
+  viggora.setId(ursineFor(viggora));
+  inventory.refreshItems();
+  return true;
+}
+
+/** The Claws of Callisto on an uncharged Viggora's chainmace, in either order. */
+function combineClaws(event) {
+  const { usedItem, usedWithItem } = event;
+  if (!usedItem || !usedWithItem) return;
+  const viggora = viggoraUnchargedIds().includes(usedItem.getId()) ? usedItem
+    : viggoraUnchargedIds().includes(usedWithItem.getId()) ? usedWithItem : null;
+  const claws = usedItem !== viggora && clawsIds().includes(usedItem.getId()) ? usedItem
+    : usedWithItem !== viggora && clawsIds().includes(usedWithItem.getId()) ? usedWithItem : null;
+  if (!viggora || !claws) return;
+  event.handled = true;
+  attachClaws(event.player, viggora, claws);
+}
+
+function isAndros(npcId, definition) {
+  return npcId === ANDROS_NPC || definition?.getName?.() === ANDROS;
+}
+
+/** Andros Mai's transcript conditions (npc-dialogues.json "Andros Mai"). */
+function androsCondition({ player, npcId, definition, text }) {
+  if (!isAndros(npcId, definition)) return null;
+  const inventory = player.getInventory();
+  const viggora = heldItem(inventory, [...viggoraIds(), ...viggoraUnchargedIds()]);
+  const claws = heldItem(inventory, clawsIds());
+  const upgradeable = Boolean(heldItem(inventory, viggoraUnchargedIds()) && claws);
+  const coins = plainAmount(inventory, core.ItemIdentifiers.COINS);
+  switch (text) {
+    case "If the player has Viggora's chainmace or the Claws of Callisto:":
+      return Boolean(viggora || claws);
+    case "With only Viggora's chainmace in the inventory:":
+      return Boolean(viggora) && !claws;
+    case "With only the Claws of Callisto in the inventory:":
+      return Boolean(claws) && !viggora;
+    case "With both in the inventory:":
+      return upgradeable;
+    case "If the player does not have enough coins:":
+      return upgradeable && coins < ANDROS_FEE;
+    case "If the player has enough coins:":
+      return upgradeable && coins >= ANDROS_FEE;
+    default:
+      return null;
+  }
+}
+
+/** "Andros Mai combines the items and gives you the Ursine chainmace (u).": 500,000 coins for the work. */
+function androsAction(message) {
+  if (message.kind !== "message" || !isAndros(message.npcId, message.definition)
+      || !ANDROS_UPGRADE.test(String(message.text ?? "").trim())) return;
+  const { player } = message;
+  message.handled = true;
+  const { inventory, viggora, claws } = pieces(player);
+  if (!viggora || !claws || restricted(viggora) || restricted(claws)
+      || plainAmount(inventory, core.ItemIdentifiers.COINS) < ANDROS_FEE) {
+    player.sendMessage(`You need ${format(ANDROS_FEE)} coins and an uncharged Viggora's chainmace with the Claws of Callisto to do that.`);
+    return;
+  }
+  takePlain(inventory, core.ItemIdentifiers.COINS, ANDROS_FEE);
+  inventory.deleteNumber(claws.getId(), 1);
+  viggora.setId(ursineFor(viggora));
+  inventory.refreshItems();
+  message.box = { items: [viggora.getId()] };
+}
+
 // ------------------------------------------------------------------ combat
 
 /** Wiki: an attack spends one ether, whether it hits or misses and wherever it is made. */
@@ -298,12 +421,15 @@ module.exports = {
   name: "RevenantWeapons",
   description: "Adds Viggora's chainmace, the Ursine chainmace and Craw's bow: revenant ether charging, Wilderness damage bonus, uncharging and dismantling.",
   members: true,
-  _test: { CHARGES_META, DEPOSIT_META, UNPAID_META, ACTIVATION_ETHER, MAX_CHARGES, DISMANTLE_ETHER, chargesOf, addEther, chargeWithEther, uncharge, dismantle, attackStarted, checkAmmo, decrementAmmo, rangedBoost, rangedDamageBoost, addToSlayerBonus, meleeBoost, deathItemDrop },
+  _test: { CHARGES_META, DEPOSIT_META, UNPAID_META, ACTIVATION_ETHER, MAX_CHARGES, DISMANTLE_ETHER, chargesOf, addEther, chargeWithEther, uncharge, dismantle, attackStarted, checkAmmo, decrementAmmo, rangedBoost, rangedDamageBoost, addToSlayerBonus, meleeBoost, deathItemDrop, URSINE_SMITHING_LEVEL, ANDROS_FEE, attachClaws, combineClaws, androsCondition, androsAction },
   register(pluginApi) {
     api = pluginApi;
     core = pluginApi.core;
     defineWeapons();
     pluginApi.onItemOnItem(chargeWithEther, { noted: false });
+    pluginApi.onItemOnItem(combineClaws, { noted: false });
+    pluginApi.onNpcDialogueCondition(androsCondition);
+    pluginApi.onCustomEvent("npc-dialogue:action", androsAction);
     pluginApi.onCustomEvent("combat:attack-started", attackStarted);
     pluginApi.onCustomEvent("slayer:imbued-ranged-bonus", addToSlayerBonus);
     pluginApi.registerRangedAmmoHandler({ checkAmmo, decrementAmmo });

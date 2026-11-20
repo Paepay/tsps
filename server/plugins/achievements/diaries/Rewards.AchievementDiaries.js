@@ -6,7 +6,7 @@
  * whose "<NPC> gives you another ..." line hands back a lost reward item.
  */
 const QuestRuntime = require("../../quests/QuestRuntime");
-const { TIERS, BY_NPC } = require("./Data.AchievementDiaries");
+const { TIERS, BY_NPC, LAMPS } = require("./Data.AchievementDiaries");
 const Progress = require("./Progress.AchievementDiaries");
 
 const REWARD_NPCS = [...BY_NPC.keys()];
@@ -23,15 +23,65 @@ function claimableTier(player, diary) {
   return null;
 }
 
+/**
+ * When AchievementDiaries is off, its stand-in completes every tier and hands out the rewards
+ * regardless of stats. That fallback withholds the tier's antique lamp: completing the tasks was
+ * not earned, so its experience must not be either. The unique item and its perks stay claimable.
+ */
+function rewardPolicy(player) {
+  const request = { player, unrestricted: false, includeXpLamps: true };
+  pluginApi.emitCustomEvent("diary:rewards-unrestricted", request);
+  return request;
+}
+
+/** The tier's reward items, with lamps omitted when the completion was automatic. */
+function claimItems(diary, tier, { includeXpLamps = true } = {}) {
+  return diary.tiers[tier].rewardItems.filter((id) => includeXpLamps || !LAMPS.has(id));
+}
+
+/**
+ * The claim transcript without the lines that promise the antique lamp. Karamja's reward NPC
+ * names the lamp inside the tier's description, and one tier splits "lamp" and "too." across
+ * two boxes, so remove the sentence and any dangling continuation rather than the whole box.
+ */
+const LAMP_PROMISE = /\s*(?:Ye|You) can have (?:this|that) lamp(?: too)?\.?\s*/i;
+
+function claimSteps(claim, includeXpLamps = true) {
+  if (includeXpLamps) return claim;
+  const steps = [];
+  let lampTail = false;
+  for (const step of claim) {
+    const speaker = step.player !== undefined ? "player" : step.npc !== undefined ? "npc" : null;
+    if (!speaker) {
+      steps.push(step);
+      continue;
+    }
+    const text = String(step[speaker]);
+    const stripped = text.replace(LAMP_PROMISE, " ").replace(/\s+/g, " ").trim();
+    const promisedLamp = stripped !== text.trim();
+    if (!stripped) {
+      lampTail = promisedLamp;
+      continue;
+    }
+    if (lampTail && /^too\.?$/i.test(stripped)) {
+      lampTail = false;
+      continue;
+    }
+    lampTail = promisedLamp;
+    steps.push({ ...step, [speaker]: stripped });
+  }
+  return steps;
+}
+
 function meetsRequirement(player, requirement) {
-  if (!requirement) return true;
+  if (!requirement || rewardPolicy(player).unrestricted === true) return true;
   const skill = pluginApi.core.Skill.values().find((entry) => entry.getName().toLowerCase() === requirement.skill.toLowerCase());
   return !skill || player.getSkillManager().getCurrentLevel(skill) >= requirement.level;
 }
 
 function grant(player, diary, tier, generation) {
   const inventory = player.getInventory();
-  const items = diary.tiers[tier].rewardItems;
+  const items = claimItems(diary, tier, rewardPolicy(player));
   if (Progress.tierGeneration(player, diary, tier) !== generation || claimableTier(player, diary) !== tier
     || !meetsRequirement(player, diary.tiers[tier].requirement)
     || inventory.getFreeSlots() < items.length
@@ -83,8 +133,11 @@ function talkTo(event) {
   const tier = diary && claimableTier(player, diary);
   if (!tier) return false;
   const data = diary.tiers[tier];
+  const policy = rewardPolicy(player);
+  const items = claimItems(diary, tier, policy);
+  const claim = claimSteps(data.claim, policy.includeXpLamps);
   const context = { npcId: definition.getId() };
-  const opening = data.claim.find((step) => step.player !== undefined);
+  const opening = claim.find((step) => step.player !== undefined);
   const generation = Progress.tierGeneration(player, diary, tier);
   if (!meetsRequirement(player, data.requirement)) {
     QuestRuntime.startDialogue(pluginApi, player, context, [
@@ -94,11 +147,11 @@ function talkTo(event) {
     ]);
     return true;
   }
-  if (player.getInventory().getFreeSlots() < data.rewardItems.length) {
-    player.sendMessage(`You need ${data.rewardItems.length} free inventory spaces to claim your reward.`);
+  if (player.getInventory().getFreeSlots() < items.length) {
+    player.sendMessage(`You need ${items.length} free inventory spaces to claim your reward.`);
     return true;
   }
-  QuestRuntime.startDialogue(pluginApi, player, context, toSteps(data.claim, () => grant(player, diary, tier, generation)));
+  QuestRuntime.startDialogue(pluginApi, player, context, toSteps(claim, () => grant(player, diary, tier, generation)));
   return true;
 }
 
@@ -121,4 +174,4 @@ module.exports = function attachRewards(api) {
   api.onCustomEvent("npc-dialogue:action", reclaim);
 };
 
-Object.assign(module.exports, { claimableTier, talkTo, reclaim, owns });
+Object.assign(module.exports, { claimableTier, claimItems, claimSteps, rewardPolicy, talkTo, reclaim, owns });

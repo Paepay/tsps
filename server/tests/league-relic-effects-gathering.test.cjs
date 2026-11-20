@@ -258,7 +258,9 @@ test("Power Miner: with the pickaxe, a second chance, four ores a rock, ore bank
   const deplete = (player, object = rock) => emit("mining:deplete-rock", { player, object, rock: "Iron rocks", handled: false }).handled;
   assert.deepEqual([deplete(who.relic), deplete(who.relic), deplete(who.relic), deplete(who.relic)], [true, true, true, false], "the fourth ore takes the rock");
   assert.equal(deplete(who.relic), true, "and the count starts again");
-  for (const player of others(who)) assert.equal(deplete(player, {}), false);
+  assert.equal(deplete(who.without, {}), false);
+  assert.equal(deplete(who.main, {}), false);
+  assert.equal(deplete(who.other, {}), true, "the other league's same slot is Trailblazer Reloaded's Endless Harvest");
   // Another miner depletes a rock the relic has taken three from: the respawned rock starts afresh.
   const shared = {};
   deplete(who.relic, shared);
@@ -569,6 +571,30 @@ test("Infernal Gathering: burn, smelt and cook with the Trailblazer tools, and T
   }
 });
 
+test("Infernal Gathering needs real room for smelted bars and cooked fish: the bank counts only with Endless Harvest (issue #18)", () => {
+  const room = (player, itemId, skill) => emit("storage:room", { player, itemId, skill, room: false }).room;
+  const fill = (player) => {
+    while (player.getInventory().getFreeSlots() > 0) player.getInventory().adds(I.LOGS, 1);
+    assert.equal(player.getInventory().isFull(), true);
+  };
+
+  const noEndless = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_PICKAXE").relic;
+  noEndless.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  noEndless.getInventory().adds(I.TRAILBLAZER_AXE, 1);
+  fill(noEndless);
+  assert.equal(room(noEndless, I.IRON_ORE, Skill.MINING), false,
+    "a bank slot is not room for a smelted bar without Endless Harvest");
+  assert.equal(room(noEndless, I.RAW_SHRIMPS, Skill.FISHING), false,
+    "nor is it room for a cooked fish");
+  assert.equal(room(noEndless, I.LOGS, Skill.WOODCUTTING), true, "a burnt log needs no room");
+
+  const endless = cases(ENDLESS_AND_INFERNAL, 4, "TRAILBLAZER_PICKAXE").relic;
+  endless.getInventory().adds(I.TRAILBLAZER_HARPOON, 1);
+  fill(endless);
+  assert.equal(room(endless, I.IRON_ORE, Skill.MINING), true, "Endless Harvest banks the bar");
+  assert.equal(room(endless, I.RAW_SHRIMPS, Skill.FISHING), true, "and the cooked fish");
+});
+
 test("Infernal Gathering: each Trailblazer tool only drives its own skill; equipped harpoon stands in for any spot", () => {
   const axeOnly = cases(INFERNAL_GATHERING, 4, "TRAILBLAZER_AXE").relic;
   assert.equal(gather(axeOnly, I.LOGS, 1, Skill.WOODCUTTING, 25).stored, 1, "the axe burns logs");
@@ -611,4 +637,26 @@ test("Infernal Gathering with Endless Harvest burns or banks the doubled yield",
   assert.equal(smelted.stored, 1);
   assert.equal(banked(who.relic, I.STEEL_BAR), 2, "two bars banked");
   assert.ok(xp(who.relic, Skill.SMITHING) - beforeSmith > 0);
+});
+
+test("Trailblazer Endless Harvest keeps spots, rocks and trees going and the harpoon delivers endless cooked fish", () => {
+  const who = cases(ENDLESS_AND_INFERNAL, 4, "TRAILBLAZER_HARPOON");
+  who.relic.getInventory().adds(I.TRAILBLAZER_AXE, 1);
+  who.relic.getInventory().adds(I.TRAILBLAZER_PICKAXE, 1);
+
+  assert.equal(emit("fishing:continue", { player: who.relic, handled: false }).handled, true, "the fishing spot stays");
+  assert.equal(emit("mining:deplete-rock", { player: who.relic, handled: false }).handled, true, "the rock stays");
+  assert.equal(emit("woodcutting:deplete-tree", { player: who.relic, handled: false }).handled, true, "the tree stays");
+  for (const player of others(who)) {
+    for (const event of ["fishing:continue", "mining:deplete-rock", "woodcutting:deplete-tree"]) {
+      assert.equal(emit(event, { player, handled: false }).handled, false, `${player.getUsername()} ${event}`);
+    }
+  }
+
+  const cooking = xp(who.relic, Skill.COOKING);
+  const caught = gather(who.relic, I.RAW_SHRIMPS, 1, Skill.FISHING, 10);
+  assert.equal(caught.stored, 1, "the harpoon takes the catch");
+  assert.deepEqual([banked(who.relic, I.SHRIMPS), banked(who.relic, I.RAW_SHRIMPS)], [2, 0],
+    "two cooked fish banked, no raw fish");
+  assert.equal(xp(who.relic, Skill.COOKING) - cooking, 60, "both cooked fish pay Cooking XP");
 });

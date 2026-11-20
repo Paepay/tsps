@@ -23,6 +23,7 @@ const PRECISE_TIMING = 11866;
 const COLLECTION_LOG_NOTIFY = 11959;
 const ESC_CLOSES = 4681;
 const BOSS_KC_FILTER = 4930;
+const GAME_FILTER = 26;
 
 before(async () => {
   await CachePipeline.initialize();
@@ -98,6 +99,18 @@ test('Anti Drag set in the client is kept for the next login, and its row click 
   assert.equal(login(p.attributes).getPacketSender().getVarbit(ANTI_DRAG), 1, 'restored at login');
   flipInClient(p, ANTI_DRAG, 0);
   assert.equal(login(p.attributes).getPacketSender().getVarbit(ANTI_DRAG), 0, 'turned off again');
+});
+
+test('the chatbox game-filter toggle is kept for the next login', () => {
+  const p = login();
+  assert.equal(p.getPacketSender().getVarbit(GAME_FILTER), 0, 'a new account starts with game chat on');
+  const transmission = flipInClient(p, GAME_FILTER, 1);
+  assert.equal(transmission.handled, true);
+  assert.equal(p.getPacketSender().getVarbit(GAME_FILTER), 1);
+  assert.equal(p.getAttribute('settings:values')['varbit:26'], 1);
+  assert.equal(login(p.attributes).getPacketSender().getVarbit(GAME_FILTER), 1, 'filter is restored at login');
+  flipInClient(p, GAME_FILTER, 0);
+  assert.equal(login(p.attributes).getPacketSender().getVarbit(GAME_FILTER), 0, 'turning it back on is saved too');
 });
 
 test('a transmit of the shared varp keeps only the settings rows on it, not the collection log bits', () => {

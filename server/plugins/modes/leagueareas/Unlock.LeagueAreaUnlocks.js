@@ -93,6 +93,7 @@ function refusal(player, type, areaId) {
 /** The state script 3668 shows for an area: unlocked, available, full, a message (not this league's) or locked. */
 function state(player, type, areaId) {
   const { states } = Common.data.interface;
+  if (!Common.regionLocked()) return states.unlocked;
   if (Common.unlocked(player).includes(Number(areaId))) return states.unlocked;
   switch (refusal(player, type, areaId)) {
     case null: return states.available;
@@ -208,9 +209,10 @@ function answerAreas(query) {
   if (!query) return;
   const type = query.player ? Common.leagueOf(query.player) : null;
   query.league = type;
-  query.unlocked = type === null ? [] : Common.unlocked(query.player);
+  query.unlocked = type === null ? []
+    : Common.regionLocked() ? Common.unlocked(query.player) : [...Common.areas.keys()].map(Number).sort((a, b) => a - b);
   query.unlockedKeys = query.unlocked.map((id) => Common.area(id)?.key).filter(Boolean);
-  query.next = type === null ? null : Common.nextSlot(type, query.player);
+  query.next = type === null || !Common.regionLocked() ? null : Common.nextSlot(type, query.player);
   query.available = type !== null && Common.available(type, query.player);
 }
 

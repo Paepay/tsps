@@ -161,6 +161,39 @@ test('a box trap from the inventory still stands 2 ticks after the set-up line',
   assert.equal(H.traps.size, 1);
 });
 
+test('scenery or ground decoration on the tile does not stop a trap; real clipping and duplicates still do (issue #19)', t => {
+  const { p, messages } = actor(t);
+  const originalType = H.core.MapObjects.getType;
+  const originalBlocked = H.core.RegionManager.blocked;
+  try {
+    H.core.MapObjects.getType = () => 10;
+    const scenery = layTrap(p, 'bird', core.ItemIdentifiers.BIRD_SNARE);
+    assert.ok(scenery, 'a bird snare lays over scenery');
+    H.traps.clear();
+
+    H.core.MapObjects.getType = () => 22;
+    const decorated = layTrap(p, 'bird', core.ItemIdentifiers.BIRD_SNARE);
+    assert.ok(decorated, 'and over ground decoration');
+    H.traps.clear();
+    H.core.MapObjects.getType = originalType;
+
+    H.core.RegionManager.blocked = () => true;
+    p.getInventory().adds(core.ItemIdentifiers.BIRD_SNARE, 1);
+    Traps.lay(p, 'bird', p.getLocation());
+    assert.equal(messages.at(-1), "You can't set up a trap here.", 'real map clipping still refuses');
+    H.core.RegionManager.blocked = originalBlocked;
+
+    const first = layTrap(p, 'bird', core.ItemIdentifiers.BIRD_SNARE);
+    p.setLocation(first.location.clone());
+    p.getInventory().adds(core.ItemIdentifiers.BIRD_SNARE, 1);
+    Traps.lay(p, 'bird', p.getLocation());
+    assert.equal(messages.at(-1), "You can't set up a trap here.", 'a second trap cannot share the tile');
+  } finally {
+    H.core.MapObjects.getType = originalType;
+    H.core.RegionManager.blocked = originalBlocked;
+  }
+});
+
 test('releasing a caught creature names it in a spam line', t => {
   const I = core.ItemIdentifiers;
   for (const [item, line] of [

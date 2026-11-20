@@ -586,6 +586,41 @@ test("quest-owned deposit boxes open the native bank deposit interface", () => {
   assert.ok(calls.some((call) => call[0] === (161 << 16 | 16)), "the native deposit modal is opened");
 });
 
+test("the Shilo gem mine's Bank Deposit Chest opens the deposit interface and handles items on it (issue #20)", () => {
+  const booth = require("../plugins/objects/BankDepositBooth.plugin");
+  const interactions = new Map();
+  let itemOnObject;
+  booth.register({
+    onObjectInteraction(name, actions) { interactions.set(name, actions); },
+    onCustomEvent() {},
+    onInterfaceActionClick() {},
+    onInterfaceActionButton() {},
+    onItemOnObject(handler) { itemOnObject = handler; },
+    emitCanBank: () => true,
+    sendMultiChatboxPrompt() {},
+  });
+  assert.ok(interactions.has("Bank Deposit Chest"), "the cache's name is registered");
+  assert.ok(interactions.has("Bank deposit chest"), "and the lower-case variant");
+
+  const calls = [];
+  const player = {
+    getAttribute: () => undefined,
+    setAttribute() {},
+    setInterfaceId: (id) => calls.push(["interface", id]),
+    getInterfaceId: () => 192,
+    getInventory: () => ({ getItems: () => [], getAmount: () => 1, forSlot: () => null }),
+    getEquipment: () => ({ getValidItems: () => [] }),
+    getPacketSender: () => new Proxy({}, { get: () => (...args) => calls.push(args) }),
+  };
+  const chest = { getDefinition: () => ({ getName: () => "Bank Deposit Chest" }) };
+  interactions.get("Bank Deposit Chest").Deposit({ player, object: chest });
+  assert.deepEqual(calls[0], ["interface", 192], "the native bank deposit box");
+
+  const event = { player, object: chest, itemId: 5, itemSlot: 0, handled: false };
+  itemOnObject(event);
+  assert.equal(event.handled, true, "an item used on the chest is the deposit box's");
+});
+
 test("enabled presets leave bot inventory and equipment lootable on the ground or in keys", () => {
   assert.equal(presets.isEnabled(), true);
   assertBotPresetLoot();

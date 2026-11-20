@@ -735,6 +735,11 @@ function chanceRules(player, npc, source) {
   const rules = [];
   if (!player || !pluginApi) return rules;
   pluginApi.emitCustomEvent("npc-drops:chance", { player, npc, npcId: npc?.getId?.() ?? null, source, rules });
+  // A unique-only rule reaches the pre-roll, main, separate and tertiary paths only when this
+  // entry is a unique; supplies, equipment and shared-table rows keep their rate.
+  const unique = [];
+  pluginApi.emitCustomEvent("npc-drops:unique-chance", { player, npc, npcId: npc?.getId?.() ?? null, source, rules: unique });
+  for (const rule of unique) rules.push({ ...rule, uniqueOnly: true });
   return rules;
 }
 
@@ -767,6 +772,7 @@ function rulesMultiplier(entry, rules) {
   let multiplier = 1;
   let floor = 0;
   for (const rule of rules) {
+    if (rule.uniqueOnly === true && !isUniqueEntry(entry)) continue;
     if (!rule.pattern.test(entry.name || "")) continue;
     if (Number.isFinite(rule.multiplier)) multiplier *= rule.multiplier;
     // At least 1 in `outOf`: the multiplier that brings this entry's weight/out_of up to it.

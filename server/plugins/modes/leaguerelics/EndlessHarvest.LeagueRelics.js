@@ -6,9 +6,11 @@
  * `storage:room`, so a full inventory does not stop the gathering. What an open container (a coal
  * bag) already took stays there; the rest and the extra go to the bank.
  *
- * Demonic Pacts' Endless Harvest (https://oldschool.runescape.wiki/w/Demonic_Pacts_League/Relics,
- * tier 1): the same doubling, the banking only while its toggle is on (the default), and rocks and
- * trees that do not deplete under the relic's owner (`mining:deplete-rock`, `woodcutting:deplete-tree`).
+ * Both leagues' Endless Harvest also keeps the resources going: fishing spots, rocks and trees do
+ * not deplete under the relic's owner (`fishing:continue`, `mining:deplete-rock`,
+ * `woodcutting:deplete-tree`). With Infernal Gathering's matching Trailblazer tool on, the doubled
+ * yield is cooked, smelted or burnt instead of gathered raw. Demonic Pacts adds the banking toggle
+ * (on by default).
  */
 const Common = require("./Common.LeagueRelics");
 const Toggles = require("./Toggles.LeagueRelics");
@@ -23,7 +25,7 @@ function active(player) {
 
 /** Whether the character's league banks the harvest: always, or while the league's toggle is on. */
 function banks(player) {
-  const toggle = effect.bankToggle?.[Common.leagueOf(player)];
+  const toggle = effect.bankToggle?.[Common.effectSource(player, effect)];
   return !toggle || Toggles.on(player, toggle);
 }
 
@@ -58,9 +60,11 @@ function room(request) {
   if (!request.room && harvested(request.skill) && active(request.player) && banks(request.player) && Common.bankHasRoom(request.player, request.itemId)) request.room = true;
 }
 
-/** A rock or tree stands while a character of an endless league (Demonic Pacts) gathers from it. */
+/** A fishing spot, rock or tree stands while a character of an endless league gathers from it. */
 function endless(request) {
-  if (!request.handled && effect.endlessLeagues.includes(Common.leagueOf(request.player)) && active(request.player)) request.handled = true;
+  const endlessSource = Common.effectSources(request.player, effect)
+    .some((source) => effect.endlessLeagues.includes(source));
+  if (!request.handled && endlessSource && active(request.player)) request.handled = true;
 }
 
 module.exports = function attach(api) {

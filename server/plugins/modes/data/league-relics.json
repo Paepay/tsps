@@ -110,6 +110,9 @@
     "crystalGrantedFloor": { "text": "{item} falls to the floor.", "source": "ours" },
     "crystalMemory": { "text": "The crystal remembers where your last teleport began.", "source": "ours" },
     "crystalAutomatic": { "text": "The crystal remembers where each teleport begins on its own.", "source": "ours" },
+    "crystalSaveOn": { "text": "The crystal will now remember where each teleport begins.", "source": "ours, Save-memory's toggle (issue #17)" },
+    "crystalSaveOff": { "text": "The crystal will no longer remember where each teleport begins.", "source": "ours, Save-memory's toggle (issue #17)" },
+    "crystalPaused": { "text": "Saving is paused; the crystal will not remember a new teleport until you resume it.", "source": "ours, Check-memories (issue #17)" },
     "crystalCooldown": { "text": "The crystal needs another {seconds} seconds before it can take you back.", "source": "ours" },
     "bankersNoteNoted": { "text": "You note {amount} x {item}.", "source": "ours" },
     "bankersNoteUnnoted": { "text": "You unnote {amount} x {item}.", "source": "ours" },
@@ -174,8 +177,8 @@
     },
     "endlessHarvest": {
       "league": [4, 6], "key": "endless-harvest", "skills": ["MINING", "WOODCUTTING", "FISHING"], "multiplier": 2,
-      "_demonicPacts": "Demonic Pacts' (Wiki, cache text): banking is the relic's toggle (cache row league_relic_endless_harvest_toggle_bank, on by default), and rocks and trees no longer deplete while the relic's owner gathers from them (ours: they stay standing for everyone, as Power Miner's rocks do).",
-      "bankToggle": { "6": "league_relic_endless_harvest_toggle_bank" }, "endlessLeagues": [6]
+      "_endless": "Both leagues' Endless Harvest keeps fishing spots, rocks and trees going while its owner gathers (ours: they stay standing for everyone, as Power Miner's rocks do). Trailblazer Reloaded (4) always banks the doubled yield; Demonic Pacts (6) banks while its toggle is on (cache row league_relic_endless_harvest_toggle_bank, on by default). With Infernal Gathering's matching Trailblazer tool on, the doubled yield is cooked, smelted or burnt instead.",
+      "bankToggle": { "6": "league_relic_endless_harvest_toggle_bank" }, "endlessLeagues": [4, 6]
     },
     "trickster": { "league": 4, "key": "trickster", "pouchLimitMultiplier": 3, "lootMultiplier": 2, "boxTrapMultiplier": 2, "boxTrapLureTicks": 2, "logsPerAction": 9, "tool": "SAGES_GREAVES", "runXpBase": 10, "runXpLevelFraction": [2, 3], "runXpTicks": 10, "runStepTiles": 2, "_runXp": "Wiki, Sage's greaves: 10 + floor(Agility level x 2/3) Agility XP roughly every 10 ticks of running, a tick counting when the player moved 2 squares in it; paid before the league's rates." },
     "powerMiner": {
@@ -273,7 +276,7 @@
       "league": 5, "key": "slayer-master", "freeKinds": ["unlock", "extend", "cancel", "block"],
       "freeItems": ["RUNE_POUCH", "HERB_SACK", "LOOTING_BAG"], "bonusKill": 100, "bonusXp": [1000, 15000]
     },
-    "_itemsComment": "The item and teleport relics (docs/leagues.md). Wiki numbers unless marked ours: the menus' grouping and wording, the tool leprechauns named after their nearest fairy ring, the banker's note's default quantities (all) and its Toggle (Activate between noting and unnoting) are ours; Reloaded's extra pick comes from tiers 1-3 (tier indexes 0-2).",
+    "_itemsComment": "The item and teleport relics (docs/leagues.md). Wiki numbers unless marked ours: the menus' grouping and wording, the tool leprechauns named after their nearest fairy ring, the banker's note's default quantities (all), its memory of every item and its Toggle (every remembered item between noting and unnoting) are ours; Reloaded's extra pick comes from tiers 1-3 (tier indexes 0-2).",
     "fairysFlight": { "league": [4, 5, 6], "key": "fairys-flight", "aliases": ["nature-s-accord"], "toolName": "Fairy mushroom" },
     "globetrotter": { "league": 4, "key": "globetrotter", "toolName": "Globetrotter pendant" },
     "bankersNote": { "league": [4, 5], "key": "bankers-note", "toolName": "Banker's note" },
@@ -463,7 +466,11 @@
     }
   },
   "leagues": {
-    "6": { "_comment": "Leagues VI - Demonic Pacts is the league this cache (rev 241) carries: its tiers, costs, passives and relics are read from the league struct (6436, enum 2670) and sent as nothing; a relic's item is its struct's param 2049, and one with an item (param 1855) unlocks only in a bank or near the Leagues Tutor, as recorded (237/01102).", "fromCache": true },
+    "6": {
+      "_comment": "Leagues VI - Demonic Pacts is the league this cache (rev 241) carries: its tiers, passives and relics are read from the league struct (6436, enum 2670); a relic's item is its struct's param 2049, and one with an item (param 1855) unlocks only in a bank or near the Leagues Tutor, as recorded (237/01102). Wiki/cache tier costs are 0, 600, 1200, 2600, 5200, 8500, 16500, 28000; this custom world uses 60% of those (40% fewer points) because only ~1100/1800 tasks are wired. `costs` overrides the cache's param 877 and is sent as structOverrides so the client matches.",
+      "fromCache": true,
+      "costs": [0, 360, 720, 1560, 3120, 5100, 9900, 16800]
+    },
     "4": {
       "iconSprite": "league_4_relics",
       "tiers": [
@@ -481,8 +488,7 @@
           "passive": "- League XP multiplier increased from 5x to 8x.<br><br>- Minigame points received are boosted by 3x.",
           "relics": [
             { "key": "fairys-flight", "name": "Fairy's Flight", "icon": 3, "description": "- Grants a fairy mushroom that teleports you to any fairy ring, spirit tree or tool leprechaun in your unlocked regions.", "grants": ["FAIRY_MUSHROOM"], "requiresBank": true },
-            { "key": "globetrotter", "name": "Globetrotter", "icon": 4, "description": "- Grants a globetrotter pendant that teleports you to every ornate jewellery box destination and nearly every spellbook teleport in your unlocked regions.", "grants": ["GLOBETROTTER_PENDANT"], "requiresBank": true },
-            { "key": "crystal-of-memories", "name": "Crystal of Memories", "icon": 26, "description": "- Grants a crystal of memories that returns you to where you last teleported from.<br><br>- Its cooldown of 6 minutes falls by 1 minute per 300 total levels.", "grants": [], "_missing": "The crystal of memories is not in this cache.", "_note": "The Wiki lists the crystal as the tier 3 passive; the tier's two relics are Banker's Note and Fire Sale, so this third slot is left for it to keep three choices a tier." }
+            { "key": "globetrotter", "name": "Globetrotter", "icon": 4, "description": "- Grants a globetrotter pendant that teleports you to every ornate jewellery box destination and nearly every spellbook teleport in your unlocked regions.", "grants": ["GLOBETROTTER_PENDANT"], "requiresBank": true }
           ]
         },
         {
@@ -490,8 +496,7 @@
           "passive": "- Grants a crystal of memories, which teleports you back to the last place you teleported from.",
           "relics": [
             { "key": "bankers-note", "name": "Banker's Note", "icon": 13, "description": "- Grants a banker's note: use an item on it to note or unnote it, or Activate it to convert a chosen quantity at once.", "grants": ["BANKERS_NOTE"], "requiresBank": true },
-            { "key": "fire-sale", "name": "Fire Sale", "icon": 5, "description": "- Every coin shop with a standard interface sells for free, and can note what you buy.<br><br>- Shops no longer buy items for gold.", "grants": [] },
-            { "key": "treasure-seeker-preview", "name": "Treasure Seeker", "icon": 9, "description": "- NPCs that drop clues have a 1 in 15 chance to drop one, including impling jars.<br><br>- Clue scrolls have the fewest steps and reward caskets roll the most rewards.", "grants": [], "_note": "Tier 5's Treasure Seeker, shown here as the third choice to keep three a tier; the Wiki lists only two tier 3 relics." }
+            { "key": "fire-sale", "name": "Fire Sale", "icon": 5, "description": "- Every coin shop with a standard interface sells for free, and can note what you buy.<br><br>- Shops no longer buy items for gold.", "grants": [] }
           ]
         },
         {

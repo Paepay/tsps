@@ -34,6 +34,7 @@ let inCombat = false;
 let worldLeague = 4;
 /** The characters whose first grave's tutorial with Death is running. */
 const inDeathTutorial = new Set();
+let regionLocked = true;
 
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -56,7 +57,11 @@ before(async () => {
   const api = new Proxy({
     core,
     persistAttribute: (key, value) => PlayerSave.persistAttribute(key, value),
-    getPluginConfig: (key, fallback) => (key === "league:type" ? worldLeague : fallback),
+    getPluginConfig: (key, fallback) => {
+      if (key === "league:type") return worldLeague;
+      if (key === "league:regionLocked") return regionLocked;
+      return fallback;
+    },
     setWorldProfile: (profile) => GameConstants.setWorldProfile(profile),
     getSkillManager: () => require("../dist/game/content/skill/SkillManager").SkillManager,
     registerCommand: (name, handler) => (hooks[`command:${name}`] = handler),
@@ -234,6 +239,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Ferox Enclave", 3140, 3630, WILDERNESS], ["north of the ditch", 3090, 3525, WILDERNESS], ["the Frozen Waste Plateau", 2970, 3930, WILDERNESS],
     ["Mudskipper Point", 2990, 3110, ASGARNIA], ["Musa Point's dock", 2956, 3146, KARAMJA], ["Ghorrock", 2920, 3900, FREMENNIK],
     ["the Varrock sewers", 3240, 9870, MISTHALIN], ["the Stronghold of Security's second floor", 2020, 5220, MISTHALIN],
+    ["Dorgesh-Kaan", 2740, 5264, MISTHALIN], ["the Dorgesh-Kaan Agility Course's west side", 2710, 5210, MISTHALIN],
     ["Kourend Castle", 1620, 3660, KOUREND], ["Mount Karuulm", 1310, 3830, KOUREND],
     ["Civitas illa Fortis", 1700, 3140, VARLAMORE], ["Aldarin", 1400, 2950, VARLAMORE],
     ["Death's Office", 3176, 5726, null], ["the rune essence mine", 2910, 4830, null], ["Tutorial Island", 3094, 3107, null],
@@ -259,33 +265,45 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
   assert.equal(areaAt(3000, 3000, { league: 99 }), null, "no league, no areas");
 });
 
-test("tile overrides: Harry's Fishing Shop is Kandarin; the Lumbridge-Varrock path west of Al Kharid mine is Misthalin", () => {
+test("the 2026-11-18 exact tiles: Catherby is Kandarin; the Al Kharid road and mine are the desert", () => {
   // Eastern Catherby sits in map square 44,53 (Asgarnia's White Wolf Mountain). Wiki leagueRegion
   // for Harry's Fishing Shop, Hickton and the fruit tree is Kandarin.
   assert.equal(areaAt(2834, 3445), KANDARIN, "Harry's Fishing Shop");
   assert.equal(areaAt(2822, 3442), KANDARIN, "Hickton's Archery Emporium");
   assert.equal(areaAt(2861, 3432), KANDARIN, "Catherby's fruit tree");
   assert.equal(areaAt(2870, 3438), ASGARNIA, "White Wolf Mountain stays Asgarnia");
-  // Road through map square 51,51: Misthalin west of the mine, desert on the mine itself.
-  assert.equal(areaAt(3280, 3300), MISTHALIN, "path NE of Lumbridge toward Varrock");
-  assert.equal(areaAt(3284, 3320), MISTHALIN, "road south of Varrock before the mine");
-  assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan) stays desert");
-  assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine stay desert");
+  // The exported boundary: Misthalin ends just east of the Lumbridge path; the desert begins at
+  // x 3268 on the road and x 3267 by the mine.
+  assert.equal(areaAt(3267, 3300), MISTHALIN, "path NE of Lumbridge, west of the new boundary");
+  assert.equal(areaAt(3268, 3300), DESERT, "the road's desert side");
+  assert.equal(areaAt(3266, 3320), MISTHALIN, "road south of Varrock, west of the new boundary");
+  assert.equal(areaAt(3267, 3320), DESERT, "the road's desert side by the mine");
+  assert.equal(areaAt(3268, 3300, { base: true }), DESERT, "Level-Up's base map has the exact boundary");
+  assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan)");
+  assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine");
 });
 
-test("the Citharede Abbey's square (53,49) is the desert; the Abandoned Mine in the square below stays Morytania", () => {
+test("the 2026-11-18 exact tiles put the Edgeville ditch's south bank in Misthalin", () => {
+  assert.equal(areaAt(3090, 3520), MISTHALIN, "the ditch's south bank at Edgeville");
+  assert.equal(areaAt(3090, 3521), WILDERNESS, "north of the ditch");
+});
+
+test("the Citharede Abbey and the land south of the plateau are desert; the Abandoned Mine entrance stays Morytania", () => {
   // Wiki (Citharede Abbey, leagueRegion = Desert): the abbey and the Giants' Plateau east of Al
   // Kharid, map square 53,49, tiles 3392-3455 by 3136-3199. That square's cabbage field is the
   // abbey task's own "in the Citharede Abbey", so the whole square must be the desert.
   for (const [x, y] of [[3413, 3178], [3400, 3140], [3392, 3136], [3455, 3199]]) {
     assert.equal(areaAt(x, y), DESERT, `the Giants' Plateau square (${x}, ${y})`);
   }
-  // The Abandoned Mine is in the surface square below (53,50; its entrance 3451, 3233, the Wiki's
-  // shooting-star pin) and stays Morytania, as do its underground levels: map y + 6400 takes the
-  // surface square (3422, 9625 is Haunted Mine's upper level, square 53,150 -> surface 53,50).
+  // The Abandoned Mine's entrance (3451, 3233, the Wiki's shooting-star pin) is in the surface
+  // square below (53,50) and stays Morytania, as do its underground levels: map y + 6400 takes
+  // the surface square (3422, 9625 is Haunted Mine's upper level, square 53,150 -> surface 53,50).
   assert.equal(areaAt(3451, 3233), MORYTANIA, "the Abandoned Mine's entrance square");
   assert.equal(areaAt(3422, 9625), MORYTANIA, "the Haunted Mine's levels under that square");
-  assert.equal(areaAt(3413, 3240), MORYTANIA, "the square just south of the plateau");
+  // The editor's exact boundary runs at x 3423: the plateau's south side is desert west of it and
+  // Morytania east of it, inside the old square 53,50 approximation.
+  assert.equal(areaAt(3422, 3240), DESERT, "the desert's east edge south of the plateau");
+  assert.equal(areaAt(3423, 3240), MORYTANIA, "the Abandoned Mine's side of the new boundary");
   // Every league moves it: it was Morytania before this square was reassigned.
   for (const league of [4, 5, 6]) {
     assert.equal(areaAt(3413, 3178, { league }), DESERT, `league ${league}: the abbey`);
@@ -326,9 +344,10 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   query("player:respawn", { player: league, killer: null, handled: true });
   const home = league.getLocation();
   assert.equal(areaAt(home.getX(), home.getY()), MISTHALIN, "the respawn lands in Misthalin");
-  assert.notEqual(areaAt(core.WorldDefinition.WORLD_SPAWN.getX(), core.WorldDefinition.WORLD_SPAWN.getY()), MISTHALIN, "(this world's spawn is in another area, so the hub stands in)");
+  // This world's spawn sits on the Wilderness ditch, so the league home is Lumbridge (docs, Areas).
 
-  // The default respawn into a locked spawn is handled the same way.
+  // The default respawn lands on this world's spawn, which is on the locked Wilderness ditch:
+  // the respawn rule sends it to the league home and handles it.
   const dead = { player: league, killer: null, handled: false };
   query("player:respawn", dead);
   assert.equal(dead.handled, true);
@@ -569,7 +588,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   assert.deepEqual(query("league:areas", { player: echoes }).next, { slot: 2, tasks: 90 }, "then 90 tasks, as before");
 });
 
-test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 80 tasks, its own cast", () => {
+test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abyss open, Karamja first at 48 tasks, its own cast", () => {
   worldLeague = 6;
   const pacts = character("pactsareas");
   worldLeague = 4;
@@ -578,14 +597,14 @@ test("Demonic Pacts: Varlamore to start, Misthalin shut but Zanaris and the Abys
   assert.deepEqual(SELECTION.map((varbit) => pacts.sent.varbits.get(varbit)), [VARLAMORE, 0, 0, 0, 0, 0]);
   const open = (x, y) => query("league:area-at", { x, y, player: pacts });
   assert.equal(open(3222, 3218).area, MISTHALIN, "Lumbridge is Misthalin's");
-  assert.equal(query("league:areas", { player: pacts }).next?.tasks, 80, "the cache's own thresholds");
+  assert.equal(query("league:areas", { player: pacts }).next?.tasks, 48, "custom world: 60% of the cache's 80/200/300/450");
   assert.equal(areaAt(2412, 4434, { league: 6 }), null, "Zanaris is open from everywhere");
   assert.equal(areaAt(3040, 4839, { league: 6 }), null, "and the Abyss");
   assert.equal(areaAt(2412, 4434, { league: 5 }), MISTHALIN, "Raging Echoes keeps them Misthalin's");
   assert.equal(areaAt(1150, 3420, { league: 6 }), VARLAMORE, "the Stranglewood counts as Varlamore");
 
   openAreas(pacts);
-  completeTasks(pacts, 80);
+  completeTasks(pacts, 48);
   viewArea(pacts, ASGARNIA);
   let [, args] = pacts.sent.scripts.at(-1);
   assert.deepEqual([args[11], args[23]], [3, "Your first new area must be Karamja."], "the first pick is Karamja's");
@@ -829,7 +848,9 @@ test("Death's Office's exit portal: a locked destination leads to the league hom
   const Enforcement = require("../plugins/modes/leagueareas/Enforcement.LeagueAreaUnlocks");
   const homeOf = (player, league) => Enforcement.home(league, player);
   const spawn = core.WorldDefinition.WORLD_SPAWN;
-  assert.equal(areaAt(spawn.getX(), spawn.getY()), WILDERNESS, "(the tutorial's exit, the world's spawn, is locked for a new character)");
+  const spawnHome = homeOf(character("spawncheck"), 4);
+  assert.equal(areaAt(spawnHome.getX(), spawnHome.getY()), MISTHALIN,
+    "(the league home, the tutorial's exit when the world spawn is locked, is in the starting area)");
 
   // The first death's tutorial leads to the respawn point: the respawn rule's league home here.
   const tutorial = inDeathsOffice("tutorialexit");
@@ -907,4 +928,31 @@ test("a reload restores the unlocks and their varbits", () => {
   stranded.moveTo(at(2662, 3305)); // Ardougne
   hooks.onPlayerLogin({ player: stranded, username: "stranded", isNewAccount: false, profile: "league" });
   assert.equal(areaAt(stranded.getLocation().getX(), stranded.getLocation().getY()), MISTHALIN);
+});
+
+test("league:regionLocked false leaves a locked area open and marks every region unlocked", () => {
+  regionLocked = false;
+  try {
+    const league = character("openworld");
+    const alKharid = at(3290, 3180);
+    league.moveTo(alKharid);
+    hooks.onPlayerMapSquareChange({ player: league, previous: at(3222, 3218), location: alKharid });
+    assert.ok(league.getLocation().equals(alKharid));
+    const teleport = { player: league, destination: at(2662, 3305), allow: null };
+    hooks.onCanTeleport(teleport);
+    assert.equal(teleport.allow, null);
+
+    assert.deepEqual(league.getAttribute("league:areas"), [MISTHALIN, KARAMJA], "the saved picks stay the real ones");
+    assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0]);
+    const areas = query("league:areas", { player: league });
+    assert.deepEqual(areas.unlocked, [MISTHALIN, KARAMJA, ASGARNIA, KANDARIN, MORYTANIA, DESERT, TIRANNWN, FREMENNIK, WILDERNESS, KOUREND, VARLAMORE]);
+    assert.equal(areas.available, false, "no pick is offered while every region is open");
+    openAreas(league);
+    viewArea(league, ASGARNIA);
+    assert.equal(league.sent.scripts.at(-1)[1][11], 1, "a locked pick is marked unlocked");
+    viewArea(league, VARLAMORE);
+    assert.equal(league.sent.scripts.at(-1)[1][11], 1, "a region this league does not offer is marked unlocked too");
+  } finally {
+    regionLocked = true;
+  }
 });

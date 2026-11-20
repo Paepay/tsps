@@ -518,6 +518,25 @@ test('the scorching bow is a bow: arrows up to dragon, speed 5, range 10, its st
   assert.equal(definition.getRequirements()[4], 77, 'Ranged to wield');
 });
 
+test("Ava's devices carry their Ranged requirement: attractor 30, accumulator 50, assembler 70 (Wiki: Ava's device)", () => {
+  const { CachePipeline } = require('../dist/game/cache/CachePipeline');
+  const { ItemDefinition } = require('../dist/game/definition/ItemDefinition');
+  const { EquipmentRequirements } = require('../dist/game/model/equipment/EquipmentRequirements');
+  const { Skill } = require('../dist/game/model/Skill');
+  CachePipeline.initialize();
+  require('../plugins/items/ItemDefinitionLoader.plugin').register({ log() {}, onPlayerLogin() {}, registerContentEndpoint() {} });
+  // The attractor comes from Animal Magnetism below 50 Ranged but still needs 30 to wear, as issue #30 reported.
+  const wearer = (ranged) => ({
+    getSkillManager: () => ({ getMaxLevel: (skill) => skill === Skill.RANGED ? ranged : 1, getCombatLevel: () => 3 }),
+  });
+  for (const [itemId, level] of [[Items.AVAS_ATTRACTOR, 30], [Items.AVAS_ACCUMULATOR, 50], [Items.AVAS_ASSEMBLER, 70]]) {
+    const definition = ItemDefinition.forId(itemId);
+    assert.equal(definition.getRequirements()[4], level, `${definition.getName()} Ranged to wield`);
+    assert.deepEqual(EquipmentRequirements.getUnmet(wearer(level - 1), definition), { label: 'Ranged', level }, `${definition.getName()} refuses ${level - 1} Ranged`);
+    assert.equal(EquipmentRequirements.getUnmet(wearer(level), definition), null, `${definition.getName()} at ${level} Ranged`);
+  }
+});
+
 test("a block on the tick of a swing doesn't replace it (cache interrupt priority: attacks 6, blocks 5)", (t) => {
   const { Player } = require('../dist/game/entity/impl/player/Player');
   const { Animation } = require('../dist/game/model/Animation');

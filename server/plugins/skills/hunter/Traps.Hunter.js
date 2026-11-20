@@ -85,9 +85,14 @@ function canLay(player, kind, location, base, ground) {
   const count = def.max ? traps.filter(t => t.kind === kind).length : traps.filter(t => !H.data.traps[t.kind].max).length;
   const max = limit(player, kind);
   if (count >= max) { player.sendMessage(`You may set up only ${max === 1 ? "one trap" : `${max} traps`} at a time at your Hunter level.`); return false; }
-  if (base ? !H.core.MapObjects.exists(base) || find(base) :
-    H.core.MapObjects.getType(location, 10, player.getPrivateArea()) || H.core.MapObjects.getType(location, 22, player.getPrivateArea())
-    || H.core.RegionManager.blocked(location, player.getPrivateArea())) {
+  // Scenery and ground decoration may be drawn on the tile without blocking it; only the map's
+  // real clipping decides whether a trap can stand there (issue #19).
+  if (base ? !H.core.MapObjects.exists(base) || find(base)
+      : H.core.RegionManager.blocked(location, player.getPrivateArea())) {
+    player.sendMessage("You can't set up a trap here."); return false;
+  }
+  if (!base && [...H.traps].some((trap) =>
+    trap.area === player.getPrivateArea() && trap.location.equals(location))) {
     player.sendMessage("You can't set up a trap here."); return false;
   }
   if (kind === "monkey" && (!hasTool(player, H.core.ItemIdentifiers.KRUK_MONKEY_GREEGREE) || !questComplete(player, "monkey_madness_ii"))) {

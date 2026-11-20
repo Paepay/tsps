@@ -5,6 +5,8 @@ export interface MenuSwapperPresets {
     trade: boolean;
     /** Pickpocketable NPCs: "Pickpocket" as the left-click. */
     pickpocket: boolean;
+    /** Shop inventory while selling: "Sell 1" as the left-click. */
+    shopSell: boolean;
     /** Every inventory item: "Drop" as the shift-click. */
     shiftDrop: boolean;
 }

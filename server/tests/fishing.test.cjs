@@ -672,6 +672,10 @@ async function fishingLoop({ emitCustomEvent = TAUGHT_BAREHAND } = {}) {
         contains: (id) => slots.some((item) => item?.getId() === id && item.getAmount() > 0),
         getAmount: (id) => slots.filter((item) => item?.getId() === id).reduce((sum, item) => sum + item.getAmount(), 0),
         getFreeSlots: () => slots.filter((item) => !item).length,
+        getAddableAmount: (item) => {
+          const stack = stackable(item.getId()) && slots.find((held) => held?.getId() === item.getId());
+          return stack ? item.getAmount() : Math.min(item.getAmount(), slots.filter((held) => !held).length);
+        },
         isFull: () => slots.every(Boolean),
         full() {},
         refreshItems() {},
@@ -1090,6 +1094,26 @@ test("Holy Lake karambwanji: floor(level / 5) + 1 a catch, shrimps only with roo
     Fishing.landCatch(crowded, TOOLS.KARAMBWANJI_NET, Fishing.findTool(crowded, TOOLS.KARAMBWANJI_NET), [FISH.KARAMBWANJI]);
     assert.equal(amount(crowded, I.RAW_KARAMBWANJI), 21);
   });
+});
+
+test("a full inventory does not announce or award a catch it cannot store (issue #18)", async () => {
+  // The old storage answer said a bank slot made room even without Endless Harvest; the catch
+  // then had nowhere to go but the chat line and the experience still counted.
+  const lyingRoom = (name, request) => {
+    if (name === "storage:room") request.room = true;
+    if (name === "fishing:barehand-unlocked") request.allowed = true;
+  };
+  const { core, Fishing, fisher } = await fishingLoop({ emitCustomEvent: lyingRoom });
+  const { ItemIdentifiers: I } = core;
+  const full = fisher({ items: [[I.SMALL_FISHING_NET], ...new Array(27).fill([I.LOGS])] });
+  assert.equal(full.getInventory().isFull(), true);
+  Fishing.landCatch(full, Fishing.TOOLS.NET, Fishing.findTool(full, Fishing.TOOLS.NET), [Fishing.FISH.SHRIMP]);
+  assert.equal(full.getInventory().getAmount(I.RAW_SHRIMPS), 0, "nothing is stored");
+  assert.deepEqual(full.messages, [], "and the catch is not announced");
+  assert.equal(full.xp, 0, "nor is its experience given");
+  assert.equal(Fishing.giveCatch(full, I.RAW_SHRIMPS, 1), 0, "giveCatch reports what it stored");
+  full.getInventory().setItem(27, null);
+  assert.equal(Fishing.giveCatch(full, I.RAW_SHRIMPS, 1), 1, "with a free slot it lands");
 });
 
 test("Civitas illa Fortis's park pond: Cast with a big net lands its table, 7.5 XP a catch; another net is the wrong size", async () => {

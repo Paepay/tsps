@@ -79,7 +79,10 @@ function refreshOnlineLockState() {
   if (!players) return;
   for (const player of players) {
     if (!player?.getPacketSender) continue;
-    if (active()) enforceSkillLevels(player);
+    if (active()) {
+      enforceSkillLevels(player);
+      requestDiaryCompletion(player);
+    }
     sendLockState(player);
   }
 }
@@ -281,6 +284,25 @@ function enforceSkillLevels(player) {
   }
 }
 
+/** Level-Up accounts see every achievement diary finished, including rewards they can claim. */
+function requestDiaryCompletion(player) {
+  if (!active() || !player) return;
+  api.emitCustomEvent("diary:complete-all", { player, source: "level-up" });
+}
+
+/**
+ * Level-Up is a self-contained progression world: trading (and every other wealth channel)
+ * must stay off even when the hosted world config left the website default on.
+ */
+function wealthPolicy(request) {
+  if (active()) request.enabled = false;
+}
+
+/** Level-Up marks every diary complete, so the reward NPCs must hand out every tier too. */
+function diaryRewardPolicy(request) {
+  if (active()) request.unrestricted = true;
+}
+
 function initialise({ player, isNewAccount }) {
   if (!active()) {
     sendLockState(player);
@@ -325,6 +347,7 @@ function initialise({ player, isNewAccount }) {
     }
   }
   enforceSkillLevels(player);
+  requestDiaryCompletion(player);
   sendLockState(player);
   player.sendMessage("Level-Up World: use ::levelup to view your progression and available choices.");
 }
@@ -414,10 +437,11 @@ function unlockSkill(player, text) {
   const next = Rules.normaliseSkills([...unlocked, index]);
   player.setAttribute(ATTR.skills, next);
   const manager = player.getSkillManager();
+  const startingLevel = Rules.startingLevel(index);
   manager.setSkillLocked(found.runtime, false);
-  manager.setExperiences(found.runtime, 0, false);
-  manager.setMaxLevels(found.runtime, 1, false);
-  manager.setCurrentLevels(found.runtime, 1, true);
+  manager.setExperiences(found.runtime, api.getSkillManager().getExperienceForLevel(startingLevel), false);
+  manager.setMaxLevels(found.runtime, startingLevel, false);
+  manager.setCurrentLevels(found.runtime, startingLevel, true);
   const reward = Rules.rewardAt(next.length);
   player.sendMessage(`${found.canonical.name} unlocked. Your XP tier is now ${Rules.xpMultiplier(next.length)}x.`);
   if (reward.region) player.sendMessage("A new region is available! Open the Level-Up journal's Areas screen to choose it.");
@@ -669,6 +693,8 @@ module.exports = {
     }
     configurePackaged(api.getPluginConfig("template:id", ""), api.getPluginConfig("template:contract", null));
     api.onCustomEvent("paescape:world-config", configureHosted);
+    api.onCustomEvent("wealth:enabled", wealthPolicy);
+    api.onCustomEvent("diary:rewards-unrestricted", diaryRewardPolicy);
     api.onCustomEvent("level-up:progress", answerProgress);
     api.onCustomEvent("level-up:area-profile", answerAreaProfile);
     api.onCustomEvent("level-up:relic-profile", answerRelicProfile);

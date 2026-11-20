@@ -71,6 +71,7 @@ before(async () => {
   };
   const api = new Proxy({
     core,
+    encodePluginMessage: (channel, data) => ({ channel, data }),
     persistAttribute() {},
     getPluginConfig: (key, fallback) => (key === "league:type" ? DP : fallback),
     setWorldProfile: (profile) => GameConstants.setWorldProfile(profile),
@@ -127,7 +128,7 @@ function character(name, profile, picks = {}, leagueType = DP) {
   player.setProfile(profile);
   player.setLocation(new Location(3200, 3200, 0));
   player.setRegistered(true);
-  const sent = { messages: [], configs: new Map(), varbits: new Map(), scripts: [], interfaces: [], flags: [] };
+  const sent = { messages: [], configs: new Map(), varbits: new Map(), scripts: [], interfaces: [], flags: [], packets: [] };
   const record = {
     sendConfig: (id, value) => sent.configs.set(id, value),
     sendVarbit: (id, value) => sent.varbits.set(id, value),
@@ -140,6 +141,7 @@ function character(name, profile, picks = {}, leagueType = DP) {
     get: (target, key) => (key in record ? (...args) => (record[key](...args), sender) : () => sender),
   });
   player.getPacketSender = () => sender;
+  player.getSession = () => ({ sendClientPacket: (packet) => sent.packets.push(packet) });
   player.sendMessage = (text) => sent.messages.push(text);
   if (profile === "league") {
     player.setAttribute("league:type", leagueType);
@@ -270,10 +272,10 @@ test("Endless Harvest (Demonic Pacts): doubled with XP, banked while the toggle 
     assert.equal(gather(player, I.IRON_ORE, 1, Skill.MINING, 35).stored, 0);
     assert.equal(emit("mining:deplete-rock", { player, handled: false }).handled, false);
   }
-  const trailblazer = character("trailblazer", "league", { 0: 2 }, 4);
-  if (Common.hasRelic(trailblazer, "endless-harvest")) {
-    assert.equal(emit("mining:deplete-rock", { player: trailblazer, handled: false }).handled, false, "Trailblazer Reloaded's rocks deplete");
-  }
+  const trailblazer = character("trailblazer", "league", { 0: 1 }, 4);
+  assert.equal(Common.hasRelic(trailblazer, "endless-harvest"), true);
+  assert.equal(emit("mining:deplete-rock", { player: trailblazer, handled: false }).handled, true,
+    "Trailblazer Reloaded's Endless Harvest keeps rocks standing too");
 });
 
 test("Barbarian Gathering: a second 50% chance, 10% Strength and Agility XP, and bare hands that fish", () => {
@@ -1333,27 +1335,60 @@ function click(player, itemId, option, { subOp = null, worn = false } = {}) {
   return { event, handled: result !== false && event.handled === true };
 }
 
-const MENU_SCRIPT = 217;
+const TELEPORT_MENU_CHANNEL = "teleport-menu";
 
-/** The player's open menu interface (187, script `menu`): { title, labels (struck kept), numbered }, or null. */
+/** The player's open teleport-menu screen, or null after the menu closed (errors keep it open). */
 function menuOf(player) {
-  if (player.getInterfaceId() !== core.CacheDefinitions.getInterfaceId("menu")) return null;
-  const script = player.sent.scripts.filter((sent) => sent.id === MENU_SCRIPT).at(-1);
-  if (!script) return null;
-  const [title, labels, numbered] = script.args;
-  return { title, labels: labels.split("|"), numbered };
+  const packets = player.sent.packets.filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL);
+  for (let index = packets.length - 1; index >= 0; index--) {
+    if (packets[index].data.type === "close") return null;
+    if (packets[index].data.type === "screen") return packets[index].data;
+  }
+  return null;
 }
 
-/** Picks `label` (plain or struck through) on the open menu: menu:lj_layer1's pause button, its index the sub. */
+/** A screen as the old assertions saw a menu: labels strike locked entries and add Back. */
+function menuView(player) {
+  const screen = menuOf(player);
+  if (!screen) return null;
+  const labels = screen.entries.map((entry) => (entry.locked ? `<str>${entry.label}</str>` : entry.label));
+  if (screen.canBack) labels.push("Back");
+  return { ...screen, labels };
+}
+
+/** The menu's latest error packet, or null. */
+function menuErrorOf(player) {
+  return player.sent.packets
+    .filter((packet) => packet.channel === TELEPORT_MENU_CHANNEL && packet.data.type === "error")
+    .map((packet) => packet.data)
+    .at(-1) ?? null;
+}
+
+/** Sends a client teleport-menu action as the browser does. */
+function menuMessage(player, data) {
+  const event = { player, channel: TELEPORT_MENU_CHANNEL, data, handled: false };
+  for (const handler of custom["network:plugin-message"] ?? []) handler(event);
+  assert.equal(event.handled, true, "the teleport menu's message");
+  return event;
+}
+
+/** Picks `label` (plain or struck through), or Back, on the open menu. */
 function pick(player, label) {
-  const menu = menuOf(player);
+  const menu = menuView(player);
   assert.ok(menu, `a menu with ${label}`);
-  const index = menu.labels.findIndex((text) => text === label || text === `<str>${label}</str>`);
-  assert.ok(index >= 0, `${label} on the menu "${menu.title}": ${menu.labels.join(", ")}`);
-  const buttonId = core.CacheDefinitions.getComponentId("menu:lj_layer1");
-  const event = { player, buttonId, groupId: buttonId >>> 16, childId: buttonId & 0xffff, action: index, handled: false };
-  hooks.onInterfaceActionClick(event);
-  assert.equal(event.handled, true, "the menu's pick");
+  if (label === "Back") {
+    assert.ok(menu.canBack, "Back on the menu");
+    menuMessage(player, { type: "back", session: menu.session });
+    return null;
+  }
+  const entry = menu.entries.find((candidate) => candidate.label === label);
+  assert.ok(entry, `${label} on the menu "${menu.title}": ${menu.labels.join(", ")}`);
+  menuMessage(player, {
+    type: menu.stage === "regions" ? "region" : "destination",
+    session: menu.session,
+    index: entry.index,
+  });
+  return entry;
 }
 
 /** Runs the game's ticks until the player stands on (x, y, z), at most `limit`; the ticks taken. */
@@ -1378,6 +1413,92 @@ function relocate(player, location) {
 function area(data, name) {
   return data.areas.find((entry) => entry.name === name);
 }
+
+test("Teleport menu: regions first over plugin messages, then exact destinations; paging and stale sessions are safe", () => {
+  const player = character("menu-protocol", "league", EVIL_EYE);
+  withLeague({}, () => {
+    const promptCount = prompts.length;
+    assert.equal(click(player, I.EVIL_EYE, "Teleport").handled, true);
+    assert.equal(prompts.length, promptCount, "no chatbox prompt");
+    let screen = menuOf(player);
+    assert.equal(screen.stage, "regions", "regions first");
+    assert.equal(screen.title, "Select a region");
+    assert.equal(screen.canBack, false);
+    assert.equal(screen.pages, 1);
+    assert.deepEqual(screen.entries.map((entry) => entry.label), EVIL_EYE_DATA.areas.map((entry) => entry.region ?? entry.name));
+
+    const packets = player.sent.packets.length;
+    menuMessage(player, { type: "region", session: screen.session + 1, index: 0 });
+    assert.ok(player.sent.packets.length > packets, "a stale session gets the current screen again");
+    assert.equal(menuOf(player).session, screen.session);
+
+    const asgarnia = EVIL_EYE_DATA.areas.findIndex((entry) => entry.name === "Asgarnia");
+    menuMessage(player, { type: "region", session: screen.session, index: asgarnia });
+    screen = menuOf(player);
+    assert.equal(screen.stage, "destinations");
+    assert.equal(screen.region.name, "Asgarnia");
+    assert.equal(screen.canBack, true);
+    assert.deepEqual(screen.entries.map((entry) => entry.label), EVIL_EYE_DATA.areas[asgarnia].destinations.map((entry) => entry.label ?? entry.name));
+
+    menuMessage(player, { type: "back", session: screen.session });
+    assert.equal(menuOf(player).stage, "regions", "Back returns to the regions");
+
+    screen = menuOf(player);
+    const varlamore = EVIL_EYE_DATA.areas.findIndex((entry) => entry.name === "Varlamore");
+    menuMessage(player, { type: "region", session: screen.session, index: varlamore });
+    screen = menuOf(player);
+    const target = EVIL_EYE_DATA.areas[varlamore].destinations.at(-1);
+    const selected = screen.entries.find((entry) => entry.label === (target.label ?? target.name));
+    menuMessage(player, { type: "destination", session: screen.session, index: selected.index });
+    assert.equal(menuOf(player), null, "a destination closes the menu");
+    assert.ok(ticksTo(player, target) > 0, `teleported to ${target.name}`);
+  });
+
+  const map = character("menu-pages", "league", MAP_OF_ALACRITY);
+  withLeague({}, () => {
+    const asgarnia = ALACRITY_DATA.areas.findIndex((entry) => entry.name === "Asgarnia");
+    assert.equal(click(map, I.MAP_OF_ALACRITY, "Read", { subOp: asgarnia }).handled, true);
+    let page = menuOf(map);
+    assert.equal(page.pages, 2, "fifteen shortcuts page as twelve and three");
+    assert.equal(page.entries.length, 12);
+    menuMessage(map, { type: "page", session: page.session, page: 1 });
+    page = menuOf(map);
+    assert.equal(page.page, 1);
+    assert.deepEqual(page.entries.map((entry) => entry.index), [12, 13, 14], "no shortcut collision across pages");
+    menuMessage(map, { type: "page", session: page.session, page: 9 });
+    assert.equal(menuErrorOf(map).message, "That page is not available.");
+    assert.equal(menuOf(map).page, 1, "an invalid page leaves the current one");
+  });
+});
+
+test("Teleport menu: logout forgets the pending menu, so its old session cannot act", () => {
+  const player = character("menu-logout", "league", EVIL_EYE);
+  withLeague({}, () => {
+    click(player, I.EVIL_EYE, "Teleport");
+    const screen = menuOf(player);
+    assert.ok(screen);
+    hooks.onPlayerLogout({ player });
+    const packets = player.sent.packets.length;
+    menuMessage(player, { type: "region", session: screen.session, index: 0 });
+    assert.equal(player.sent.packets.length, packets, "nothing answers after logout");
+  });
+});
+
+test("Teleport menu: another interface opening closes it, so its keys and clicks stop", () => {
+  const player = character("menu-interface", "league", EVIL_EYE);
+  withLeague({}, () => {
+    click(player, I.EVIL_EYE, "Teleport");
+    const screen = menuOf(player);
+    assert.ok(screen);
+    for (const handler of custom["interface:opened"] ?? []) {
+      handler({ player, groupId: 12, targetUid: 0, type: "main" });
+    }
+    assert.equal(menuOf(player), null, "the menu closes with the other interface");
+    const packets = player.sent.packets.length;
+    menuMessage(player, { type: "region", session: screen.session, index: 0 });
+    assert.equal(player.sent.packets.length, packets, "its old session no longer acts");
+  });
+});
 
 test("Evil Eye and Map of Alacrity: the data's areas are the items' submenus, every destination a real tile, named once", () => {
   const areaIds = require("../plugins/modes/data/league-areas.json").leagues[DP].areas;
@@ -1430,15 +1551,9 @@ test("Evil Eye: Teleport's area submenu, carried or worn, lists its destinations
   const target = varlamore.destinations.at(-1);
   withLeague({}, () => {
     assert.equal(click(player, I.EVIL_EYE, "Teleport", { subOp: EVIL_EYE_DATA.areas.indexOf(varlamore) }).handled, true);
-    // Live's menu interface (237/01104): its title, live's labels in live's order, Back, numbered.
-    const menuId = core.CacheDefinitions.getInterfaceId("menu");
-    assert.equal(player.sent.interfaces.at(-1), menuId);
-    assert.deepEqual(player.sent.flags.at(-1), { uid: core.CacheDefinitions.getComponentId("menu:lj_layer1"), from: 0, to: 512, flags: 1 }, "pause buttons on menu:lj_layer1 0-512");
-    assert.deepEqual(menuOf(player), {
-      title: "Evil Eye teleports - Varlamore",
-      labels: ["Abyssal Sire", "Amoxliatl", "Doom of Mokhaiotl", "Fortis Colosseum", "Hueycoatl", "Moons of peril (Blood)", "Moons of peril (Blue)", "Moons of peril (Eclipse)", "Vardorvis", "Back"],
-      numbered: 1,
-    });
+    // The browser menu's destination screen: its title, live's labels in live's order, Back.
+    assert.equal(menuView(player).title, "Evil Eye teleports - Varlamore");
+    assert.deepEqual(menuView(player).labels, ["Abyssal Sire", "Amoxliatl", "Doom of Mokhaiotl", "Fortis Colosseum", "Hueycoatl", "Moons of peril (Blood)", "Moons of peril (Blue)", "Moons of peril (Eclipse)", "Vardorvis", "Back"]);
     pick(player, target.name);
     assert.equal(menuOf(player), null, "the menu closes on a pick");
     const lastVarp = core.CacheDefinitions.getVarpId("league_default_teleport_last_destination");
@@ -1459,17 +1574,16 @@ test("Evil Eye: Teleport's area submenu, carried or worn, lists its destinations
     assert.equal(click(player, I.EVIL_EYE, "Teleport", { subOp: EVIL_EYE_DATA.areas.indexOf(varlamore), worn: true }).handled, true);
     assert.equal(menuOf(player).title, "Evil Eye teleports - Varlamore");
     click(player, I.EVIL_EYE, "Teleport");
-    assert.deepEqual(menuOf(player), {
-      title: "Select a region",
-      labels: ["Asgarnia", "Kharidian Desert", "Fremennik Province", "Kandarin", "Karamja", "Great Kourend", "Morytania", "Tirannwn", "Varlamore", "Wilderness"],
-      numbered: 1,
-    }, "live's regions (237/01133)");
+    assert.equal(menuView(player).title, "Select a region");
+    assert.deepEqual(menuView(player).labels,
+      ["Asgarnia", "Kharidian Desert", "Fremennik Province", "Kandarin", "Karamja", "Great Kourend", "Morytania", "Tirannwn", "Varlamore", "Wilderness"],
+      "live's regions (237/01133)");
     pick(player, "Varlamore");
     assert.equal(menuOf(player).title, "Evil Eye teleports - Varlamore");
     pick(player, "Back");
     assert.equal(menuOf(player).title, "Select a region", "Back to the regions");
     pick(player, "Morytania");
-    assert.deepEqual(menuOf(player).labels, ["Araxxor", "Barrows Chest", "Barrows Surface", "Grotesque Guardians", "The Nightmare", "Theatre of blood", "Back"], "237/01107");
+    assert.deepEqual(menuView(player).labels, ["Araxxor", "Barrows Chest", "Barrows Surface", "Grotesque Guardians", "The Nightmare", "Theatre of blood", "Back"], "237/01107");
   });
   const fresh = character("fresh-eye", "league", EVIL_EYE);
   assert.equal(click(fresh, I.EVIL_EYE, "Last-destination").handled, true);
@@ -1539,15 +1653,15 @@ test("Evil Eye: a destination in an area not unlocked is refused, from the menu 
     assert.equal(player.sent.messages.at(-1), Common.message("areaLocked"));
     // The regions: those not unlocked struck through (237/01133); picking one is refused.
     click(player, I.EVIL_EYE, "Teleport");
-    assert.deepEqual(menuOf(player).labels, EVIL_EYE_DATA.areas.map((entry) => {
+    assert.deepEqual(menuView(player).labels, EVIL_EYE_DATA.areas.map((entry) => {
       const name = entry.region ?? entry.name;
       return entry === varlamore ? name : `<str>${name}</str>`;
     }));
     const messages = player.sent.messages.length;
     pick(player, "Asgarnia");
-    assert.equal(player.sent.messages.length, messages + 1);
-    assert.equal(player.sent.messages.at(-1), Common.message("areaLocked"));
-    assert.equal(menuOf(player), null, "the menu closes");
+    assert.equal(player.sent.messages.length, messages, "the locked region is reported in the menu");
+    assert.equal(menuErrorOf(player).message, Common.message("areaLocked"));
+    assert.ok(menuOf(player), "the menu stays open on a locked region");
     player.setAttribute("league:last-destination:evil-eye", { label: asgarnia.destinations[0].name, x: 0, y: 0, z: 0 });
     const before = player.getLocation().clone();
     click(player, I.EVIL_EYE, "Last-destination");
@@ -1560,6 +1674,7 @@ test("Evil Eye: a destination in an area not unlocked is refused, from the menu 
     click(player, I.EVIL_EYE, "Teleport", { subOp: EVIL_EYE_DATA.areas.indexOf(varlamore) });
     pick(player, varlamore.destinations[0].name);
     assert.equal(player.sent.messages.at(-1), Common.message("areaLocked"));
+    assert.equal(menuErrorOf(player).message, "That teleport could not be completed. See chat for details.");
   });
 });
 
@@ -1580,7 +1695,7 @@ test("Evil Eye and Map of Alacrity: from above level 20 of the Wilderness, where
   }
 });
 
-test("Map of Alacrity: Read lists an area's shortcuts in the menu interface; no Agility level needed, a shortcut behind the Wiki's quest is refused", () => {
+test("Map of Alacrity: Read lists an area's shortcuts in the browser menu; no Agility level needed, a shortcut behind the Wiki's quest is refused", () => {
   const player = character("alacrity", "league", MAP_OF_ALACRITY);
   const kandarin = area(ALACRITY_DATA, "Kandarin");
   const target = kandarin.destinations.find((destination) => destination.level > 1);
@@ -1589,7 +1704,8 @@ test("Map of Alacrity: Read lists an area's shortcuts in the menu interface; no 
   skills.setCurrentLevel(Skill.AGILITY, 1).setMaxLevel(Skill.AGILITY, 1);
   withLeague({}, () => {
     assert.equal(click(player, I.MAP_OF_ALACRITY, "Read", { subOp: ALACRITY_DATA.areas.indexOf(kandarin) }).handled, true);
-    assert.deepEqual(menuOf(player), { title: "Kandarin", labels: [...kandarin.destinations.map((destination) => destination.name), "Back"], numbered: 1 });
+    assert.equal(menuView(player).title, "Kandarin");
+    assert.deepEqual(menuView(player).labels, [...kandarin.destinations.map((destination) => destination.name), "Back"]);
     const messages = player.sent.messages.length;
     pick(player, target.name);
     assert.equal(player.sent.messages.length, messages, `no refusal: ${player.sent.messages.slice(messages)}`);
@@ -1608,17 +1724,19 @@ test("Map of Alacrity: Read lists an area's shortcuts in the menu interface; no 
     assert.ok(ticksTo(player, target) > 0, "Last-destination");
 
     click(player, I.MAP_OF_ALACRITY, "Read");
-    assert.deepEqual(menuOf(player), { title: Common.message("alacrityTitle"), labels: ALACRITY_DATA.areas.map((entry) => entry.name), numbered: 1 });
+    assert.equal(menuView(player).title, Common.message("alacrityTitle"));
+    assert.deepEqual(menuView(player).labels, ALACRITY_DATA.areas.map((entry) => entry.name));
 
     const varlamore = area(ALACRITY_DATA, "Varlamore");
     const behindQuest = varlamore.destinations.find((destination) => destination.quest);
     skills.setCurrentLevel(Skill.AGILITY, 99).setMaxLevel(Skill.AGILITY, 99);
     custom["quest:is-complete"] = [(query) => { if (query.name === behindQuest.quest) query.complete = false; }];
     click(player, I.MAP_OF_ALACRITY, "Read", { subOp: ALACRITY_DATA.areas.indexOf(varlamore) });
-    assert.ok(menuOf(player).labels.includes(`<str>${behindQuest.name}</str>`), "struck through");
+    assert.ok(menuView(player).labels.includes(`<str>${behindQuest.name}</str>`), "struck through");
     const before = player.getLocation().clone();
     pick(player, behindQuest.name);
-    assert.equal(player.sent.messages.at(-1), Common.message("questNeeded", { quest: behindQuest.quest }));
+    assert.equal(menuErrorOf(player).message, Common.message("questNeeded", { quest: behindQuest.quest }));
+    assert.ok(menuOf(player), "the menu stays open on a locked destination");
     for (let tick = 0; tick < 30; tick++) core.TaskManager.process();
     assert.ok(player.getLocation().equals(before), "stayed");
   });

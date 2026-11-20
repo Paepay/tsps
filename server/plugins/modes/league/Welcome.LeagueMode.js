@@ -4,7 +4,16 @@
  * says when the league ends, the days left in it. WelcomeScreen says when it is up.
  */
 const Common = require("./Common.LeagueMode");
-const data = require("../data/league-tutorial.json");
+/** The welcome screen's message of the week (welcome_screen:motw, 378:6) on a league world, as
+ * captured (227/00196): the league's name and, when world.json's pluginConfig `league:end` (an ISO
+ * date) is set, the days left. */
+const WELCOME = {
+  motw: [378, 6],
+  colour: "670e3b",
+  text: "Welcome to Old School RuneScape: <col={colour}>{league}</col>!",
+  remaining: "<br>There are <col={colour}>{days} days remaining</col> in this League.",
+  remainingOne: "<br>There is <col={colour}>1 day remaining</col> in this League.",
+};
 
 /** world.json pluginConfig: when the league ends (an ISO date). */
 const END_CONFIG = "league:end";
@@ -30,7 +39,7 @@ function shown({ player }) {
   const type = player ? Common.leagueOf(player) : null;
   if (type === null) return;
   const end = Date.parse(String(Common.api.getPluginConfig(END_CONFIG, "")));
-  player.getPacketSender().sendString(messageOfTheWeek(type, end), uid(data.welcome.motw));
+  player.getPacketSender().sendString(messageOfTheWeek(type, end), uid(WELCOME.motw));
 }
 
 module.exports = function attach(api) {

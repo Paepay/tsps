@@ -125,7 +125,9 @@ function sendJournalAvailability(player) {
   sender.sendConfig(MAP_FLAGS_VARP, flags.flags | 0);
   sender.sendVarbit(LEAGUE_ACCOUNT_VARBIT, 1);
   sender.sendVarbit(LEAGUE_TYPE_VARBIT, LEAGUE_STYLE_TYPE);
-  sender.sendVarbit(LEAGUE_TUTORIAL_VARBIT, 12);
+  // Cache 242's script 2449 answers 14 for every league type; the area screen's script 3719
+  // compares against it, so 12 made the client warn that the tutorial was incomplete (#23).
+  sender.sendVarbit(LEAGUE_TUTORIAL_VARBIT, 14);
   sender.sendVarbit(RUNEDAY_VARBIT, runeday());
 }
 
@@ -346,6 +348,9 @@ function sendAreaState(player) {
     .filter(Number.isInteger);
   const sender = player.getPacketSender();
   AreaData.varbits.selection.forEach((varbit, slot) => sender.sendVarbit(varbit, unlocked[slot] ?? 0));
+  if (Number.isInteger(AreaData.varps?.unlockedCount)) {
+    sender.sendConfig(AreaData.varps.unlockedCount, state.regions.length);
+  }
   sender.sendVarbit(AreaData.varbits.available, state.pendingRegionMilestone !== null ? 1 : 0);
   sender.sendVarbit(AreaData.varbits.lastViewed, 0);
 }
@@ -569,6 +574,7 @@ function openRelics(event) {
 }
 
 function slotToRelic(catalog, sub) {
+  if (!Number.isInteger(sub) || sub < 0) return null;
   let first = 0;
   for (let tier = 0; tier < (catalog?.tiers.length ?? 0); tier++) {
     const count = catalog.tiers[tier].relics.length;
@@ -599,6 +605,7 @@ function showRelic(player, index) {
   if (!at) return false;
   const { tier, slot } = at;
   const relic = Common.relic(LEAGUE_STYLE_TYPE, tier, slot);
+  if (!relic) return false;
   const structs = Common.structIds(LEAGUE_STYLE_TYPE, tier, slot);
   const state = relicState(player, tier, slot);
   const passive = Rules.stripXpPassiveLines(Common.catalog(LEAGUE_STYLE_TYPE).tiers[tier]?.passive ?? "");
@@ -636,7 +643,7 @@ function presentRelic(player) {
 
 /** The top-right cross on league_relics (655:4, league_relics:close_button): leave without unlocking. */
 function relicClose(event) {
-  if (!active() || !relicViewing.has(event.player)) return false;
+  if (!active() || !event?.player) return false;
   relicViewing.delete(event.player);
   event.player.getPacketSender().sendInterfaceRemoval();
   return true;
@@ -652,16 +659,20 @@ function relicClosed({ player, interfaceId }) {
 function relicConfirm(event) {
   if (!active() || !relicViewing.has(event.player)) return false;
   const { player } = event;
+  const state = progress(player);
+  if (state.pendingRelicMilestone === null) {
+    // The final relic was already claimed: leave the (still browsable) screen cleanly
+    // instead of holding the player on a confirm button that can no longer do anything.
+    relicViewing.delete(player);
+    player.getPacketSender().sendInterfaceRemoval();
+    player.sendMessage("All relic choices have been claimed.");
+    return true;
+  }
   const index = relicViewing.get(player);
   const Common = relicCommon();
   const at = slotToRelic(Common.catalog(LEAGUE_STYLE_TYPE), index);
   if (!at) {
     player.sendMessage("Select a relic first.");
-    return true;
-  }
-  const state = progress(player);
-  if (state.pendingRelicMilestone === null) {
-    player.sendMessage("You do not have an unclaimed relic milestone.");
     return true;
   }
   if (at.tier !== state.pendingRelicTier) {
@@ -790,5 +801,8 @@ function attach(pluginApi) {
 module.exports = {
   attach,
   refreshPanel,
-  _test: { STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas, openRelics, relicCostOverrides, relicClaimedPoints, RELIC_CLOSE },
+  _test: {
+    STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas,
+    openRelics, relicCostOverrides, relicClaimedPoints, relicClose, relicConfirm, slotToRelic, RELIC_CLOSE,
+  },
 };

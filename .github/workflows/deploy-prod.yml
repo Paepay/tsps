@@ -5,11 +5,14 @@ name: Deploy prod
 # Do not remove those guards or point this workflow at the upstream repo.
 #
 # Behaviour:
-#   - push to prod → update the shared checkout + yarn install/build only (no restart;
-#     live processes keep the previous build until the next weekly/manual restart)
-#   - Wednesdays 03:00 America/New_York → pull latest origin/prod, build, restart
-#     every configured / active PaeScape world unit via systemctl --user
-#   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run)
+#   - push to prod → update the shared checkout + yarn install/build only. Never
+#     restarts a live world: running processes keep the previous build.
+#   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run).
+#     A restart asks the Official world for its five-minute counted restart, which
+#     warns, logs out and saves players before systemd starts the replacement.
+#     Community worlds (the Level-Up world) are never restarted by this workflow;
+#     their owner restarts them from the platform dashboard so they get the same
+#     five-minute timer.
 #
 # Worlds (tsps, paescape-level-up, paescape-official, …) must share WorkingDirectory
 # `$VPS_PATH/server` with their own EnvironmentFile. One build updates every world;
@@ -22,9 +25,7 @@ name: Deploy prod
 #                    Prefer this over VPS_SSH_KEY — multiline PEM secrets often break.
 #   VPS_SSH_KEY      Fallback: raw private key PEM (avoid if possible)
 #   VPS_PATH         Absolute checkout path, e.g. /home/user/apps/tsps
-#   VPS_SERVICE      user-systemd unit name(s), space-separated, e.g. tsps
-#                    (restarted via systemctl --user on weekly/manual restart only;
-#                    enabled/active paescape-*.service units are included automatically)
+#   VPS_SERVICE      optional, retained for older deployments; no longer restarted.
 #
 # One-time VPS setup:
 #   1. Generate a keypair for Actions; add the public key to ~/.ssh/authorized_keys
@@ -39,20 +40,16 @@ name: Deploy prod
 on:
     push:
         branches: [prod]
-    # Both UTC slots; the job keeps only the run that is 03:00 Eastern.
-    schedule:
-        - cron: "0 7 * * 3"
-        - cron: "0 8 * * 3"
     workflow_dispatch:
         inputs:
             mode:
-                description: Update code, restart servers, or both
+                description: Update code, request the five-minute restart, or both
                 type: choice
                 options:
                     - update
                     - restart
                     - update-and-restart
-                default: update-and-restart
+                default: update
 
 permissions:
     contents: read
@@ -82,20 +79,6 @@ jobs:
                   event="${{ github.event_name }}"
                   mode="${{ github.event.inputs.mode || '' }}"
 
-                  if [ "$event" = schedule ]; then
-                      eastern="$(TZ=America/New_York date +%u-%H)"
-                      if [ "$eastern" != 3-03 ]; then
-                          echo "Scheduled run at UTC $(date -u +%H:%M); Eastern is $(TZ=America/New_York date). Skipping."
-                          echo "run=false" >> "$GITHUB_OUTPUT"
-                          exit 0
-                      fi
-                      echo "do_update=true" >> "$GITHUB_OUTPUT"
-                      echo "do_restart=true" >> "$GITHUB_OUTPUT"
-                      echo "deploy_sha=" >> "$GITHUB_OUTPUT"
-                      echo "run=true" >> "$GITHUB_OUTPUT"
-                      exit 0
-                  fi
-
                   if [ "$event" = workflow_dispatch ]; then
                       case "$mode" in
                           update)
@@ -120,7 +103,7 @@ jobs:
                       exit 0
                   fi
 
-                  # push to prod: ship code only; weekly/manual restart picks it up
+                  # push to prod: ship code only; a counted restart picks it up later
                   echo "do_update=true" >> "$GITHUB_OUTPUT"
                   echo "do_restart=false" >> "$GITHUB_OUTPUT"
                   echo "deploy_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
@@ -134,7 +117,6 @@ jobs:
                   VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
                   VPS_SSH_KEY_B64: ${{ secrets.VPS_SSH_KEY_B64 }}
                   VPS_PATH: ${{ secrets.VPS_PATH }}
-                  VPS_SERVICE: ${{ secrets.VPS_SERVICE }}
                   DEPLOY_SHA: ${{ steps.plan.outputs.deploy_sha }}
                   DO_UPDATE: ${{ steps.plan.outputs.do_update }}
                   DO_RESTART: ${{ steps.plan.outputs.do_restart }}
@@ -144,9 +126,7 @@ jobs:
                   VPS_HOST=$(printf '%s' "$VPS_HOST" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                   VPS_USER=$(printf '%s' "$VPS_USER" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                   VPS_PATH=$(printf '%s' "$VPS_PATH" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                  VPS_SERVICE=$(printf '%s' "$VPS_SERVICE" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-
-                  for required in VPS_HOST VPS_USER VPS_PATH VPS_SERVICE; do
+                  for required in VPS_HOST VPS_USER VPS_PATH; do
                       eval "value=\${$required:-}"
                       if [ -z "$value" ]; then
                           echo "Missing secret: $required" >&2
@@ -187,7 +167,6 @@ jobs:
                       env \
                       DEPLOY_SHA="$DEPLOY_SHA" \
                       VPS_PATH="$VPS_PATH" \
-                      VPS_SERVICE="$VPS_SERVICE" \
                       DO_UPDATE="$DO_UPDATE" \
                       DO_RESTART="$DO_RESTART" \
                       bash -s <<'REMOTE'
@@ -217,32 +196,22 @@ jobs:
                   fi
 
                   if [ "$DO_RESTART" = true ]; then
-                      # VPS_SERVICE plus every enabled/active hosted world unit.
-                      services=""
-                      for service in $VPS_SERVICE; do
-                          case " $services " in
-                              *" $service "*) ;;
-                              *) services="$services $service" ;;
-                          esac
-                      done
-                      for unit in "$HOME"/.config/systemd/user/paescape-*.service; do
-                          [ -f "$unit" ] || continue
-                          name=$(basename "$unit" .service)
-                          if systemctl --user is-enabled "$name" >/dev/null 2>&1 \
-                              || systemctl --user is-active "$name" >/dev/null 2>&1; then
-                              case " $services " in
-                                  *" $name "*) ;;
-                                  *) services="$services $name" ;;
-                              esac
-                          fi
-                      done
-                      for service in $services; do
-                          systemctl --user restart "$service"
-                          active=$(systemctl --user is-active "$service")
-                          echo "Restarted $service; status=$active"
-                          test "$active" = active
-                      done
+                      # Never signal a live world here. The operator CLI asks the platform
+                      # for the fixed five-minute counted restart, so players are warned,
+                      # logged out and saved before systemd replaces the process.
+                      operator=""
+                      if [ -x /usr/local/bin/paescape-official ]; then
+                          operator=/usr/local/bin/paescape-official
+                      elif [ -x "$VPS_PATH/server/deploy/paescape-official" ]; then
+                          operator="$VPS_PATH/server/deploy/paescape-official"
+                      fi
+                      if [ -z "$operator" ]; then
+                          echo "paescape-official was not found; refusing to hard-restart the official world" >&2
+                          exit 1
+                      fi
+                      "$operator" restart
+                      echo "Official world five-minute restart requested; community worlds stay untouched until their owner restarts them from the dashboard"
                   else
-                      echo "Skipped restart (shared build is on disk; live processes load it on the next weekly/manual restart)"
+                      echo "Skipped restart (shared build is on disk; live worlds pick it up on their five-minute counted restart)"
                   fi
                   REMOTE

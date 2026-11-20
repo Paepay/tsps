@@ -185,6 +185,10 @@ class LoginSession {
       // namespace), or a name a live player (a bot) shows for another account, though never saved.
       // A name this account deleted comes back to it.
       const nameKey = DisplayNames.key(name);
+      if (DisplayNames.isReserved(nameKey)) {
+        this.send(encodeCharacterResult(false, 1, "That name is not available."));
+        return;
+      }
       if (Accounts.isDeleted(nameKey) && !Accounts.deletedBy(nameKey, pending.account)) {
         this.send(encodeCharacterResult(false, 1, "That name belonged to a deleted character and can't be used again."));
         return;

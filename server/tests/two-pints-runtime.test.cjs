@@ -106,6 +106,25 @@ test("production claim callback stops after inventory space disappears", () => {
   assert.equal(p.getInventory().contains(13145), false);
 });
 
+test("a synthetically completed diary claims its unique item but not its lamp", () => {
+  const p = player();
+  const diary = Data.BY_KEY.get("ardougne");
+  const [item, lamp] = diary.tiers.easy.rewardItems;
+  api.onCustomEvent("diary:rewards-unrestricted", (request) => {
+    if (request.player !== p) return;
+    request.unrestricted = true;
+    request.includeXpLamps = false;
+  });
+
+  complete(p, diary, "easy");
+  assert.equal(talk(p), true);
+  advance(p, 3);
+
+  assert.equal(Progress.claimedTiers(p, diary).has("easy"), true, "the tier and its perks are claimed");
+  assert.equal(p.getInventory().contains(item), true, "the unique diary item is granted");
+  assert.equal(p.getInventory().contains(lamp), false, "the antique lamp is withheld");
+});
+
 test("reset and recompletion invalidate a reward callback from the earlier completion", () => {
   const p = player();
   const diary = Data.BY_KEY.get("ardougne");

@@ -58,7 +58,12 @@ function on(player, rowName) {
 }
 
 function inLeague(player) {
-  return [].concat(config.league).includes(Common.leagueOf(player));
+  if (!Common.relicsEnabled()) return false;
+  const type = Common.leagueOf(player);
+  if (type === null) return false;
+  // A world catalog may place a Demonic Pacts relic in any base league; its toggle rows and
+  // varp still belong to the relic, not to the world's season.
+  return [].concat(config.league).includes(type) || Common.isCustomCatalog(type);
 }
 
 function send(player) {
@@ -73,7 +78,9 @@ function toggled(event) {
   const found = Number.isInteger(rowId) ? row(rowId) : null;
   const bit = found?.int(resolve().bit, -1) ?? -1;
   const relicName = found ? String(Common.core.CacheDefinitions.getStructParams(found.int(resolve().relic, -1)).get(Common.data.params.relicName) ?? "") : "";
-  if (!found || bit < 0 || bit > 31 || !relicName || !Common.hasRelic(player, Common.slug(relicName))) {
+  // These rows belong to Demonic Pacts' relics: the same key in another source league has its
+  // own, untoggleable rule and must not flip this varp.
+  if (!found || bit < 0 || bit > 31 || !relicName || !Common.hasRelic(player, Common.slug(relicName), 6)) {
     send(player);
     return true;
   }

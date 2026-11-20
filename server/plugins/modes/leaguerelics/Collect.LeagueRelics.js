@@ -10,12 +10,25 @@
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
 
-/** The relics the character holds: one a chosen tier, and Reloaded's extra pick. */
+/**
+ * Level-Up's stored relic list. Older saves kept only this list; the tutor still reclaims what
+ * the character earned before `league:relics` held their picks.
+ */
+function levelUpRelics(player, type) {
+  const query = { player };
+  Common.api.emitCustomEvent("level-up:progress", query);
+  if (query.active !== true || !Array.isArray(query.progress?.relics)) return [];
+  return query.progress.relics.map(({ id }) => Common.relicBySlug(type, id)).filter(Boolean);
+}
+
+/** The relics the character holds: one a chosen tier, Reloaded's extra pick and Level-Up's list. */
 function heldRelics(player, type) {
+  if (!Common.relicsEnabled()) return [];
   const held = Object.entries(Common.chosen(player)).map(([tier, slot]) => Common.relic(type, Number(tier), slot));
   const extra = Common.reloadedPick(player, type);
   if (extra) held.push(extra);
-  return held.filter(Boolean);
+  held.push(...levelUpRelics(player, type));
+  return held.filter(Boolean).filter((relic, index, all) => all.findIndex((other) => other.key === relic.key) === index);
 }
 
 /** Carried, worn or banked; a bank placeholder (amount 0) isn't owning it. */
@@ -34,9 +47,9 @@ function tutorCollectIds(type) {
 /** The relic items the character owns none of, each once. */
 function owed(player, type) {
   const ids = heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic));
-  // Trailblazer Reloaded tier 3 passive: the Crystal of memories (cache name Crystal of Echoes).
+  // The Crystal of memories passive, wherever the world assigned it (cache name Crystal of Echoes).
   const crystal = Common.data.effects.crystalOfMemories;
-  if (crystal && [].concat(crystal.league).includes(type) && Common.highestTier(player) + 1 >= crystal.fromTier) {
+  if (Common.activePassiveValues(player, "crystalOfMemories").length > 0) {
     const id = Common.core.ItemIdentifiers[crystal.item];
     if (Number.isInteger(id)) ids.push(id);
   }
