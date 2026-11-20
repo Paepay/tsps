@@ -174,6 +174,7 @@ module.exports = function registerDesertTreasureIQuest(api) {
   const SHADOW_DIAMOND = ItemIdentifiers.SHADOW_DIAMOND;
   const GILDED_CROSS = ItemIdentifiers.GILDED_CROSS;
   const ANCIENT_STAFF = ItemIdentifiers.ANCIENT_STAFF;
+  const ANCIENT_STAFF_PRICE = 80_000;
   const BANDITS_BREW = ItemIdentifiers.BANDITS_BREW;
   const WARM_KEY = ItemIdentifiers.WARM_KEY;
   const SILVER_BAR = ItemIdentifiers.SILVER_BAR;
@@ -609,6 +610,17 @@ module.exports = function registerDesertTreasureIQuest(api) {
     if (!DIALOGUE_NPC_IDS.has(npcId)) return null;
     const value = String(text).toLowerCase();
     if (value.includes("without the required skill levels")) return !meetsPrerequisites(player);
+    if (EBLIS_IDS.has(npcId) && quest.getStage(player) >= STAGE_COMPLETE) {
+      // The dump carries two variants of the post-quest offer, one with the price and one without.
+      if (value.includes("doesn't have enough gold") || value.includes("does not have enough gold")) {
+        return !has(player, COINS, ANCIENT_STAFF_PRICE);
+      }
+      if (value.includes("has enough gold to purchase")) return has(player, COINS, ANCIENT_STAFF_PRICE);
+      if (value.includes("80,000")) {
+        if (value.includes("does not have") || value.includes("doesn't have")) return !has(player, COINS, ANCIENT_STAFF_PRICE);
+        return has(player, COINS, ANCIENT_STAFF_PRICE);
+      }
+    }
     if (value.includes("650 coins")) {
       if (value.includes("doesn't")) return !has(player, COINS, 650);
       return has(player, COINS, 650);
@@ -687,15 +699,41 @@ module.exports = function registerDesertTreasureIQuest(api) {
   }
 
   /** A transcript condition was chosen: run the hand-in it represents. */
+  /** Hands over the ancient staff and takes the coins; false when the purchase cannot happen. */
+  function buyAncientStaff(player) {
+    if (!has(player, COINS, ANCIENT_STAFF_PRICE)) {
+      player.sendMessage("You need 80,000 coins to buy the ancient staff.");
+      return false;
+    }
+    if (player.getInventory().getFreeSlots() < 1) {
+      player.sendMessage("You need a free inventory slot to carry the ancient staff.");
+      return false;
+    }
+    take(player, COINS, ANCIENT_STAFF_PRICE);
+    give(player, ANCIENT_STAFF);
+    player.sendMessage("Eblis hands you an ancient staff.");
+    return true;
+  }
+
   function handleCondition({ player, npcId, text }) {
     if (npcId === TERRY_NPC_ID && /has the etchings/i.test(String(text ?? ""))) {
       take(player, ETCHINGS);
       return;
     }
+    // The first post-quest variant has no receive step, so the choice itself buys the staff.
+    if (EBLIS_IDS.has(npcId) && quest.getStage(player) >= STAGE_COMPLETE
+      && /has enough gold to purchase/i.test(String(text ?? ""))) {
+      buyAncientStaff(player);
+    }
   }
 
   function handleAction(actionEvent) {
     const { player, npcId, stepId } = actionEvent;
+    if (stepId === "J_39m0") {
+      if (quest.getStage(player) >= STAGE_COMPLETE) buyAncientStaff(player);
+      actionEvent.handled = true;
+      return;
+    }
     if (stepId === "aHOat3") {
       if (has(player, COMPLETE_POT)) take(player, COMPLETE_POT);
       spawnDessous(player);
