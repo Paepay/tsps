@@ -284,6 +284,10 @@ function hesporiLoot(event) {
     const anima = ["Attas seed", "Iasor seed", "Kronos seed"].map(Data.itemId);
     const loot = event.drops.filter((d) => !anima.includes(d.itemId) && d.itemId !== Data.itemId("Tangleroot"));
     loot.push({ itemId: anima[Math.floor(Math.random() * anima.length)], amount: 1 + Math.floor(Math.random() * 2) });
+    // The collection log reads this list in a microtask after the roll, so replace its contents
+    // with the final loot; otherwise it logs the anima seed the table rolled and we discarded.
+    event.drops.length = 0;
+    event.drops.push(...loot);
     Patches.stateFor(fight.player, fight.patch).hesporiLoot = loot.map(({ itemId, amount, noted }) => ({
         itemId: noted && core.CacheDefinitions.getItem(itemId).note >= 0 ? core.CacheDefinitions.getItem(itemId).note : itemId,
         amount,
