@@ -1154,7 +1154,8 @@ Animal Wrangler's Hunter and cooking ones) do not.
   temples, Underground Pass) are plain altars here.
 - **Farmer's Fortune** (Trailblazer Reloaded tier 6): a 20% chance to keep the seed or sapling
   planted (with its pot, and no Amulet of bounty charge; the message is ours), patches, including the Tithe Farm's, grown the moment they are planted and never
-  diseased (`farming:plant-rules`; anima plants still grow, their last stage is their end),
+  diseased (`farming:plant-rules`; an anima plant becomes fully grown at once and keeps the
+  final 640-minute stage of its life before dying),
   harvesting 25 times faster (25 picks an action, `farming:harvests-per-action`), and each pick
   three times the produce, noted (`farming:pick`; the herb sack takes only unnoted herbs, so these
   go to the inventory). The usual Farming XP a pick, not tripled: ours, the Wiki gives no XP rule.
