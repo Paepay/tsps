@@ -201,6 +201,7 @@ async function main(): Promise<void> {
         registerCustomInterface: (definition: any) => { commandsDefinition = definition; },
         registerCommand() {},
         onCustomEvent() {},
+        core: { PlayerRights: { NONE: 0 } },
     });
     setCustomInterface(commandsDefinition);
     for (const widget of commandsDefinition.widgets) {
@@ -463,6 +464,38 @@ async function main(): Promise<void> {
         assert.equal(scrollView.scrollHeight, 500, "invalid dynamic heights use the declared fallback");
     }
     runtime.onInterfaceClosed(SCROLL_GROUP);
+
+    // A tabbed catalog without a search box still parses and draws its rows.
+    const CATALOG_GROUP = 30013;
+    const catalogUid = (component: number) => (CATALOG_GROUP << 16) | component;
+    setCustomInterface({
+        groupId: CATALOG_GROUP,
+        widgets: [{ uid: catalogUid(0), parentUid: -1 }],
+        dataComponent: 2,
+        list: {
+            viewComponent: 3, slotCount: 2, columns: 1, rowHeight: 20,
+            iconStart: 10, labelStart: 20, backgroundStart: 30, itemLabel: "%name", clickable: true,
+        },
+        tabs: {
+            components: [50, 51], labelComponents: [60, 61], labels: ["Active", "All"],
+            activeTemplate: "<col=ffffff>%s</col>", inactiveTemplate: "<col=ffd27f>%s</col>",
+            layoutComponent: 4,
+        },
+    });
+    for (const component of [2, 3, 4, 10, 11, 20, 21, 30, 31, 50, 51, 60, 61]) {
+        widgets.set(catalogUid(component), { uid: catalogUid(component), width: 200, height: 60, scrollY: 0 });
+    }
+    runtime.onInterfaceOpened(CATALOG_GROUP);
+    runtime.handleSetText(catalogUid(2), JSON.stringify([
+        { id: 1, name: "Berserker" },
+        { id: 2, name: "Endless Harvest" },
+    ]));
+    runtime.handleSetText(catalogUid(4), JSON.stringify({ active: 0, tabs: [[1], [1, 2]] }));
+    assert.equal(widgets.get(catalogUid(20)).text, "Berserker", "rows draw with no search declaration");
+    assert.equal(widgets.get(catalogUid(21)).hidden, true, "the active tab only shows its rows");
+    runtime.handleWidgetOp(CATALOG_GROUP, 51);
+    assert.equal(widgets.get(catalogUid(21)).text, "Endless Harvest", "tab clicks still switch the catalog");
+    runtime.onInterfaceClosed(CATALOG_GROUP);
 
     console.log("custom-interface-runtime.test.ts: all tests passed");
 }

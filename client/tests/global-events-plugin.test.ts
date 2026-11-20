@@ -1,7 +1,8 @@
 ﻿import { strict as assert } from "node:assert";
 import { GameState } from "@runelite/api/GameState";
 import { GameStateChanged, PluginMessage } from "@runelite/api/events";
-import { GlobalEventsPlugin } from "../game/plugins/globalevents/GlobalEventsPlugin";
+import { OverlayPosition } from "@runelite/client/ui/overlay/OverlayPosition";
+import { GlobalEventsPlugin, HUD_ITEM_ID } from "../game/plugins/globalevents/GlobalEventsPlugin";
 
 const client: any = { isLoggedIn: () => true };
 const plugin = new GlobalEventsPlugin(client);
@@ -11,6 +12,9 @@ const plugin = new GlobalEventsPlugin(client);
 const overlay = (plugin as any).widgetOverlay;
 assert.ok(overlay.movable, "the HUD icon must be a movable overlay");
 assert.equal(overlay.movable.name, "GlobalEvents");
+assert.equal(overlay.movable.position, OverlayPosition.BELOW_SPECIAL_ATTACK,
+    "the icon sits just under the special-attack orb");
+assert.equal(HUD_ITEM_ID, 1042, "the HUD icon is a blue partyhat, not the event's item");
 
 // The server sends state once on login; the client is still CONNECTING/LOADING_GAME at that
 // point, so those transitions must not discard it (Paepay/tsps#65 follow-up).

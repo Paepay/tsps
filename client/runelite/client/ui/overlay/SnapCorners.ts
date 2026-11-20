@@ -24,6 +24,8 @@ export type HudFrame = {
     /** Not the fixed-size layout. */
     resized: boolean;
     combatStatus?: { right: number; top: number; rowHeight: number; mobile: boolean; scaleX: number; scaleY: number };
+    /** The special-attack orb, when it is drawn. */
+    specialAttack?: Rect;
 };
 
 export const OriginX = { LEFT: "LEFT", CENTER: "CENTER", RIGHT: "RIGHT" } as const;
@@ -94,6 +96,13 @@ const CORNERS: CornerDef[] = [
         mode: ALIGNMENT_RIGHT | EXPAND_DOWN,
         point: ({ combatStatus, hud, scaleX, scaleY }) =>
             [combatStatus?.right ?? hud.x + hud.w - BORDER * scaleX, combatStatus?.top ?? (BORDER + MOUSEOVERTEXT_OFFSET) * scaleY],
+    },
+    {
+        position: OverlayPosition.BELOW_SPECIAL_ATTACK,
+        mode: ALIGNMENT_CENTER_HORIZONTAL | EXPAND_DOWN,
+        point: ({ specialAttack, hud, scaleX, scaleY }) => specialAttack
+            ? [specialAttack.x + specialAttack.w / 2, specialAttack.y + specialAttack.h + 2 * scaleY]
+            : [hud.x + hud.w - BORDER * scaleX, (BORDER + MOUSEOVERTEXT_OFFSET) * scaleY],
     },
 ];
 
