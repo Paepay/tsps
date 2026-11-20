@@ -30,6 +30,8 @@ const WALK_OVER_MAX_TICKS = 2;
 const DOOR_NAMES = new Set([
   "Door", "Doors", "Large door", "Large doors", "Castle door", "Cell Door", "Cell door",
   "Glass door", "Magic door", "Magic guild door", "Metal door", "Mind Door", "Mithril door", "Tent door", "Wall",
+  // Tai Bwo Wannai's huntsman huts, including Tiadeche's (open leaf 780 has no actions).
+  "Bamboo Door",
   // The Ranging Guild's entrance (11665, diagonal, Open only). Its 40 Ranged gate is
   // areas/RangingGuild.plugin.js; this only swings the leaf.
   "Guild door",
@@ -900,6 +902,8 @@ function defineDoorData({ ObjectIdentifiers: O }) {
   // colour door and the exit doors (ticks 2109-2688), crossed both ways with the leaf always on the
   // same side. The quest's key rules run before this (door:toggle) and open them through door:open.
   PASS_THROUGH_FAMILIES = new Map([
+    // Tiadeche's and the other Tai Bwo Wannai huntsman huts: open 780 is the actionless same-model leaf.
+    [O.BAMBOO_DOOR, { open: 780 }],
     // Same guide 7:15.37-7:16.50: the Baxtorian doors close behind the walking player.
     [O.DOOR_48, { open: NAMELESS_DOOR_LEAF_IDS.DOOR_48_OPEN }],
     [O.DOOR_91, { open: NAMELESS_DOOR_LEAF_IDS.MELZAR_DOOR_OPEN }],

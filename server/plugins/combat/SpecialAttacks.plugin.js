@@ -89,6 +89,7 @@ module.exports = {
     require("./specials/TonalzticsOfRalos.SpecialAttack")(api);
     require("./specials/ToxicBlowpipe.SpecialAttack")(api);
     require("./specials/ToxicStaffOfTheDead.SpecialAttack")(api);
+    require("./specials/UrsineChainmace.SpecialAttack")(api);
     require("./specials/VestasLongsword.SpecialAttack")(api);
     require("./specials/VestasLongswordBh.SpecialAttack")(api);
     require("./specials/VestasSpearBh.SpecialAttack")(api);

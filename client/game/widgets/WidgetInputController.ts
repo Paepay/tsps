@@ -60,7 +60,17 @@ export class WidgetInputController {
 
     handleConstructionKeyboardInput(): void {
         const input = this.deps.getInputManager();
-        if (processConstructionKeyboardInput(this.deps, input, this.deps.getWidgetManager())) {
+        const widgetManager = this.deps.getWidgetManager();
+        // A capture-phase key arrives outside the normal frame build. The build menu only needs
+        // its root trees and static-child lookup to dispatch script 8184's furniture hotkeys.
+        const frame = {
+            allRoots: widgetManager.getInputRoots(),
+            visibleMap: new Map<number, boolean>(),
+            getStaticChildren: (uid: number) => widgetManager.getStaticChildrenByParentUid(uid),
+            mx: input.mouseX,
+            my: input.mouseY,
+        };
+        if (processConstructionKeyboardInput(this.deps, input, widgetManager, frame)) {
             input.keyEvents.length = 0;
         }
     }

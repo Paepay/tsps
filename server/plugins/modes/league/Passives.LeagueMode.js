@@ -147,6 +147,18 @@ function minigamePoints(request) {
   if (multiplier) request.points = Math.floor(request.points * multiplier);
 }
 
+/**
+ * `minigame:yield` { player, minigame, amount }: the items a minigame the passive lists is about
+ * to award, multiplied by the same tier as its points (the Tithe Farm's fruit).
+ */
+function minigameYield(request) {
+  if (!request?.player || !(request.amount > 0)) return;
+  const entry = passive(request.player, "minigamePoints");
+  if (!entry?.minigames?.includes(request.minigame)) return;
+  const multiplier = tierValue(request.player, "minigamePoints");
+  if (multiplier) request.amount = Math.floor(request.amount * multiplier);
+}
+
 /** `slayer:task-reward` { player, master, freeTasks, multiplier }: 5x task points, from the first task. */
 function slayerTaskReward(request) {
   const slayer = request?.player ? passive(request.player, "slayer") : null;
@@ -215,6 +227,7 @@ module.exports = function attach(api) {
   api.registerRunEnergyDrainModifier(runEnergyDrain);
   api.onCanGainExperience(combatExperience);
   api.onCustomEvent("minigame:points", minigamePoints);
+  api.onCustomEvent("minigame:yield", minigameYield);
   api.onCustomEvent("slayer:task-reward", slayerTaskReward);
   api.onCustomEvent("slayer:superior-spawn", superiorSpawn);
   api.onCustomEvent("treasure-trails:scroll-boxes", scrollBoxes);

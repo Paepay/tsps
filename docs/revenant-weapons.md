@@ -28,7 +28,9 @@
 ## Death
 Dying to a player in the Wilderness drops all the ether to the killer even when the weapon is protected, and the weapon comes back uncharged.
 
+## Bear Down
+The Ursine chainmace's special attack (Wiki: Ursine chainmace). It needs the charged mace and 50% special energy. Accuracy is doubled and rolled against the target's slash defence. On a successful hit it deals 20 damage over 6 seconds in five red hits of 4, drains 20 Agility and stops the target running for 6 ticks (3.6 seconds). `server/plugins/combat/specials/UrsineChainmace.SpecialAttack.js`.
+
 ## Not covered
-- The Ursine chainmace's special attack, Bear Down: it needs a charged mace, 50% energy, doubled accuracy against slash defence, 20 damage over 6 seconds, a 6-tick run block and 20 Agility drained (Wiki: Ursine chainmace). Not implemented.
 - The bank's Configure-Charges option.
 - Deaths to monsters in the Wilderness: the existing Webweaver bow rule (killed by a player) is followed.

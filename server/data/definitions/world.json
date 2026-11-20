@@ -31,6 +31,7 @@
     { "_description": "Skeletal Tomb, Calvar'ion's lair (Wilderness level 21, singles-plus)", "minX": 1856, "maxX": 1919, "minY": 11520, "maxY": 11583, "z": 1, "tags": ["pvp"] },
     { "_description": "Web Chasm, Spindel's lair (Wilderness level 29, singles-plus)", "minX": 1600, "maxX": 1663, "minY": 11520, "maxY": 11583, "z": 2, "tags": ["pvp"] },
     { "_description": "Scorpia's cave beneath the Scorpion Pit (Wilderness level 50+, multi-combat like the pit)", "minX": 3212, "maxX": 3262, "minY": 10324, "maxY": 10360, "z": 0, "tags": ["pvp", "multi-combat"] },
+    { "_description": "Wyvern Cave, Fossil Island (Ammonite Crabs, multi-combat)", "minX": 3592, "maxX": 3644, "minY": 10259, "maxY": 10299, "z": 0, "tags": ["multi-combat"] },
     { "_description": "Fossil Island multicombat (Wiki map revision 15119386)", "minX": 3799, "maxX": 3799, "minY": 3749, "maxY": 3749, "z": 0, "tags": ["multi-combat"] },
     { "_description": "Fossil Island multicombat (Wiki map revision 15119386)", "minX": 3799, "maxX": 3800, "minY": 3750, "maxY": 3751, "z": 0, "tags": ["multi-combat"] },
     { "_description": "Fossil Island multicombat (Wiki map revision 15119386)", "minX": 3799, "maxX": 3801, "minY": 3752, "maxY": 3752, "z": 0, "tags": ["multi-combat"] },

@@ -3,7 +3,16 @@ const { test } = require("node:test");
 const { Server } = require("../dist/Server");
 Server.installProductionPathResolver();
 const { ContentApi } = require("../dist/net/http/ContentApi");
+const { getWorldDefinition } = require("../dist/game/definition/WorldDefinition");
 const plugin = require("../plugins/world/MultiCombatApi.plugin");
+
+test("the Fossil Island Wyvern Cave is multi-combat", () => {
+  const zone = getWorldDefinition().zones.find((entry) => entry.tags.includes("multi-combat")
+    && (entry.z ?? 0) === 0
+    && entry.minX <= 3592 && entry.maxX >= 3644
+    && entry.minY <= 10259 && entry.maxY >= 10299);
+  assert.ok(zone, "Ammonite Crabs stay multi-combat in the Wyvern Cave");
+});
 
 test("production exposes only gameplay multicombat bounds through the content API", (t) => {
   const previous = Server.PRODUCTION;

@@ -13,6 +13,9 @@ const COMBAT_CHARGE_TICKS = 90;
 const VENOM_SEVERITY = 6;
 const CHARGES_META_KEY = "serpentine-helm";
 const COMBAT_CHARGE_TICK_ATTRIBUTE = "serpentine:combat-charge-tick";
+const CRAFTING_LEVEL = 52;
+const CRAFTING_XP = 120;
+const CHISEL_ANIMATION = 3102;
 
 let core = null;
 let chargedIds = new Set();
@@ -177,6 +180,34 @@ function uncharge({ player, item }) {
   return true;
 }
 
+/** Chisel a serpentine visage into an uncharged serpentine helm (Crafting 52, 120 XP). */
+function craftUncharged(event) {
+  const { player, usedItemId, usedWithItemId } = event;
+  const I = core.ItemIdentifiers;
+  const visages = new Set([I.SERPENTINE_VISAGE, I.SERPENTINE_VISAGE_2]);
+  const visageId = visages.has(usedItemId) ? usedItemId : visages.has(usedWithItemId) ? usedWithItemId : null;
+  const otherId = visageId === usedItemId ? usedWithItemId : usedItemId;
+  const chisels = new Set([I.CHISEL, I.CHISEL_2, I.CHISEL_3, I.CHISEL_4, I.CHISEL_5, I.JEWELLERS_CHISEL, I.JEWELLERS_CHISEL_2]);
+  if (visageId === null || !chisels.has(otherId)) return;
+  if (player.getSkillManager().getCurrentLevel(core.Skill.CRAFTING) < CRAFTING_LEVEL) {
+    player.sendMessage(`You need a Crafting level of ${CRAFTING_LEVEL} to chisel a serpentine visage.`);
+    event.handled = true;
+    return;
+  }
+  const inventory = player.getInventory();
+  if (inventory.getAddableAmount(new core.Item(I.SERPENTINE_HELM_UNCHARGED_, 1)) < 1) {
+    player.sendMessage("You need a free inventory slot to chisel the serpentine visage.");
+    event.handled = true;
+    return;
+  }
+  inventory.deleteNumber(visageId, 1);
+  inventory.adds(I.SERPENTINE_HELM_UNCHARGED_, 1);
+  player.performAnimation(new core.Animation(CHISEL_ANIMATION));
+  player.getSkillManager().addExperiences(core.Skill.CRAFTING, CRAFTING_XP);
+  player.sendMessage("You chisel the serpentine visage into a serpentine helm.");
+  event.handled = true;
+}
+
 function processPlayer({ player }) {
   if (!player?.isPlayerBot?.()) processUpkeep(player);
 }
@@ -198,6 +229,7 @@ function attach(api) {
     api.onItemOnItem("Zulrah's scales", name, chargeHelm, { noted: false });
     api.onItemOnItem("Zulrah's scales", `${name} (uncharged)`, chargeHelm, { noted: false });
   }
+  api.onItemOnItem("Chisel", "Serpentine visage", craftUncharged, { noted: false });
   api.onCombatHitResolved(onHitResolved);
   api.onCustomEvent("serpentine-helm:protection", protectionQuery);
   api.onPlayerProcess(processPlayer);
@@ -207,7 +239,7 @@ module.exports = {
   name: "SerpentineHelm",
   description: "Charges the serpentine helm with Zulrah's scales for poison and venom immunity and a chance to envenom targets, spending scales in combat.",
   members: true,
-  _test: { charges, wornHelm, processUpkeep, venomChance, onHitResolved, chargeHelm, uncharge, MAX_CHARGES },
+  _test: { charges, wornHelm, processUpkeep, venomChance, onHitResolved, chargeHelm, uncharge, craftUncharged, MAX_CHARGES },
   register(api) {
     attach(api);
   },
