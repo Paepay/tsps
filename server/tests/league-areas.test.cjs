@@ -243,6 +243,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Kourend Castle", 1620, 3660, KOUREND], ["Mount Karuulm", 1310, 3830, KOUREND],
     ["Civitas illa Fortis", 1700, 3140, VARLAMORE], ["Aldarin", 1400, 2950, VARLAMORE],
     ["Death's Office", 3176, 5726, null], ["the rune essence mine", 2910, 4830, null], ["Tutorial Island", 3094, 3107, null],
+    ["the Tears of Guthix cave", 3245, 9500, MISTHALIN], ["the Lumbridge Swamp Caves", 3170, 9570, MISTHALIN],
   ];
   for (const [name, x, y, expected] of landmarks) {
     assert.equal(areaAt(x, y), expected, `${name} (${x}, ${y})`);
