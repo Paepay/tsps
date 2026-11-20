@@ -793,6 +793,15 @@ module.exports = function registerGreatBrainRobberyQuest(api) {
       startTranscript(api, player, MIGOR_CHAT_ID, PAGE, "confronting-mi-gor");
       return;
     }
+    // The post-quest right-click Transport carries the player either way; the quest's own
+    // dialogue takes them while it is running.
+    if (TRANQUILITY_NPC_IDS.has(npcId) && action === "Transport") {
+      if (quest.getStage(player) < STAGE_COMPLETE) return;
+      event.handled = true;
+      const atHarmony = nearLocation(event.location, TRANQUILITY_TILES.tranquilityHarmony, 12);
+      teleport(player, atHarmony ? MOS_TILE : HARMONY_TILE);
+      return;
+    }
     if (action !== "Talk-to") return;
     if (TRANQUILITY_NPC_IDS.has(npcId)) {
       event.handled = true;
