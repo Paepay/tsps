@@ -599,6 +599,87 @@ test("Trailblazer Reloaded's Trickster grants Sage's greaves and the Leagues Tut
   assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Leagues Tutor.");
 });
 
+test("Trailblazer Reloaded's Guardian grants the guardian horn and the Leagues Tutor reclaims it", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I, ItemDefinition } = core;
+  const relic = Common.relic(4, 7, 3);
+  assert.equal(relic.key, "guardian");
+  assert.deepEqual(Unlock.grantedItems(relic), [I.GUARDIAN_HORN]);
+  assert.equal(relic.requiresBank, true, "Trailblazer Reloaded's item relics unlock in a bank");
+  assert.equal(relic._missing, undefined, "the horn is in this cache now");
+  const horn = ItemDefinition.forId(I.GUARDIAN_HORN);
+  assert.deepEqual([horn.getName(), horn.getExamine(), horn.isTradeable(), horn.isDropable()], [
+    "Guardian horn", "A horn to call your loyal guardian.", false, false,
+  ]);
+
+  const denied = relicCharacter("guardian-denied", 4);
+  givePoints(denied, 24000);
+  assert.equal(Unlock.refusal(denied, 4, 7, 3, false), "needsBank");
+  assert.equal(Unlock.unlock(denied, 7, 3), false);
+  assert.equal(denied.getInventory().contains(I.GUARDIAN_HORN), false);
+
+  const player = relicCharacter("guardian-grant", 4);
+  givePoints(player, 24000);
+  assert.equal(Unlock.unlock(player, 7, 3, { bankOpen: true }), true);
+  assert.equal(player.getInventory().contains(I.GUARDIAN_HORN), true, "the horn lands in the inventory");
+  const guardianRow = dataset(player, "structOverrides").find((row) => row.params?.[879] === "Guardian");
+  assert.equal(guardianRow.params[1855], 1, "the client draws Guardian as an item relic");
+  assert.equal(Collect.owed(player, 4).includes(I.GUARDIAN_HORN), false, "the granted horn is owned");
+  player.getInventory().delete(I.GUARDIAN_HORN, 1);
+  assert.equal(Collect.owed(player, 4).filter((id) => id === I.GUARDIAN_HORN).length, 1, "a lost horn is owed once");
+
+  const { action, chains } = collect(player, 315);
+  action.send(player);
+  assert.equal(player.getInventory().contains(I.GUARDIAN_HORN), true, "the tutor hands the horn back");
+  assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Leagues Tutor.");
+});
+
+test("every relic that grants an item resolves, hands it over, and the Leagues Tutor reclaims it", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
+  const { ItemIdentifiers: I, ItemDefinition } = core;
+  const tutorNpc = { 4: 315, 5: 315, 6: 15609 };
+  let audited = 0;
+  for (const league of [4, 5, 6]) {
+    const catalog = Common.catalog(league);
+    assert.ok(catalog, `league ${league} has a catalog`);
+    const points = Math.max(...catalog.tiers.map((tier) => tier.cost || 0)) + 1000;
+    catalog.tiers.forEach((tier, tierIndex) => {
+      tier.relics.forEach((relic, slotIndex) => {
+        const declared = relic.grants ?? [];
+        const ids = Unlock.grantedItems(relic);
+        assert.equal(ids.length, declared.length, `${league}/${relic.key}: every declared grant resolves`);
+        if (declared.length === 0) {
+          assert.equal(relic._missing, undefined, `${league}/${relic.key}: no item was silently dropped`);
+          return;
+        }
+        assert.equal(relic._missing, undefined, `${league}/${relic.key}: a granted item is not marked missing`);
+        for (const id of ids) {
+          const definition = ItemDefinition.forId(id);
+          assert.ok(definition && definition.getName(), `${league}/${relic.key}: item ${id} exists`);
+        }
+        audited++;
+        const player = relicCharacter(`audit-${league}-${tierIndex}-${slotIndex + 1}`, league);
+        givePoints(player, points);
+        assert.equal(Unlock.unlock(player, tierIndex, slotIndex + 1, { bankOpen: true }), true, `${relic.name} unlocks`);
+        for (const id of ids) {
+          assert.equal(player.getInventory().contains(id), true, `${relic.name} grants ${id}`);
+          assert.equal(Collect.owed(player, league).includes(id), false, `${relic.name} owns ${id} after the grant`);
+          player.getInventory().delete(id, 1);
+          assert.equal(Collect.owed(player, league).includes(id), true, `${relic.name} owes ${id} after loss`);
+        }
+        const { action } = collect(player, tutorNpc[league]);
+        action.send(player);
+        for (const id of ids) assert.equal(player.getInventory().contains(id), true, `${relic.name} reclaims ${id}`);
+      });
+    });
+  }
+  assert.ok(audited >= 30, `audited ${audited} item relics across the three leagues`);
+});
+
 test("Demonic Pacts' Dramen staff is reclaimed from the Leagues Tutor after loss", () => {
   const Collect = require("../plugins/modes/leaguerelics/Collect.LeagueRelics");
   const { ItemIdentifiers: I, CacheDefinitions } = core;

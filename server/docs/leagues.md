@@ -830,7 +830,7 @@ tooltip is 655:53.
   every tab shares, and a slot one item takes is not counted for the next), and each item
   goes where that check placed it: the inventory if it fits, else the bank tab holding it, else
   its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
-  greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
+  greaves, Trailblazer Reloaded's Trickster greaves and both leagues' guardian horn are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
   Trailblazer Reloaded's Infernal Gathering tools are custom items too (the cache reused their
   ids for the Echo tools); they are granted and reclaimable the same way. The crystal of
