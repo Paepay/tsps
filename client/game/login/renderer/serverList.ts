@@ -1,6 +1,7 @@
 import {
     getConfiguredDefaultServer,
     getConfiguredServers,
+    getPlatformWorldListUrl,
     getWebRtcRelayConfig,
 } from "../../../config/clientEnv";
 import { SERVER_LIST_URL } from "./constants";
@@ -107,6 +108,10 @@ export function relayWorldEntries(
                     validPublicText(world.ownerUsername, 100)
                         ? world.ownerUsername
                         : undefined,
+                ownerProfileUrl:
+                    validPublicText(world.ownerUsername, 100)
+                        ? forumProfileUrl(world.ownerUsername)
+                        : undefined,
                 iceServers,
                 relayDiscovered: true,
             }];
@@ -115,6 +120,61 @@ export function relayWorldEntries(
 
 export function forumProfileUrl(ownerUsername: string): string {
     return `https://rsps.app/public/u/${encodeURIComponent(ownerUsername)}`;
+}
+
+const WORLD_SLUG = /^[A-Za-z0-9][A-Za-z0-9-]{0,79}$/;
+const PLATFORM_WORLD_ID = /^wld_[A-Za-z0-9_-]{8,128}$/;
+
+/**
+ * PaeScape.Online's public world directory (`/platform/api/play/worlds`).
+ *
+ * These worlds cannot be entered by re-pointing the socket: the hosted client needs a
+ * website-minted single-use ticket bound to a character. Each row therefore carries the
+ * world's `/play/<slug>` page, where the player picks a character and starts a new client.
+ */
+export function platformWorldEntries(payload: unknown): ServerListEntry[] {
+    const worlds = (payload as any)?.worlds;
+    if (!Array.isArray(worlds)) return [];
+    return worlds.flatMap((world: any): ServerListEntry[] => {
+        if (typeof world?.slug !== "string" || !WORLD_SLUG.test(world.slug)) return [];
+        if (typeof world?.id !== "string" || !PLATFORM_WORLD_ID.test(world.id)) return [];
+        const name =
+            validPublicText(world.name, 64) && world.name === world.name.trim()
+                ? world.name
+                : world.slug;
+        const online = world.online !== false;
+        const playerCount =
+            online && Number.isInteger(world.playerCount) && world.playerCount >= 0 && world.playerCount <= 2047
+                ? world.playerCount
+                : online ? -1 : null;
+        return [{
+            name,
+            address: "",
+            secure: true,
+            playerCount,
+            maxPlayers:
+                Number.isInteger(world.maxPlayers) && world.maxPlayers > 0
+                    ? world.maxPlayers
+                    : 2047,
+            transport: "websocket",
+            playUrl: `/play/${encodeURIComponent(world.slug)}`,
+            platformWorldId: world.id,
+            ownerName: validPublicText(world.ownerName, 100) ? world.ownerName : undefined,
+            relayDiscovered: true,
+        }];
+    });
+}
+
+export async function discoverPlatformWorlds(
+    directoryUrl = getPlatformWorldListUrl(),
+): Promise<ServerListEntry[]> {
+    if (!directoryUrl) return [];
+    try {
+        const response = await fetch(directoryUrl, { signal: AbortSignal.timeout(5000) });
+        return response.ok ? platformWorldEntries(await response.json()) : [];
+    } catch {
+        return [];
+    }
 }
 
 export function replaceRelayWorlds(
@@ -183,6 +243,16 @@ export async function fetchServerList(host: LoginRendererHost): Promise<void> {
 
         if (host.serverListFetched) return;
 
+        // The PaeScape website client has one authoritative list: its platform's worlds.
+        if (getPlatformWorldListUrl()) {
+            const worlds = await discoverPlatformWorlds();
+            if (worlds.length > 0) {
+                host.serverList = worlds;
+                host.serverListFetched = true;
+                return;
+            }
+        }
+
         const configured = getConfiguredServers();
         if (configured && configured.length > 0) {
             host.serverList = filterServersForCurrentHost(
@@ -238,7 +308,10 @@ export function refreshServerList(host: LoginRendererHost) {
             server.playerCount = alive ? -1 : null;
         });
 
-        Promise.all([Promise.all(promises), discoverRelayWorlds()]).then(([, discovered]) => {
+        const discovery = getPlatformWorldListUrl()
+            ? discoverPlatformWorlds()
+            : discoverRelayWorlds();
+        Promise.all([Promise.all(promises), discovery]).then(([, discovered]) => {
             host.serverList = replaceRelayWorlds(visibleServers, discovered);
         }).finally(() => {
             host.probing = false;

@@ -74,6 +74,7 @@ import {
 } from "../common/vars";
 
 import {
+    getClientBrandName,
     getDefaultServerAddress,
     getDefaultServerName,
     getDefaultServerSecure,
@@ -82,6 +83,7 @@ import {
     isMapEditorUrl,
 } from "../config/clientEnv";
 import { parsePaeScapeLaunch, requestPaeScapeLogin } from "../config/paescapeLaunch";
+import type { ServerListEntry } from "./login/renderer/types";
 import {
     type BankServerUpdate,
     getClientCycle,
@@ -1468,7 +1470,7 @@ export class OsrsClient {
             widgetManager.invalidateWidgetRender(widgetManager.getGroupRoot(INVENTORY), "shift");
         };
         if (editMode) {
-            document.title = "Edit Mode - RSPS.app";
+            document.title = `Edit Mode - ${getClientBrandName()}`;
             this.loadEditModePlugin();
         }
         // If cache is provided, initialize immediately
@@ -4428,7 +4430,8 @@ export class OsrsClient {
             // The list may have been refreshed while it asked: switch to the server it named.
             const index = asked ? this.loginRenderer.serverList.findIndex((server) =>
                 server.name === asked.name && server.address === asked.address &&
-                server.worldId === asked.worldId && server.signalUrl === asked.signalUrl) : -1;
+                server.worldId === asked.worldId && server.signalUrl === asked.signalUrl &&
+                server.platformWorldId === asked.platformWorldId) : -1;
             if (index >= 0) this.switchToServer(index, true);
             return;
         }
@@ -4446,6 +4449,22 @@ export class OsrsClient {
      */
     private switchToServer(index: number, confirmed: boolean): void {
         const server = this.loginRenderer.serverList[index];
+        if (server?.playUrl) {
+            // A website world cannot be entered by re-pointing this socket: the player needs
+            // the play page to pick a character and mint a fresh single-use login ticket.
+            if (this.isCurrentPlatformWorld(server)) {
+                this.processLoginAction({ type: "close_server_list" });
+                return;
+            }
+            if (!confirmed && this.varManager?.getVarbit(VARBIT_WORLDSWITCHER_DISABLE_CONFIRMATION) !== 1) {
+                this.loginState.serverSwitchConfirm = server;
+                return;
+            }
+            this.loginState.serverListOpen = false;
+            this.loginState.serverSwitchConfirm = null;
+            this.openPlatformWorld(server.playUrl);
+            return;
+        }
         const transport = server?.transport ?? "websocket";
         const isCurrent =
             transport === this.loginState.serverTransport &&
@@ -4465,6 +4484,21 @@ export class OsrsClient {
 
         this.loginState.serverListOpen = false;
         this.performLogout(() => this.processLoginAction({ type: "select_server", index }));
+    }
+
+    private openPlatformWorld(playUrl: string): void {
+        if (typeof window !== "undefined" && window.location?.assign) window.location.assign(playUrl);
+    }
+
+    /** True when the platform world in `server` is the one this page launched into. */
+    private isCurrentPlatformWorld(server: ServerListEntry): boolean {
+        if (typeof window === "undefined") return false;
+        try {
+            const launch = parsePaeScapeLaunch(window.location?.search ?? "");
+            return !!launch?.worldId && launch.worldId === server.platformWorldId;
+        } catch {
+            return false;
+        }
     }
 
     runClientScriptWithInts(scriptId: number, args: number[]): void {
@@ -6406,6 +6440,12 @@ export class OsrsClient {
 
             case "select_server": {
                 const server = this.loginRenderer.serverList[action.index];
+                if (server?.playUrl) {
+                    this.loginState.serverListOpen = false;
+                    this.loginState.hoveredServerIndex = -1;
+                    this.openPlatformWorld(server.playUrl);
+                    return undefined;
+                }
                 if (server) {
                     this.loginState.serverAddress = server.address;
                     this.loginState.serverName = server.name;

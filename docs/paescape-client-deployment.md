@@ -36,3 +36,17 @@ connects directly to the platform-verified world WSS endpoint.
 To roll back the browser client, revert the website lock file and website
 commit, rebuild, and redeploy `dist`. The pinned TSPS commit remains available
 in Git history and does not require changing a hosted world's server files.
+
+## In-game World Switcher
+
+The logout tab's World Switcher (the same overlay as the login screen's world
+list) reads `/platform/api/play/worlds` when the client runs from the PaeScape
+`/client/` mount. It lists every public PaeScape.Online world with its owner and
+player count, brands the footer for PaeScape.Online, and sends a selection to
+that world's `/play/<slug>` page. A hosted world cannot be entered by
+re-pointing the game socket: the play page picks a character and mints a fresh
+single-use login ticket, so no logout or saved password is involved.
+
+Local development and non-PaeScape builds keep the RSPS.app relay directory
+(`wss://worlds.rsps.app`). `?paescapePlatform=1` forces the platform directory
+on a local dev server for testing.

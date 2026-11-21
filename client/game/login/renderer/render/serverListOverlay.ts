@@ -1,5 +1,6 @@
 import type { LoginState } from "../../LoginState";
 import type { LoginRendererHost, RenderContext } from "../host";
+import { getServerListNotice } from "../../../../config/clientEnv";
 import {
     SERVER_LIST_OWNER_COLUMN_START,
     SERVER_LIST_PANEL_WIDTH,
@@ -133,10 +134,10 @@ export function drawServerListOverlay(host: LoginRendererHost, ctx: RenderContex
                 drawText(host, 
                     ctx,
                     host.fontPlain12,
-                    ellipsis(host, server.ownerUsername ?? "—", ownerMaxW),
+                    ellipsis(host, server.ownerName ?? server.ownerUsername ?? "—", ownerMaxW),
                     col2X,
                     textY,
-                    server.ownerUsername ? 0xffcc00 : 0x777777,
+                    (server.ownerName ?? server.ownerUsername) ? 0xffcc00 : 0x777777,
                 );
                 if (server.playerCount === null) {
                     drawText(host, ctx, host.fontPlain12, "Offline", col3X, textY, 0xff0000);
@@ -154,7 +155,7 @@ export function drawServerListOverlay(host: LoginRendererHost, ctx: RenderContex
         drawCenteredText(host, 
             ctx,
             host.fontPlain12!,
-            "Register on RSPS.app to publish your own world",
+            getServerListNotice(),
             panelX + panelW / 2,
             panelY - 8,
             0xaaaaaa,

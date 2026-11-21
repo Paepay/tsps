@@ -1,6 +1,7 @@
 import { GameState } from "../../GameState";
 import type { LoginState } from "../../LoginState";
 import type { LoginRendererHost, RenderContext } from "../host";
+import { getClientBrandName } from "../../../../config/clientEnv";
 import {
     getWelcomeLayout,
     LOGIN_FORM_BUTTON_Y,
@@ -14,7 +15,7 @@ export function drawWelcomeScreen(host: LoginRendererHost, ctx: RenderContext, s
 
         if (!host.fontBold12) return;
         const layout = getWelcomeLayout(host);
-        const welcomeName = state.serverName?.trim() || "RSPS.app";
+        const welcomeName = state.serverName?.trim() || getClientBrandName();
         drawCenteredText(host, 
             ctx,
             host.fontBold12,

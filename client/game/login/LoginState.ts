@@ -6,6 +6,7 @@ import {
 } from "../../common/authentication";
 import {
     getBrowserHostWorldConfig,
+    getClientBrandName,
     getConfiguredDefaultServer,
     getConfiguredServers,
     getDefaultServerAddress,
@@ -367,7 +368,8 @@ export class LoginState {
         this.currentServerName = name;
         // Edit mode keeps its own title (OsrsClient sets it).
         if (typeof document === "undefined" || isMapEditorUrl()) return;
-        document.title = name.trim() ? `${name.trim()} - RSPS.app` : "RSPS.app";
+        const brand = getClientBrandName();
+        document.title = name.trim() ? `${name.trim()} - ${brand}` : brand;
     }
 
     /** Whether the current server uses secure WebSocket */

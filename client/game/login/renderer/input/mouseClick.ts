@@ -8,12 +8,12 @@ import { toContentPoint } from "../layout/geometry";
 import { isTitleMuteHit } from "../controls";
 import { getServerListButtonPosition } from "../layout/geometry";
 import { getMobileWorldIndexAtPosition } from "../world/worldSelectMobile";
+import { forumProfileUrl } from "../serverList";
 import {
     SERVER_LIST_OWNER_COLUMN_START,
     SERVER_LIST_PANEL_WIDTH,
     SERVER_LIST_PLAYERS_COLUMN_START,
 } from "../constants";
-import { forumProfileUrl } from "../serverList";
 import { ellipsis } from "../render/drawUtils";
 import {
     handleWelcomeClick,
@@ -64,16 +64,19 @@ export function handleServerListClick(host: LoginRendererHost, state: LoginState
             for (let i = 0; i < host.serverList.length; i++) {
                 const ry = rowStartY + i * rowH;
                 if (x >= panelX + 4 && x <= panelX + panelW - 4 && y >= ry && y < ry + rowH) {
-                    const owner = host.serverList[i].ownerUsername;
+                    const server = host.serverList[i];
+                    const owner = server.ownerName ?? server.ownerUsername;
+                    const ownerProfileUrl = server.ownerProfileUrl
+                        ?? (server.ownerUsername && !server.playUrl ? forumProfileUrl(server.ownerUsername) : undefined);
                     const ownerX = panelX + SERVER_LIST_OWNER_COLUMN_START;
                     const ownerText = owner && ellipsis(
                         host,
                         owner,
                         SERVER_LIST_PLAYERS_COLUMN_START - SERVER_LIST_OWNER_COLUMN_START - 4,
                     );
-                    if (owner && ownerText && host.fontPlain12 && x >= ownerX
+                    if (ownerText && ownerProfileUrl && host.fontPlain12 && x >= ownerX
                         && x < ownerX + host.fontPlain12.measure(ownerText)) {
-                        window.open(forumProfileUrl(owner), "_blank", "noopener,noreferrer");
+                        window.open(ownerProfileUrl, "_blank", "noopener,noreferrer");
                         return undefined;
                     }
                     return { type: "select_server", index: i } as const;
