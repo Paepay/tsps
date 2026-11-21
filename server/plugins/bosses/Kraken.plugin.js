@@ -36,6 +36,7 @@ const Area = require("./kraken/Area.Kraken");
 const Respawn = require("./kraken/Respawn.Kraken");
 const Loot = require("./kraken/Loot.Kraken");
 const Instance = require("./kraken/Instance.Kraken");
+const CombatAchievements = require("./kraken/CombatAchievements.Kraken");
 
 module.exports = {
   name: "Kraken",
@@ -50,6 +51,7 @@ module.exports = {
     Fight.attach(api);
     Area.attach(api);
     Instance.attach(api);
+    CombatAchievements.attach(api);
     Respawn.attach(api);
     Loot.attach(api);
   },
