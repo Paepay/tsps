@@ -5,6 +5,7 @@ import { Player } from "../../../entity/impl/player/Player";
 import { StackType } from "../StackType";
 const getWeaponInterfaces = lazyRequire(() => require("../../../content/combat/WeaponInterfaces").WeaponInterfaces as typeof import("../../../content/combat/WeaponInterfaces").WeaponInterfaces);
 const getItemDefinition = lazyRequire(() => require("../../../definition/ItemDefinition").ItemDefinition as typeof import("../../../definition/ItemDefinition").ItemDefinition);
+const getBonusManager = lazyRequire(() => require("../../equipment/BonusManager").BonusManager as typeof import("../../equipment/BonusManager").BonusManager);
 
 export class Equipment extends ItemContainer {
 
@@ -73,6 +74,10 @@ export class Equipment extends ItemContainer {
             this.sendWornInventory();
         }
         this.getPlayer().onEquipmentChanged();
+        // Every route that replaces worn items ends here, including a plugin restoring saved
+        // gear with setItems. The equip packet path also updates separately, so keep the
+        // worn set and its bonuses in step here rather than relying on that caller.
+        getBonusManager().update(this.getPlayer());
         require("../../../../plugins/PluginManager").PluginManager.emitCustomEvent("equipment:changed", {
             player: this.getPlayer(),
             ...(change ? { equipped: true, itemId: change.itemId, slot: change.slot } : {}),

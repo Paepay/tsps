@@ -811,6 +811,9 @@ export class Player extends Mobile {
         // packet path, so the weapon interface/fight-styles/attack animation
         // (all driven by player.weapon, set here) are never assigned on login.
         WeaponInterfaceManager.assign(this);
+        // Those restored items have not been through the equip path either, and
+        // Autocasting below only recalculates bonuses in some branches.
+        BonusManager.update(this);
         CombatSpecial.ensureRestoreTask(this);
         const autocastSpell = this.getCombat().getAutocastSpell();
         if (autocastSpell != null && autocastSpell.getSpellbook?.() !== this.getSpellbook()) {
