@@ -61,6 +61,11 @@ module.exports = function registerElementalWorkshopIQuest(api) {
   const STAGE_COMPLETE = BIT.complete;
 
   const BOOKCASE = ObjectIdentifiers.BOOKCASE_99;
+  // The smithy south-west of the Seers' Village bank holds two bookcases: the quest's own
+  // BOOKCASE_99 and a plain BOOKCASE_97 a few tiles away. Players search either; the book is
+  // in both. BOOKCASE_97 is used elsewhere too, so it only counts inside this building.
+  const SMITHY_BOOKCASE = ObjectIdentifiers.BOOKCASE_97;
+  const SMITHY_BOOKCASE_AREA = { minX: 2708, maxX: 2720, minY: 3476, maxY: 3483 };
   const ODD_WALLS = [ObjectIdentifiers.ODD_LOOKING_WALL_7, ObjectIdentifiers.ODD_LOOKING_WALL_8];
   const OPEN_ODD_WALL = ObjectIdentifiers.ODD_LOOKING_WALL_6;
   // The cache places multi-loc bases; the 185xx ids are their varbit children.
@@ -222,11 +227,22 @@ module.exports = function registerElementalWorkshopIQuest(api) {
     player.sendMessage("You stitch the leather over the hole in the bellows.");
   }
 
+  /** The smithy's two bookcases, either of which holds the battered book (issue #67). */
+  function isSmithyBookcase(objectId, location) {
+    if (objectId === BOOKCASE) return true;
+    if (objectId !== SMITHY_BOOKCASE) return false;
+    const x = location?.x ?? location?.getX?.();
+    const y = location?.y ?? location?.getY?.();
+    const z = location?.z ?? location?.getZ?.() ?? 0;
+    return z === 0 && x >= SMITHY_BOOKCASE_AREA.minX && x <= SMITHY_BOOKCASE_AREA.maxX &&
+      y >= SMITHY_BOOKCASE_AREA.minY && y <= SMITHY_BOOKCASE_AREA.maxY;
+  }
+
   function handleObjectInteraction(event) {
     const option = String(event.definition?.getInteractions?.()?.[event.clickType - 1] ?? "").toLowerCase();
     const { player, objectId, location } = event;
 
-    if (objectId === BOOKCASE && option.includes("search")) {
+    if (isSmithyBookcase(objectId, location) && option.includes("search")) {
       const book = hasBit(player, BIT.slashedBook) ? ItemIdentifiers.SLASHED_BOOK : ItemIdentifiers.BATTERED_BOOK;
       if (!has(player, book)) {
         player.getInventory().adds(book, 1);
