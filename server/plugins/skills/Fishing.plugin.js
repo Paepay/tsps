@@ -16,6 +16,7 @@ const RadasBlessing = require("./fishing/RadasBlessing.Fishing");
 const SpiritFlakes = require("./fishing/SpiritFlakes.Fishing");
 const KarambwanVessel = require("./fishing/Karambwan.Fishing");
 const ClueBottles = require("./fishing/ClueBottles.Fishing");
+const SharkLure = require("./fishing/SharkLure.Fishing");
 const { pauseForLevelUp } = require("./SkillActions");
 
 // Ticks per resource roll (Wiki: Game tick/Action lengths): rods 5, net, cage and harpoon
@@ -624,7 +625,7 @@ function findTool(player, tool) {
 
 /** Ticks to the next catch roll: the tool's, as content adjusts it ("fishing:interval", a league relic's faster harpoon). */
 function catchInterval(player, tool) {
-  const request = { player, ticks: rollInterval(tool) };
+  const request = { player, tool, ticks: rollInterval(tool) };
   pluginApi?.emitCustomEvent("fishing:interval", request);
   return Math.max(1, request.ticks | 0);
 }
@@ -872,11 +873,16 @@ function landCatch(player, tool, variant, caught, spotId = null) {
     if (!hasRoom(player, fish)) break;
     const amount = fish.amount(player);
     const flaked = tool !== TOOLS.PARK_NET && SpiritFlakes.consumeFlake(player);
+    // Wiki (Shark lure): the configured lures are consumed for each raw shark caught, and the
+    // catch's Fishing XP is the lure quantity's, not the fish's.
+    const lureAmount = SharkLure.isSharkId(fish.id) ? SharkLure.activeAmount(player) : 0;
+    const experience = SharkLure.experienceFor(lureAmount, fish.experience);
     // Wiki (Mod Ash): big trophy fish are never incinerated. A cooked catch still gets the catch
     // line (as an infernal axe's burnt log still says "You get some logs.").
     const cooked = variant.infernal && !fish.chance && InfernalHarpoon.tryCookFish(player, fish.id);
-    if (!cooked && giveCatch(player, fish.id, amount, fish.experience * xpMultiplier) <= 0) break;
-    landed.push({ fish, kind, amount, flaked });
+    if (!cooked && giveCatch(player, fish.id, amount, experience * xpMultiplier) <= 0) break;
+    landed.push({ fish, kind, amount, flaked, lureAmount });
+    if (lureAmount > 0) SharkLure.consume(player, lureAmount);
     if (!cooked) {
       // Junk (a casket, an old boot) is no fish, so it is its own event: "fishing:junk"
       // { player, itemId, amount }, for a league's "Obtain a Casket from Fishing" or an old boot.
@@ -886,7 +892,7 @@ function landCatch(player, tool, variant, caught, spotId = null) {
     if (variant.crystal) {
       CrystalHarpoon.tryUseCharge(player);
     }
-    player.getSkillManager().addExperiences(Skill.FISHING, fish.experience * xpMultiplier);
+    player.getSkillManager().addExperiences(Skill.FISHING, experience * xpMultiplier);
     for (const [skill, xp] of fish.extraXp) {
       player.getSkillManager().addExperiences(skill, xp);
     }
@@ -909,7 +915,9 @@ function landCatch(player, tool, variant, caught, spotId = null) {
   let stop = false;
   for (const fish of new Set(landed.map((entry) => entry.fish))) {
     if (fish.junk) continue;
-    const event = { player, skill: Skill.FISHING, itemId: fish.id, petBase: fish.petBase, barehand: variant.barehand === true, stop: false };
+    // Wiki (Shark lure): using lures makes the Heron rarer.
+    const lureAmount = landed.find((entry) => entry.fish === fish)?.lureAmount ?? 0;
+    const event = { player, skill: Skill.FISHING, itemId: fish.id, petBase: SharkLure.petBaseFor(lureAmount, fish.petBase), barehand: variant.barehand === true, stop: false };
     pluginApi.emitCustomEvent("fishing:success", event);
     if (event.stop) stop = true;
   }
@@ -1127,6 +1135,7 @@ module.exports = {
     MinnowPlatform.attach(api);
     KarambwanVessel.attach(api);
     ClueBottles.attach(api);
+    SharkLure.attach(api);
 
     api.onPlayerDisconnect(({ player }) => {
       stopFishing(activeSessions, player, false);
@@ -1152,6 +1161,7 @@ module.exports = {
   },
   TOOLS,
   FISH,
+  SharkLure,
   catchChance,
   catchLevel,
   rollInterval,

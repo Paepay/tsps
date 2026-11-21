@@ -84,7 +84,7 @@
       "sw_tower_basement_trapdoor": "Only the way down into the Isle of Souls tower basement is captured; its exit ladder (40746) has no handler, so an entry would strand the player.",
       "viking_warrior_ladder": "Only the way down is captured; its exit ladder (4188 at 2672,10099,2) has no handler, so an entry would strand the player.",
       "ardougne_prison_entry": "Song of the Elves owns it (enterPrison); the one capture is the quest's prison-entry scene.",
-      "brimhaven_slayer_dragon_tunnel": "Into the Brimhaven Dungeon's Slayer-only metal dragon area (Wiki): only the way in is captured (local 1001569 left by teleport each time), and the area needs a Slayer task gate.",
+      "brimhaven_slayer_dragon_tunnel": "The generator would add only the captured way in (local 1001569 left by teleport each time); the two-way inferred pair for this name is already in loc-teleports.json, so leave it alone.",
       "hellhound_cave_entrance_c_03": "Into Cerberus's lair, a boss area tsps has no plugin for; the one capture is a Leagues world's."
     },
     "patterns": [

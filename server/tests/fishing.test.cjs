@@ -624,7 +624,7 @@ test("minnow fishing: Wiki catch rates, rotating spots, flying fish and Kylie's 
  * taught (Barbarian Training's "fishing:barehand-unlocked") unless `emitCustomEvent` answers.
  */
 const TAUGHT_BAREHAND = (name, request) => { if (name === "fishing:barehand-unlocked") request.allowed = true; };
-async function fishingLoop({ emitCustomEvent = TAUGHT_BAREHAND } = {}) {
+async function fishingLoop({ emitCustomEvent = TAUGHT_BAREHAND, attach = [] } = {}) {
   const { CachePipeline } = require("../dist/game/cache/CachePipeline");
   const { PluginManager } = require("../dist/plugins/PluginManager");
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -635,14 +635,20 @@ async function fishingLoop({ emitCustomEvent = TAUGHT_BAREHAND } = {}) {
   const npcs = new Map();
   const tasks = [];
   const handlers = new Map();
+  const listeners = new Map();
   const api = new Proxy({
     core,
     getTaskManager: () => ({ submit: (task) => tasks.push(task) }),
     getWorld: () => ({ getNpcs: () => npcs }),
     onNpcInteraction: (name, actions) => handlers.set(name, actions),
-    emitCustomEvent,
+    onCustomEvent: (name, handler) => listeners.set(name, [...(listeners.get(name) ?? []), handler]),
+    emitCustomEvent: (name, request) => {
+      for (const handler of listeners.get(name) ?? []) handler(request);
+      return emitCustomEvent(name, request);
+    },
   }, { get: (target, name) => target[name] ?? (() => {}) });
   Fishing.register(api);
+  for (const plugin of attach) plugin.attach(api);
   const task = tasks.find((submitted) => submitted.constructor.name === "FishingTask");
 
   function fisher({ level = 99, items = [] } = {}) {
@@ -2293,4 +2299,71 @@ test("native ordinary trout catch can award an eligible beginner clue bottle", a
   assert.equal(tutorialClueRolls, 0);
   assert.equal(tutorialPlayer.getInventory().getAmount(I.CLUE_BOTTLE_BEGINNER_), 0);
 
+});
+test("shark lures: Configure 1/3/5, faster and likelier sharks, less XP and lures used (#95)", async () => {
+  const SharkLure = require("../plugins/skills/fishing/SharkLure.Fishing");
+  const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = core;
+
+  // Wiki (Shark lure): the table's success, XP and Heron rates.
+  assert.deepEqual([1, 3, 5].map(SharkLure.successMultiplier), [3, 4.5, 6]);
+  assert.deepEqual([1, 3, 5].map((n) => SharkLure.experienceFor(n, 110)), [27.5, 22, 17.6]);
+  assert.deepEqual([1, 3, 5].map((n) => SharkLure.petBaseFor(n, 82243)), [328972, 411215, 493458]);
+  assert.equal(SharkLure.successMultiplier(0), 1, "no lures, no boost");
+  assert.equal(SharkLure.experienceFor(0, 110), 110);
+  assert.equal(SharkLure.petBaseFor(0, 82243), 82243);
+  // Action length on the 6-tick shark spot: 5.5, 5 and 4.5 ticks are the Wiki's half-tick rolls.
+  assert.equal(SharkLure.intervalFor(1, 6, () => 0.2), 5);
+  assert.equal(SharkLure.intervalFor(1, 6, () => 0.8), 6);
+  assert.equal(SharkLure.intervalFor(3, 6, () => 0.8), 5);
+  assert.equal(SharkLure.intervalFor(5, 6, () => 0.2), 4);
+  assert.equal(SharkLure.intervalFor(5, 6, () => 0.8), 5);
+
+  // Configure asks 1, 3 or 5 and sends the client's shark_lure_use_quantity varbit (16564).
+  const attributes = new Map();
+  const varbits = new Map();
+  const configurePlayer = {
+    getAttribute: (key) => attributes.get(key),
+    setAttribute: (key, value) => attributes.set(key, value),
+    getPacketSender: () => ({ sendInterfaceRemoval() {}, sendVarbit: (id, value) => varbits.set(id, value) }),
+    getDialogueManager: () => ({ startDialogues: (chain) => chain.getDialogues().get(0).execute(2) }),
+  };
+  assert.equal(SharkLure.amountOf(configurePlayer), 1, "one lure until configured");
+  SharkLure.configure({ player: configurePlayer });
+  assert.equal(attributes.get(SharkLure.ATTR), 3);
+  assert.equal(varbits.get(SharkLure.VARBIT), 3);
+  SharkLure.setAmount(configurePlayer, 5);
+  assert.equal(varbits.get(SharkLure.VARBIT), 5);
+
+  const withLures = (held, configured) => {
+    const p = fisher({ items: [[I.HARPOON], [I.SHARK_LURE, held]] });
+    const stored = new Map([[SharkLure.ATTR, configured]]);
+    p.getAttribute = (key) => stored.get(key);
+    p.setAttribute = (key, value) => stored.set(key, value);
+    return p;
+  };
+
+  await withRandom(0.2, async () => {
+    const p = withLures(10, 3);
+    assert.equal(start(p, spot(N.FISHING_SPOT_11, 90), "Harpoon"), true);
+    ticks(4);
+    assert.equal(amount(p, I.RAW_SHARK), 1, "the first shark still lands on the fourth tick");
+    assert.equal(amount(p, I.SHARK_LURE), 7, "three lures go with the shark");
+    assert.equal(p.xp, 22, "the lure quantity's XP, not the shark's 110");
+    ticks(4);
+    assert.equal(amount(p, I.RAW_SHARK), 1, "three lures make the next roll 5 ticks, not 6");
+    ticks(1);
+    assert.equal(amount(p, I.RAW_SHARK), 2);
+    assert.equal(amount(p, I.SHARK_LURE), 4);
+    assert.equal(p.xp, 44);
+  });
+
+  await withRandom(0.02, async () => {
+    const p = withLures(2, 3);
+    start(p, spot(N.FISHING_SPOT_11, 91), "Harpoon");
+    ticks(4);
+    assert.equal(amount(p, I.RAW_SHARK), 1, "an ordinary shark without the configured three");
+    assert.equal(amount(p, I.SHARK_LURE), 2, "and no lures are used");
+    assert.equal(p.xp, 110);
+  });
 });
