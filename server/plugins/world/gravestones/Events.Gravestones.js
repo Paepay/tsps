@@ -79,9 +79,14 @@ function officeTake(request) {
   if (!entry || count <= 0) return;
   const inventory = player.getInventory();
   const room = inventory.getAddableAmount(Common.toItem(entry));
-  const taken = Math.min(count, entry.amount, room);
+  const requested = Math.min(count, entry.amount, room);
+  if (requested <= 0) return;
+  // The office is the owner of these items until the inventory has actually accepted them. Do not
+  // consume the storage row by a planned amount the container later refuses.
+  const before = inventory.getAmount(entry.id);
+  inventory.add(Common.toItem(entry, requested), true);
+  const taken = Math.max(0, inventory.getAmount(entry.id) - before);
   if (taken <= 0) return;
-  inventory.add(Common.toItem(entry, taken), true);
   entry.amount -= taken;
   if (entry.amount <= 0) records[slot] = null;
   Storage.setOffice(player, records);

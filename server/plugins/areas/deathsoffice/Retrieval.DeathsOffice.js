@@ -96,11 +96,12 @@ function take(player, slot, count) {
     return;
   }
   if (!charge(player, entry.fee * taking)) return;
-  takeFromOffice(player, slot, taking);
+  const taken = takeFromOffice(player, slot, taking);
   if (entry.fee > 0) Common.sound(player, Common.PAYMENT_SOUND, Common.PAYMENT_SOUND_DELAY);
   const office = Common.state(player).office;
   if (!office[slot] || entry.fee === 0) clearSelection(player);
   sendOffice(player, office);
+  if (taken < Math.min(count, entry.amount)) player.sendMessage(MESSAGE.noSpace);
 }
 
 function clickItem(event) {
@@ -198,7 +199,9 @@ function takeWhatFits(player) {
   for (const { slot, count } of moves) takeFromOffice(player, slot, count);
   if (fee > 0) Common.sound(player, Common.PAYMENT_SOUND, Common.PAYMENT_SOUND_DELAY);
   clearSelection(player);
-  if (isOpen(player)) sendOffice(player, Common.state(player).office);
+  const office = Common.state(player).office;
+  if (isOpen(player)) sendOffice(player, office);
+  if (office.some(Boolean)) player.sendMessage(MESSAGE.noSpace);
 }
 
 function attach(api) {
