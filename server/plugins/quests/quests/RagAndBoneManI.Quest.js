@@ -38,7 +38,7 @@
  *    already-handed bones.
  *  - The Wiki lists each raw bone as a guaranteed drop only while the quest still wants it;
  *    this plugin answers `npc-drops:quest-item` for the rows in npc-drops.json, so the tables
- *    own the drop and it stops as soon as the bone is handed in or the quest completes.
+ *    own the drop and it stops as soon as the bone is held or handed in, or the quest completes.
  *  - The wiki does not document the boiler's Remove-Pot mid-boil, so it hands
  *    the bone in vinegar back; the item's Empty option (the wiki's bone-loss
  *    warning) is not implemented, so bones cannot be destroyed here.
@@ -519,12 +519,15 @@ module.exports = function registerRagAndBoneManIQuest(api) {
 
   /**
    * npc-drops.json marks each raw bone row with the Wiki's quest condition; this answers it, so
-   * the bone drops only while Rag and Bone Man I is in progress and still wants that species.
+   * the bone drops only while Rag and Bone Man I is in progress, still wants that species and
+   * the player is not already carrying it.
    */
   function handleQuestItem(event) {
     const bone = RAW_BONE_BY_ITEM.get(event.itemId);
     if (!bone) return;
-    event.allowed = quest.getStage(event.player) === STAGE_STARTED && !hasHanded(event.player, bone.bit);
+    event.allowed = quest.getStage(event.player) === STAGE_STARTED
+      && !hasHanded(event.player, bone.bit)
+      && !held(event.player, event.itemId);
   }
 
   function handleLogin({ player }) {

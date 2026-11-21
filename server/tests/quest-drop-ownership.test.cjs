@@ -115,6 +115,14 @@ test('Rag and Bone Man bones only drop while their quest still needs them', asyn
     questingI.setAttribute('quest.rag_and_bone_man_i.stage', 1);
     assert.ok(itemIds(withLuckyDrops(() => roll(questingI, 'giant_rat_drop_table3', core.NpcIdentifiers.GIANT_RAT_4))).includes(giantRatBone),
         'the giant rat bone drops while Rag and Bone Man I is in progress');
+
+    const holdingBone = player();
+    holdingBone.setAttribute('quest.rag_and_bone_man_i.stage', 1);
+    holdingBone.getPacketSender = () => new Proxy({}, { get: () => () => {} });
+    holdingBone.getInventory().adds(giantRatBone, 1);
+    const heldDrops = itemIds(withLuckyDrops(() => roll(holdingBone, 'giant_rat_drop_table3', core.NpcIdentifiers.GIANT_RAT_4)));
+    assert.ok(heldDrops.includes(bones), 'the giant rat still drops its regular bones');
+    assert.ok(!heldDrops.includes(giantRatBone), 'another giant rat bone does not drop while one is carried');
 });
 
 test('Between a Rock owns page 1 instead of the unconditional scorpion table', async () => {
