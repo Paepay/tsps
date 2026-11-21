@@ -734,6 +734,48 @@ export class CombatFactory {
         attacker.getCombat().setUnderAttack(null);
     }
 
+    /**
+     * Whether a fighter in single-way combat is locked by whoever is attacking it. Free NPC
+     * brawls and always-multi NPCs do not count when a player is in the fight; an owned NPC
+     * (a thrall) still does.
+     */
+    private static singleWayLockedBy(mobile: Mobile, playerInFight: boolean): boolean {
+        const by = mobile.getCombat().getAttacker();
+        const npcBrawl = by != null && by.isNpc() && by.getAsNpc().getOwner() == null &&
+            mobile.isNpc() && playerInFight;
+        return by != null && !(by.isNpc() && by.getAsNpc().isMultiCombat()) && !npcBrawl;
+    }
+
+    private static singleWayHitQueueFree(mobile: Mobile, except: Mobile): boolean {
+        if (mobile.isNpc() && except.isPlayer()) {
+            return mobile.getCombat().getHitQueue().isEmptyButFreeNpcs(except);
+        }
+        return mobile.getCombat().getHitQueue().isEmpty(except);
+    }
+
+    /**
+     * The busy half of the single-way gate: something other than `target` is attacking this
+     * fighter, or a delayed hit is still in flight. Kept in one place because retaliation has
+     * to tell a real fight from a click that is only waiting for this gate (#82).
+     */
+    private static singleWayAttackerBusy(attacker: Mobile, target: Mobile): boolean {
+        const playerInFight = attacker.isPlayer() || target.isPlayer();
+        const ownSuperior = CombatFactory.isOwnSuperiorInSingleWay(attacker, target);
+        return ServerPerf.measurePhase("combat.process.can_attack.attacker_busy", () =>
+            (
+                !(ownSuperior && attacker.getCombat().getAttacker()?.isNpc() === true) &&
+                CombatFactory.isBeingAttacked(attacker) &&
+                attacker.getCombat().getAttacker() != target &&
+                attacker.getCombat().getAttacker().getHitpoints() > 0 &&
+                CombatFactory.singleWayLockedBy(attacker, playerInFight)
+            ) || !(ownSuperior
+                // Hits already in flight from unowned monsters (the standard monster) do not hold the own
+                // superior's attack; hits from players and owned monsters still do.
+                ? attacker.getCombat().getHitQueue().isEmptyButFreeNpcs(target)
+                : attacker.getCombat().getHitQueue().isEmpty(target))
+        );
+    }
+
     /** Target/area ownership checks safe to run before pursuit; no ammo or runes are consumed. */
     public static canAttackPermission(
         attacker: Mobile,
@@ -769,41 +811,8 @@ export class CombatFactory {
             "combat.process.can_attack.multi_check",
             () => CombatFactory.multiCombatBetween(attacker, target)
         )) {
-            // An always-multi NPC (a boss's summoned minion) never ties up the one it fights: a
-            // player a hellhound is biting may still attack its master in a singles lair.
-            // Free NPCs fighting each other (NpcRivalries) don't tie one up against a player
-            // either, or the single-combat Battlefront, where soldiers are always fighting the
-            // lizardmen, would keep every lizardman from players. An owned NPC (a thrall) still
-            // ties up what it fights.
-            const npcBrawl = (mobile: Mobile, by: Mobile | null) =>
-                by != null && by.isNpc() && by.getAsNpc().getOwner() == null && mobile.isNpc() &&
-                (attacker.isPlayer() || target.isPlayer());
-            const lockedBy = (mobile: Mobile) => {
-                const by = mobile.getCombat().getAttacker();
-                return by != null && !(by.isNpc() && by.getAsNpc().isMultiCombat()) && !npcBrawl(mobile, by);
-            };
-            const hitQueueFree = (mobile: Mobile, except: Mobile) => mobile.isNpc() && except.isPlayer()
-                ? mobile.getCombat().getHitQueue().isEmptyButFreeNpcs(except)
-                : mobile.getCombat().getHitQueue().isEmpty(except);
-            // A player may attack their own superior slayer monster while another monster attacks them, in
-            // single-way combat (Wiki: Superior slayer monster). Only the busy-with-another-attacker clause is
-            // lifted; the hit queue and the target checks below still apply.
-            const ownSuperior = CombatFactory.isOwnSuperiorInSingleWay(attacker, target);
-            if (
-                ServerPerf.measurePhase("combat.process.can_attack.attacker_busy", () =>
-                    (
-                        !(ownSuperior && attacker.getCombat().getAttacker()?.isNpc() === true) &&
-                        CombatFactory.isBeingAttacked(attacker) &&
-                        attacker.getCombat().getAttacker() != target &&
-                        attacker.getCombat().getAttacker().getHitpoints() > 0 &&
-                        lockedBy(attacker)
-                    ) || !(ownSuperior
-                        // Hits already in flight from unowned monsters (the standard monster) do not hold the own
-                        // superior's attack; hits from players and owned monsters still do.
-                        ? attacker.getCombat().getHitQueue().isEmptyButFreeNpcs(target)
-                        : attacker.getCombat().getHitQueue().isEmpty(target))
-                )
-            ) {
+            const playerInFight = attacker.isPlayer() || target.isPlayer();
+            if (CombatFactory.singleWayAttackerBusy(attacker, target)) {
                 return CanAttackResponse.ALREADY_UNDER_ATTACK;
             }
 
@@ -818,9 +827,10 @@ export class CombatFactory {
             // Here we check if we are already in combat with another entity.
             if (
                 ServerPerf.measurePhase("combat.process.can_attack.target_busy", () =>
-                    (CombatFactory.isBeingAttacked(target) && target.getCombat().getAttacker() != attacker && lockedBy(target) &&
+                    (CombatFactory.isBeingAttacked(target) && target.getCombat().getAttacker() != attacker &&
+                        CombatFactory.singleWayLockedBy(target, playerInFight) &&
                         !(superiorOfTarget && releasedStandardTag(target))) ||
-                    !hitQueueFree(target, attacker)
+                    !CombatFactory.singleWayHitQueueFree(target, attacker)
                 )
             ) {
                 return CanAttackResponse.TARGET_IN_COMBAT;
@@ -1644,11 +1654,20 @@ export class CombatFactory {
             TaskManager.hasActiveTask(target.getIndex(), "MovementTask") ||
             TaskManager.wasTaskActiveThisCycle(target.getIndex(), "MovementTask")
         );
-        const hasActiveDifferentTarget =
+        const currentTargetActive =
             currentTarget != null &&
             currentTarget !== attacker &&
             currentTarget.getHitpoints() > 0 &&
             (typeof currentTarget.isRegistered !== "function" || currentTarget.isRegistered());
+        // A single-combat click that is only waiting for this character to be free is not an
+        // active fight. When the monster already attacking them hits again, auto-retaliation
+        // must answer that monster rather than stand idle on the waiting click (#82).
+        const currentTargetWaits =
+            currentTarget != null &&
+            currentTargetActive &&
+            !CombatFactory.multiCombatBetween(target, currentTarget) &&
+            CombatFactory.singleWayAttackerBusy(target, currentTarget);
+        const hasActiveDifferentTarget = currentTargetActive && !currentTargetWaits;
 
         // In multi-combat, an NPC may change to a player who has just attacked it.
         // A single NPC still has one active target and attack sequence at a time.
