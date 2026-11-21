@@ -17,6 +17,7 @@ const RECHARGE_PAYMENT_ACTION_ID = "LfIGD_";
 const IBAN_BLAST_SPELL = "IBAN_BLAST";
 
 let core;
+let pluginApi;
 
 /** Wiki (Iban's staff (o), Iban's staff (u) (o)): the ornament kit only changes the look. */
 function isUpgraded(itemId) {
@@ -67,7 +68,10 @@ function spendCharges({ player, spell }) {
   if (!staff) return;
   const target = player.getCombat().getTarget();
   const cost = target?.isPlayer?.() ? PLAYER_CAST_COST : NPC_CAST_COST;
-  setCharges(staff, Math.max(0, chargesOf(staff) - cost));
+  const consume = { player, itemId: staff.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
+  if (consume.extra > 0) setCharges(staff, Math.min(capacityOf(staff.getId()), chargesOf(staff) + Math.floor(consume.extra)));
+  if (!consume.skip) setCharges(staff, Math.max(0, chargesOf(staff) - cost));
   player.getEquipment().refreshItems();
 }
 
@@ -134,6 +138,7 @@ module.exports = {
   members: true,
   _test: { chargesOf, setCharges, rechargeCondition, rechargePayment, CHARGES_META_KEY },
   register(api) {
+    pluginApi = api;
     api.onServerStartup(initialize.bind(null, api.core));
     api.onSpellDisabled(refuseEmptyStaff);
     api.onCustomEvent("magic:cast-committed", spendCharges);

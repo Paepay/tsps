@@ -15,7 +15,7 @@
   },
   "varps": {
     "_comment": "A plain varp carries the real area count to cache script 3658, which otherwise hardcodes a five-area total; the six selection varbits cannot represent Level-Up's nine areas.",
-    "unlockedCount": 7998
+    "unlockedCount": 7994
   },
   "maxUnlocked": 5,
   "thresholds": {
@@ -2753,7 +2753,7 @@
     },
     "7": {
       "key": "tirannwn",
-      "_comment": "Tirannwn (Arandar, Isafdar, Lletya, the Tyras Camp, Port Tyras, Zul-Andra, the Poison Waste, Gwenith), the Underground Pass with Iban's temple, the Temple of Light, Prifddinas with everything under it (the Iorwerth Dungeon, its mines; map rows 187-196) and Zalcano.",
+      "_comment": "Tirannwn (Arandar, Isafdar, Lletya, the Tyras Camp, Port Tyras, Zul-Andra, the Poison Waste, Gwenith), the Underground Pass with Iban's temple (map squares 37-38,150-151; the two squares below it hold Nieve's cave, Kandarin), the Temple of Light, Prifddinas with everything under it (the Iorwerth Dungeon, its mines; map rows 187-196) and Zalcano.",
       "rects": [
         [
           33,
@@ -2771,7 +2771,7 @@
           37,
           150,
           38,
-          153
+          151
         ],
         [
           32,
@@ -3454,6 +3454,12 @@
           10240,
           3903,
           10303
+        ],
+        [
+          3200,
+          9472,
+          3263,
+          9535
         ]
       ]
     },
@@ -5385,7 +5391,7 @@
           2368,
           9600,
           2495,
-          9855
+          9727
         ],
         [
           2240,

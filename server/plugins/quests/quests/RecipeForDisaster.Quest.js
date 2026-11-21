@@ -3889,7 +3889,6 @@ module.exports = function registerRecipeForDisasterQuest(api) {
   api.onCustomEvent("ladders:climb", claimSnakePitRope);
   api.onObjectRoute(routeRedBananaTree);
   api.onObjectRoute(routeAwowogeiDungeonExit);
-  api.onObjectRoute(routeCulinaromancerChest);
   api.onCustomEvent("door:toggle", handleDiningDoors);
   api.onObjectInteraction("Barrier", { "Pass-through": passDiningBarrier });
   api.onCanSpawnNpc(blockStaticDiningGuests);

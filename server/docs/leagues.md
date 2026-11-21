@@ -141,7 +141,7 @@ relics are the first askers; nothing changes when nobody answers):
 | Event | Owner | Payload |
 | --- | --- | --- |
 | `ranged:ammo-saving` | core `CombatFactory.decrementAmmo`, the blowpipe, chinchompa and Dizana's quiver handlers | `{ player, itemId, amount, saved, extra }`: `saved` shots are neither broken nor dropped; `extra` shots are given back on top |
-| `combat:consume-charge` | the powered staves, the crystal and venator bows, scythe, crystal halberd, Arclight, warped sceptre, bone staff, revenant weapons, Webweaver bow, Tonalztics of Ralos and the abyssal tentacle | `{ player, itemId, skip, extra }`: `skip` keeps the charge; `extra` charges are given back on top |
+| `combat:consume-charge` | the powered staves, the crystal and venator bows, scythe, crystal halberd, Arclight, warped sceptre, bone staff, revenant weapons, Webweaver bow, Tonalztics of Ralos, the abyssal tentacle, the serpentine helm, toxic staff of the dead, amulet of blood fury, dragonfire shield, ring of suffering, obligator, Dizana's quiver, Iban's staff, slayer's staff (e), Zorya's tome, the elemental tomes and crystal armour | `{ player, itemId, skip, extra }`: `skip` keeps the charge; `extra` charges are given back on top |
 | `combat:bolt-proc-chance` | EnchantedBolts | `{ player, target, itemId, chance }` after the gear's and the special's multipliers |
 | `combat:status-apply` | core `CombatFactory.poisonEntity` (poison, venom), DragonfireProtection (dragonfire) | `{ target, kind, allow }`; `allow = false` and the status never takes |
 | `combat-special:cost` | core `CombatSpecial` (the energy check and the drain) | `{ player, specialId, cost, available, allow, phase }`; `phase` is "check" or "drain"; `allow` lets a short player use it |
@@ -832,7 +832,7 @@ tooltip is 655:53.
   every tab shares, and a slot one item takes is not counted for the next), and each item
   goes where that check placed it: the inventory if it fits, else the bank tab holding it, else
   its tab or any tab with room. Refusals are game messages of ours. Raging Echoes' Sage's
-  greaves and guardian horn, and Trailblazer Reloaded's Trickster greaves, are custom items:
+  greaves, Trailblazer Reloaded's Trickster greaves and both leagues' guardian horn are custom items:
   they are granted and can be reclaimed from the Leagues Tutor's Collect-items.
   Trailblazer Reloaded's Infernal Gathering tools are custom items too (the cache reused their
   ids for the Echo tools); they are granted and reclaimable the same way. The crystal of
@@ -905,7 +905,7 @@ These relics have their effects (`leaguerelics/*.LeagueRelics.js`, numbers in th
   magic damage (the equipment-effect modifiers), a 90% roll a cast that keeps the runes (the
   existing `magic:rune-saving`, asked once the cast has checked the player has them, so they are
   required but not spent) or the staff's charge (`combat:consume-charge`, asked by the trident in
-  core and by the Sanguinesti staff and Tumeken's shadow before a charge is spent), in multicombat
+  core, by the Sanguinesti staff and Tumeken's shadow, and by every other modelled charge item (the serpentine helm, toxic staff of the dead, amulet of blood fury, dragonfire shield, ring of suffering, obligator, Dizana's quiver, Iban's staff, slayer's staff (e), Zorya's tome, the elemental tomes and crystal armour), in multicombat
   a landed spell also hits up to five attackable targets within a tile of its target for 0 to 25%
   of its damage (fixed-damage hits that pay no XP, never splash themselves and are not scaled
   again by Berserker, since the hit they derive from already was), and the standard
@@ -1157,7 +1157,8 @@ Animal Wrangler's Hunter and cooking ones) do not.
   temples, Underground Pass) are plain altars here.
 - **Farmer's Fortune** (Trailblazer Reloaded tier 6): a 20% chance to keep the seed or sapling
   planted (with its pot, and no Amulet of bounty charge; the message is ours), patches, including the Tithe Farm's, grown the moment they are planted and never
-  diseased (`farming:plant-rules`; anima plants still grow, their last stage is their end),
+  diseased (`farming:plant-rules`; an anima plant becomes fully grown at once and keeps the
+  final 640-minute stage of its life before dying),
   harvesting 25 times faster (25 picks an action, `farming:harvests-per-action`), and each pick
   three times the produce, noted (`farming:pick`; the herb sack takes only unnoted herbs, so these
   go to the inventory). The usual Farming XP a pick, not tripled: ours, the Wiki gives no XP rule.
@@ -1825,7 +1826,10 @@ Asgarnia, the Fremennik Province, Kandarin, the Kharidian Desert, Morytania, Tir
 Wilderness and Kourend; Raging Echoes 90, 200 and 400, Varlamore among them (Wiki). Only the next
 slot can be filled, a pick is permanent, and the unlocks live in `league:areas` (area ids in
 unlock order). An area the league does not offer (Varlamore on a Trailblazer Reloaded world) stays
-locked for good.
+locked for good. The areas page's map draws each unlocked area from the selection varbits
+(script 3659); `varps.unlockedCount` (7994, clear of the freeze timer's 7998) carries the real
+count the patched summary prints. View Areas resends both every time it opens, so a stale client
+whose delayed unlock packet was lost recovers on reopen.
 
 The 2026-11-18 region-editor export replaces the old 64-tile approximations for Misthalin,
 Karamja, Asgarnia, Kandarin, Morytania, the Kharidian Desert, Tirannwn and the Wilderness with
@@ -1834,6 +1838,11 @@ map squares; a league's own square `overrides` (including `area: null` for open)
 their squares, so Raging Echoes' Lithkren Vault and Demonic Pacts' Zanaris and Abyssal Area keep
 their league rules. TSPS's access lookup has no plane dimension, so a plane-0 rectangle also
 governs the same tile on planes 1-3, as the old map-square rule did.
+
+The export drew Tirannwn over map rows 150-153 (both its tile rectangles and its grid), which also
+covered Nieve's cave below the Underground Pass. The pass's content ends by y 9718, so Tirannwn
+stops at map row 151: the Stronghold Slayer Cave (2388-2495, 9768-9838) belongs to Kandarin,
+under the Tree Gnome Stronghold. `docs/stronghold-slayer-cave.md` has the cave.
 
 **Demonic Pacts** (Wiki Demonic_Pacts_League/Areas, recordings 237/01098, 01102, 01104, 01107,
 01149) starts in Varlamore alone; Misthalin is never open, while Zanaris and the Abyssal Area are

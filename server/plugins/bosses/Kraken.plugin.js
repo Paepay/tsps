@@ -52,6 +52,7 @@ module.exports = {
     Fight.attach(api);
     Area.attach(api);
     Instance.attach(api);
+    CombatAchievements.attach(api);
     Respawn.attach(api);
     Loot.attach(api);
     CombatAchievements.attach(api);

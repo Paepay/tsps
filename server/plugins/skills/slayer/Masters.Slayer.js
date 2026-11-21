@@ -60,6 +60,12 @@ const CANCEL_ACTION = "slayer_cancel_task";
 const { MORTIMER, MODIFIER } = Data;
 /** Konar's master id (slayer-masters.json). */
 const KONAR = 8;
+/** Hot Stuff's reward row and the two challenge assignments it offers (slayer_task ids). */
+const HOT_STUFF_UNLOCK_ROW = 6411;
+const TZHAAR_TASK_ID = 96;
+const TZTOK_JAD_TASK_ID = 97;
+const TZKAL_ZUK_TASK_ID = 105;
+const TZHAAR_OFFER_ACTION = "slayer_tzhaar_offer";
 
 let api = null;
 let core = null;
@@ -170,7 +176,57 @@ function assignmentSteps(player, master, praise) {
   if (offersChoice(player, master)) return null;
   const result = Tasks.assign(player, master);
   if (!result.line) return [{ npc: result.refused }, end];
-  return [{ npc: praise ? `${PRAISE} ${result.line}` : result.line }, afterTaskMenu(player, master)];
+  const line = praise ? `${PRAISE} ${result.line}` : result.line;
+  return tzhaarOfferAvailable(player)
+    ? [{ npc: line }, { type: "action", action: TZHAAR_OFFER_ACTION, target: master.names[0] }, afterTaskMenu(player, master)]
+    : [{ npc: line }, afterTaskMenu(player, master)];
+}
+
+/** Whether the task just set gets Hot Stuff's TzTok-Jad/TzKal-Zuk offer. */
+function tzhaarOfferAvailable(player) {
+  return Tasks.current(player)?.taskId === TZHAAR_TASK_ID && Tasks.hasUnlock(player, HOT_STUFF_UNLOCK_ROW);
+}
+
+/** Off-task TzKal-Zuk kills gate his option ("at least 1 TzKal-Zuk kill", Wiki: TzKal-Zuk/Slayer). */
+function zukKills(player) {
+  const request = { player, monster: "TzKal-Zuk", total: 0 };
+  api.emitCustomEvent("combat-achievements:count", request);
+  return Number.isInteger(request.total) ? request.total : 0;
+}
+
+/** The boss task a picked option gives, or 0 for "No". */
+function tzhaarBossTask(option) {
+  if (option === 1) return TZTOK_JAD_TASK_ID;
+  if (option === 2) return TZKAL_ZUK_TASK_ID;
+  return 0;
+}
+
+/** Plays the rest of the assignment after the offer, through the master's own transcript. */
+function playTzhaarTail(player, master, npcId, line) {
+  playSteps(player, master, null, npcId, () => (line ? [{ npc: line }, afterTaskMenu(player, master)] : [afterTaskMenu(player, master)]));
+}
+
+/**
+ * Hot Stuff, after a TzHaar assignment: Jad instead, and Zuk as well once the player has a Zuk
+ * kill. The master's line has already been said; this menu replaces the rest of that dialogue.
+ */
+function openTzhaarOffer(player, master, npcId) {
+  if (!tzhaarOfferAvailable(player)) return false;
+  const labels = ["Yes, slay TzTok-Jad"];
+  if (zukKills(player) >= 1) labels.push("Yes, slay TzKal-Zuk");
+  labels.push("No, keep the Tzhaar task");
+  const { OptionDialogue, DialogueChainBuilder } = core;
+  const menu = new OptionDialogue(0, { executeOption: (option) => {
+    const taskId = tzhaarBossTask(Number(option));
+    if (!taskId) {
+      playTzhaarTail(player, master, npcId, null);
+      return;
+    }
+    const result = Tasks.assignTzhaarBoss(player, master, taskId);
+    playTzhaarTail(player, master, npcId, result?.line ?? null);
+  } }, ...labels).setTitle("Slay a TzHaar boss?");
+  player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(menu));
+  return true;
 }
 
 /** Whether this master's Talk-to assignment starts with the praise (Konar and Krystilia word theirs apart). */
@@ -273,6 +329,9 @@ function assignmentEvent(request) {
   }
   const result = Tasks.assign(request.player, master);
   request.line = result.line ?? result.refused;
+  if (result.line && tzhaarOfferAvailable(request.player)) {
+    request.after = () => openTzhaarOffer(request.player, master, request.npcId ?? request.definitionId ?? null);
+  }
 }
 
 /** "slayer:task-tip": where to find the task (Konar: the area's hint). */
@@ -413,6 +472,13 @@ function action(request) {
     }
     return;
   }
+  if (request.action === TZHAAR_OFFER_ACTION) {
+    request.handled = true;
+    if (!openTzhaarOffer(player, master, request.npcId ?? request.definition.getId())) {
+      request.steps = [{ type: "end" }];
+    }
+    return;
+  }
   if (request.action === CANCEL_ACTION) {
     const cancel = { player, quiet: true, cancelled: false };
     api.emitCustomEvent("slayer:cancel-task", cancel);
@@ -439,7 +505,13 @@ function action(request) {
     player.setAttribute(REPLACE_ATTRIBUTE, null);
     request.handled = true;
     const line = replaceTask(player, master);
-    if (line) request.steps = Tasks.current(player) ? [{ npc: line }, afterTaskMenu(player, master)] : [{ npc: line }];
+    if (line) {
+      request.steps = Tasks.current(player)
+        ? tzhaarOfferAvailable(player)
+          ? [{ npc: line }, { type: "action", action: TZHAAR_OFFER_ACTION, target: master.names[0] }, afterTaskMenu(player, master)]
+          : [{ npc: line }, afterTaskMenu(player, master)]
+        : [{ npc: line }];
+    }
     else {
       request.end = true;
       offerLater(player, master, request.npcId ?? request.definition.getId());

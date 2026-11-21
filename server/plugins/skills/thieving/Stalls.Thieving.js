@@ -409,9 +409,15 @@ function finishTheft(event, stall) {
   // Another item can fill the final slot during the attempt tick.
   if (player.getInventory().isFull()) { player.getInventory().full(); return; }
   if (stall.success) {
-    const roll = { player, object, success: Math.random() < successChance(stall.success, player.getSkillManager().getCurrentLevel(core.Skill.THIEVING)) };
+    const success = {
+      player,
+      chance: successChance(stall.success, player.getSkillManager().getCurrentLevel(core.Skill.THIEVING)),
+      alwaysSucceeds: false,
+    };
+    pluginApi?.emitCustomEvent?.("thieving:stall-success", success);
+    const roll = { player, object, success: success.alwaysSucceeds || Math.random() < success.chance };
     pluginApi.emitCustomEvent("thieving:stall-roll", roll);
-    if (!roll.success) {
+    if (!success.alwaysSucceeds && !roll.success) {
       player.sendMessage(MISSED_THEFT_MESSAGE);
       return;
     }

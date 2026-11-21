@@ -4,8 +4,9 @@
  * Where Kraken loot lands (see ../Kraken.plugin.js for behaviour and sources).
  *
  * The Kraken's body sits in deep water, so the default loot tile (its own location)
- * is unreachable. Loot goes to a fixed shore tile south of the pool, as with Zulrah
- * and Vorkath moving loot off the boss.
+ * is unreachable. Boss loot goes to a fixed shore tile south of the pool, as with
+ * Zulrah and Vorkath moving loot off the boss. Cave krakens also die in the pool,
+ * so their loot follows the killer onto the walkway tile.
  */
 
 const Shared = require("./Shared.Kraken");
@@ -19,7 +20,14 @@ const Shared = require("./Shared.Kraken");
 const LOOT_TILE = [2280, 10031];
 
 function placeLoot(where) {
-  if (!where || where.npcId !== Shared.ids().BOSS) return;
+  if (!where) return;
+  const { BOSS, CAVE_KRAKEN } = Shared.ids();
+  if (where.npcId === CAVE_KRAKEN) {
+    const tile = where.player?.getLocation?.();
+    if (tile) where.location = tile.clone();
+    return;
+  }
+  if (where.npcId !== BOSS) return;
   const z = where.npc?.getLocation?.()?.getZ?.() ?? 0;
   const { Location } = Shared.core();
   where.location = new Location(LOOT_TILE[0], LOOT_TILE[1], z);

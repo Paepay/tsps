@@ -44,7 +44,7 @@ export function SidebarToggleArrow({ store }: { store: SidebarStore }): JSX.Elem
         <div ref={zone} className={`rl-sidebar-toggle-zone${near ? " near" : ""}`}>
             <button
                 type="button"
-                className={`rl-sidebar-toggle${collapsed ? "" : " close"}`}
+                className={`rl-sidebar-toggle${collapsed ? " collapsed" : " close"}`}
                 style={{ backgroundImage: `url(${runeliteImage("open_rs.png")})` }}
                 onClick={() => store.toggleCollapsed()}
                 aria-label={label}

@@ -88,6 +88,15 @@ function spendCharge({ attacker, target, spell }) {
   const player = attacker.getAsPlayer();
   const staff = weaponOf(player);
   if (!isEnchanted(staff) || !onTask(player, target)) return;
+  // The league Charge Reduction mastery asks every charge-bearing weapon; a kept charge
+  // leaves the staff untouched, and extra charges are added back on top.
+  const consume = { player, itemId: staff.getId(), skip: false, extra: 0 };
+  api?.emitCustomEvent?.("combat:consume-charge", consume);
+  if (consume.extra > 0) setCharges(staff, Math.min(ENCHANTED_CAPACITY, chargesOf(staff) + Math.floor(consume.extra)));
+  if (consume.skip) {
+    player.getEquipment().refreshItems();
+    return;
+  }
   const left = Math.max(0, chargesOf(staff) - CHARGE_PER_HIT);
   if (left > 0) {
     setCharges(staff, left);

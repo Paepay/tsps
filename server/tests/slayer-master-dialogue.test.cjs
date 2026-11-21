@@ -90,6 +90,18 @@ function harness(npcId, { points = 0, at = new Location(3089, 3524, 0) } = {}) {
       await send({ type: "dialogue_continue", widgetId: core.MultiChatboxPrompt.OPTIONS_WIDGET_ID, childIndex: index + 1 });
       record();
     },
+    async continueDialogue(widgetId) {
+      await send({ type: "dialogue_continue", widgetId, childIndex: -1 });
+      record();
+    },
+    async chooseOption(text) {
+      const current = player.getDialogueManager().getCurrent();
+      const options = current?.getOptions?.() ?? [];
+      const index = options.indexOf(text);
+      assert.ok(index >= 0, `${text} in ${options}`);
+      await send({ type: "dialogue_continue", widgetId: core.OptionDialogue.OPTIONS_WIDGET_ID, childIndex: index + 1 });
+      record();
+    },
     async talkToAssignment() {
       await this.option("Talk-to");
       for (let i = 0; i < 4; i++) {
@@ -269,6 +281,38 @@ test("Steve as a Slayer master greets as the masters do; the wyvern-cave Steve k
     await cave.option("Talk-to");
     assert.equal(cave.lines[0], "Welcome to my private little wyvern area.");
   } finally { cave.close(); }
+});
+
+test("Hot Stuff offers TzTok-Jad after a TzHaar assignment", async () => {
+  const h = harness(DURADEL);
+  const assign = Tasks.assign;
+  try {
+    const master = [...require("../plugins/skills/slayer/Data.Slayer").get().masters.values()].find((row) => row.names.includes("Duradel"));
+    const tzhaar = master.tasks.find((row) => row.task.id === 96);
+    assert.ok(tzhaar, "Duradel can assign TzHaar with Hot Stuff");
+    State.setVarp(h.player, "slayer_rewards_unlocks", 1 << 18);
+    Tasks.assign = (player, owner) => ({ line: Tasks.assignPicked(player, owner, tzhaar, 0, 25, () => 0.5) });
+
+    await h.option("Assignment");
+    assert.equal(Tasks.current(h.player).taskId, 96, "the TzHaar task is assigned first");
+
+    for (let i = 0; i < 5 && !h.player.getDialogueManager().getCurrent()?.getOptions; i++) {
+      const group = h.player.getPacketSender().getChatboxGroupId();
+      await h.continueDialogue((group << 16) | 5);
+    }
+    const menu = h.player.getDialogueManager().getCurrent();
+    assert.deepEqual(menu?.getOptions?.(), ["Yes, slay TzTok-Jad", "No, keep the Tzhaar task"]);
+    await h.chooseOption("Yes, slay TzTok-Jad");
+
+    const task = Tasks.current(h.player);
+    assert.equal(task.taskId, 97);
+    assert.equal(task.count, 1, "one Jad without the Master/Grandmaster tiers");
+    assert.equal(h.player.getDialogueManager().getCurrent()?.getText?.(), "Your new task is to kill 1 TzTok-Jad.");
+    assert.deepEqual(await h.toMenu(), [MENU[0], MENU[2]]);
+  } finally {
+    Tasks.assign = assign;
+    h.close();
+  }
 });
 
 test("the equipment shop's title has no ' (shop)'", async () => {

@@ -1,5 +1,6 @@
 import type { LoginState } from "../../LoginState";
 import type { LoginRendererHost, RenderContext } from "../host";
+import { getClientBrandName } from "../../../../config/clientEnv";
 import { isCaretVisible } from "../canvas";
 import {
     getRememberedPlayBounds,
@@ -238,7 +239,7 @@ export function drawWelcomeDisplayName(
         drawCenteredText(host, 
             ctx,
             host.fontBold12,
-            `Welcome to ${state.serverName?.trim() || "RSPS.app"}`,
+            `Welcome to ${state.serverName?.trim() || getClientBrandName()}`,
             centerX,
             REMEMBERED_TITLE_Y,
             0xffff00,

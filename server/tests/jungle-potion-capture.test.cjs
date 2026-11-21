@@ -97,8 +97,9 @@ test("the offer plays the captured lines; the quest starts as the player continu
   assert.ok(!messages(f).some((m) => m.startsWith("You've started a new quest")));
   await h.continueLine(f);
   assert.equal(stage(f), 1, "started as it is continued (tick 160)");
-  assert.equal(messages(f).filter((m) => m.startsWith("You've started a new quest: ")).length, 1);
-  assert.match(messages(f).at(-1), /^You've started a new quest: <col=[0-9a-f]{6}>Jungle Potion<\/col>$/);
+  const starts = messages(f).filter((m) => m.startsWith("You've started a new quest: "));
+  assert.equal(starts.length, 1);
+  assert.match(starts[0], /^You've started a new quest: <col=[0-9a-f]{6}>Jungle Potion<\/col>$/);
   await until(f, "That is excellent Bwana!");
   await until(f, "It grows near vines in an area to the south west where");
 });

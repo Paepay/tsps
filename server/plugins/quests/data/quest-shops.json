@@ -1,5 +1,5 @@
 {
-  "_source": "OSRS Wiki shop and owner pages: each shop below won't trade, and each 'stock' item isn't sold, until the quest is complete ('started': once it is started). 'carrying' is an item the player must hold in the inventory or worn. Quests are matched by name through quest:is-complete / quest:is-started; a quest this server doesn't have leaves the shop open.",
+  "_source": "OSRS Wiki shop and owner pages: each shop below won't trade, and each 'stock' item isn't sold, until the quest is complete ('started': once it is started, for shops and stock rows alike). 'carrying' is an item the player must hold in the inventory or worn. Quests are matched by name through quest:is-complete / quest:is-started; a quest this server doesn't have leaves the shop open.",
   "_messages": "Refusals are the Wiki's own lines (Transcript:<NPC>, 'Trying to trade'): 'npc' says 'lines', then 'statement' shows in a box; 'message' is a game message. A shop with neither gets the 'fallback' message, which is ours.",
   "fallback": "You need to complete {quest} to trade here.",
   "fallbackStarted": "You need to start {quest} to trade here.",
@@ -39,7 +39,10 @@
   "stock": [
     { "shop": "Quartermaster's Stores", "items": ["DRAGON_HALBERD"], "quest": "Regicide" },
     { "shop": "The Big Heist Lodge", "items": ["BANDITS_BREW"], "quest": "Desert Treasure I" },
-    { "shop": "The Other Inn.", "items": ["BRAINDEATH_RUM"], "quest": "Cabin Fever" }
+    { "shop": "The Other Inn.", "items": ["BRAINDEATH_RUM"], "quest": "Cabin Fever" },
+    { "shop": "Slayer Equipment (shop)", "items": ["REINFORCED_GOGGLES"], "quest": "A Porcine of Interest" },
+    { "shop": "Ali's Discount Wares.", "items": ["MENAPHITE_PURPLE_HAT", "MENAPHITE_PURPLE_TOP", "MENAPHITE_PURPLE_ROBE", "MENAPHITE_PURPLE_KILT", "MENAPHITE_RED_HAT", "MENAPHITE_RED_TOP", "MENAPHITE_RED_ROBE", "MENAPHITE_RED_KILT"], "quest": "Rogue Trader" },
+    { "shop": "Alry the Angler's Angling Accessories", "items": ["PEARL_BARBARIAN_ROD"], "quest": "Barbarian Training", "started": true }
   ],
   "_versions": "Shop versions whose names don't name their quest: the version that applies, for npc-dialogue:shop (dialogue and Trade).",
   "versions": [

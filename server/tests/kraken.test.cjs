@@ -11,6 +11,7 @@ const { Location } = require("../dist/game/model/Location");
 const Shared = require("../plugins/bosses/kraken/Shared.Kraken");
 const { areaClass } = require("../plugins/bosses/kraken/Area.Kraken");
 const Fight = require("../plugins/bosses/kraken/Fight.Kraken");
+const Loot = require("../plugins/bosses/kraken/Loot.Kraken");
 
 class Area {}
 class Boundary {}
@@ -22,6 +23,7 @@ Shared.bind({
   core: {
     Area,
     Boundary,
+    Location,
     Projectile,
     CombatMethod: class {},
     CombatType: { MAGIC: "magic" },
@@ -70,6 +72,31 @@ test("a tentacle is asked about as the Kraken, which carries the task", () => {
   onTaskAnswer = (request) => request.npc === tentacle && request.npcId === Shared.ids().BOSS;
   assert.equal(Shared.onTask(player, tentacle), true);
   assert.equal(requests.at(-1).npcId, Shared.ids().BOSS);
+});
+
+test("Cave kraken loot follows the killer; boss loot stays on the shore", () => {
+  const killerTile = new Location(2255, 10024, 0);
+  const caveKraken = {
+    player: { getLocation: () => killerTile },
+    npcId: Shared.ids().CAVE_KRAKEN,
+    npc: npc(Shared.ids().CAVE_KRAKEN),
+  };
+  Loot.placeLoot(caveKraken);
+  assert.equal(caveKraken.location?.equals(killerTile), true, "loot lands on the walkway under the killer");
+  assert.notEqual(caveKraken.location, killerTile, "the player's live location is not mutated by the drop");
+
+  const bossTile = new Location(2278, 10034, 0);
+  const boss = {
+    player: { getLocation: () => killerTile },
+    npcId: Shared.ids().BOSS,
+    npc: { ...npc(Shared.ids().BOSS), getLocation: () => bossTile },
+  };
+  Loot.placeLoot(boss);
+  assert.deepEqual(
+    [boss.location.getX(), boss.location.getY(), boss.location.getZ()],
+    [...Loot.LOOT_TILE, 0],
+    "the boss keeps its fixed reachable shore tile",
+  );
 });
 
 test("the Kraken's hit lands with its legacy-shape projectile at any range (#1862)", (t) => {

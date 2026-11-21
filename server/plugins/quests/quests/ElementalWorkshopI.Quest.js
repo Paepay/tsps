@@ -51,6 +51,11 @@ module.exports = function registerElementalWorkshopIQuest(api) {
 
   const I = ItemIdentifiers;
   const BOOKCASE = ObjectIdentifiers.BOOKCASE_99; // 26113 elemental_workshop_bookcase
+  // The smithy south-west of the Seers' Village bank holds two bookcases: the quest's own
+  // BOOKCASE_99 and a plain BOOKCASE_97 a few tiles away. Players search either; the book is
+  // in both. BOOKCASE_97 is used elsewhere too, so it only counts inside this building.
+  const SMITHY_BOOKCASE = ObjectIdentifiers.BOOKCASE_97;
+  const SMITHY_BOOKCASE_AREA = { minX: 2708, maxX: 2720, minY: 3476, maxY: 3483 };
   const ODD_WALL_LEFT = ObjectIdentifiers.ODD_LOOKING_WALL_8; // 26115 at 2709,3495
   const ODD_WALL_RIGHT = ObjectIdentifiers.ODD_LOOKING_WALL_7; // 26114 at 2710,3495
   const ODD_WALLS = [ODD_WALL_LEFT, ODD_WALL_RIGHT];
@@ -792,12 +797,23 @@ module.exports = function registerElementalWorkshopIQuest(api) {
     return String(event.definition?.getInteractions?.()?.[event.clickType - 1] ?? "").toLowerCase();
   }
 
+  /** The smithy's two bookcases, either of which holds the battered book (issue #67). */
+  function isSmithyBookcase(objectId, location) {
+    if (objectId === BOOKCASE) return true;
+    if (objectId !== SMITHY_BOOKCASE) return false;
+    const x = location?.x ?? location?.getX?.();
+    const y = location?.y ?? location?.getY?.();
+    const z = location?.z ?? location?.getZ?.() ?? 0;
+    return z === 0 && x >= SMITHY_BOOKCASE_AREA.minX && x <= SMITHY_BOOKCASE_AREA.maxX &&
+      y >= SMITHY_BOOKCASE_AREA.minY && y <= SMITHY_BOOKCASE_AREA.maxY;
+  }
+
   function handleObjectInteraction(event) {
     const option = objectOption(event);
     const { player, objectId, location, object } = event;
     const handled = () => { event.handled = true; };
 
-    if (objectId === BOOKCASE && option === "search") return handled(), searchBookcase(player);
+    if (isSmithyBookcase(objectId, location) && option === "search") return handled(), searchBookcase(player);
     if (ODD_WALLS.includes(objectId) && option === "open") return handled(), openOddWall(player, object, false);
     if (objectId === SURFACE_STAIRS && option === "climb-down") return handled(), climbDown(player);
     if (objectId === WORKSHOP_STAIRS && option === "climb-up") return handled(), climbUp(player);

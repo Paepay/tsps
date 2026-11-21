@@ -54,7 +54,7 @@ const FIRST_ATTACK_TICKS = 2;
 const TORNADO_EVERY = 56;
 const TORNADO_TICKS = 20;
 const PATTERN_EVERY = 30;
-const FIRST_PATTERN_TICKS = 4;
+const FIRST_PATTERN_TICKS = 10;
 const BLUE_TICKS = [5, 4, 3];
 const ORANGE_TICKS = 6;
 const FLOOR_DAMAGE = [10, 20];
@@ -377,7 +377,8 @@ class HunllefFight {
     for (const [x, y] of pattern) {
       const key = `${x},${y}`;
       if (this.floor.has(key)) continue;
-      this.floor.set(key, { x, y, orangeAt, clearAt: orangeAt + ORANGE_TICKS, state: "blue" });
+      // A tile hurts from the tick after it turns orange, so standing on it as it changes is not instant damage.
+      this.floor.set(key, { x, y, orangeAt, damageFrom: orangeAt + 1, clearAt: orangeAt + ORANGE_TICKS, state: "blue" });
       this.setFloor(x, y, 1);
     }
   }
@@ -394,7 +395,7 @@ class HunllefFight {
         tile.state = "orange";
         this.setFloor(tile.x, tile.y, 2);
       }
-      if (tile.state === "orange" && this.arenaTile(tile.x, tile.y).equals(here)) {
+      if (tile.state === "orange" && this.ticks >= (tile.damageFrom ?? tile.orangeAt) && this.arenaTile(tile.x, tile.y).equals(here)) {
         const amount = randomInt(this.random, ...FLOOR_DAMAGE);
         this.taken.avoidable += amount;
         damage(player, amount);

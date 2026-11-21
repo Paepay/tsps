@@ -2007,6 +2007,9 @@ test("a mark of grace is rolled when a lap is completed, and lasts 10 minutes fo
   assert.deepEqual(marks[0].options, { goesGlobal: false, despawnDelay: 1000 });
   const { x, y, z } = { x: marks[0].position.getX(), y: marks[0].position.getY(), z: marks[0].position.getZ() };
   assert.ok(draynor.marks.tiles.some((tile) => tile[0] === x && tile[1] === y && tile[2] === z), "on one of the course's mark tiles");
+  const logged = hooks.events.find((event) => event.name === "collection-log:obtain" && event.payload.itemId === MARK_OF_GRACE);
+  assert.ok(logged, "the drop fills the collection-log slot as it spawns");
+  assert.equal(logged.payload.amount, 1);
 });
 
 test("every course's loot tracker source is the cache's entry for it (enum 4976)", () => {

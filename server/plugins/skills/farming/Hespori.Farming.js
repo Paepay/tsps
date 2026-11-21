@@ -306,6 +306,10 @@ function hesporiLoot(event) {
     loot.push({ itemId: anima[Math.floor(Math.random() * anima.length)], amount: 1 + Math.floor(Math.random() * 2) });
     // An Echo Hespori's harvest is saved apart from the crop; the patch is never touched.
     if (fight.echoToken) { addEchoHarvest(fight.player, loot); return; }
+    // The collection log reads this list in a microtask after the roll, so replace its contents
+    // with the final loot; otherwise it logs the anima seed the table rolled and we discarded.
+    event.drops.length = 0;
+    event.drops.push(...loot);
     Patches.stateFor(fight.player, fight.patch).hesporiLoot = harvestItems(loot);
     Patches.stateFor(fight.player, fight.patch).hesporiFight = false;
     releaseVines(fight);

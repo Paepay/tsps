@@ -1366,6 +1366,21 @@ test("Abyssal demons need either quest; partly-done quests only need starting", 
   assert.equal(Tasks.meetsQuests(createPlayer(), taskId("Ghouls")), true);
 });
 
+test("Sourhogs need A Porcine of Interest; Spria cannot assign them early", () => {
+  withQuests(() => {
+    const player = createPlayer();
+    player.quests = { a_porcine_of_interest: "started" };
+    assert.equal(Tasks.meetsQuests(player, taskId("Sourhogs")), false, "the task needs the quest complete");
+    for (let i = 0; i < 300; i++) {
+      Tasks.clear(player);
+      Tasks.assign(player, master(9), Math.random);
+      assert.notEqual(Tasks.current(player).task.displayName, "Sourhogs");
+    }
+    player.quests.a_porcine_of_interest = "complete";
+    assert.equal(Tasks.meetsQuests(player, taskId("Sourhogs")), true);
+  });
+});
+
 test("every task quest names a task and a registered quest", () => {
   const fs = require("fs");
   const path = require("path");

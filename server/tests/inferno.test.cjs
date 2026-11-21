@@ -248,7 +248,7 @@ function createWorld() {
   };
   for (const name of ['onNpcDialogueCondition', 'onCustomEvent', 'onObjectFirstClick', 'onObjectSecondClick', 'onObjectRoute', 'onPlayerLogin', 'onPlayerLogout', 'onPlayerProcess',
     'onPlayerBeforeDeath', 'onPlayerDeath', 'onShouldDropItemsOnDeath', 'onCanTeleport', 'onCanAttack', 'onNpcBeforeDeath', 'onCombatHitResolved',
-    'onPlayerDealtDamage', 'onNpcDeath', 'onNpcInteraction', 'onItemOnNpc',
+    'onPlayerDealtDamage', 'onNpcDeath', 'onNpcInteraction', 'onItemOnNpc', 'onNpcHitModify',
     'registerCommand']) {
     api[name] = hook(name);
   }

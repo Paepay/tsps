@@ -5,6 +5,7 @@ const CAST_DATA_KEY = 'elemental-tomes:cast';
 const ELEMENT_NAMES = { 1: 'air', 2: 'water', 3: 'earth', 4: 'fire' };
 const curses = new Set();
 const statCurses = new Set();
+let pluginApi = null;
 
 function initialize(api) {
   curses.clear(); statCurses.clear();
@@ -39,7 +40,13 @@ function committed(event) {
   const state = current(event.player);
   event.context.data.set(CAST_DATA_KEY, state);
   if (!worn || !chargedCast(event.player,event.spell,state)) return;
-  Common.set(worn.item,worn.definition,worn.state.charges-1,worn.state.pageId);
+  // The league Charge Reduction mastery asks every spell-charged item; a kept charge
+  // leaves the tome untouched, and extra charges come back on top.
+  const consume = { player: event.player, itemId: worn.item.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
+  const extra = Math.max(0, Math.floor(Number(consume.extra) || 0));
+  const left = Math.min(Common.MAX_CHARGES, worn.state.charges + extra - (consume.skip ? 0 : 1));
+  Common.set(worn.item,worn.definition,left,worn.state.pageId);
   Common.refresh(event.player);
 }
 function supplyRune(event) {
@@ -71,6 +78,7 @@ function curseStrength(request) {
   if (snapshot(request)?.element === 'water' && statCurses.has(request.spell?.spellId?.())) request.percent = Math.floor(request.percent * 1.5);
 }
 function attach(api) {
+  pluginApi = api;
   api.onCustomEvent('magic:cast-committed',committed);
   api.onSpellRuneBypass(supplyRune);
   api.onCustomEvent('combat:magic-hit-bounds',hitBounds);

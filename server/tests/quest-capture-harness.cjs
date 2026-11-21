@@ -33,7 +33,7 @@ h.teardown = () => PM.emitServerShutdown({});
 h.quest = (key = h.key) => QuestRuntime.getRegisteredQuests().findLast((entry) => entry.key === key);
 h.stage = (f) => h.quest().getStage(f.player);
 
-h.actor = function actor(t, { stage = 0, items = [], at, amulet = false, attributes = {}, done = ["lost_city", "nature_spirit"], farming = 30 } = {}) {
+h.actor = function actor(t, { stage = 0, items = [], at, amulet = false, attributes = {}, done = ["lost_city", "nature_spirit"], farming = 30, questKey = h.key } = {}) {
   const { core } = h;
   const channel = { kind: "test", remoteAddress: "127.0.0.1", isOpen: () => true, send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
   const session = new PlayerSession(channel);
@@ -65,7 +65,7 @@ h.actor = function actor(t, { stage = 0, items = [], at, amulet = false, attribu
   player.getSkillManager().setCurrentLevel(core.Skill.FARMING, farming, false);
   // The saved attributes first: the stage change re-sends the varbits derived from them.
   for (const [key, value] of Object.entries(attributes)) player.setAttribute(key, value);
-  h.quest().setStage(player, stage);
+  h.quest(questKey).setStage(player, stage);
   if (amulet) player.getEquipment().setItem(core.Equipment.AMULET_SLOT, new core.Item(core.ItemIdentifiers.GHOSTSPEAK_AMULET, 1));
   for (const id of items) player.getInventory().add(new core.Item(id, 1), false);
   return f;

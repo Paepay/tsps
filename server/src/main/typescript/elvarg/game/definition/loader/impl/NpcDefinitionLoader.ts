@@ -54,6 +54,11 @@ type CombatAnimation = {
     projectileArc?: { startHeight?: number; endHeight?: number; angle?: number; progress?: number };
     /** Ticks from the death animation to the death itself; 2 when absent. */
     deathTicks?: number;
+    /**
+     * The cache NPC this one becomes while fighting (a wyrm rears from its crawling idle into
+     * the attacking form). The spawn definition keeps the id so the form can revert.
+     */
+    combatForm?: number;
     /** Ticks from removal to respawn; 25 when absent, 0 to disable. */
     respawn?: number;
     /** Tiles an aggressive NPC searches for a target from its current south-west tile; 3 when absent. */
@@ -568,6 +573,10 @@ export class NpcDefinitionLoader extends DefinitionLoader {
                     spawnAnim: animation.anims?.spawn ?? definition.getSpawnAnim(),
                     deathSound: animation.sounds?.death ?? definition.getDeathSound(),
                 });
+            }
+            const combatForm = animationFile.npcs?.[key]?.combatForm;
+            if (Number.isInteger(combatForm) && combatForm > 0) {
+                (definition as any).combatForm = combatForm;
             }
             // A hand-set deathTicks wins, then this NPC's captured timing, then the timing every
             // captured NPC with its death animation shares; 2 otherwise.

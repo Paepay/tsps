@@ -6,6 +6,7 @@ import {
 } from "../../common/authentication";
 import {
     getBrowserHostWorldConfig,
+    getClientBrandName,
     getClientConfig,
     getConfiguredDefaultServer,
     getConfiguredServers,

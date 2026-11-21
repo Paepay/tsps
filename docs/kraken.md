@@ -20,7 +20,7 @@ The plugin is `server/plugins/bosses/Kraken.plugin.js`, with its units in
 | `Fight.Kraken.js` | Attack script for 492/494/5535: Magic, Fire-Wave-like projectiles (156 boss, 162 cave/tentacle; real spotanims in rev 241), impacts 157/163, splash on miss. Speeds/max hits stay the dump's. |
 | `Area.Kraken.js` | Kraken Cove multicombat over the Slayer-area box, so boss + tentacles can pile one player. |
 | `Respawn.Kraken.js` | No mid-fight trickle: tentacles killed while the boss is up stay dead; killing the boss kills the rest and respawns all five whirlpools together on the boss timer. |
-| `Loot.Kraken.js` | Boss loot lands on a fixed verified shore tile (2280, 10031), not in the water under the body. |
+| `Loot.Kraken.js` | Boss loot lands on a fixed verified shore tile (2280, 10031), not in the water under the body; Cave kraken loot follows the killer so it lands on the walkway tile rather than the water. |
 
 Already in data (not this plugin): combat stats (`monsters-complete.json`: Kraken 494,
 87 Slayer, max hit 28, magic), drops (`npc-drops.json`: `kraken`, `cave_kraken`),

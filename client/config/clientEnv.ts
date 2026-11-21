@@ -191,6 +191,38 @@ export function getPublicWebRtcRelayConfig(): WebRtcRelayConfig {
     return { signalUrl: DEFAULT_WEBRTC_SIGNAL_URL, iceServers: DEFAULT_WEBRTC_ICE_SERVERS };
 }
 
+/**
+ * True when this page is the PaeScape website's `/client` mount.
+ *
+ * The hosted client already mints a login ticket through the website, so its world
+ * switcher must list the platform's worlds rather than the public RSPS.app relay.
+ * `?paescapePlatform=1` forces the same mode on a local dev server for testing.
+ */
+export function isPaeScapePlatformClient(): boolean {
+    if (typeof window === "undefined") return false;
+    if (new URLSearchParams(window.location?.search ?? "").get("paescapePlatform") === "1") return true;
+    const pageHost = (window.location?.hostname ?? "").toLowerCase();
+    if (!pageHost || LOOPBACK_HOST.test(pageHost)) return false;
+    const publicUrl = (process.env.PUBLIC_URL ?? "").replace(/\/+$/, "");
+    const path = window.location?.pathname ?? "";
+    return publicUrl === "/client" || path === "/client" || path.startsWith("/client/");
+}
+
+/** Same-origin directory of PaeScape.Online's public worlds, or undefined off-platform. */
+export function getPlatformWorldListUrl(): string | undefined {
+    return isPaeScapePlatformClient() ? "/platform/api/play/worlds" : undefined;
+}
+
+/** Brand used where the client is not naming a particular world. */
+export function getClientBrandName(): string {
+    return isPaeScapePlatformClient() ? "PaeScape.Online" : "RSPS.app";
+}
+
+/** Footer of the in-game World Switcher. */
+export function getServerListNotice(): string {
+    return `Register on ${getClientBrandName()} to publish your own world`;
+}
+
 let iceCache: { signalUrl: string; iceServers: RTCIceServer[]; expiresAt: number } | undefined;
 
 // Set after a direct (non-relay) WebRTC connection fails, so the next attempt

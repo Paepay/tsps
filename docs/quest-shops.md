@@ -13,8 +13,9 @@ Wiki shop and owner pages):
   Piracy). The refusal is the Wiki's own: the trader's line (Transcript:<NPC>, "Trying to trade"),
   a box, or a game message ("Only Fremenniks may purchase fish here."). A shop with no recorded
   refusal says "You need to complete <quest> to trade here." (ours).
-- `stock`: items a shop sells only after a quest (the Quartermaster's dragon halberd, Regicide).
-  They are hidden, so they take no slot.
+- `stock`: items a shop sells only after a quest (the Quartermaster's dragon halberd, Regicide;
+  the Slayer masters' reinforced goggles, A Porcine of Interest; `started` for the pearl barbarian
+  rod, which needs Barbarian Training partly done). They are hidden, so they take no slot.
 - `versions`: shop versions whose names don't name their quest ("Battle Runes (Post-miniquest)",
   Enter the Abyss), picked for `npc-dialogue:shop`.
 

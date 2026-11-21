@@ -848,6 +848,7 @@ test('the singing bowl follows the Wiki costs and upgrades worn gear in place', 
     for (const piece of ['helm', 'body', 'legs']) {
       assert.ok(recipes.some((recipe) => recipe.id === items[piece][0]), `${piece} (basic) offered`);
       player.menu.execute(items[piece][0], 1);
+      assert.ok(player.menu?.getItems?.().length > 0, 'the bowl stays open for the next piece');
     }
     assert.equal(player.inventory.getAmount(items.shards), 0, 'a basic set is 150 shards');
     assert.equal(player.inventory.getAmount(items.ore), 0, 'and 3 ore');
@@ -1199,7 +1200,8 @@ test('floor tiles turn blue, then orange, and orange ones hurt', () => {
     player.damage.length = 0;
     while (fight.ticks < tile.orangeAt) { fight.ticks++; fight.tickFloor(player); }
     assert.equal(floor(), 36151, 'orange');
-    assert.ok(player.damage.length >= 1 && player.damage.every((d) => d >= 10 && d <= 20), 'orange tiles hurt 10-20');
+    assert.equal(player.damage.length, 0, 'no damage on the tick it turns orange');
+    fight.ticks++; fight.tickFloor(player);    assert.ok(player.damage.length >= 1 && player.damage.every((d) => d >= 10 && d <= 20), 'orange tiles hurt 10-20');
     while (fight.floor.size) { fight.ticks++; fight.tickFloor(player); }
     assert.equal(floor(), 36149, 'back to the plain floor');
   } finally {

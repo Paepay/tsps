@@ -1,6 +1,6 @@
 # PaeScape Issue Review Queue
 
-Last reviewed: 2026-11-18
+Last reviewed: 2026-11-21
 
 Repository: [`Paepay/PaeScape_Issues`](https://github.com/Paepay/PaeScape_Issues)
 
@@ -9,13 +9,15 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 | Issue | Status | Area | Finding | Next action |
 | --- | --- | --- | --- | --- |
 | [#24](https://github.com/Paepay/PaeScape_Issues/issues/24) | `needs reporter info` | Teleports / Sins of the Father | Could not reproduce on the current local build. After completing Sins of the Father, both inventory Teleport and the worn Darkmeyer option reached `3592,3337`. | Ask for build, quest-journal state and whether they used inventory Teleport or the worn option. Retest against the build they used. |
-| [#25](https://github.com/Paepay/PaeScape_Issues/issues/25) | `needs repro` | Leagues / area map | Server-side area state and the existing login/unlock tests look correct. The symptom points to stale client varbits, an interrupted delayed unlock, or a mismatch between the saved area and the map state. | Reproduce on a league character and capture `league:areas`, varbits `10662`-`10667`, and the map state after login and after reopening View Areas. |
+| [#25](https://github.com/Paepay/PaeScape_Issues/issues/25) | `fixed locally` | Leagues / area map | The cache's areas page draws each unlocked area's map sprite from selection varbits `10662`-`10667` (script 3659). View Areas never re-sent them, so a stale client could open a map without Karamja even though the save had it. Seasonal leagues also never sent the area-count varp the patched summary reads, leaving `0/9 areas` beside a red Karamja. | Verify on the local client: unlock Karamja, reopen View Areas, relog and reopen; the Karamja overlay stays red and the summary counts it. |
 | [#26](https://github.com/Paepay/PaeScape_Issues/issues/26) | `confirmed bug` | Tai Bwo Wannai Trio / world objects | Before quest completion, object `779` (Bamboo Door) is blocked by the quest. After completion the quest handler falls through, but the generic door plugin does not register `Bamboo Door`; a click moved the player without opening or toggling the door. | Add the missing open/close handling for object `779` (or its cache-derived partner) and test both sides of the door before and after completion. |
 | [#27](https://github.com/Paepay/PaeScape_Issues/issues/27) | `fixed locally` | Chatbox / settings persistence | The game-chat Filter toggle is varbit `26` on varp `1055` (`chat_filter_assist`). The client did not transmit that varp and the server did not save or restore the bit, so every login reset it to On. | Verify on the local client: set Game chat to Filter, relog, and confirm it stays filtered. |
 | [#28](https://github.com/Paepay/PaeScape_Issues/issues/28) | `fixed locally` | Dragon Slayer I / Duke Horacio | The quest flow works on the current build when Duke is approached on `z=1`. The reproducible defect was a full inventory: the quest announced the hand-over and showed the shield box while adding nothing. It now uses `giveItem`, reports the missing space, and ends without a false item box. | Retest with both a free slot and a full inventory. If the reporter had free slots, ask for their exact location and Dragon Slayer stage. |
 | [#29](https://github.com/Paepay/PaeScape_Issues/issues/29) | `fixed locally` | Leagues / Trailblazer harpoon | Endless Harvest now keeps fishing spots, rocks and trees from depleting in Trailblazer Reloaded as well as Demonic Pacts. With Infernal Gathering on and the matching Trailblazer tool, the endless gather delivers processed output: cooked fish from the harpoon, bars from the pickaxe, and burnt logs/Firemaking XP from the axe. | Verify on the local server with Endless Harvest plus Infernal Gathering: fish with the harpoon, chop with the axe and mine with the pickaxe; each should continue without depleting and bank the doubled processed result. |
 | [#30](https://github.com/Paepay/PaeScape_Issues/issues/30) | `ready to close` | Equipment / Ava's attractor | Working as intended. Ava's attractor is the sub-50 Ranged Animal Magnetism reward and has no Ranged equip requirement; Ava's accumulator is the 50 Ranged upgrade. The reported level-30 requirement belongs to neither item. | Close as not a bug and point the reporter to Ava's accumulator's level-50 requirement. |
 | [#31](https://github.com/Paepay/PaeScape_Issues/issues/31) | `ready to close` | Farming / Farmer's Fortune | Working as intended. Farmer's Fortune grows farming patches instantly and never lets them catch disease. A seedling in a plant pot is not a farming patch, so its sapling timer is unchanged by the relic. | Close as not a bug; no seedling-specific change without a different source for that behavior. |
+| [#76](https://github.com/Paepay/PaeScape_Issues/issues/76) | `fixed locally` | Kraken Cove / loot | Cave kraken kills used the NPC's default water tile for drops; only the Kraken boss had a location override. Cave kraken loot now follows the killer while the boss keeps its fixed reachable shore tile. | Verify a Cave kraken kill at the cove: loot appears under the player and can be picked up. |
+| [#78](https://github.com/Paepay/PaeScape_Issues/issues/78) | `fixed locally` | Slayer / A Porcine of Interest | Spria's Sourhogs task is correctly gated on the quest, and the public cave works after it. The real gap was the replacement reinforced goggles: the osrsreboxed shop dumper read only a page's first store table, so Slayer Equipment's quest-added goggles row never reached `shops.json`. | Verify on local: with A Porcine of Interest done, `Trade` at any Slayer Master shows reinforced goggles for 100 coins; before the quest the row is absent. |
 
 ## #24 - Drakan's medallion cannot reach Darkmeyer
 
@@ -26,10 +28,10 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 
 ## #25 - Karamja still shown as locked on the area map
 
-- Login resends every selection varbit from the saved `league:areas` list (`server/plugins/modes/leagueareas/Unlock.LeagueAreaUnlocks.js:13` and `:26`).
-- An unlock saves immediately, then sends the new slot varbit fourteen ticks later (`Unlock.LeagueAreaUnlocks.js:119` and `:142`; delay at `server/plugins/modes/data/league-areas.json:37`).
-- Existing tests cover defaults and the Karamja selection varbit, so reproduce with a real league character before changing the mapping or client state.
-- Suggested capture points: `league:areas`; selection varbits `10662`-`10667`; last-viewed `11693`; available `11695`; and the map before/after a relog and reopening View Areas.
+- The page's map is cache script `3659`: for each selection varbit `10662`-`10667` it sets the matching `region_data` row's map sprite on `512:22..32` (`client/tests/league-area-count.test.ts` now checks Karamja's `512:23 / 8061`).
+- The server already sent those varbits at login and after an unlock's fourteen-tick delay, but View Areas opened the interface without re-sending them. `Interface.LeagueAreaUnlocks.open` now calls `Unlock.sendState`, so reopening repairs a stale client.
+- Seasonal leagues never sent the area-count varp (`league-areas.json` `varps.unlockedCount`), so the patched summary read zero. `Unlock.sendState` and the unlock completion now send it; the count varp moved to `7994` because `7998` is the freeze timer's seconds (`client/game/plugins/statustimer/StatusTimerOverlay.tsx`).
+- Regression coverage: `server/tests/league-areas.test.cjs` (login, reopen, unlock count) and `client/tests/league-area-count.test.ts` (Karamja's map sprite).
 
 ## #26 - Tiadeche's hut door will not open
 
@@ -71,9 +73,41 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 - A seedling in a plant pot is not a farming patch; its `farming:sapling-at` timer is a separate plant-pot mechanic. The relic's patch rule does not apply.
 - No change: making potted seedlings instant would extend the relic beyond its documented behavior.
 
+## #76 - Cave kraken loot lands in the water
+
+- `Loot.Kraken.js` moved only the Kraken boss (`npcId === BOSS`); Cave kraken kills kept NpcDrops' default location, the Cave kraken's water tile.
+- Cave kraken loot now clones the killer's location. The boss keeps its fixed reachable shore tile at `2280,10031`.
+- Live check: a Cave kraken surfaced at `2280,10010` dropped a Fire rune at the player's `2283,10012` tile, and the item was picked up.
+- Regression coverage: `server/tests/kraken.test.cjs` (Cave kraken follows the killer, boss stays on the shore).
+
+## #75 - Falador shield does not locate the Giant Mole
+
+- `FaladorShield.DiaryRewards.js` only had recharge/check; `GiantMole.plugin.js` listed Falador shield tracking as skipped.
+- `updateMoleLocator` now runs on every player tick. Any Falador shield 1-4, worn or carried, points the client's hint arrow at the Giant Mole in the player's own part of the lair (public or rented instance): an NPC hint within 15 tiles while she is visible, her tile otherwise (far away or buried). It clears on leaving, losing the shield, or her death.
+- The client blinks hint arrows itself (200ms on/off), matching the Wiki's flashing indicator.
+- Live check: MoleProbe1 carried shield 4 at `1758,5188`; at `1760,5189` the blinking arrow sat above the Mole's head in `exports/issue75/videos/t0000381-locator.mp4` and `exports/issue75/frames/sheet.png`.
+- Regression coverage: `server/tests/giant-mole.test.cjs` (10 locator cases; 53 in the file).
+
+## #77 - Boosted drops on Level-Up worlds (league 4)
+
+- Already fixed by `3ba4c9896` (`fix(leagues): boost the restricted drop tables on the Level-Up world (Fixes #62)`), which is an ancestor of this batch.
+- `server/tests/league-boosted-drops.test.cjs` passes 3/3, including "every restricted source applies in Level-Up".
+- No further change; close with `#62` when this batch lands on `local`.
+
+## #78 - Spria assigns Sourhogs but the cave has no reinforced goggles in the shop
+
+- Task gating was already right: `server/plugins/skills/data/slayer-masters.json` gives task `121` `{"any": ["a_porcine_of_interest"]}`, so Spria cannot offer Sourhogs before the quest is complete.
+- The cave is reachable after the quest. Live check: MoleProbe1 climbed down at `3150,3347` to `3158,9713`, crossed the `40331` blockage to `3157,9703`, and the public Sourhogs loaded around `3159-3177,9673-9699`; the completed quest opens no private area.
+- The reported gap was the replacement goggles: `osrsreboxed-db`'s shop dumper read only a page's first `StoreTableHead`, so Slayer Equipment's "A Porcine of Interest" table (reinforced goggles, stock 50, restock 1) never reached `shops.json`. The dumper now merges tables whose section says a quest or miniquest completion adds stock, skipping duplicate-shop and league tables; `test/test_shops_database.py` covers both sides.
+- `server/plugins/quests/data/quest-shops.json` hides the goggles (and the other two newly imported gated rows: Ali's Menaphite gear, Alry's pearl barbarian rod) until their quest is met, so nobody buys them early.
+- Regression coverage: `server/tests/quest-shops.test.cjs` (hidden before the quest, visible after; stock/price row), `server/tests/slayer.test.cjs` (Sourhogs need the quest), and `server/tests/p2p-skilling-parity.test.cjs` (post-quest public cave).
+
 ## Suggested Review Order
 
-1. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
-2. Verify `#28` with a free slot and again with a full inventory.
-3. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
-4. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.
+1. Verify `#78`: Trade at Spria with the quest done for 100-coin reinforced goggles, then climb down and cross the blockage to a Sourhog.
+2. Verify `#75` with a shield 1-4 carried and worn beside the Mole, then without a shield.
+3. Verify `#76` by killing a small Cave kraken and taking its drop.
+4. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
+5. Verify `#28` with a free slot and again with a full inventory.
+6. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
+7. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.

@@ -490,10 +490,18 @@ function plant(player, patch, id, seeds = inventorySeeds(player, id)) {
             lives: 0, plantExperiencePending: true, plantedAt, plantedTick: Model.tickIndex(plantedAt, offset, rate),
             nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, 0), offset, rate),
             diseaseFree: rules.diseaseFree === true, undying: rules.undying === true });
-        // Fully grown at once, as the growth model leaves a crop on its last stage (an anima plant's last stage is its end).
-        if (rules.grown === true && crop.type !== "ANIMA") {
-            Object.assign(state, { stage: crop.stages, status: "grown", lives: Model.startingLives(crop, state.compost) });
-            if (crop.regrow) state.nextAt = Model.nextGrowth(Date.now(), crop.regrow, offset, rate);
+        // Fully grown at once. An anima plant has no harvest stage: its effect is live from
+        // planting and its last stage (the withered look) is the one before death, so instant
+        // growth moves it there and leaves the final 640 minutes of its life.
+        if (rules.grown === true) {
+            if (crop.type === "ANIMA") {
+                const last = Math.max(0, crop.stages - 1);
+                Object.assign(state, { stage: last, status: "growing",
+                    nextAt: Model.nextGrowth(plantedAt, Data.stageMinutes(crop, last), offset, rate) });
+            } else {
+                Object.assign(state, { stage: crop.stages, status: "grown", lives: Model.startingLives(crop, state.compost) });
+                if (crop.regrow) state.nextAt = Model.nextGrowth(Date.now(), crop.regrow, offset, rate);
+            }
         }
         spam(player, plantLine(crop, patch, crop.seedCount));
         if (typeof rules.message === "string") player.sendMessage(rules.message);

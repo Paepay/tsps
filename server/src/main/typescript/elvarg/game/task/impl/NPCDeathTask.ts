@@ -44,6 +44,8 @@ export class NPCDeathTask extends Task {
                 this.lastDamager = this.npc.getCombat().getLastDamager();
                 this.lastDamagerWeaponId = this.lastDamager?.getEquipment().getItems()[Equipment.WEAPON_SLOT]?.getId() ?? -1;
                 this.killer = this.npc.getCombat().getKiller(true);
+                // Die in the attacking form: the death sequence is rigged for it.
+                this.npc.updateCombatForm(true);
                 this.npc.performAnimation(new Animation(this.npc.getCurrentDefinition().getDeathAnim()));
                 NpcCombatSounds.death(this.npc, this.damagers.length > 0 ? this.damagers : this.killer ? [this.killer] : []);
                 this.npc.getCombat().reset();

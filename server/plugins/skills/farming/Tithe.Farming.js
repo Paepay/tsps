@@ -28,7 +28,9 @@ const GAMES = new WeakMap();
 function scoreFor(player) { return Patches.farmFor(player).tithe ??= { points: 0, score: 0 }; }
 function inField(player) {
     const p = player.getLocation();
-    return p.getX() > 1805 && p.getX() <= 1840 && p.getY() >= 3485 && p.getY() <= 3518 && p.getZ() === 0;
+    // The area boundary is 1805..1840: the door tile at 1805 is inside, so it must ask
+    // whether to leave rather than read as the prep room (#52).
+    return p.getX() >= 1805 && p.getX() <= 1840 && p.getY() >= 3485 && p.getY() <= 3518 && p.getZ() === 0;
 }
 function sync(player) {
     const score = scoreFor(player);

@@ -61,14 +61,26 @@ function restore(event) {
   if (passive) event.amount = Math.floor(event.amount * passive.prayerGainMultiplier);
 }
 
-/** The Gauntlet's Hunllef changes prayer by script rather than activating a real prayer. */
-function scriptedPrayerAgainst(target, combatType) {
-  const protecting = target?.__gauntletHunllef?.protecting;
-  if (protecting === undefined || protecting === null) return false;
-  const style = combatType === core.CombatType.MAGIC ? "magic"
+function styleName(combatType) {
+  return combatType === core.CombatType.MAGIC ? "magic"
     : combatType === core.CombatType.RANGED ? "ranged"
       : combatType === core.CombatType.MELEE ? "melee" : null;
-  return style !== null && protecting === style;
+}
+
+/**
+ * Protection a target keeps by script rather than by activating a real prayer: the Gauntlet's
+ * Hunllef, a demonic gorilla whose id picks its overhead. Owners answer
+ * `combat:scripted-protection` { target, combatType, protecting } and set `protecting` to true,
+ * so the penetration passive can see the prayer the core cannot.
+ */
+function scriptedPrayerAgainst(target, combatType) {
+  const protecting = target?.__gauntletHunllef?.protecting;
+  const style = styleName(combatType);
+  if (style === null) return false;
+  if (protecting !== undefined && protecting !== null) return protecting === style;
+  const query = { target, combatType, protecting: false };
+  Common.api.emitCustomEvent("combat:scripted-protection", query);
+  return query.protecting === true;
 }
 
 function praysAgainst(target, combatType) {

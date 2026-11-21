@@ -256,8 +256,8 @@ function strike(session, state) {
     monsters.later(zuk, Projectile.arrivalTicks(zuk, glyph), () => {
       if (!alive(glyph)) return;
       glyph.performAnimation(new Animation(GLYPH_BLOCK_ANIM));
-      // Wiki: the shield is destroyed after taking 600 damage; Zuk's own hits count.
-      glyph.setHitpoints(Math.max(0, glyph.getHitpoints() - damage));
+      // Wiki (Ancestral Glyph): it sustains Zuk's attacks indefinitely; only the monsters
+      // summoned during the fight damage its 600 hitpoints, so Zuk's hit is blocked outright.
     });
     return;
   }

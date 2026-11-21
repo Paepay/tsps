@@ -38,7 +38,7 @@ function build() {
   stockByShop = new Map();
   for (const entry of DATA.stock) {
     const list = stockByShop.get(entry.shop) ?? [];
-    list.push({ quest: entry.quest, items: new Set(entry.items.map(item)) });
+    list.push({ quest: entry.quest, started: entry.started === true, items: new Set(entry.items.map(item)) });
     stockByShop.set(entry.shop, list);
   }
 }
@@ -95,7 +95,7 @@ function stockVisible(event) {
   build();
   const gates = stockByShop.get(event.shopName);
   if (!gates || event.player?.isPlayerBot?.()) return;
-  if (gates.some((gate) => gate.items.has(event.itemId) && !questDone(event.player, gate.quest))) event.visible = false;
+  if (gates.some((gate) => gate.items.has(event.itemId) && !questDone(event.player, gate.quest, gate.started === true))) event.visible = false;
 }
 
 /**

@@ -566,6 +566,40 @@ test("the relic panel keeps the top tier's cost nonzero so its tracker cannot di
   }
 });
 
+test("Level-Up's eighth relic pick routes Guardian through the item grant", () => {
+  const Common = require("../plugins/modes/leaguerelics/Common.LeagueRelics");
+  const Unlock = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
+  const originalGrant = Unlock.grant;
+  const granted = [];
+  let plugin;
+  Unlock.grant = (player, relic) => granted.push({ player, relic });
+  try {
+    const fake = createRuntime();
+    plugin = require("../plugins/modes/TemplateWorlds.plugin");
+    fake.plugin = plugin;
+    plugin.register(fake.api);
+    Common.init(fake.api);
+    plugin._test.configure("level_up", JSON.stringify(validContract()));
+    login(fake, { player: fake.player, isNewAccount: true });
+    fake.attributes.set("level-up:unlocked-skills", Rules.SKILLS.map(({ index }) => index).slice(0, 23));
+    fake.attributes.set("level-up:claimed-relic-milestones", Rules.RELIC_MILESTONES.slice(0, 7));
+    fake.attributes.set("league:relics", { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 });
+    assert.equal(plugin._test.pendingMilestone(fake.player, "relic"), 23);
+
+    assert.equal(
+      fake.handlers["command:levelup"][0]({ player: fake.player, parts: ["levelup", "relic", "3"] }),
+      true,
+    );
+    assert.deepEqual(fake.attributes.get("league:relics"), { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 3 });
+    assert.equal(granted.length, 1, "the pick reaches the item grant");
+    assert.equal(granted[0].relic.key, "guardian");
+    assert.ok(granted[0].relic.grants.includes("GUARDIAN_HORN"), "the horn is part of the grant");
+  } finally {
+    Unlock.grant = originalGrant;
+    plugin?._test.configure("", null);
+  }
+});
+
 test("Level-Up relic passive text drops league and combat XP modifier lines", () => {
   assert.equal(
     Rules.stripXpPassiveLines("- League XP multiplier is 5x.<br><br>- Run energy is never drained whilst running."),
@@ -904,29 +938,6 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(plugin._test.active(), false, "Level-Up progress is absent outside the level_up template");
 });
 
-test("unlocking Herblore starts it at level 3 while other skills still start at 1", () => {
-  const fake = createRuntime();
-  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
-  fake.plugin = plugin;
-  plugin.register(fake.api);
-  plugin._test.configure("level_up", JSON.stringify(validContract()));
-  login(fake, { player: fake.player, isNewAccount: true });
-
-  assert.equal(Rules.startingLevel(9), 3, "Herblore's canonical index opens at 3");
-  assert.equal(Rules.startingLevel(0), 1);
-  assert.equal(Rules.startingLevel(20), 1);
-  assert.equal(plugin.unlockSkill(fake.player, "Herblore"), true);
-
-  const herblore = fake.byName("Herblore");
-  assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [7, 9]);
-  assert.equal(fake.manager.getMaxLevel(herblore), 3);
-  assert.equal(fake.manager.getCurrentLevel(herblore), 3);
-  assert.equal(fake.manager.getExperience(herblore), 300, "XP matches getExperienceForLevel(3)");
-  assert.equal(fake.locked.has(herblore.getIndex()), false);
-
-  plugin._test.configure("", null);
-});
-
 test("::levelup master unlocks all skills at level 99", () => {
   const fake = createRuntime();
   const plugin = require("../plugins/modes/TemplateWorlds.plugin");
@@ -958,4 +969,27 @@ test("::levelup master unlocks all skills at level 99", () => {
   } finally {
     plugin._test.configure("", null);
   }
+});
+
+test("unlocking Herblore starts it at level 3 while other skills still start at 1", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  plugin._test.configure("level_up", JSON.stringify(validContract()));
+  login(fake, { player: fake.player, isNewAccount: true });
+
+  assert.equal(Rules.startingLevel(9), 3, "Herblore's canonical index opens at 3");
+  assert.equal(Rules.startingLevel(0), 1);
+  assert.equal(Rules.startingLevel(20), 1);
+  assert.equal(plugin.unlockSkill(fake.player, "Herblore"), true);
+
+  const herblore = fake.byName("Herblore");
+  assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [7, 9]);
+  assert.equal(fake.manager.getMaxLevel(herblore), 3);
+  assert.equal(fake.manager.getCurrentLevel(herblore), 3);
+  assert.equal(fake.manager.getExperience(herblore), 300, "XP matches getExperienceForLevel(3)");
+  assert.equal(fake.locked.has(herblore.getIndex()), false);
+
+  plugin._test.configure("", null);
 });

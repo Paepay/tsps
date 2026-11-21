@@ -187,7 +187,9 @@
     image-rendering: pixelated;
     cursor: pointer;
     opacity: 0;
-    pointer-events: auto;
+    /* Hidden means hidden: the arrow sits over the minimap's right side, so an invisible
+       button must not take the click and close the sidebar instead of opening the map. */
+    pointer-events: none;
 }
 
 /* "Close sidebar" is the same arrow flipped (ImageUtil.flipImage). */
@@ -198,6 +200,14 @@
 .rl-sidebar-toggle-zone.near .rl-sidebar-toggle,
 .rl-sidebar-toggle:focus-visible {
     opacity: 1;
+    pointer-events: auto;
+}
+
+/* Collapsed: the reopen arrow stays visible, so a hidden sidebar is never lost, and only then
+   does it permanently keep the click away from the minimap underneath. */
+.rl-sidebar-toggle.collapsed {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .rl-sidebar-toggle:focus-visible {

@@ -2,29 +2,28 @@
 
 ## Cleaning-area entrance
 
-`server/plugins/areas/MuseumEntrance.plugin.js` guards the cleaning-area gate at
-(3261,3446). A members-world player who has completed The Dig Site receives the
-canonical Museum guard Welcome and Yes/No choice on their first admission after
-login. Yes opens the gate and walks them through; subsequent entries in that login
-are direct. Leaving is free. The guard remains loaded on free worlds to refuse entry
-even when the members-only Museum activity is filtered out.
+`server/plugins/areas/MuseumEntrance.plugin.js` owns the cleaning-area guard and admission,
+with the pass-through gate for loc 24536 in `server/plugins/objects/Doors.plugin.js`.
+A members-world player who has completed The Dig Site receives the canonical Museum guard
+Welcome and Yes/No choice on the first gate click of each login. Yes (Wiki transcript action
+`AFy65N`) moves them to 3259,3445. No consumes the session prompt, and later clicks open
+and cross without asking, matching the 2019 QoL note on Transcript:Museum guard. Leaving is
+free. The guard remains loaded on free worlds to refuse entry, and Talk-to uses the same
+before/after refusal variants instead of the free-to-play guard's standard line.
 
-The words and first-login distinction come from the [Museum guard
-transcript](https://oldschool.runescape.wiki/w/Transcript:Museum_guard), already imported
-without generated-data changes. RSProx recordings [1702](https://rsprox.net/download/1702)
-(revision 226, normal world, ticks 4066–4069) and [1704](https://rsprox.net/download/1704)
-(revision 227, Leagues, ticks 450–453) show the shared world swap: closed gate
-24536 at (3261,3446), shape 0/face 1, becomes actionless barrier 24564 there and
-the same gate at (3261,3447), shape 0/face 0, then restores three ticks later.
-The active revision-242 cache gamevals are `vm_barrier_guard_gate` and `vm_invisbarrier`.
+The gate is the barrier row's one Open-only loc at 3261,3446 (`vm_barrier_guard_gate`).
+RSProx recordings [1702](https://rsprox.net/download/1702) and
+[1704](https://rsprox.net/download/1704) establish the shared world swap. The pass-through
+entry turns the gate on its own tile with `vm_invisbarrier`, carries the opener from the
+hall row (3447) to the cleaning row (3445) or back over that blocker, and restores the closed
+gate two ticks later. The gate is a face-1 wall loc, so the route override also lets a player
+standing on either row operate it from their own tile.
 
-Those recordings observe someone else's gate opening from a distance: they establish
-the scenery and restore time, not the opener's dialogue, crossing, or audio. Crossing
-uses the existing checked-player-only pass-through gate movement and default gate
-sound; its exact retail movement/audio timing remains unverified.
-`server/tests/museum-entrance-native.test.cjs` exercises real map clipping, native
-object/dialogue packets and World turns for entry, No, repeat entry, logout reset,
-incomplete/free-world refusals, free exit, stale choices and a blocked bystander.
+Not captured: the gate's opening sound and leaf animation. They follow the other Open-only
+gates rather than a recording of 24536 itself. `server/tests/museum-guard-gate.test.cjs`
+covers the guard, dialogue, session prompt and two-way crossing;
+`server/tests/museum-entrance-native.test.cjs` covers native packets, map clipping,
+free-world and incomplete-quest refusals, free exit, stale choices and a blocked bystander.
 
 Historian Minas pays Kudos for completed quests. Choose "I have some information which might be
 of use in your displays." and he hears every unreported quest in one conversation: 5 Kudos each,

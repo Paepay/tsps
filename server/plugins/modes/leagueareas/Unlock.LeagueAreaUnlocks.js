@@ -9,12 +9,13 @@
 const Common = require("./Common.LeagueAreaUnlocks");
 const Regions = require("./Regions.LeagueAreaUnlocks");
 
-/** The varbits the client's scripts read: each slot's area, the last viewed, whether a pick is affordable. */
+/** The state the client's scripts read: each slot's area, the summary's count, whether a pick is affordable. */
 function sendState(player, type) {
-  const { varbits } = Common.data;
+  const { varbits, varps } = Common.data;
   const list = Common.unlocked(player);
   const sender = player.getPacketSender();
   varbits.selection.forEach((varbit, slot) => sender.sendVarbit(varbit, list[slot] ?? 0));
+  if (Number.isInteger(varps?.unlockedCount)) sender.sendConfig(varps.unlockedCount, list.length);
   sender.sendVarbit(varbits.available, Common.available(type, player) ? 1 : 0);
 }
 
@@ -120,6 +121,8 @@ function complete(player, type, area, slot) {
   const { varbits, notifications } = Common.data;
   const sender = player.getPacketSender();
   sender.sendVarbit(varbits.selection[slot], area.id);
+  // Keep the summary's real count in step with the slot, not just the cache's hardcoded total.
+  if (Number.isInteger(Common.data.varps?.unlockedCount)) sender.sendConfig(Common.data.varps.unlockedCount, Common.unlocked(player).length);
   completeAreaContent(player, type, area.id);
   player.sendMessage(Common.message("unlocked", { colour: Common.colourHex(type), area: area.name }));
   require("./Interface.LeagueAreaUnlocks").open({ player });

@@ -20,6 +20,7 @@ const CHARGES_META_KEY = "toxic-staff-charges";
 const COMBAT_CHARGE_AT_ATTRIBUTE = "toxic-staff:combat-charge-at";
 
 let core = null;
+let pluginApi = null;
 let chargedIds = new Set();
 let unchargedByCharged = new Map();
 let chargedByUncharged = new Map();
@@ -52,6 +53,16 @@ function deactivate(player, item) {
 }
 
 function consumeCharges(player, item, amount) {
+  player.setAttribute(COMBAT_CHARGE_AT_ATTRIBUTE, Date.now());
+  // The league Charge Reduction mastery asks every charge-bearing weapon; a kept charge never
+  // reaches the count, and `extra` scales are added back on top.
+  const consume = { player, itemId: item.getId(), skip: false, extra: 0 };
+  pluginApi?.emitCustomEvent?.('combat:consume-charge', consume);
+  if (consume.skip) {
+    if (consume.extra > 0) item.setMetaValue(CHARGES_META_KEY, Math.min(MAX_CHARGES, charges(item) + consume.extra));
+    return charges(item);
+  }
+  amount += Math.max(0, Number(consume.extra) || 0);
   const left = charges(item) - amount;
   if (left <= 0) {
     deactivate(player, item);
@@ -79,7 +90,6 @@ function processCombatUpkeep(player) {
     return;
   }
   consumeCharges(player, item, COMBAT_CHARGE);
-  player.setAttribute(COMBAT_CHARGE_AT_ATTRIBUTE, now);
 }
 
 /** 25% venom chance; a serpentine helm makes it certain against NPCs. */
@@ -220,6 +230,7 @@ module.exports = {
   _test: { charges, isWieldingCharged, consumeCharges, processCombatUpkeep, onHitResolved, chargeStaff, uncharge, fillCharges, MAX_CHARGES },
   register(api) {
     core = api.core;
+    pluginApi = api;
     zulrahScalesId = core.ItemIdentifiers.ZULRAHS_SCALES;
     unchargedByCharged = new Map([
       [core.ItemIdentifiers.TOXIC_STAFF_OF_THE_DEAD, core.ItemIdentifiers.TOXIC_STAFF_UNCHARGED_],

@@ -165,5 +165,5 @@ module.exports = {
     api.onCustomEvent("player:bootstrap-complete", syncSlepeVarbit);
     api.onGroundItemPickup(crumbleSpareTablet);
   },
-  _test: { crumbleSpareTablet, SPARE_TABLET_MESSAGE, useSlepeyTablet, inspectTablet, syncSlepeVarbit, TABLET_USED_MESSAGE, INSPECT_MESSAGES },
+  _test: { crumbleSpareTablet, SPARE_TABLET_MESSAGE, useSlepeyTablet, inspectTablet, syncSlepeVarbit, TABLET_USED_MESSAGE, INSPECT_MESSAGES, destinationsFor },
 };

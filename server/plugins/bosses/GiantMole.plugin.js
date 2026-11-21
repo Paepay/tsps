@@ -58,8 +58,13 @@
  * and Fight-privately sends no "dropped down" line (only the mole hill's choice was recorded). Her
  * next life comes 16 ticks after a kill, while the instance has a player.
  *
+ * Falador shields 1-4 locate her while worn or carried (Wiki, Falador shield 4: "An indicator will point
+ * to the location of the Giant Mole while inside its lair"). The 9 March 2017 update made the hint-arrow
+ * automatic. Ours: an NPC hint while she is close and visible, her tile otherwise (a far NPC has nothing
+ * for the client to draw on, and a buried one is hidden); leaving the lair or losing the shield clears it.
+ *
  * Skipped: the public lair's baby moles in instances, her dirt putting out open light sources when she burrows
- * (the Wiki gives no chance for it), Falador shield tracking.
+ * (the Wiki gives no chance for it).
  */
 
 const Darkness = require("../world/Darkness.plugin");
@@ -129,6 +134,16 @@ const MOLE_HOLE_ROPE = { x: 1752, y: 5136 };
  * bottom of map square 27,80 so the corridor to the exit rope (1752, 5136) counts too.
  */
 const MOLE_LAIR = { minX: 1720, maxX: 1795, minY: 5120, maxY: 5250, z: 0 };
+
+/** Wiki: any Falador shield tier locates her while worn or in the inventory (Falador shield 4, Benefits). */
+const FALADOR_SHIELD_NAMES = [
+  "falador_shield_easy", "falador_shield_medium", "falador_shield_hard", "falador_shield_elite",
+];
+/** Past the client's NPC view distance an entity hint is never drawn, so point at her tile instead. */
+const NPC_VIEW_TILES = 15;
+const LOCATOR_HINT_HEIGHT = 128;
+/** The arrow is re-sent this often; another hint (a clue) can replace it. */
+const LOCATOR_REFRESH_TICKS = 2;
 
 // OSRS Wiki map data: the lair's fixed burrow spots.
 const BURROW_LOCATIONS = [
@@ -234,6 +249,63 @@ function digOnMoleHill(api, { player }) {
 function inMoleLair(at) {
   return at.getZ() === MOLE_LAIR.z && at.getX() >= MOLE_LAIR.minX && at.getX() <= MOLE_LAIR.maxX
     && at.getY() >= MOLE_LAIR.minY && at.getY() <= MOLE_LAIR.maxY;
+}
+
+let faladorShieldIds = null;
+
+function faladorShields({ CacheDefinitions }) {
+  faladorShieldIds ??= FALADOR_SHIELD_NAMES
+    .map((name) => CacheDefinitions.getObjId(name))
+    .filter((id) => Number.isInteger(id));
+  return faladorShieldIds;
+}
+
+function carriesFaladorShield(core, player) {
+  const inventory = player.getInventory?.();
+  const equipment = player.getEquipment?.();
+  return faladorShields(core).some(
+    (id) => inventory?.contains?.(id) === true || equipment?.contains?.(id) === true
+  );
+}
+
+/** Her NPC in the player's own part of the lair: the public one, or their instance's clone. */
+function lairMoleFor(core, player) {
+  const area = player.getPrivateArea?.() ?? null;
+  for (const npc of core.World.getNpcs()) {
+    if (!isGiantMole(core, npc) || npc.isRegistered?.() === false) continue;
+    if ((npc.getPrivateArea?.() ?? null) !== area) continue;
+    if ((npc.getHitpoints?.() ?? 0) <= 0 || !inMoleLair(npc.getLocation())) continue;
+    return npc;
+  }
+  return null;
+}
+
+/** player -> the hint the locator last showed, so another plugin's arrow is not cleared blindly. */
+const locatorHints = new WeakMap();
+
+function updateMoleLocator(core, { player }) {
+  const state = locatorHints.get(player) ?? null;
+  const shows = inMoleLair(player.getLocation()) && carriesFaladorShield(core, player);
+  const npc = shows ? lairMoleFor(core, player) : null;
+  if (!npc) {
+    if (state) {
+      player.getPacketSender().clearHintArrow();
+      locatorHints.delete(player);
+    }
+    return;
+  }
+  const at = npc.getLocation();
+  // A buried Mole has no visible NPC for an entity hint to follow; her tile still shows.
+  const buried = npc.getAttribute(BURIED_ATTRIBUTE) != null || npc.isVisible?.() === false;
+  const far = buried || !player.getLocation().isWithinDistance(at, NPC_VIEW_TILES);
+  const key = `${npc.getIndex()}:${at.getX()}:${at.getY()}:${far ? "tile" : "npc"}`;
+  const cycle = core.World.getProcessCycle();
+  if (state && state.key === key && cycle - state.cycle < LOCATOR_REFRESH_TICKS) return;
+  const sender = player.getPacketSender();
+  sender.clearHintArrow();
+  if (far) sender.sendPositionalHint(at, 2, LOCATOR_HINT_HEIGHT, at.getZ());
+  else sender.sendEntityHint(npc);
+  locatorHints.set(player, { key, cycle });
 }
 
 /**
@@ -518,12 +590,14 @@ module.exports = {
     api.onObjectInteraction("Spade", { "Fight-privately": fightPrivately.bind(null, api) });
     api.persistAttribute(INSTANCE_ATTRIBUTE, false);
     api.onPlayerLogin(leaveInstanceOnLogin.bind(null, api.core));
+    api.onPlayerProcess(updateMoleLocator.bind(null, api.core));
     api.onNpcDeath(respawnInstanceMole.bind(null, api));
     api.onCustomEvent("gravestones:grave-location", graveOutsideInstance);
     api.onCustomEvent("combat:damage-apply", watchBurrow.bind(null, api.core));
     api.onNpcBeforeDeath(revealBuriedMole.bind(null, api.core));
     api.onServerStartup(setRespawn.bind(null, api.core));
   },
+  BURIED_ATTRIBUTE,
   BURROWS_ATTRIBUTE,
   SURFACED_TICK_ATTRIBUTE,
   DIED_TICK_ATTRIBUTE,
@@ -532,4 +606,8 @@ module.exports = {
   MOLE_HILL_ID,
   NEED_LIGHT_MESSAGE,
   DROPPED_IN_MESSAGE,
+  FALADOR_SHIELD_NAMES,
+  carriesFaladorShield,
+  lairMoleFor,
+  updateMoleLocator,
 };

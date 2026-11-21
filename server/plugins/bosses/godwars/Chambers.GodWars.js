@@ -5,9 +5,12 @@
  *
  * - Open: into the shared chamber for 40 of the god's essence, or an ecumenical key when the
  *   essence is short ("Your ecumenical key melts into the door.", captured). From inside, the
- *   door lets the player out. An Ironman finds the shared chamber closed while someone fights
- *   there (captured message).
+ *   door lets the player out. An account the world keeps isolated (Ironman, a league character,
+ *   or wealth transfer off) gets its own chamber from this option instead: it never shares a
+ *   boss, and the 150,000-coin instance fee does not apply (issue #68).
  * - The instance option: a private copy of the chamber for 150,000 coins on top of the essence.
+ *   A chamber stays built for a while after its owner leaves (the door, a teleport, a crystal
+ *   of memories), so coming back finds the same NPCs instead of a fresh copy (issue #68).
  *   tsps has no Combat Achievements, so the Hard tier's price applies to everyone. As captured,
  *   godwars_fader_init fades the overlay, the chamber is rebuilt a tick later around the same
  *   inside tile, and varbit godwars_instance is 1 while in it.
@@ -26,6 +29,8 @@ const Rules = require("./Rules.GodWars");
 const CHUNK = 8;
 const PLANES = 4;
 const COINS = 995;
+/** Ticks a built chamber waits for its owner to come back before it is destroyed. */
+const INSTANCE_PARK_TICKS = 1000;
 
 /** Faction key -> the chamber's general and bodyguard spawns, from npc-spawns.json. */
 let chamberSpawns = null;
@@ -121,16 +126,28 @@ function instanceClass() {
       player.getPacketSender().sendVarbit(Common.data.instanceVarbit, 1);
     }
 
-    /** Leaving ends the chamber; logging out puts the player outside its door first. */
+    /**
+     * Leaving returns the player outside; logging out puts them outside its door first. A chamber
+     * left behind stays built for INSTANCE_PARK_TICKS so its NPCs keep their state.
+     */
     postLeave(mobile, logout) {
-      super.postLeave(mobile, logout);
-      if (!mobile.isPlayer() || mobile.getAsPlayer() !== this.player) return;
+      if (!mobile.isPlayer() || mobile.getAsPlayer() !== this.player) {
+        super.postLeave(mobile, logout);
+        return;
+      }
       const player = this.player;
+      // PrivateArea.postLeave destroys an empty chamber. Keep this one alive so a teleport back
+      // and the door can re-enter the same NPCs; `end` destroys it when the park expires.
+      this.remove(mobile);
       player.setAttribute(Common.CHAMBER_ATTRIBUTE, null);
-      if (logout) player.setLocation(Common.toLocation(this.faction.door.outside));
       player.getPacketSender().sendVarbit(Common.data.instanceVarbit, 0);
-      if (!logout) Common.later(1, () => player.isRegistered() && !Dungeon.inGodWars(player) && Dungeon.closeOverlay(player));
-      end(player);
+      if (logout) {
+        player.setLocation(Common.toLocation(this.faction.door.outside));
+        end(player);
+        return;
+      }
+      Common.later(1, () => player.isRegistered() && !Dungeon.inGodWars(player) && Dungeon.closeOverlay(player));
+      park(player, this);
     }
 
     destroy() {
@@ -144,6 +161,21 @@ function instanceClass() {
     }
   };
   return InstanceClass;
+}
+
+/**
+ * Keeps a chamber built after its owner leaves. A returning player (the door, or a crystal of
+ * memories' teleport back) finds the same NPCs: a boss killed before leaving stays dead for
+ * its own respawn timer instead of a new copy spawning. It is destroyed after the wait unless
+ * its owner is back inside.
+ */
+function park(player, area) {
+  const token = (area.parkToken ?? 0) + 1;
+  area.parkToken = token;
+  Common.later(INSTANCE_PARK_TICKS, () => {
+    if (instances.get(player) !== area || area.parkToken !== token || area.hasMember(player)) return;
+    end(player);
+  });
 }
 
 function end(player) {
@@ -167,6 +199,28 @@ function isIronman(player) {
   const query = { player, mode: "none" };
   Common.api.emitCustomEvent("ironman:mode", query);
   return query.mode !== "none";
+}
+
+/** Whether the player is a league character (LeagueMode answers `league:profile`). */
+function isLeagueCharacter(player) {
+  const query = { player, league: null };
+  Common.api.emitCustomEvent("league:profile", query);
+  return query.league !== null && query.league !== undefined;
+}
+
+/**
+ * Whether the world keeps this account out of shared chambers: an Ironman, a league character
+ * (including Level-Up's relic profile), or any account on a world without wealth transfer.
+ */
+function isolatedAccount(player) {
+  if (isIronman(player) || isLeagueCharacter(player)) return true;
+  const levelUp = { player, league: null, active: false };
+  Common.api.emitCustomEvent("level-up:relic-profile", levelUp);
+  if (levelUp.active === true) return true;
+  if (Common.api.getPluginConfig?.("WealthTransfer:enabled", true) === false) return true;
+  const wealth = { enabled: true };
+  Common.api.emitCustomEvent("wealth:enabled", wealth);
+  return wealth.enabled === false;
 }
 
 /** Spends the door's price: 40 essence, else the key. False (with the captured message) if short. */
@@ -210,10 +264,8 @@ function openDoor({ player, objectId }) {
     leaveChamber(player, inside[0], inside[1]);
     return true;
   }
-  if (isIronman(player) && Dungeon.chamberOccupants(faction) > 0) {
-    player.sendMessage("There appears to be someone fighting in there already. As an Ironman, you'd do better with your own room.");
-    return true;
-  }
+  // Isolated accounts never share a chamber (issue #68); their own room costs the essence only.
+  if (isolatedAccount(player)) return startPrivate(player, faction, false);
   if (!payEntry(player, faction)) return true;
   player.getMovementQueue().reset();
   Common.swingDoor(faction);
@@ -221,22 +273,36 @@ function openDoor({ player, objectId }) {
   return true;
 }
 
-/** The private chamber, as captured: the fade, then a tick later the rebuilt chamber. */
-function startInstance({ player, objectId }) {
-  const faction = Common.factionForDoor(objectId);
-  if (!faction) return false;
-  const inside = chamberOf(player);
-  if (inside) {
-    leaveChamber(player, inside[0], inside[1]);
+/** Into a chamber already built for this player, without another instance fee. */
+function reenter(player, area) {
+  const faction = area.faction;
+  player.getMovementQueue().reset();
+  Common.swingDoor(faction);
+  Common.later(1, () => {
+    if (!player.isRegistered()) return;
+    area.enter(player);
+    player.moveTo(area.copyOf(faction.door.inside));
+  });
+}
+
+/**
+ * The private chamber, as captured: the fade, then a tick later the rebuilt chamber. A chamber
+ * this player already has is re-entered (the essence is paid again, the coins are not).
+ */
+function startPrivate(player, faction, chargeCoins) {
+  const existing = instanceOf(player);
+  if (existing && existing.faction === faction && !existing.hasMember(player)) {
+    if (!payEntry(player, faction)) return true;
+    reenter(player, existing);
     return true;
   }
   const cost = Common.data.instanceCost;
-  if (player.getInventory().getAmount(COINS) < cost) {
+  if (chargeCoins && player.getInventory().getAmount(COINS) < cost) {
     player.sendMessage(`You need ${cost.toLocaleString("en-US")} coins to start your own instance.`);
     return true;
   }
   if (!payEntry(player, faction)) return true;
-  player.getInventory().delete(COINS, cost);
+  if (chargeCoins) player.getInventory().delete(COINS, cost);
   player.getMovementQueue().reset();
   const { overlay } = Common.data;
   player.getPacketSender().sendClientScript(overlay.faderScript, 1, 0, 1, (overlay.group << 16) | overlay.fader);
@@ -250,6 +316,17 @@ function startInstance({ player, objectId }) {
     player.moveTo(area.copyOf(faction.door.inside));
   });
   return true;
+}
+
+function startInstance({ player, objectId }) {
+  const faction = Common.factionForDoor(objectId);
+  if (!faction) return false;
+  const inside = chamberOf(player);
+  if (inside) {
+    leaveChamber(player, inside[0], inside[1]);
+    return true;
+  }
+  return startPrivate(player, faction, !isolatedAccount(player));
 }
 
 function peek({ player, objectId }) {
@@ -319,4 +396,4 @@ function attachChambers(api) {
   api.onNpcDeath(respawnInChamber);
 }
 
-module.exports = { attachChambers, instanceOf };
+module.exports = { attachChambers, instanceOf, _test: { end, park, isolatedAccount, isLeagueCharacter, startPrivate } };

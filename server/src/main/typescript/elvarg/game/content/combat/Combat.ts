@@ -1133,6 +1133,10 @@ export class Combat {
         }
         this.lastAttackTarget = target;
 
+        // A wyrm rears into its attacking form before its first swing, so the client already
+        // has the model its attack sequence is rigged for when the animation arrives.
+        if (this.character.isNpc()) this.character.getAsNpc().updateCombatForm(true);
+
         // The swing's own animation is what may stall the character; specials override start() and
         // perform it themselves - many through super.start() first - so the arm stays open across
         // the whole call, and the seq left standing when it returns is the one that is measured.

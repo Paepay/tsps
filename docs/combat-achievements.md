@@ -24,11 +24,12 @@ Combat Achievements live in `server/plugins/achievements/combatachievements/`. T
 | Barrows | chest count, Pray for Success, Faithless Crypt Run, Can't Touch Me |
 | Obor, Bryophyta | chest counts, Fighting as Intended (I and II) on a free-to-play world |
 | Zulrah | count, speed (off a slayer task), Perfect Zulrah, Snake. Snake!? Snaaaaaake! |
+| Kraken | Unnecessary Optimisation (all four tentacles, then the boss) |
 | Vorkath | speed (timed from her waking), Faithless Encounter, The Walk, Dodging the Dragon and Extended Encounter (kills in a row without leaving her area; her specials' damage) |
 | Araxxor | count, the three speed tasks (N kills in 10:00 in one stay), Perfect Araxxor (I and II), Relaxxor, Let it seep in, Araxyte Betrayal, Arachnid Lover, Swimming in Venom |
 | Skotizo | counts, Demonic Weakening, Demonbane Weaponry, Up for the Challenge, Demon Evasion, Precise Positioning |
 
-That's 397 of the 655 tasks: Easy 27/41, Medium 40/64, Hard 42/89, Elite 107/166, Master 102/173, Grandmaster 79/122 (the Chambers of Xeric's 40 and the Theatre of Blood's 50 on the 305 before them). Most of the rest belong to content this server doesn't have yet (the Nightmare, the Desert Treasure II bosses) or need a boss's own mechanics reported (ToA's rooms, Doom's grubs, the GWD instances).
+That's 398 of the 655 tasks: Easy 27/41, Medium 40/64, Hard 43/89, Elite 107/166, Master 102/173, Grandmaster 79/122 (the Chambers of Xeric's 40 and the Theatre of Blood's 50 on the 305 before them). Most of the rest belong to content this server doesn't have yet (the Nightmare, the Desert Treasure II bosses) or need a boss's own mechanics reported (ToA's rooms, Doom's grubs, the GWD instances).
 
 From another plugin:
 

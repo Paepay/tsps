@@ -25,9 +25,16 @@ const SIDE_PANEL = 656;
 const SELECTION = [10662, 10663, 10664, 10665, 10666, 10667];
 const LAST_VIEWED = 11693;
 const AVAILABLE = 11695;
+const COUNT_VARP = 7994;
 const THRESHOLD_STRUCTS = [5971, 5972, 5973, 5974, 5975];
 const MISTHALIN = 1, KARAMJA = 2, ASGARNIA = 3, KANDARIN = 4, MORYTANIA = 5, DESERT = 6, TIRANNWN = 7, FREMENNIK = 8, WILDERNESS = 11, KOUREND = 20, VARLAMORE = 21;
 const uid = (group, child) => (group << 16) | child;
+
+test("the area count varp stays clear of the freeze timer", () => {
+  const AreaData = require("../plugins/modes/data/league-areas.json");
+  assert.equal(AreaData.varps.unlockedCount, 7994);
+  assert.notEqual(AreaData.varps.unlockedCount, 7998, "7998 is the freeze timer's seconds");
+});
 
 let core;
 const hooks = {};
@@ -94,12 +101,13 @@ function character(name, profile = "league", { login = true, restore = null, ses
   player.setUsername(name);
   player.setProfile(profile);
   if (restore) restore.applyToPlayer(player);
-  const sent = { messages: [], varbits: new Map(), scripts: [], subs: [], flags: [], sounds: [], content: [], destinations: [], removals: 0 };
+  const sent = { messages: [], varbits: new Map(), configs: new Map(), scripts: [], subs: [], flags: [], sounds: [], content: [], destinations: [], removals: 0 };
   const sender = new Proxy({}, {
     get: (target, key) => {
       switch (key) {
         case "sendDestination": return (x, y) => (sent.destinations.push([x, y]), sender);
         case "sendVarbit": return (id, value) => (sent.varbits.set(id, value), sender);
+        case "sendConfig": return (id, value) => (sent.configs.set(id, value), sender);
         case "sendInterfaceScript": return (id, args) => (sent.scripts.push([id, args]), sender);
         case "sendSubInterface": return (target, group) => (sent.subs.push([target, group]), sender);
         case "sendInterface": return (group) => (sent.subs.push(["main", group]), sender);
@@ -154,6 +162,7 @@ test("a new league character starts with Misthalin and Karamja; a main character
   const league = character("starter");
   assert.deepEqual(league.getAttribute("league:areas"), [MISTHALIN, KARAMJA]);
   assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0], "league_area_selection_0..5");
+  assert.equal(league.sent.configs.get(COUNT_VARP), 2, "the summary's real count, not the cache's zero");
   assert.equal(league.sent.varbits.get(LAST_VIEWED), 0);
   assert.equal(league.sent.varbits.get(AVAILABLE), 0, "no pick affordable yet");
   assert.deepEqual(thresholds(league), [0, 0, 60, 140, 300], "Wiki: Trailblazer Reloaded's unlocks at 60, 140 and 300 tasks");
@@ -240,6 +249,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Canifis", 3495, 3491, MORYTANIA], ["Mos Le'Harmless", 3680, 2970, MORYTANIA], ["Burgh de Rott", 3500, 3180, MORYTANIA],
     ["Al Kharid", 3290, 3180, DESERT], ["Nardah", 3430, 2900, DESERT], ["the Duel Arena", 3360, 3230, DESERT],
     ["Lletya", 2340, 3160, TIRANNWN], ["Prifddinas", 3260, 6080, TIRANNWN], ["the Underground Pass", 2420, 9700, TIRANNWN],
+    ["Nieve's cave (the Stronghold Slayer Cave)", 2434, 9817, KANDARIN],
     ["Rellekka", 2661, 3657, FREMENNIK], ["Lunar Isle", 2110, 3915, FREMENNIK], ["Keldagrim", 2880, 10200, FREMENNIK], ["Weiss", 2870, 3940, FREMENNIK],
     ["Ferox Enclave", 3140, 3630, WILDERNESS], ["north of the ditch", 3090, 3525, WILDERNESS], ["the Frozen Waste Plateau", 2970, 3930, WILDERNESS],
     ["Mudskipper Point", 2990, 3110, ASGARNIA], ["Musa Point's dock", 2956, 3146, KARAMJA], ["Ghorrock", 2920, 3900, FREMENNIK],
@@ -248,6 +258,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Kourend Castle", 1620, 3660, KOUREND], ["Mount Karuulm", 1310, 3830, KOUREND],
     ["Civitas illa Fortis", 1700, 3140, VARLAMORE], ["Aldarin", 1400, 2950, VARLAMORE],
     ["Death's Office", 3176, 5726, null], ["the rune essence mine", 2910, 4830, null], ["Tutorial Island", 3094, 3107, null],
+    ["the Tears of Guthix cave", 3245, 9500, MISTHALIN], ["the Lumbridge Swamp Caves", 3170, 9570, MISTHALIN],
   ];
   for (const [name, x, y, expected] of landmarks) {
     assert.equal(areaAt(x, y), expected, `${name} (${x}, ${y})`);
@@ -262,6 +273,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
       ["the Dagannoth Kings' lair", 2926, 4375, FREMENNIK], ["Waterbirth Island Dungeon's lower levels", 1830, 4380, FREMENNIK],
       ["the Ancient Cavern", 1760, 5340, KANDARIN], ["the Ancient Cavern's west end", 1620, 5320, KANDARIN],
       ["Fossil Island's Wyvern Cave", 3610, 10270, MISTHALIN],
+      ["the Stronghold Slayer Cave", 2434, 9817, KANDARIN],
     ]) assert.equal(areaAt(x, y, { league }), expected, `league ${league}: ${name} (${x}, ${y})`);
   }
   assert.equal(areaAt(1565, 5075), MISTHALIN, "the Lithkren Vault, Fossil Island's (Trailblazer Reloaded)");
@@ -286,6 +298,19 @@ test("the 2026-11-18 exact tiles: Catherby is Kandarin; the Al Kharid road and m
   assert.equal(areaAt(3268, 3300, { base: true }), DESERT, "Level-Up's base map has the exact boundary");
   assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan)");
   assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine");
+});
+
+test("Nieve's cave under the Tree Gnome Stronghold is Kandarin, not the Underground Pass", () => {
+  // The 2026-11-18 export drew Tirannwn's Underground Pass over map rows 150-153 (both its
+  // tile rectangles and its grid), which swallowed the Stronghold Slayer Cave in the
+  // rows below the pass. The pass's content ends by y 9718, so Tirannwn keeps rows 150-151 and
+  // the cave (2388-2495, 9768-9838) falls through to its surface square's owner, Kandarin.
+  for (const [x, y] of [[2388, 9768], [2434, 9817], [2495, 9838], [2490, 9830]]) {
+    assert.equal(areaAt(x, y), KANDARIN, `the Stronghold Slayer Cave (${x}, ${y})`);
+    assert.equal(areaAt(x, y, { base: true }), KANDARIN, `the base map (${x}, ${y})`);
+  }
+  assert.equal(areaAt(2420, 9700), TIRANNWN, "the Underground Pass itself stays Tirannwn");
+  assert.equal(areaAt(2443, 9651), TIRANNWN, "the pass's rock-slide ledge");
 });
 
 test("the 2026-11-18 exact tiles put the Edgeville ditch's south bank in Misthalin", () => {
@@ -392,6 +417,16 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   const mainTeleport = { player: main, destination: at(3290, 3180), allow: null };
   hooks.onCanTeleport(mainTeleport);
   assert.equal(mainTeleport.allow, null);
+});
+
+test("reopening View Areas resends the saved area state and count", () => {
+  const league = character("staleareas");
+  assert.equal(openAreas(league), true);
+  league.sent.varbits.clear();
+  league.sent.configs.clear();
+  assert.equal(openAreas(league), true);
+  assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0], "the map is rebuilt from the saved areas");
+  assert.equal(league.sent.configs.get(COUNT_VARP), 2, "the count is resent too");
 });
 
 test("View Areas opens the interface as captured; an area's details show its state", () => {
@@ -681,6 +716,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   worldLeague = 4;
   assert.deepEqual(echoes.getAttribute("league:areas"), [MISTHALIN], "Wiki: 'All players will begin the league restricted to Misthalin'");
   assert.equal(echoes.sent.varbits.get(SELECTION[1]) ?? 0, 0, "league_area_selection_1 is still 0, so the tutorial's areas page waits");
+  assert.equal(echoes.sent.configs.get(COUNT_VARP), 1, "the summary counts the one starting area");
   const areas = query("league:areas", { player: echoes });
   assert.deepEqual([areas.next, areas.available], [{ slot: 1, tasks: 0 }, true], "the first pick needs no tasks");
   openAreas(echoes);
@@ -695,6 +731,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   assert.deepEqual([event?.area, event?.slot], [KARAMJA, 1], "league:area-unlocked moves the tutorial on");
   for (let tick = 0; tick < 14; tick++) core.TaskManager.process();
   assert.equal(echoes.sent.varbits.get(SELECTION[1]), KARAMJA, "league_area_selection_1 0 -> 2, as recorded");
+  assert.equal(echoes.sent.configs.get(COUNT_VARP), 2, "Karamja's unlock updates the summary too");
   assert.deepEqual(query("league:areas", { player: echoes }).next, { slot: 2, tasks: 90 }, "then 90 tasks, as before");
 });
 

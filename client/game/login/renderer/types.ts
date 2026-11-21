@@ -90,6 +90,14 @@ export interface ServerListEntry {
     signalUrl?: string;
     worldId?: string;
     ownerUsername?: string;
+    /** Display-only owner for a PaeScape.Online world (it has no RSPS.app profile). */
+    ownerName?: string;
+    /** Where the Owner cell links, when the entry has a public profile. */
+    ownerProfileUrl?: string;
+    /** A PaeScape.Online world: selecting it opens the website to mint a login ticket. */
+    playUrl?: string;
+    /** The platform's world id (`wld_...`), used to tell the current world apart. */
+    platformWorldId?: string;
     iceServers?: RTCIceServer[];
     relayDiscovered?: boolean;
 }

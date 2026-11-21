@@ -15,6 +15,13 @@
  */
 const Common = require("./Common.LeagueMode");
 
+/** The Slayer Equipment shop's elemental shields on league and Level-Up worlds (issue #69). */
+const EQUIPMENT_SHOP = "Slayer Equipment (shop)";
+const SHIELDS = [
+  { id: 2890, amount: 50, restockTicks: 100 },
+  { id: 9731, amount: 50, restockTicks: 100 },
+];
+
 let api = null;
 
 /** League type for a keep-stock world: a league save, or Level-Up's relic catalog type. */
@@ -45,8 +52,52 @@ function addStock({ shopName, stock }) {
   }
 }
 
+/** A league world, including the Level-Up template that reuses the league catalog. */
+function leagueWorld() {
+  if (Common.worldLeague() !== null) return true;
+  return /^level[-_]up$/i.test(String(api?.getPluginConfig?.("template:id", "") ?? ""));
+}
+
+/**
+ * Adds the elemental shields to the Slayer Equipment shop's own stock. The shops.json row is
+ * generated, so the definition is cloned at runtime instead of edited there. Running twice is
+ * harmless: a shield already in the stock is left alone.
+ */
+function addShieldsToShop() {
+  if (!api || !leagueWorld()) return false;
+  const { ShopDefinition, ShopManager } = api.core;
+  const shop = ShopDefinition.all().find((entry) => entry.getName() === EQUIPMENT_SHOP);
+  if (!shop) return false;
+  const stocked = new Set(shop.getOriginalStock().map((row) => row.id));
+  const extra = SHIELDS.filter((row) => !stocked.has(row.id));
+  if (extra.length === 0) return false;
+  const definition = new ShopDefinition(
+    shop.getId(),
+    shop.getName(),
+    shop.getCurrency(),
+    [...shop.getOriginalStock(), ...extra],
+    shop.getDefaultRestockTicks(),
+    shop.getDefaultDestockTicks(),
+    shop.getSoldItemDestockTicks(),
+    shop.getSource(),
+    shop.getSalesPolicy()
+  );
+  ShopManager.registerShop(definition);
+  return true;
+}
+
 module.exports = function attach(pluginApi) {
   api = pluginApi;
   api.onCustomEvent("shop:keep-stock", keepStock);
   api.onCustomEvent("shop:load-stock", addStock);
+  api.onServerStartup?.(addShieldsToShop);
+  api.onCustomEvent("paescape:world-config", () => {
+    if (typeof queueMicrotask === "function") queueMicrotask(addShieldsToShop);
+    else addShieldsToShop();
+  });
 };
+
+module.exports.addShieldsToShop = addShieldsToShop;
+module.exports.leagueWorld = leagueWorld;
+module.exports.EQUIPMENT_SHOP = EQUIPMENT_SHOP;
+module.exports.SHIELDS = SHIELDS;
