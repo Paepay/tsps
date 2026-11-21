@@ -15,6 +15,7 @@ const Cannonballs = require("./smithing/Cannonballs.Smithing");
 const Gear = require("./smithing/Gear.Smithing");
 const Godswords = require("./smithing/Godswords.Smithing");
 const DragonShields = require("./smithing/DragonShields.Smithing");
+const ZombieAxe = require("./smithing/ZombieAxe.Smithing");
 const Spears = require("./smithing/Spears.Smithing");
 const CalcifiedDeposit = require("./smithing/CalcifiedDeposit.Smithing");
 const Superheat = require("./smithing/Superheat.Smithing");
@@ -26,7 +27,8 @@ function useItemOnObject(event) {
   if (FURNACE_NAMES.has(name)) Cannonballs.useOnFurnace(event) || Smelting.useOnFurnace(event);
   else if (name === "Rusted anvil") Anvil.useOnAnvil(event);
   else if (Anvil.ANVIL_NAMES.includes(name)) {
-    CalcifiedDeposit.useOnAnvil(event) || Godswords.useOnAnvil(event) || DragonShields.useOnAnvil(event) || Anvil.useOnAnvil(event);
+    CalcifiedDeposit.useOnAnvil(event) || Godswords.useOnAnvil(event) || ZombieAxe.useOnAnvil(event)
+      || DragonShields.useOnAnvil(event) || Anvil.useOnAnvil(event);
   }
   else if (event.objectId === Core.CacheDefinitions.getLocId(DragonShields.SHIELD_MACHINE)) DragonShields.useOnShieldMachine(event);
 }

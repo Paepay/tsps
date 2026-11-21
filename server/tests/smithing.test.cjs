@@ -34,6 +34,7 @@ function registerSmithing() {
     onItemAction: (name, actions) => itemActions.set(name, actions),
     onItemOnObject: (handler) => { if (!itemOnObject) itemOnObject = handler; else extraItemOnObject.push(handler); },
     onItemOnItem() {}, onSpellOnItem() {}, log() {},
+    sendMultiChatboxPrompt: (player, title, ...pairs) => { player.prompt = { title, pairs }; return true; },
     onObjectInteraction: (name, actions) => objects.set(name, actions),
     onInterfaceActionButton: (ids, handler) => { for (const id of ids) buttons.set(id, handler); },
   });
@@ -63,6 +64,12 @@ function playerWith(barId = I.BRONZE_BAR, bars = 27) {
       addItem: item => items.set(item.getId(), (items.get(item.getId()) ?? 0) + item.getAmount()),
       // Plain stand-ins, one per held id, for the dragon shields' preset check (it reads slots).
       getItems: () => [...items].filter(([, n]) => n > 0).map(([id, n]) => ({ getId: () => id, getAmount: () => n })),
+      setItem(slot, item) {
+        const id = [...items].filter(([, n]) => n > 0)[slot]?.[0];
+        if (id !== undefined) items.delete(id);
+        if (item?.getId?.() >= 0) items.set(item.getId(), item.getAmount());
+        return { refreshItems() {} };
+      },
       deleteAtSlot(slot, amount = 1) {
         const id = [...items].filter(([, n]) => n > 0)[slot]?.[0];
         if (id !== undefined) items.set(id, items.get(id) - amount);
@@ -778,6 +785,51 @@ test("two godsword shards forge into a pair, then the blade, 100 XP each", () =>
   const one = playerWith(I.GODSWORD_SHARD_1, 1);
   itemOnObject({ player: one, itemId: I.GODSWORD_SHARD_1, object: anvil });
   assert.match(dialogueTexts(one).join(), /at least two different Godsword blade pieces/);
+});
+
+test("a broken zombie axe is repaired at an anvil after the prompt, for 500 XP", () => {
+  const player = playerWith();
+  player.items.delete(I.BRONZE_BAR);
+  player.items.set(I.BROKEN_ZOMBIE_AXE, 1);
+  const event = { player, itemId: I.BROKEN_ZOMBIE_AXE, object: anvil, handled: false };
+  itemOnObject(event);
+  assert.equal(event.handled, true);
+  assert.equal(player.prompt.title, "Repair your zombie axe?");
+  assert.equal(player.items.get(I.BROKEN_ZOMBIE_AXE), 1, "nothing happens before Yes");
+  player.prompt.pairs[3]();
+  assert.equal(player.items.get(I.BROKEN_ZOMBIE_AXE), 1, "No leaves the axe broken");
+  itemOnObject(event);
+  player.prompt.pairs[1]();
+  ticks(8);
+  assert.equal(player.items.get(I.BROKEN_ZOMBIE_AXE), 1, "the repair is still in progress");
+  ticks(1);
+  assert.equal(player.items.get(I.BROKEN_ZOMBIE_AXE) ?? 0, 0);
+  assert.equal(player.items.get(I.ZOMBIE_AXE), 1);
+  assert.equal(player.xp, 500);
+  assert.equal(player.xpSkill, Skill.SMITHING);
+  assert.match(dialogueTexts(player).at(-1), /successfully repair your zombie axe/);
+});
+
+test("a broken zombie axe needs 70 Smithing and a hammer before the repair prompt", () => {
+  const low = playerWith();
+  low.items.delete(I.BRONZE_BAR);
+  low.items.set(I.BROKEN_ZOMBIE_AXE, 1);
+  low.level = 69;
+  const lowEvent = { player: low, itemId: I.BROKEN_ZOMBIE_AXE, object: anvil, handled: false };
+  itemOnObject(lowEvent);
+  assert.equal(lowEvent.handled, true);
+  assert.equal(low.prompt, undefined);
+  assert.equal(low.items.get(I.BROKEN_ZOMBIE_AXE), 1);
+
+  const noHammer = playerWith();
+  noHammer.items.delete(I.BRONZE_BAR);
+  noHammer.items.delete(I.HAMMER);
+  noHammer.items.set(I.BROKEN_ZOMBIE_AXE, 1);
+  const noHammerEvent = { player: noHammer, itemId: I.BROKEN_ZOMBIE_AXE, object: anvil, handled: false };
+  itemOnObject(noHammerEvent);
+  assert.equal(noHammerEvent.handled, true);
+  assert.equal(noHammer.prompt, undefined);
+  assert.equal(noHammer.items.get(I.BROKEN_ZOMBIE_AXE), 1);
 });
 
 test("dragon sq shield halves are repaired at an anvil after the message boxes", () => {
