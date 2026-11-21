@@ -55,6 +55,8 @@ function actor(t){
         // Private-chamber respawn callbacks are unkeyed; allow the normal 150-tick
         // callback and any in-flight death task to drain after the chamber closes.
         for(let i=0;i<170;i++) core.World.process();
+        // A chamber now stays built for its owner (issue #68); this fixture ends it outright.
+        Chambers._test.end(player);
       }
     } finally {
       try {
@@ -149,6 +151,16 @@ async function claimNext(f,name){
   f.player.closeInterruptibleInterfaces();if(npc.isRegistered())core.World.getNpcs().remove(npc);
 }
 function reachable(player,object){const loc=object.getLocation(),def=ObjectDefinition.forPlayer(object.getId(),player),type=object.getType(),rect=[10,11,22].includes(type),footprint=type===22?def:ObjectDefinition.forId(object.getId());return def&&PathFinder.reachedObject(player,loc.getX(),loc.getY(),rect?footprint.getSizeX():1,rect?footprint.getSizeY():1,object.getFace(),rect?10:type,rect?def.getBlockingMask():0);}
+async function useDoor(f,clickType){
+  const faction=Common.factionByKey('bandos'),[x,y,z]=faction.door.tile,loc=new core.Location(x,y,z);
+  core.RegionManager.loadMapFiles(x,y);const door=core.World.findCacheObject(f.player,faction.door.id,loc);assert.ok(door,'active placed door');
+  const def=ObjectDefinition.forPlayer(door.getId(),f.player);assert.ok(def);const outside=Common.toLocation(faction.door.outside);
+  assert.equal(core.RegionManager.blocked(outside,f.player.getPrivateArea()),false);f.player.setLocation(outside);f.player.setNeedsPlacement(false);
+  const ok=reachable(f.player,door);assert.ok(ok,JSON.stringify({player:[f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],outside:[outside.getX(),outside.getY(),outside.getZ()],door:[x,y,z],privateArea:f.player.getPrivateArea()?.getName?.()??null,interactions:def.getInteractions()}));
+  await f.connection.dispatch([{type:'object_option',id:def.id,x,y,clickType}]);
+  for(let i=0;i<20;i++)core.World.process();
+  return {faction,def};
+}
 async function enterBandos(f){
   const faction=Common.factionByKey('bandos'),[x,y,z]=faction.door.tile,loc=new core.Location(x,y,z);
   core.RegionManager.loadMapFiles(x,y);const door=core.World.findCacheObject(f.player,faction.door.id,loc);assert.ok(door,'active placed door');
@@ -209,4 +221,29 @@ test('an unrelated private area does not gain general credit',async t=>{
   assert.ok(area.hasMember(f.player));assert.equal(Chambers.instanceOf(f.player),null);
   const event=await death(f,npc,area);assert.equal(event.faction,'bandos');
   assert.deepEqual(f.player.getAttribute('fremennik-diary:gwd-generals')??[],[]);
+});
+
+test('an Ironman opens a private chamber without paying the instance fee',async t=>{
+  const f=actor(t);f.player.setAttribute('ironman:mode','ironman');
+  assert.equal(Chambers._test.isolatedAccount(f.player),true);
+  const faction=Common.factionByKey('bandos'),I=core.ItemIdentifiers,cash=Common.data.instanceCost+1000,essence=Common.data.essence.required+7;
+  f.player.getInventory().adds(I.COINS,cash);Common.setEssence(f.player,faction,essence);
+  await useDoor(f,1);
+  const area=Chambers.instanceOf(f.player);assert.ok(area?.isGodWarsInstance,'Open starts the isolated account\'s own room');assert.equal(area.faction,faction);
+  assert.equal(f.player.getPrivateArea(),area);assert.equal(f.player.getInventory().getAmount(I.COINS),cash,'the 150,000-coin instance fee is not charged');
+  assert.equal(Common.getEssence(f.player,faction),essence-Common.data.essence.required,'the god\'s essence is still spent');
+});
+
+test('re-entering a parked chamber keeps the same chamber and dead general',async t=>{
+  const f=actor(t),{area,general}=await enterBandos(f),I=core.ItemIdentifiers,generalId=general.getId();
+  f.player.getCombat().reset();general.getCombat().reset();general.setHitpoints(0);
+  for(let i=0;i<20&&general.isRegistered();i++)core.World.process();
+  assert.equal(general.isRegistered(),false,'the general died through the engine');for(let i=0;i<5;i++)core.World.process();
+  assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area&&n.getId()===generalId),false,'the general remains dead while its respawn timer runs');
+  area.leave(f.player,false);assert.equal(Chambers.instanceOf(f.player),area,'leaving parks this same chamber');assert.equal(f.player.getPrivateArea(),null);
+  const cash=f.player.getInventory().getAmount(I.COINS);Common.setEssence(f.player,area.faction,Common.data.essence.required);
+  await useDoor(f,2);
+  assert.equal(Chambers.instanceOf(f.player),area,'the door re-enters the parked chamber instead of building a fresh one');assert.equal(f.player.getPrivateArea(),area);
+  assert.equal(f.player.getInventory().getAmount(I.COINS),cash,'re-entering does not charge the instance fee again');
+  assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area&&n.getId()===generalId),false,'re-entering does not reset the general\'s respawn');
 });
