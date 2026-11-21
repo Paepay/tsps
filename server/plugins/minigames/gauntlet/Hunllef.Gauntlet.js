@@ -3,8 +3,10 @@
 /**
  * The Crystalline and Corrupted Hunllef (Wiki, both use the same mechanics):
  * - 600 / 1000 hitpoints, an attack every 5 ticks; Ranged first, switching between Ranged and
- *   Magic every 4 attacks (tornado and prayer-disabling attacks count, the stomp does not), with
- *   an animation as it switches;
+ *   Magic every 4 attacks (tornado and prayer-disabling attacks count, the stomp does not). Two
+ *   ticks after the fourth attack it plays that style's switch animation (8755 ranged, 8754
+ *   magic) and the change growl (6994) twice; four ticks before that, two ticks before the
+ *   fourth attack, it growls the incoming style (6996 ranged, 6997 magic). rsprox capture 1158;
  * - it protects against one style; every 6th off-prayer hit, zero hits included, it switches to
  *   protect against that hit's style. Hits it protects against do nothing;
  * - a stomp if the player stands under it when it attacks;
@@ -60,7 +62,11 @@ const ORANGE_TICKS = 6;
 const FLOOR_DAMAGE = [10, 20];
 const DISABLE_PRAYER_CHANCE = 0.15;
 
-const ANIMATION = { ATTACK: 8419, TORNADO: 8418, STOMP: 8420, SWITCH: 8754 };
+const ANIMATION = { ATTACK: 8419, TORNADO: 8418, STOMP: 8420 };
+/** The switch animation and its growl, and the growl warning the incoming style (rsprox 1158). */
+const SWITCH_ANIMATION = { ranged: 8755, magic: 8754 };
+const SWITCH_GROWL = { ranged: 6996, magic: 6997 };
+const CHANGE_GROWL = 6994;
 const PROJECTILE = {
   regular: { ranged: 1711, magic: 1707, disable: 1713 },
   corrupted: { ranged: 1712, magic: 1708, disable: 1714 },
@@ -156,6 +162,9 @@ class HunllefFight {
     this.wrongStyleHits = 0;
     this.ticks = 0;
     this.nextAttack = 0;
+    this.growlAt = Infinity;
+    this.growlStyle = null;
+    this.switchAt = Infinity;
     this.nextTornado = TORNADO_EVERY;
     this.nextPattern = FIRST_PATTERN_TICKS;
     this.tornadoes = [];
@@ -222,7 +231,12 @@ class HunllefFight {
     this.tickTornadoes(player);
     this.tickFloor(player);
     if (this.ticks === this.nextPattern) this.startPattern();
-    if (this.ticks === this.switchAt) this.npc.performAnimation(new (Shared.core().Animation)(ANIMATION.SWITCH));
+    if (this.ticks === this.growlAt) player.getPacketSender().sendSound(SWITCH_GROWL[this.growlStyle], 1, 0);
+    if (this.ticks === this.switchAt) {
+      this.npc.performAnimation(new (Shared.core().Animation)(SWITCH_ANIMATION[this.style]));
+      player.getPacketSender().sendSound(CHANGE_GROWL, 1, 0);
+      player.getPacketSender().sendSound(CHANGE_GROWL, 1, 0);
+    }
     if (this.ticks >= this.nextAttack) this.attack(player);
     return true;
   }
@@ -281,9 +295,14 @@ class HunllefFight {
       this.standardAttack(player);
     }
     this.attacks++;
-    if (this.attacks % ATTACKS_PER_STYLE === 0) {
+    const attackInStyle = this.attacks % ATTACKS_PER_STYLE;
+    if (attackInStyle === ATTACKS_PER_STYLE - 1) {
+      // Warn two ticks before the fourth attack, four ticks before the switch.
+      this.growlStyle = this.style === "ranged" ? "magic" : "ranged";
+      this.growlAt = this.ticks + 3;
+    } else if (attackInStyle === 0) {
       this.style = this.style === "ranged" ? "magic" : "ranged";
-      this.switchAt = this.ticks + 1;
+      this.switchAt = this.ticks + 2;
     }
   }
 

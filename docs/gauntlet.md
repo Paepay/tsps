@@ -218,7 +218,7 @@ The Hunllef waits in the boss room from the start of a run. It fights once the b
 | --- | --- |
 | Hitpoints | 600 / 1000 |
 | Attack speed | every 5 ticks |
-| Attack style | Ranged first; switches every 4 attacks (tornado and prayer-disabling attacks count, the stomp doesn't), with animation 8754 |
+| Attack style | Ranged first; switches every 4 attacks (tornado and prayer-disabling attacks count, the stomp doesn't). Two ticks after the fourth attack it plays animation 8754 (magic) or 8755 (ranged) and the change growl 6994 twice; two ticks before the fourth attack it growls the incoming style (6997 magic, 6996 ranged). rsprox capture 1158. |
 | Protection prayer | Protects against one style (forms 9021 / 9022 / 9023: melee / ranged / magic; corrupted 9035–9037). Every 6th off-prayer hit, zeros included, switches it to that hit's style. Hits it protects against do nothing, unless the hit bypasses protection prayers (Demonic Pacts prayer penetration, or any hit marked to); ours: such a hit still counts as a wrong-style hit and doesn't switch its prayer. |
 | Stomp | If you stand under it when it attacks |
 | Tornadoes | Crystalline 1 / 2 / 3, Corrupted 2 / 3 / 4, above 66% / 33–66% / below 33% HP. They chase you for 20 ticks; damage by armour tier is in the table below. |
