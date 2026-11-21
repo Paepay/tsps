@@ -147,6 +147,34 @@ test("the Attract option works from the ledge and a creature outside the chasm i
   assert.equal(south.p.getLocation().getY(), 9530, "the south side crosses back to the north edge");
 });
 
+test("after While Guthix Sleeps the north-ledge light creatures offer the descent into the temple", (t) => {
+  const lowerCreature = () => creature(3225, 9517);
+
+  const { p: clicker } = player(t, "togwgsattract", 3234, 9525);
+  QuestRuntime.getRegisteredQuests().find((entry) => entry.key === "tears_of_guthix").setStage(clicker, 2);
+  QuestRuntime.getRegisteredQuests().find((entry) => entry.key === "while_guthix_sleeps").setStage(clicker, 900);
+  clicker.getInventory().adds(LIT_LANTERN, 1);
+  assert.equal(PM.emitNpcInteraction(npcEvent(clicker, lowerCreature())), true,
+    "the north-ledge creature accepts Attract after the quest");
+  PM.emitCustomEvent("npc-dialogue:action", { player: clicker, npcId: LIGHT_CREATURE, stepId: "uRkrGI" });
+  assert.deepEqual([clicker.getLocation().getX(), clicker.getLocation().getY(), clicker.getLocation().getZ()], [4064, 4600, 0],
+    "the Attract descent lands the player at the bottom of the chasm");
+
+  const { p: lantern } = player(t, "togwgslantern", 3234, 9525);
+  QuestRuntime.getRegisteredQuests().find((entry) => entry.key === "tears_of_guthix").setStage(lantern, 2);
+  QuestRuntime.getRegisteredQuests().find((entry) => entry.key === "while_guthix_sleeps").setStage(lantern, 900);
+  lantern.getInventory().adds(LIT_LANTERN, 1);
+  const npc = lowerCreature();
+  const use = {
+    player: lantern, target: npc, npcId: LIGHT_CREATURE, targetIndex: 1, item: { getId: () => LIT_LANTERN },
+    itemId: LIT_LANTERN, slot: 0, interfaceId: 149 << 16, definition: definition(), handled: false,
+  };
+  assert.equal(PM.emitItemOnNpc(use), true, "the lit lantern is accepted after the quest");
+  PM.emitCustomEvent("npc-dialogue:action", { player: lantern, npcId: LIGHT_CREATURE, stepId: "uRkrGI" });
+  assert.deepEqual([lantern.getLocation().getX(), lantern.getLocation().getY(), lantern.getLocation().getZ()], [4064, 4600, 0],
+    "the lantern descent lands the player at the bottom of the chasm");
+});
+
 test("a second Attract during the approach does not chain a second crossing", (t) => {
   const { p, messages } = player(t, "togdouble1", 3234, 9525);
   p.getInventory().adds(LIT_LANTERN, 1);
