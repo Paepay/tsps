@@ -217,6 +217,32 @@ test("the SOTE supply cave Exit returns to a walkable tile beside its surface en
   assert.equal(path.success, true, 'the landing connects to the camp by ordinary walking');
 });
 
+test("Brimhaven Dungeon's metal dragon crevice is a two-way passage (#96)", () => {
+  const east = data.locs.find((loc) => loc.name === "brimhaven_slayer_dragon_tunnel" && loc.x === 2696);
+  const west = data.locs.find((loc) => loc.name === "brimhaven_slayer_dragon_tunnel" && loc.x === 2685);
+  assert.ok(east && west, "both ends are entries");
+  assert.deepEqual([east.id, east.y, east.z, east.op, east.option], [CacheDefinitions.getLocId("brimhaven_slayer_dragon_tunnel"), 9436, 0, 1, "Enter"]);
+  assert.equal(CacheDefinitions.getObject(east.id).actions[0], "Enter");
+  assert.ok(locAt(30198, 2696, 9436, 0) && locAt(30198, 2685, 9436, 0), "the cache places both ends");
+  assert.deepEqual(east.to, [2684, 9436, 0], "east end lands beyond the west end");
+  assert.deepEqual(west.to, [2697, 9436, 0], "west end lands beyond the east end");
+  for (const [x, y, z] of [east.to, west.to]) {
+    core.RegionManager.loadMapFiles(x, y);
+    assert.equal(core.RegionManager.getClipping(x, y, z, null) & 0x200100, 0, `${x},${y} is walkable`);
+  }
+
+  for (const [entry, from] of [[east, [2697, 9436, 0]], [west, [2684, 9436, 0]]]) {
+    const visit = explorer(from);
+    const object = locAt(entry.id, entry.x, entry.y, entry.z);
+    const request = { player: visit.player, object, objectId: object.getId(), clickType: 1, handled: false };
+    hooks.object(request);
+    assert.equal(request.handled, true, "the crevice takes Enter");
+    runTicks(visit, entry.tick + 3);
+    const at = visit.player.getLocation();
+    assert.deepEqual([at.getX(), at.getY(), at.getZ()], entry.to);
+  }
+});
+
 test("Ynysdail's cave entrance and the cavern's exit lead to each other, onto walkable tiles beside them", () => {
   const enter = data.locs.find((loc) => loc.name === "ynysdail_cave_entrance");
   const exit = data.locs.find((loc) => loc.name === "ynysdail_cave_exit");
@@ -1885,7 +1911,6 @@ test("the 2026-11-15 run's locs land where the captures show, from the tile each
 
 test("one-way captures and a quest's own staircase are skipped, so no entry strands a player", () => {
   const skipped = [
-    ["brimhaven_slayer_dragon_tunnel", "Crevice", /Slayer-only/],
     ["viking_warrior_ladder", "Ladder", /strand/],
     ["ardougne_prison_entry", "Staircase", /Song of the Elves/],
   ];
@@ -1893,6 +1918,12 @@ test("one-way captures and a quest's own staircase are skipped, so no entry stra
     assert.match(choose(captured({ name }), nothing, display, decisions).reason, why, name);
     assert.equal(data.locs.some((loc) => loc.name === name), false, `${name} has no entry`);
   }
+});
+
+test("the Brimhaven crevice's one-way capture is left to its hand-added pair (#96)", () => {
+  const name = "brimhaven_slayer_dragon_tunnel";
+  assert.match(choose(captured({ name }), nothing, "Crevice", decisions).reason, /already in loc-teleports/, "the generator keeps the captured half out");
+  assert.equal(data.locs.filter((loc) => loc.name === name).length, 2, "and the two-way pair stays");
 });
 
 test("a dialogue decided for one option doesn't ask on the loc's other options", () => {

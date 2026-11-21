@@ -13,6 +13,8 @@ let monsters;
 let zuk;
 let InfernoArea = null;
 const sessions = new WeakMap();
+/** Yt-HurKot that a player has hit: attacked healers stop healing for good, as live. */
+const TAGGED_HEALERS = new WeakSet();
 const DEFEATED_MESSAGE = "You have been defeated!";
 
 const ATTR_WAVE = "inferno:wave";
@@ -59,7 +61,7 @@ const REVIVAL_SPOTS = [
 const SINGLE_JAD = { x: 2265, y: 5348 };
 const TRIPLE_JADS = [{ x: 2274, y: 5346 }, { x: 2265, y: 5347 }, { x: 2268, y: 5335 }];
 const TRIPLE_JAD_STAGGER_TICKS = 3;
-const JAD_FIRST_ATTACK_TICKS = 4;
+const JAD_FIRST_ATTACK_TICKS = 8;
 // Rocky supports: the loc is a multiloc whose varbit picks the damage stage the client draws.
 const SUPPORTS = [
   { key: "west", objectId: 30353, x: 2257, y: 5349 }, // rocky_support_multi
@@ -91,6 +93,11 @@ function init(pluginApi, combat, zukPhase) {
   core = pluginApi.core;
   monsters = combat;
   zuk = zukPhase;
+  api.onNpcHitModify?.(({ npc }) => {
+    if (npc && (npc.getId?.() === core.NpcIdentifiers.YT_HURKOT_2 || npc.getId?.() === core.NpcIdentifiers.YT_HURKOT_3)) {
+      TAGGED_HEALERS.add(npc);
+    }
+  });
 }
 
 function ids() {
@@ -517,16 +524,18 @@ function tendJads(session) {
       }
     }
     for (const healer of entry.healers) {
-      const fighting = healer.getCombat().getTarget() != null;
+      // An attacked healer stops healing and fights the player; only an untagged one heals,
+      // and only while it stands next to the Jad.
+      const fighting = TAGGED_HEALERS.has(healer) || healer.getCombat().getTarget() != null;
       const distance = healer.calculateDistance(jad);
-      if (distance <= 1 || (fighting && distance <= HEALER_COMBAT_REACH)) {
+      if (!fighting && distance <= 1) {
         if (now % JAD_HEAL_TICKS === 0 && jad.getHitpoints() < max) {
           healer.setMobileInteraction(jad);
           healer.performAnimation(new Animation(HEALER_HEAL_ANIM));
           jad.performGraphic(new Graphic(HEAL_GRAPHIC));
           jad.heal(core.Misc.randomInclusive(JAD_MIN_HEAL, JAD_MAX_HEAL));
         }
-      } else if (!fighting) {
+      } else if (!fighting && distance <= HEALER_COMBAT_REACH) {
         PathFinder.calculateWalkRoute(healer, jad.getLocation().getX(), jad.getLocation().getY());
       }
     }
