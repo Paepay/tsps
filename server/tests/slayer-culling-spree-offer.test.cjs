@@ -2,8 +2,10 @@
 // Culling Spree (Demonic Pacts League relic, Wiki Culling_Spree_(Demonic_Pacts_League) and
 // Demonic_Pacts_League/Guide/Slayer): a Slayer master offers three tasks, one a boss task (with
 // Like a Boss) from the bosses in the character's unlocked areas, and the player types the kill
-// count, 5 to 200. Through the real plugins (LeagueMode, LeagueRelics, LeagueAreaUnlocks, Slayer)
-// and a real Player: the master's Assignment option, the chatbox menu and the amount prompt.
+// count: 5 to 200 for a regular task, or the Boss task's range for the boss (3-35, 3-36 for
+// Barrows, +5/+6 per claimed Combat Achievement tier). Through the real plugins (LeagueMode,
+// LeagueRelics, LeagueAreaUnlocks, Slayer) and a real Player: the master's Assignment option,
+// the chatbox menu and the amount prompt.
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test, before, afterEach } = require("node:test");
@@ -29,6 +31,7 @@ const MISTHALIN = 1;
 const KANDARIN = 4;
 const DESERT = 6;
 const KOUREND = 20;
+const MORYTANIA = 5;
 
 let core;
 let Data;
@@ -190,16 +193,63 @@ test("Duradel offers three tasks, one a boss from the unlocked areas, and the ty
 
   const [, chooseBoss] = menus[0].entries.find(([label]) => label === "Vardorvis");
   chooseBoss();
-  assert.equal(player.sent.prompts.at(-1), "How many would you like to slay? (5-200)");
-  typeAmount(player, 200);
+  assert.equal(player.sent.prompts.at(-1), "How many would you like to slay? (3-35)");
+  for (const invalid of [36, 200, 2]) {
+    typeAmount(player, invalid);
+    assert.equal(Tasks.current(player), null, `${invalid} is outside the Boss task range`);
+    assert.equal(player.sent.messages.at(-1), "You must choose an amount between 3 and 35.");
+    chooseBoss();
+  }
+  typeAmount(player, 35);
   const task = Tasks.current(player);
   assert.equal(task.taskId, Data.BOSS_TASK_ID);
   assert.equal(task.task.displayName, "Vardorvis");
-  assert.equal(task.count, 200);
-  assert.equal(task.original, 200);
+  assert.equal(task.count, 35);
+  assert.equal(task.original, 35);
   assert.equal(task.masterId, 5, "Duradel's task, for his points and streak");
   assert.deepEqual(Offer.stored(player), [], "the offer is spent");
   assert.equal(player.sent.dialogues.length, 1, "Duradel says the task");
+});
+
+test("a boss task's count follows the Boss task's range: tiers raise it and Barrows is 3-36", () => {
+  const master = Data.get().masters.get(5);
+  // One claimed Combat Achievement tier raises the 3-35 to 3-40 (Wiki, Boss task).
+  const easy = (request) => {
+    if (request.tier === "Easy") {
+      request.claimed = true;
+      request.currentThresholdMet = true;
+    }
+  };
+  custom["combat-achievements:tier"] = (custom["combat-achievements:tier"] ?? []).concat([easy]);
+  try {
+    const player = character("boss-tier");
+    assignment(player, "Duradel");
+    const [, chooseBoss] = menus.at(-1).entries.find(([label]) => label === "Vardorvis");
+    chooseBoss();
+    assert.equal(player.sent.prompts.at(-1), "How many would you like to slay? (3-40)");
+    typeAmount(player, 41);
+    assert.equal(Tasks.current(player), null);
+    assert.equal(player.sent.messages.at(-1), "You must choose an amount between 3 and 40.");
+    chooseBoss();
+    typeAmount(player, 40);
+    assert.equal(Tasks.current(player).count, 40);
+  } finally {
+    custom["combat-achievements:tier"] = (custom["combat-achievements:tier"] ?? []).filter((handler) => handler !== easy);
+  }
+
+  // The Barrows brothers' task is 3-36 (Wiki), and Culling Spree offers it with Morytania open.
+  const barrows = character("boss-barrows", { areas: [MORYTANIA] });
+  assert.ok(Tasks.bossChoices(barrows, master).some(([bossId]) => bossId === 17), "Barrows is available in Morytania");
+  const choice = { master: master.id, task: Data.BOSS_TASK_ID, boss: 17 };
+  barrows.setAttribute(Offer.OFFER_ATTRIBUTE, [choice]);
+  Offer.pick(barrows, master, choice);
+  assert.equal(barrows.sent.prompts.at(-1), "How many would you like to slay? (3-36)");
+  typeAmount(barrows, 37);
+  assert.equal(Tasks.current(barrows), null);
+  assert.equal(barrows.sent.messages.at(-1), "You must choose an amount between 3 and 36.");
+  Offer.pick(barrows, master, choice);
+  typeAmount(barrows, 36);
+  assert.equal(Tasks.current(barrows).count, 36);
 });
 
 test("a regular task takes the count typed (5), and out-of-range, 0 and a cancelled prompt assign nothing", () => {
@@ -382,7 +432,6 @@ test("Krystilia's offered boss (Culling Spree) is never the Abyssal Sire or the 
 
 // Wiki (Demonic_Pacts_League/Areas): Slayer masters "assign their standard task list, taking into
 // account unlocked areas" (leagueareas/Slayer.LeagueAreaUnlocks.js over `slayer:task-available`).
-const MORYTANIA = 5;
 const eligibleNames = (player, master) =>
   master.tasks.filter((entry) => Tasks.eligible(player, master, entry, new Set())).map((entry) => entry.task.displayName);
 
