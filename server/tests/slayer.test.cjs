@@ -1126,6 +1126,8 @@ test("keys: brimstone on Konar's tasks, Larran's on Krystilia's, by combat level
   assert.equal(placed().length, before);
   Keys.taskKill({ player, npc: bloodveld }, () => 0);
   assert.equal(placed().at(-1), CacheDefinitions.getObjId("konar_key"));
+  const keyPlace = emitted.filter(([name]) => name === "npc-drops:place").at(-1)[1];
+  assert.equal(keyPlace.npcId, bloodveld.getId(), "the key names the kill for the loot tracker");
   Keys.taskKill({ player, npc: npcNamed("Insatiable Bloodveld") }, () => 0.999);
   assert.equal(placed().length, before + 2, "a superior always drops one");
   giveTask(player, 7, "Bears", 5);
