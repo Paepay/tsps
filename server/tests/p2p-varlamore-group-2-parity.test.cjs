@@ -1543,6 +1543,28 @@ test('DOTI login restores the captured finale fight varbit', () => {
   assert.equal(p.varbits.get(11258), 6, 'capture 1695 leaves doti_final_fight at 6 after completion');
 });
 
+test('DOTI post-quest Constantinius key opens the fancy chest and the south-west fountain yields the icon', () => {
+  const { h, p, npc, object } = doti();
+  h.quest.setStage(p, 50);
+  // The placed 14073 multi-NPC resolves to the pickpocketable 13826 after the quest.
+  npc(13826, 'Pickpocket');
+  h.action(p, 13826, 'FTSXlx');
+  assert.equal(p.items.get(29923), 1, 'the recorded pickpocket line gives the chest key');
+
+  p.moveTo(new core.Location(1435, 9312, 0));
+  object(54736);
+  assert.equal(p.attrs.get('quest.death_on_the_isle.chest.opened'), true);
+  assert.equal(p.items.get(29923), 0, 'opening consumes the key');
+  assert.equal(p.varbits.get(11232), 1, 'the fountain becomes searchable');
+
+  p.moveTo(new core.Location(1435, 2920, 0));
+  object(54739);
+  h.action(p, 13834, '1XIQ80');
+  assert.equal(p.items.get(29897), 1, 'the search gives the Aldarin icon');
+  assert.equal(p.attrs.get('quest.death_on_the_isle.icon.found'), true);
+  assert.equal(p.varbits.get(11232), 2);
+});
+
 test('Quetzals use cache destinations, reject closed or locked map clicks, and finish the captured flight once', () => {
   const h = harness('TwilightPromise'), p = player();
   const plugin = require('../plugins/world/Quetzals.plugin'); plugin.register(h.api);

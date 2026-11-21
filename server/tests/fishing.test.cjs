@@ -959,6 +959,43 @@ test("karambwan vessels fish every 4 ticks and every attempt uses the karambwanj
   assert.equal(Fishing.catchChance(65, FISH.KARAMBWAN), 107 / 256);
 });
 
+test("all four Wiki Karamja karambwan spots are spawned and the restored one fishes", async () => {
+  const spawns = require("../data/definitions/npc-spawns.json");
+  const { core, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = core;
+  const karambwanSpotIds = new Set([N.FISHING_SPOT_60, N.FISHING_SPOT_61, N.FISHING_SPOT_62]);
+  // Wiki: Fishing spot (karambwan), north-eastern Karamja (fairy ring DKP). The spawn at
+  // 2928,3112 was missing, so the spot was unreachable (#88); the cache ids are identical.
+  const wikiTiles = [[2899, 3119], [2912, 3119], [2768, 3165], [2928, 3112]];
+  const at = (x, y) => spawns.find((spawn) =>
+    spawn.x === x && spawn.y === y && spawn.level === 0 && karambwanSpotIds.has(spawn.id));
+  for (const [x, y] of wikiTiles) assert.ok(at(x, y), `karambwan spot at ${x},${y} is spawned`);
+  const restored = at(2928, 3112);
+
+  // Tai Bwo Wannai Trio is the access route and gives the vessel; the spot itself enforces
+  // the 65 Fishing and vessel/bait requirements the plugin documents.
+  await withRandom(0, async () => {
+    const p = fisher({ level: 65, items: [[I.KARAMBWAN_VESSEL], [I.RAW_KARAMBWANJI, 2]] });
+    assert.equal(start(p, spot(restored.id, 80), "Fish"), true);
+    ticks(4);
+    assert.equal(amount(p, I.RAW_KARAMBWAN), 1, "65 Fishing with a loaded vessel catches karambwan");
+    assert.equal(p.xp, 50);
+  });
+
+  const noVessel = fisher({ level: 65, items: [[I.RAW_KARAMBWANJI, 5]] });
+  start(noVessel, spot(restored.id, 81), "Fish");
+  assert.equal(noVessel.statements[0]?.getDialogues().get(0).getText(),
+    "You need a Karambwan vessel to fish here.");
+
+  const noBait = fisher({ level: 65, items: [[I.KARAMBWAN_VESSEL]] });
+  start(noBait, spot(restored.id, 82), "Fish");
+  assert.equal(noBait.messages.at(-1), "You do not have the required bait.");
+
+  const lowLevel = fisher({ level: 64, items: [[I.KARAMBWAN_VESSEL_3]] });
+  start(lowLevel, spot(restored.id, 83), "Fish");
+  assert.equal(lowLevel.messages.at(-1), "You need a Fishing level of at least 65 to do this.");
+});
+
 test("barehand shark plays the cache start, ready and shark-finish sequences", async () => {
   const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
   const { ItemIdentifiers: I, NpcIdentifiers: N, Skill } = core;

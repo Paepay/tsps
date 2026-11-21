@@ -62,11 +62,13 @@ const CLAIMED_POINTS_VARP = 2615;
 /** The task list's runtime components (the cache builds 657's rows from its scripts). */
 const TASK_SCREEN = Object.freeze({
   group: 657,
-  title: 32810,
+  // Script 9428 writes the title text at 657:32811; 32810 is the title sprite beside it.
+  title: 32811,
   banner: 32785,
   rowBase: 32820,
   rowStride: 5,
-  rewardOffset: 4,
+  // Script 9429 creates each row's reward text at 32825 + row * 5; 32824 is the task name.
+  rewardOffset: 5,
 });
 
 /** The area screen's script-written header texts. */

@@ -1324,6 +1324,12 @@ function groundOptions(event) {
 function placeRolled({ player, drops, location, npcId }) {
   placeDrops(player, drops, location);
   if (Number.isInteger(npcId)) reportLoot(player, npcId, drops);
+  // Loot put down by a plugin (a Slayer key added to the kill, a boss share, a corpse) reaches
+  // the same notifications as a kill's own roll. ValueWarnings ignores a drop array it already
+  // announced on "npc-drops:roll", so callers that send both still say each line once.
+  if (player && Array.isArray(drops) && drops.length > 0) {
+    pluginApi?.emitCustomEvent("drops:received", { player, drops });
+  }
 }
 
 /**

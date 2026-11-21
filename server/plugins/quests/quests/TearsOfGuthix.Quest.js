@@ -549,7 +549,9 @@ module.exports = function registerTearsOfGuthixQuest(api) {
 
   /** The lit sapphire lantern attracts a Chasm light creature across to the far side. */
   function crossChasm(player, npcLocation, creature = null) {
-    if (quest.getStage(player) !== STAGE_STONE_BOWL || !isChasmLightCreature(npcLocation)) return false;
+    // The creatures carry players on every visit, not only while the quest asks them to
+    // (the completed quest's minigame still crosses here); stage 0 has not met Juna yet.
+    if (quest.getStage(player) < STAGE_STONE_BOWL || !isChasmLightCreature(npcLocation)) return false;
     if (!has(player, LIT_SAPPHIRE_LANTERN_ITEM_ID)) {
       player.sendMessage(NO_LANTERN_MESSAGE);
       return true;
@@ -754,7 +756,7 @@ module.exports = function registerTearsOfGuthixQuest(api) {
   /** Both the lantern use and the Attract option target the creature from the ledge. */
   function routeLanternToLightCreature(event) {
     const npcId = event.npcId ?? event.npc?.getId?.();
-    if (npcId !== LIGHT_CREATURE_NPC_ID || quest.getStage(event.player) !== STAGE_STONE_BOWL ||
+    if (npcId !== LIGHT_CREATURE_NPC_ID || quest.getStage(event.player) < STAGE_STONE_BOWL ||
       (event.itemId !== undefined && event.itemId !== LIT_SAPPHIRE_LANTERN_ITEM_ID) ||
       !isChasmLightCreature(event.npc?.getLocation?.() ?? event.location)) return;
     event.range = LIGHT_CREATURE_USE_RANGE;

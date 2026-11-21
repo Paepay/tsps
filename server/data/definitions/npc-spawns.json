@@ -5812,6 +5812,7 @@
   {"level":0,"name":"Monkey","x":2909,"y":3077,"id":2848},
   {"level":0,"name":"Tiadeche","x":2912,"y":3118,"id":6235},
   {"level":0,"name":"Fishing spot","wanderRadius":0,"x":2912,"y":3119,"id":4713},
+  {"level":0,"name":"Fishing spot","wanderRadius":0,"x":2928,"y":3112,"id":4712},
   {"level":0,"name":"Pelican","x":2914,"y":3106,"id":283},
   {"level":0,"name":"Cormorant","x":2931,"y":3108,"id":282},
   {"level":0,"name":"Pelican","x":2934,"y":3105,"id":283},

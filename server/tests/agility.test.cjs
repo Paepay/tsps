@@ -429,6 +429,22 @@ test("as captured (rsprox local 1000143, 1000473, 1521): the Alchemical Hydra la
   assert.deepEqual(tile(entry.steps(at(1352, 10252))[0].move), [1352, 10250, 0]);
   assert.equal(entry.end, "You climb over the rocks.");
   assert.equal(entry.requires, undefined);
+
+  // Issue #81: the placed rock on the corridor anchor, and both landings walkable in game.
+  const { RegionManager } = require("../dist/game/collision/RegionManager");
+  const { MapObjects } = require("../dist/game/entity/impl/object/MapObjects");
+  RegionManager.init();
+  RegionManager.loadMapFiles(1351, 10251);
+  assert.ok(MapObjects.get(34548, new Location(1351, 10251, 0), null), "the placed rock on the corridor anchor");
+  for (const spot of [[1351, 10250, 0], [1351, 10252, 0]]) {
+    assert.equal(RegionManager.blocked(new Location(...spot), null), false, `${spot.join(",")} is a walkable landing`);
+  }
+  for (const from of [[1351, 10250, 0], [1351, 10252, 0]]) {
+    const player = createPlayer(...from, 1);
+    assert.notEqual(operate(player, 34548, [1351, 10251, 0]), false);
+    assert.deepEqual(tileOf(player), from[1] === 10250 ? [1351, 10252, 0] : [1351, 10250, 0]);
+    assert.equal(player.getAttribute("agility.obstacle") ?? null, null);
+  }
 });
 
 /** A real Player whose packet sender records every call as [method, ...args]. */

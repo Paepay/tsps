@@ -47,6 +47,24 @@ const PROMPTS = {
 const LOOT_COLOUR = "ef1020";
 const VALUABLE = "<col=7f0000>valuable</col>";
 
+/**
+ * Drop arrays already announced (or queued) from "npc-drops:roll", per player: placing the same
+ * array later must not repeat them. A shared array may still be announced to each player once.
+ */
+const ANNOUNCED_DROPS = new WeakMap();
+
+function announced(drops, player) {
+  let players = ANNOUNCED_DROPS.get(drops);
+  if (!players) ANNOUNCED_DROPS.set(drops, players = new WeakSet());
+  return players.has(player);
+}
+
+function markAnnounced(drops, player) {
+  let players = ANNOUNCED_DROPS.get(drops);
+  if (!players) ANNOUNCED_DROPS.set(drops, players = new WeakSet());
+  players.add(player);
+}
+
 let pluginApi = null;
 
 function varbit(player, id) {
@@ -119,12 +137,19 @@ function notify(player, drops) {
 function lootNotifications(request) {
   const { player, npc } = request ?? {};
   if (!player || !npc) return;
+  if (request.drops && typeof request.drops === "object") markAnnounced(request.drops, player);
   queueMicrotask(() => notify(player, request.drops));
 }
 
 /** Loot already given to the player, from anything but a kill. */
 function receivedNotifications(request) {
-  if (request?.player) notify(request.player, request.drops);
+  const { player, drops } = request ?? {};
+  if (!player) return;
+  if (drops && typeof drops === "object") {
+    if (announced(drops, player)) return;
+    markAnnounced(drops, player);
+  }
+  notify(player, drops);
 }
 
 module.exports = {

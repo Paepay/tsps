@@ -77,8 +77,13 @@ The Prayer loops pause for a level-up pop-up, as the bone altars' loop does (doc
 
 Virilis at the foot of the altar unnotes the bones for 10 coins each (docs/note-exchange.md).
 
+## Sunfire wine
+
+Two sunfire splinters on a jug of wine, with a pestle and mortar carried, make a jug of sunfire wine (Wiki). The pestle is a tool and is not consumed, there is no Herblore level or experience, and splinters cannot be added to a jug of blessed wine (Wiki). Recording 1141 has the refusal for a missing component: "You need two sunfire splinters, a jug of wine, and a pestle and mortar to create sunfire wine."
+
+The Wiki's creation row is 1 tick with the note "Crushing sunfire splinters is 1, then 4 ticks": the first jug comes a tick after the use and the next every 4 ticks. Estimated: the success is silent and the pestle's `human_herbing_grind` animation with the mix sound 2608 is used; no recording shows the successful action.
+
 ## Not here
 
-- Making sunfire wine (two sunfire splinters on a jug of wine with a pestle and mortar). Recording 1141 has its refusal: "You need two sunfire splinters, a jug of wine, and a pestle and mortar to create sunfire wine."
 - Blessed wine being unbankable.
 - Soul Harvest's Soul shards (Leagues) in the bowl. There is no capture of their rate (see `SoulHarvest.LeagueRelics.js`).

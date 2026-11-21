@@ -375,3 +375,42 @@ test("both chasm rocks climb one tile over the slope, as recorded", (t) => {
   assert.equal(climb(other, 3233, 9505, 1234), false, "an unrelated rock is left to other plugins");
   assert.ok(other.getLocation().equals(before));
 });
+// The minigame is only open once the quest is complete, so return visits must cross the same way:
+// the creatures are not quest-only (Wiki, Tears of Guthix: reaching Juna).
+test("a quest-complete player still crosses the chasm for the minigame", (t) => {
+  const quest = () => QuestRuntime.getRegisteredQuests().find((entry) => entry.key === "tears_of_guthix");
+  const { p, messages } = player(t, "togcomplete1", 3234, 9525);
+  quest().setStage(p, 2);
+  p.getInventory().adds(LIT_LANTERN, 1);
+  const npc = creature(3226, 9518);
+
+  const route = npcEvent(p, npc, { clickType: 1 });
+  PM.emitNpcRoute(route);
+  assert.equal(route.range, 8, "Attract still routes after the quest");
+  assert.equal(PM.emitNpcInteraction(npcEvent(p, npc)), true);
+  assert.ok(messages.includes("The light creature is attracted to your beam and comes towards you..."));
+  tickTasks(7);
+  assert.equal(p.getAnimation().getId(), 2046);
+  tickTasks(26);
+  assert.equal(p.getLocation().getX(), 3224);
+  assert.equal(p.getLocation().getY(), 9504, "the completed quest still rides across");
+
+  const back = player(t, "togcomplete2", 3226, 9510);
+  quest().setStage(back.p, 2);
+  back.p.getInventory().adds(LIT_LANTERN, 1);
+  const use = {
+    player: back.p, target: creature(3226, 9518), npcId: LIGHT_CREATURE, targetIndex: 1,
+    item: { getId: () => LIT_LANTERN }, itemId: LIT_LANTERN, slot: 0, interfaceId: 149 << 16,
+    definition: definition(), handled: false,
+  };
+  assert.equal(PM.emitItemOnNpc(use), true);
+  tickTasks(7 + 25);
+  assert.equal(back.p.getLocation().getX(), 3224);
+  assert.equal(back.p.getLocation().getY(), 9530, "the lantern still carries the player back");
+
+  const unstarted = player(t, "togunstarted1", 3234, 9525);
+  quest().setStage(unstarted.p, 0);
+  unstarted.p.getInventory().adds(LIT_LANTERN, 1);
+  assert.equal(PM.emitNpcInteraction(npcEvent(unstarted.p, creature(3226, 9518))), false,
+    "a player who has not met Juna is not carried");
+});

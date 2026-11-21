@@ -133,7 +133,8 @@ Krystilia: not the Abyssal Sire or the King Black Dragon).
   transcript's assignment step, Turael's replacement, a remote assignment). An answer gives how
   many tasks, the kill count range the player types, and whether one is a boss task (with a
   `bossAllowed(task)` filter). Demonic Pacts' Culling Spree answers it: three tasks, one a boss
-  from the unlocked areas with Like a Boss, 5-200 kills (Wiki).
+  from the unlocked areas with Like a Boss. A regular task takes 5-200 kills; a boss task uses
+  the Boss task's range (3-35, 3-36 for Barrows, +5/+6 per claimed Combat Achievement tier).
 - The talk ends and a chatbox menu lists the tasks; a pick asks for the count (an amount
   prompt that takes 0 and negatives so it can refuse them). Out of range assigns nothing; the
   roll is saved (`slayer:offered-tasks`) and offered again until any task is assigned. A pick

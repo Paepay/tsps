@@ -83,7 +83,12 @@ function taskKill({ player, npc, offTask }, random = Math.random) {
   if (!key || random() >= chance(key, npc)) return;
   const itemId = core.CacheDefinitions.getObjId(key.obj);
   if (itemId == null) return;
-  api.emitCustomEvent("npc-drops:place", { player, drops: [{ itemId, amount: 1 }], location: npc.getLocation() });
+  api.emitCustomEvent("npc-drops:place", {
+    player,
+    drops: [{ itemId, amount: 1 }],
+    location: npc.getLocation(),
+    npcId: npc.getId?.() ?? null,
+  });
 }
 
 function attach(pluginApi) {
