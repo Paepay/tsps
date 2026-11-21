@@ -445,6 +445,35 @@ test("a master leaves out a task none of whose monsters lives in an area the cha
   assert.equal(eligibleNames(main, duradel).includes("Araxytes"), true, "a main character is never asked");
 });
 
+test("Spiritual Creatures wait for Asgarnia or the Wilderness; one unlocked area is enough", () => {
+  const duradel = Data.get().masters.get(5);
+  const krystilia = Data.get().masters.get(7);
+  const spiritual = (master) => master.tasks.find((entry) => entry.task.displayName === "Spiritual Creatures");
+  const duradelRow = spiritual(duradel);
+  const krystiliaRow = spiritual(krystilia);
+  assert.ok(duradelRow && krystiliaRow, "both masters assign the cache task");
+
+  const varlamore = character("spiritual-varlamore", { picks: {}, areas: [VARLAMORE], likeABoss: false });
+  assert.equal(Tasks.eligible(varlamore, duradel, duradelRow, new Set()), false, "GWD is Asgarnia's");
+  assert.equal(Tasks.bossChoices(varlamore, duradel).some(([, task]) => task.displayName === "General Graardor"), false,
+    "the boss choice uses the same area gate");
+  varlamore.setAttribute("league:areas", [VARLAMORE, ASGARNIA]);
+  assert.equal(Tasks.eligible(varlamore, duradel, duradelRow, new Set()), true, "Asgarnia reaches the dungeon");
+  assert.equal(Tasks.bossChoices(varlamore, duradel).some(([, task]) => task.displayName === "General Graardor"), true,
+    "and opens its boss");
+
+  // Spiritual creatures also spawn in the Wilderness GWD; only those count for Krystilia.
+  const asgarnia = character("spiritual-asgarnia", { picks: {}, areas: [VARLAMORE, ASGARNIA], likeABoss: false });
+  assert.equal(Tasks.eligible(asgarnia, krystilia, krystiliaRow, new Set()), false, "Krystilia's kills are Wilderness-only");
+  asgarnia.setAttribute("league:areas", [VARLAMORE, ASGARNIA, WILDERNESS]);
+  assert.equal(Tasks.eligible(asgarnia, krystilia, krystiliaRow, new Set()), true);
+
+  const noAreas = character("spiritual-no-areas", { picks: {}, areas: [], likeABoss: false });
+  assert.equal(Tasks.eligible(noAreas, duradel, duradelRow, new Set()), false, "no unlocks, no offer");
+  const main = character("spiritual-main", { profile: "main", likeABoss: false });
+  assert.equal(Tasks.eligible(main, duradel, duradelRow, new Set()), true, "a main character is never asked");
+});
+
 test("Kalphites stay out until the Desert is unlocked (league and Level-Up)", () => {
   const duradel = Data.get().masters.get(5);
   // Demonic Pacts never opens Misthalin; Asgarnia + Kandarin + Kourend still leave the Lair locked.
