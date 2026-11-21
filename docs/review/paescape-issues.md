@@ -1,6 +1,6 @@
 # PaeScape Issue Review Queue
 
-Last reviewed: 2026-11-18
+Last reviewed: 2026-11-21
 
 Repository: [`Paepay/PaeScape_Issues`](https://github.com/Paepay/PaeScape_Issues)
 
@@ -16,6 +16,7 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 | [#29](https://github.com/Paepay/PaeScape_Issues/issues/29) | `fixed locally` | Leagues / Trailblazer harpoon | Endless Harvest now keeps fishing spots, rocks and trees from depleting in Trailblazer Reloaded as well as Demonic Pacts. With Infernal Gathering on and the matching Trailblazer tool, the endless gather delivers processed output: cooked fish from the harpoon, bars from the pickaxe, and burnt logs/Firemaking XP from the axe. | Verify on the local server with Endless Harvest plus Infernal Gathering: fish with the harpoon, chop with the axe and mine with the pickaxe; each should continue without depleting and bank the doubled processed result. |
 | [#30](https://github.com/Paepay/PaeScape_Issues/issues/30) | `ready to close` | Equipment / Ava's attractor | Working as intended. Ava's attractor is the sub-50 Ranged Animal Magnetism reward and has no Ranged equip requirement; Ava's accumulator is the 50 Ranged upgrade. The reported level-30 requirement belongs to neither item. | Close as not a bug and point the reporter to Ava's accumulator's level-50 requirement. |
 | [#31](https://github.com/Paepay/PaeScape_Issues/issues/31) | `ready to close` | Farming / Farmer's Fortune | Working as intended. Farmer's Fortune grows farming patches instantly and never lets them catch disease. A seedling in a plant pot is not a farming patch, so its sapling timer is unchanged by the relic. | Close as not a bug; no seedling-specific change without a different source for that behavior. |
+| [#76](https://github.com/Paepay/PaeScape_Issues/issues/76) | `fixed locally` | Kraken Cove / loot | Cave kraken kills used the NPC's default water tile for drops; only the Kraken boss had a location override. Cave kraken loot now follows the killer while the boss keeps its fixed reachable shore tile. | Verify a Cave kraken kill at the cove: loot appears under the player and can be picked up. |
 
 ## #24 - Drakan's medallion cannot reach Darkmeyer
 
@@ -70,6 +71,13 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 - Farmer's Fortune grows **farming patches** instantly and prevents patch disease. It also saves planted seeds/saplings 20% of the time.
 - A seedling in a plant pot is not a farming patch; its `farming:sapling-at` timer is a separate plant-pot mechanic. The relic's patch rule does not apply.
 - No change: making potted seedlings instant would extend the relic beyond its documented behavior.
+
+## #76 - Cave kraken loot lands in the water
+
+- `Loot.Kraken.js` moved only the Kraken boss (`npcId === BOSS`); Cave kraken kills kept NpcDrops' default location, the Cave kraken's water tile.
+- Cave kraken loot now clones the killer's location. The boss keeps its fixed reachable shore tile at `2280,10031`.
+- Live check: a Cave kraken surfaced at `2280,10010` dropped a Fire rune at the player's `2283,10012` tile, and the item was picked up.
+- Regression coverage: `server/tests/kraken.test.cjs` (Cave kraken follows the killer, boss stays on the shore).
 
 ## Suggested Review Order
 
