@@ -235,6 +235,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
     ["Canifis", 3495, 3491, MORYTANIA], ["Mos Le'Harmless", 3680, 2970, MORYTANIA], ["Burgh de Rott", 3500, 3180, MORYTANIA],
     ["Al Kharid", 3290, 3180, DESERT], ["Nardah", 3430, 2900, DESERT], ["the Duel Arena", 3360, 3230, DESERT],
     ["Lletya", 2340, 3160, TIRANNWN], ["Prifddinas", 3260, 6080, TIRANNWN], ["the Underground Pass", 2420, 9700, TIRANNWN],
+    ["Nieve's cave (the Stronghold Slayer Cave)", 2434, 9817, KANDARIN],
     ["Rellekka", 2661, 3657, FREMENNIK], ["Lunar Isle", 2110, 3915, FREMENNIK], ["Keldagrim", 2880, 10200, FREMENNIK], ["Weiss", 2870, 3940, FREMENNIK],
     ["Ferox Enclave", 3140, 3630, WILDERNESS], ["north of the ditch", 3090, 3525, WILDERNESS], ["the Frozen Waste Plateau", 2970, 3930, WILDERNESS],
     ["Mudskipper Point", 2990, 3110, ASGARNIA], ["Musa Point's dock", 2956, 3146, KARAMJA], ["Ghorrock", 2920, 3900, FREMENNIK],
@@ -258,6 +259,7 @@ test("the map squares follow the Wiki's areas; instances and the places open to 
       ["the Dagannoth Kings' lair", 2926, 4375, FREMENNIK], ["Waterbirth Island Dungeon's lower levels", 1830, 4380, FREMENNIK],
       ["the Ancient Cavern", 1760, 5340, KANDARIN], ["the Ancient Cavern's west end", 1620, 5320, KANDARIN],
       ["Fossil Island's Wyvern Cave", 3610, 10270, MISTHALIN],
+      ["the Stronghold Slayer Cave", 2434, 9817, KANDARIN],
     ]) assert.equal(areaAt(x, y, { league }), expected, `league ${league}: ${name} (${x}, ${y})`);
   }
   assert.equal(areaAt(1565, 5075), MISTHALIN, "the Lithkren Vault, Fossil Island's (Trailblazer Reloaded)");
@@ -282,6 +284,19 @@ test("the 2026-11-18 exact tiles: Catherby is Kandarin; the Al Kharid road and m
   assert.equal(areaAt(3268, 3300, { base: true }), DESERT, "Level-Up's base map has the exact boundary");
   assert.equal(areaAt(3295, 3284), DESERT, "Al Kharid mine (Avan)");
   assert.equal(areaAt(3298, 3299), DESERT, "scorpions at the mine");
+});
+
+test("Nieve's cave under the Tree Gnome Stronghold is Kandarin, not the Underground Pass", () => {
+  // The 2026-11-18 export drew Tirannwn's Underground Pass over map rows 150-153 (both its
+  // tile rectangles and its grid), which swallowed the Stronghold Slayer Cave in the
+  // rows below the pass. The pass's content ends by y 9718, so Tirannwn keeps rows 150-151 and
+  // the cave (2388-2495, 9768-9838) falls through to its surface square's owner, Kandarin.
+  for (const [x, y] of [[2388, 9768], [2434, 9817], [2495, 9838], [2490, 9830]]) {
+    assert.equal(areaAt(x, y), KANDARIN, `the Stronghold Slayer Cave (${x}, ${y})`);
+    assert.equal(areaAt(x, y, { base: true }), KANDARIN, `the base map (${x}, ${y})`);
+  }
+  assert.equal(areaAt(2420, 9700), TIRANNWN, "the Underground Pass itself stays Tirannwn");
+  assert.equal(areaAt(2443, 9651), TIRANNWN, "the pass's rock-slide ledge");
 });
 
 test("the 2026-11-18 exact tiles put the Edgeville ditch's south bank in Misthalin", () => {

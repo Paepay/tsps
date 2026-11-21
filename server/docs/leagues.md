@@ -1828,6 +1828,11 @@ their squares, so Raging Echoes' Lithkren Vault and Demonic Pacts' Zanaris and A
 their league rules. TSPS's access lookup has no plane dimension, so a plane-0 rectangle also
 governs the same tile on planes 1-3, as the old map-square rule did.
 
+The export drew Tirannwn over map rows 150-153 (both its tile rectangles and its grid), which also
+covered Nieve's cave below the Underground Pass. The pass's content ends by y 9718, so Tirannwn
+stops at map row 151: the Stronghold Slayer Cave (2388-2495, 9768-9838) belongs to Kandarin,
+under the Tree Gnome Stronghold. `docs/stronghold-slayer-cave.md` has the cave.
+
 **Demonic Pacts** (Wiki Demonic_Pacts_League/Areas, recordings 237/01098, 01102, 01104, 01107,
 01149) starts in Varlamore alone; Misthalin is never open, while Zanaris and the Abyssal Area are
 open from everywhere (overrides with `area: null`). Its first unlock, at 80 tasks, must be Karamja

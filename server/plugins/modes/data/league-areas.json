@@ -593,7 +593,7 @@
         [3008, 6016, 3071, 6079],
         [3200, 6016, 3327, 6207],
         [2304, 9408, 2431, 9471],
-        [2368, 9600, 2495, 9855],
+        [2368, 9600, 2495, 9727],
         [2240, 9792, 2303, 9855],
         [3200, 11968, 3327, 12607]
       ]
@@ -810,8 +810,8 @@
     },
     "7": {
       "key": "tirannwn",
-      "_comment": "Tirannwn (Arandar, Isafdar, Lletya, the Tyras Camp, Port Tyras, Zul-Andra, the Poison Waste, Gwenith), the Underground Pass with Iban's temple, the Temple of Light, Prifddinas with everything under it (the Iorwerth Dungeon, its mines; map rows 187-196) and Zalcano.",
-      "rects": [[33, 46, 37, 51], [33, 52, 35, 53], [37, 150, 38, 153], [32, 70, 34, 73], [28, 72, 31, 73], [50, 94, 51, 96], [50, 187, 51, 196]],
+      "_comment": "Tirannwn (Arandar, Isafdar, Lletya, the Tyras Camp, Port Tyras, Zul-Andra, the Poison Waste, Gwenith), the Underground Pass with Iban's temple (map squares 37-38,150-151; the two squares below it hold Nieve's cave, Kandarin), the Temple of Light, Prifddinas with everything under it (the Iorwerth Dungeon, its mines; map rows 187-196) and Zalcano.",
+      "rects": [[33, 46, 37, 51], [33, 52, 35, 53], [37, 150, 38, 151], [32, 70, 34, 73], [28, 72, 31, 73], [50, 94, 51, 96], [50, 187, 51, 196]],
       "squares": [[47, 94]]
     },
     "8": {
