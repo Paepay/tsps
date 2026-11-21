@@ -22,7 +22,7 @@ covers something, this page says so.
 | `Bookcase`, `TipJar`, `Scrying`, `CapeHanger`, `Trophies` | Bookcases, tip jars, the scrying pool, the cape hanger, skill hall trophy displays |
 | `CombatRings` | Boxing, fencing and combat rings, ranging pedestals, racks, the balance beam |
 | `GamesRoom` with `Prizes`, `RangingGames`, `Hangman`, `ElementalBalance`, `AttackStone`, `Jester`, `TreasureHunt` | The games room |
-| `Menagerie` | Pet houses, the pet list, roaming pets |
+| `Menagerie` | Pet houses, the pet list, roaming pets, the desert habitat's cactus |
 | `Dungeon`, `ThroneRoom` | Guards, traps, doors, treasure, oubliette; the throne room lever, trapdoors and cages, challenge mode |
 | `MahoganyHomes` | Contractors, contracts, the clients' homes, the reward shop |
 | `Menu`, `Commands` | The generic option menu (script 217); `::hotspots` |
@@ -273,6 +273,21 @@ the generic Ladders plugin's `ladders:climb`, which otherwise claims every Climb
   water in order to plant garden plants." The menagerie's habitats water in too but give no
   Farming experience (Wiki: Pet house). The hammer and saw are still asked for; the captures
   don't show a planting without them.
+- **Topiary bush:** Clip, on the plain bush or any shape, needs secateurs or magic secateurs
+  (carried; magic secateurs also wielded): without them "You'll need some secateurs to clip the
+  topiary bush." (rsprox.net recs 2581 tick 295, 2884 tick 10243). With them it opens menu 187
+  "Choose a shape" (None, Kraken, Zulrah, Kalphite Queen, Cerberus, Abyssal Sire, Skotizo,
+  Vorkath, Alchemical Hydra, The Nightmare). A pick plays `pruning_all` and synth 2440, and three
+  ticks later the animation resets and the bush becomes that shape's `poh_topiary_*` loc, saved
+  with the house (rec 2884, rev 230, ticks 12577-12725). No message or experience. Picking the
+  shape the bush already has opens a mesbox, "It's already in that form.", and prunes nothing
+  (rec 2884 tick 12537, None on the plain bush). Each shape
+  needs that boss killed once (Wiki: Topiary bush), read from Combat Achievements' kill counts,
+  so Phosani's Nightmare doesn't unlock The Nightmare. The Wiki asks for the post-quest Vorkath;
+  Combat Achievements also counts the Dragon Slayer II one (npc `vorkath_quest`), so the shape
+  needs a recorded death of npc `vorkath` (`construction:topiary-vorkath-killed`); a kill count
+  alone can't tell them apart. Ours: the refusal "You need to have killed <boss> to clip that shape.",
+  owner-only reshaping, and None giving the plain bush back.
 - **Cape hanger:** cape and hood mount as their `poh_mounted_*` loc; Take, Admire and, for the
   owner, the cape's options through `skillcape:operate` in the SkillCapes plugin. Untrimmed
   skillcapes show trimmed once the owner has two 99s (Wiki).
@@ -343,6 +358,13 @@ others): on the tick the owner reaches it the NPC goes, the pet item arrives and
 and form varbit clear, with no animation or sound. Only that pet goes; the others keep roaming.
 Ours: a full backpack gets "You don't have enough inventory space." (as Take), a guest's
 Pick-up does nothing, and an account with a bank PIN is asked for it first (as Take).
+
+The desert habitat's cactus (`poh_menagerie_habitat_feature_3`) has Touch. In rsprox capture
+2792 (ticks 768-890) the player walks up, faces it and plays `human_pickuptable` (832); the
+next tick sends "That was unwise." as a spam message and a 2-damage hitsplat, and held clicks
+touch every other tick. The Wiki (Desert habitat) gives the same 2 damage and message.
+It never kills: at 1 hitpoint (2792 ticks 993-998) each touch still sends the message but hits
+a blue 0. Ours: at 2 hitpoints it takes 1, as no recording touches at 2.
 
 ### Dungeon and throne room
 
@@ -638,6 +660,38 @@ Wiki:
 Not covered by either source: the Maid's and Cook's in-house greeting and "You rang", the
 wage demand of Rick, the Maid and the Cook, a full-inventory line other than the Demon
 butler's, guests' conversations with the servant, and the Butler's guest greeting.
+
+### Boss lair display
+
+`BossLair.Construction.js`, with the jars in `Storage.Construction.js` (rsprox captures 2909,
+rev 230; 3897, rev 235; local 1001171, a guest):
+
+- **Jars** opens the costume-room storage on enum 3300 (one row per jar, 16 in rev 242):
+  `poh_costumes_init` gets 3300, whether the viewer may change it (owner only), and the reset
+  flag. Ours: removing the display is refused while it holds a jar, like the costume room;
+  live asks "Really remove it?" with a jar inside (2909 tick 2481) and what Yes does with the
+  jar is unrecorded.
+- **Configure** opens the list menu (`menu`, script 217) titled "Choose a lair": `Empty`, then
+  each lair in enum 3300's order, struck through (`<str>`) unless its jar is stored. A stored
+  lair or Empty: the player does `human_pickuptable` (832) with area sound 2942 (delay 10,
+  range 7) and the display becomes that lair's loc (`poh_display_*`, saved as the furniture's
+  `displayObjectId`) a tick later. A lair without its jar opens a message box, "The display
+  does not contain the jar of that creature.", and the menu again after it (2909 tick 5214).
+  Picking what the display already shows (a lair, or Empty when blank) opens a message box,
+  "It's already in that state.", with no reach (2909 tick 4739).
+- A guest's Configure: "You can only configure the display in your own house." Their Jars
+  opens the storage to look at only.
+- Taking out the shown lair's jar closes the storage, the player reaches in with the same
+  animation and sound, and the display is blank a tick later (3897 tick 1092).
+- The boss must also have been killed once (Wiki), by Combat Achievements' kill count; for
+  Vorkath a kill of the post-quest form (8061), which the display records on its death, since
+  that count also counts every quest-form (8060) kill; a player Dragon Slayer II never marked has
+  only met 8061, so their count still answers.
+  Phosani's Nightmare's kills count for The Nightmare. Ours: the refusal, a message box "You
+  haven't killed that creature yet." with the menu after it, like the missing jar's; no capture
+  shows one.
+- Ours: the Shellbane Gryphon and Mad Angel menu labels (the Wiki's names; no capture lists
+  them).
 
 ## Not done yet
 
