@@ -1040,6 +1040,7 @@ test("as captured: closing the bank by any route ends a bank search; closing any
       const player = recordingPlayer();
       PacketSender.prototype[route].call({
         player,
+        isWorldMapOpen: () => false,
         resetInterfaceState: () => interfaceId,
         closeTrackedInterfaces: () => true,
         sendSubInterface: () => {},
@@ -1068,6 +1069,7 @@ test("as captured: closing the bank under an unanswered Enter amount prompt abor
       const sender = Object.assign(Object.create(PacketSender.prototype), {
         player,
         inventoryOwners: new Map(),
+        subInterfaceTargets: new Map(),
         closeTrackedInterfaces: () => opcodes.push(ServerPacketId.WIDGET_CLOSE_SUB) > 0,
         sendConfig() { return this; },
         sendVarbit() { return this; },

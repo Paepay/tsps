@@ -32,6 +32,7 @@ function fakeApi({ applied = true } = {}) {
     registerLoginExtension() {},
     registerCommand() {},
     onServerStartup() {},
+    onPlayerLogin() {},
     onPlayerLogout() {},
     onPlayerDisconnect() {},
     onCustomEvent() {},
@@ -65,7 +66,7 @@ test("every website plugin toggle becomes the runtime plugin switch", () => {
     Quests: true, AchievementDiaries: true, CombatAchievements: true, CollectionLog: true, Pets: true,
     Gravestones: true, DuelStaking: true, GrandExchange: true, CustomShops: true, NpcSpawns: true,
     PlayerBots: true, RandomEvents: true, ShootingStars: true, CustomCharacterSummary: true,
-    FreeToPlay: true, CrossFloor: true,
+    FreeToPlay: true, CrossFloor: true, PaeScape: true,
   });
 });
 

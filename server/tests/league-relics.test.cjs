@@ -689,16 +689,18 @@ test("Demonic Pacts' Dramen staff is reclaimed from the Leagues Tutor after loss
 
   const player = relicCharacter("pacts-dramen", 6);
   assert.equal(player.getInventory().contains(staff), true, "the starter kit already holds the Dramen staff");
-  assert.deepEqual(Collect.owed(player, 6), [], "holding the staff clears the debt");
+  // The login kit has the staff but not the tutor's other starting supplies, so those are
+  // legitimately owed (league-relics-demonic-pacts.test.cjs covers the handover).
+  assert.equal(Collect.owed(player, 6).includes(staff), false, "holding the staff clears its debt");
   player.getInventory().delete(staff, 1);
-  assert.deepEqual(Collect.owed(player, 6), [staff], "a lost Dramen staff is owed");
+  assert.equal(Collect.owed(player, 6).filter((id) => id === staff).length, 1, "a lost Dramen staff is owed once");
 
   const { action, chains } = collect(player, 15609);
   action.send(player);
   assert.equal(player.getInventory().contains(staff), true, "Collect-items hands the Dramen staff back");
   assert.equal([...chains[1].getDialogues().values()][0].getText(), "You receive some items from the Tutor.");
-  assert.equal(player.getInventory().contains(I.SPADE), false, "no free spade");
-  assert.equal(player.getInventory().contains(I.IMPLING_JAR), false, "no free impling jar");
+  assert.equal(player.getInventory().contains(I.SPADE), true, "the tutor supplies the missing spade");
+  assert.equal(player.getInventory().contains(I.IMPLING_JAR), true, "the tutor supplies the missing impling jar");
 
   const reloaded = relicCharacter("reloaded-no-dramen", 4);
   assert.equal(Collect.owed(reloaded, 4).includes(staff), false, "other leagues are not owed a Dramen staff");
