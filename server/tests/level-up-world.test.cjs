@@ -88,6 +88,7 @@ function createRuntime() {
   const experiences = Array(24).fill(0);
   const locked = new Set();
   const packets = { varbits: [], configs: [] };
+  const strings = [];
   const manager = {
     getMaxLevel: (skill) => baseLevels[skill.getIndex()],
     getCurrentLevel: (skill) => currentLevels[skill.getIndex()],
@@ -115,6 +116,7 @@ function createRuntime() {
         if (name === "sendVarbit") return (id, value) => packets.varbits.push({ id, value });
         if (name === "getVarp") return () => 0;
         if (name === "sendConfig") return (id, value) => packets.configs.push({ id, value });
+        if (name === "sendString") return (text, id, serverOwned) => strings.push({ text, id, serverOwned });
         return () => {};
       },
     }),
@@ -122,7 +124,7 @@ function createRuntime() {
     sendMessage: (message) => { (player.messages ??= []).push(message); },
   };
   manager.combatLevel = 3;
-  return { api, handlers, runtimeSkills, byName, skill, itemDefinitions, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets };
+  return { api, handlers, runtimeSkills, byName, skill, itemDefinitions, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets, strings };
 }
 
 function summaryFor(fake, unlocked, levels = {}, extra = {}) {
@@ -283,6 +285,63 @@ test("the mastery screen's two extra Level-Up rows have task completion bits", (
     fake.api.emitCustomEvent("league:points-changed", { player: fake.player });
     const withNinetyNine = fake.packets.configs.find(({ id }) => id === 2616)?.value;
     assert.notEqual(withNinetyNine & (1 << 11), 0, "bit 11 is combat-skill-99, the twelfth row");
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
+test("the Level-Up task screen shows one Combat Mastery reward line per row", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const Tasks = require("../plugins/modes/leaguetasks/Common.LeagueTasks");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  fake.api.onCustomEvent("level-up:mastery-profile", (query) => { query.active = true; });
+  Common.init(fake.api);
+  Tasks.init(fake.api);
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    const uid = (group, child) => (group << 16) | child;
+    assert.equal(Tasks.leagueOf(fake.player), Interface._test.TASK_TYPE,
+      "the screen opens for a real Level-Up character, not a league profile");
+    fake.player.setAttribute(Common.POINTS_ATTRIBUTE, { giant: 1 });
+
+    // Interface.LeagueTasks' open emits this after mounting 657 and running its task wipe.
+    fake.strings.length = 0;
+    fake.api.emitCustomEvent("league:tasks-opened", { player: fake.player });
+
+    const writes = fake.strings.filter(({ id }) => (id >>> 16) === 657);
+    const title = writes.find(({ id }) => id === uid(657, 32811));
+    assert.equal(title?.text, "Combat Mastery Tasks <col=ffffff>1/12</col>",
+      "script 9428's title text is 657:32811; 32810 is the sprite beside it");
+    assert.equal(title?.serverOwned, true);
+    const banner = writes.find(({ id }) => id === uid(657, 32785));
+    assert.equal(banner?.text, "Complete challenges for Combat Mastery points.");
+    assert.equal(banner?.serverOwned, true);
+
+    const total = Common.levelUpChallenges().length;
+    assert.equal(total, 12, "the twelve mastery challenges are the screen's rows");
+    for (let index = 0; index < total; index++) {
+      const nameId = uid(657, 32824 + index * 5);
+      const rewardId = uid(657, 32825 + index * 5);
+      const rowWrites = writes.filter(({ id }) => {
+        const child = id & 0xffff;
+        const rowStart = 32820 + index * 5;
+        return child > rowStart && child <= rowStart + 5;
+      });
+      const rewards = rowWrites.filter(({ text }) => /Reward:/i.test(text));
+      assert.equal(rewards.length, 1, `row ${index} has exactly one reward line`);
+      assert.equal(rewards[0].id, rewardId,
+        "script 9429 draws the reward at 32825 + row * 5, not at the name text 32824");
+      assert.equal(rewards[0].text, "Reward: <col=ffffff>1 Combat Mastery point");
+      assert.equal(rewards[0].serverOwned, true, "the client's redraw may not replace it");
+      assert.equal(rowWrites.some(({ id }) => id === nameId), false,
+        "the challenge name at 32824 + row * 5 is left intact");
+    }
+    assert.equal(writes.some(({ text }) => /League Points/i.test(text)), false,
+      "no row receives the seasonal League Points reward");
   } finally {
     plugin._test.configure("", null);
   }
