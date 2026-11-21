@@ -64,6 +64,31 @@ and Kudos agree across the three and with the Wiki's Kudos page.
   lamp." and ends the conversation there; the report stays open for the next talk.
 - A player still holding a report's lamp gets no second one and no lamp line.
 
+# Dig Site cleaning area: the guard and the gate
+
+Code: `server/plugins/world/museum/GuardGate.Museum.js` for the guard, and the pass-through
+entry for loc 24536 in `server/plugins/objects/Doors.plugin.js`; test:
+`server/tests/museum-guard-gate.test.cjs`.
+
+The cleaning room is reached through the barrier row's one Open-only gate, 24536
+(`vm_barrier_guard_gate`) at 3261,3446. Its neighbours 24537 (`vm_barrier_extra`) and 24538
+(its west mirror) have no actions, so the door catalog cannot pair 24536 with an open leaf. The
+pass-through entry opens the gate on its own tile, carries the opener from the hall row (3447)
+to the cleaning row (3445), or back from 3261,3445, and shuts it two ticks later.
+
+- Before The Dig Site, the guard (NPC 1910) refuses both Talk-to and Open with
+  `You're not permitted in this area.`; the gate does not open.
+- After the quest, the first gate click of a login plays the guard's welcome and menu.
+  `Yes, I'll go in!` (Wiki transcript action `AFy65N`) moves the player to 3259,3445.
+  `No thanks, I'll take a look around out here.` consumes the session prompt, and later gate
+  clicks open and cross without asking, matching the 2019 QoL note on Transcript:Museum guard.
+- Talk-to uses the same before/after variants instead of the transcript's first `standard`
+  variant, which is the free-to-play guard's line.
+
+Not captured: the gate's opening sound and leaf animation. They follow the other Open-only
+gates rather than a recording of 24536 itself; the forced two-tile crossing is forced by the
+doorway blocker the open gate leaves in place.
+
 # Curator Haig Halen: Sailing salvaging relics
 
 Code: `server/plugins/world/museum/SalvagingRelics.Museum.js`; test:

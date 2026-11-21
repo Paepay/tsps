@@ -237,7 +237,9 @@ function makeApi(quests = new Set()) {
     onAnyNpcInteraction(actions) { anyNpc = actions; },
     onInterfaceActionButton() {},
     onNpcDialogueVariant() {},
+    onObjectRoute() {},
     onPlayerLogin(handler) { login.push(handler); },
+    onPlayerLogout() {},
     registerArea(area) { areas.push(area); },
     sendMultiChatboxPrompt(_player, _title, ...flat) {
       const options = [];

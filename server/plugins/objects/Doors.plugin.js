@@ -891,6 +891,23 @@ function defineDoorData({ ObjectIdentifiers: O }) {
       closeTicks: 2,
       openSoundId: 2410,
     }),
+    // Varrock Museum's cleaning-area gate (24536, the only gap in the barrier row at y 3446).
+    // Its neighbours 24537/24538 are actionless barrier extras, not an open leaf, so the
+    // catalog cannot pair it. Not captured: the leaf turns on its own tile, the opener is
+    // carried two tiles across (cleaning room 3445 <-> hall 3447) over the doorway's blocker,
+    // and the gate returns two ticks later, as the other Open-only gates do. Museum's
+    // GuardGate plugin runs before this (door:toggle) to refuse before The Dig Site and ask
+    // on the first entry of the session.
+    Object.freeze({
+      closed: [[O.GATE_170, 3261, 3446, 0, 1]],
+      opened: [
+        [NAMELESS_DOOR_LEAF_IDS.INVISWALL, 3261, 3446, 0, 1],
+        [O.GATE_170, 3261, 3446, 0, 2],
+      ],
+      crossYBetween: [3445, 3447],
+      crossColumns: [3261],
+      closeTicks: 2,
+    }),
   ]);
   // Pass-through doors placed many times, as a family: every placement of the door works like a
   // PASS_THROUGH_GATES entry built from its own tile and face. Open puts INVISWALL on the door's
@@ -1938,6 +1955,25 @@ function carryAcrossGate(player, gate, y, z) {
 }
 
 /**
+ * The north-south twin of crossBetween: a thin gate row that the map blocks on both sides of, so
+ * the opener is carried from the row beside it to the row past it, in either direction.
+ */
+function carryAcrossGateY(player, gate, x, z) {
+  const [low, high] = gate.crossYBetween;
+  const here = player.getLocation();
+  const column = gate.crossColumns?.includes(here.getX()) ? here.getX()
+    : gate.crossColumns?.length === 1 ? gate.crossColumns[0] : x;
+  const northward = here.getY() < (low + high) / 2;
+  const from = cloneLocation(column, northward ? low : high, z);
+  if (Math.abs(here.getX() - from.getX()) > 1 || Math.abs(here.getY() - from.getY()) > 1) return;
+  if (!here.equals(from)) player.moveTo(from.clone());
+  const span = high - low;
+  core.TaskManager.submit(new core.ForceMovementTask(player, span,
+    new core.ForceMovement(from.clone(), new core.Location(0, northward ? span : -span, 0), 0, 30 * span,
+      northward ? 0 : 2, GATE_WALK_ANIMATION)));
+}
+
+/**
  * A gate that keeps a collision blocker on its doorway while open: the opener, standing on the tile beside
  * it, is carried the one tile over (forced movement ignores the blocker); nobody else can walk across.
  */
@@ -2033,6 +2069,10 @@ function standAtDiagonal(player, gate, z) {
 function stepThroughGate(player, gate, x, y, z) {
   if (gate.crossDiagonal) {
     carryAcrossDiagonal(player, gate, z);
+    return;
+  }
+  if (gate.crossYBetween) {
+    carryAcrossGateY(player, gate, x, z);
     return;
   }
   if (gate.crossBetween) {

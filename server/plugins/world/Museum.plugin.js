@@ -961,5 +961,6 @@ module.exports = {
     pluginApi.onCustomEvent("player:bootstrap-complete", handleBootstrap);
     require("./museum/NaturalHistoryQuiz.Museum")(pluginApi);
     require("./museum/SalvagingRelics.Museum")(pluginApi);
+    require("./museum/GuardGate.Museum")(pluginApi);
   },
 };
