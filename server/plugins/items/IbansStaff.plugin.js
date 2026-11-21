@@ -69,7 +69,7 @@ function spendCharges({ player, spell }) {
   const target = player.getCombat().getTarget();
   const cost = target?.isPlayer?.() ? PLAYER_CAST_COST : NPC_CAST_COST;
   const consume = { player, itemId: staff.getId(), skip: false, extra: 0 };
-  pluginApi?.emitCustomEvent?.(combat:consume-charge, consume);
+  pluginApi?.emitCustomEvent?.("combat:consume-charge", consume);
   if (consume.extra > 0) setCharges(staff, Math.min(capacityOf(staff.getId()), chargesOf(staff) + Math.floor(consume.extra)));
   if (!consume.skip) setCharges(staff, Math.max(0, chargesOf(staff) - cost));
   player.getEquipment().refreshItems();
