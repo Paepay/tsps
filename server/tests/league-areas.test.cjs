@@ -288,6 +288,32 @@ test("the 2026-11-18 exact tiles put the Edgeville ditch's south bank in Misthal
   assert.equal(areaAt(3090, 3521), WILDERNESS, "north of the ditch");
 });
 
+test("the Tears of Guthix cave is Misthalin for a Misthalin-only character; the Desert's caves stay Desert", () => {
+  // Wiki: the cave is in Misthalin. Juna's loc is at 3252,9517,2 and the light creatures at
+  // 3224-3226,9516-9518,2; the Games necklace lands at 3245,9500,2.
+  const cave = [
+    ["the cave's north-west corner", 3200, 9472], ["the cave's south-east corner", 3263, 9535],
+    ["Juna", 3252, 9517], ["the chasm's light creatures", 3225, 9517], ["the Games necklace landing", 3245, 9500],
+  ];
+  for (const league of [4, 5, 6]) {
+    for (const [name, x, y] of cave) assert.equal(areaAt(x, y, { league }), MISTHALIN, `league ${league}: ${name}`);
+  }
+
+  const misthalinOnly = character("tears-misthalin");
+  misthalinOnly.setAttribute("league:areas", [MISTHALIN]);
+  for (const [name, x, y] of cave) {
+    assert.equal(areaAt(x, y, { player: misthalinOnly }), MISTHALIN, `${name} resolves for the character`);
+  }
+  const teleport = { player: misthalinOnly, destination: at(3245, 9500, 2), allow: null };
+  hooks.onCanTeleport(teleport);
+  assert.equal(teleport.allow, null, "the Games necklace's landing is not refused");
+
+  // The Desert's own surface and the exact Kalphite Lair rectangle next door are unchanged.
+  assert.equal(areaAt(3290, 3180), DESERT, "Al Kharid");
+  assert.equal(areaAt(3430, 2900), DESERT, "Nardah");
+  assert.equal(areaAt(3328, 9472), DESERT, "the Kalphite Lair");
+});
+
 test("the Citharede Abbey and the land south of the plateau are desert; the Abandoned Mine entrance stays Morytania", () => {
   // Wiki (Citharede Abbey, leagueRegion = Desert): the abbey and the Giants' Plateau east of Al
   // Kharid, map square 53,49, tiles 3392-3455 by 3136-3199. That square's cabbage field is the
