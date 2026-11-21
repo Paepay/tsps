@@ -394,13 +394,57 @@ test("Open and Close lines (rsprox 449, 452, 1545)", () => {
   assert.equal(p.messages.at(-1), "You close your looting bag.");
 });
 
-test("opening the bank seeds inv 516 so the client offers View (bankside_drawitem)", () => {
-  const bag = bagWith(OPEN_BAG, [{ id: COINS, amount: 5 }]);
+// Issue 5583: the bank's inventory panel gives the bag its View op only while the client holds
+// something in inv looting_bag (bankside scripts 296 and 297), so a bag that had not been checked
+// since login offered the Deposit ops alone at a bank, and nothing could be taken out of it.
+test("an open bank is sent the bag's contents: on opening, when they change, and when the bag is gone", () => {
+  bankTabs = bankTab();
+  const contents = (p) => packets(p, "sendInventory").map(([, inv, size, items, owner]) => ({ inv, size, owner, items: items.map(({ id, amount }) => [id, amount]) }));
+  const bag = bagWith(OPEN_BAG, [{ id: KARAMBWAN, amount: 1 }, { id: FIRE_RUNE, amount: 13 }]);
   const p = player({ at: LUMBRIDGE, items: [bag] });
+
+  // Away from a bank nothing is sent: only the bag's own interfaces send them there.
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.deepEqual(contents(p), []);
+
   p.bankOpen = true;
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
   hooks.events[core.Bank.OPENED_EVENT]({ player: p });
-  assert.equal(packets(p, "sendInventory").at(-1)[1], BAG_INV);
-  assert.deepEqual(packets(p, "sendInventory").at(-1)[3].slice(0, 1), [{ id: COINS, amount: 5 }]);
+  const sent = contents(p);
+  assert.ok(sent.length >= 1);
+  assert.deepEqual(sent.at(-1), { inv: BAG_INV, size: 28, owner: core.Bank.MAIN_INTERFACE_ID, items: [[KARAMBWAN, 1], [FIRE_RUNE, 13]] });
+
+  // The bank refreshes on every item moved: the same contents are not sent again.
+  const before = contents(p).length;
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.equal(contents(p).length, before);
+
+  // They changed (a Deposit op took the karambwan out): sent again.
+  const items = bankside("lootingbag_items");
+  hooks.events[core.Bank.INVENTORY_OP_EVENT]({ player: p, item: bag, slot: 0, op: 1, handled: false });
+  click({ player: p, groupId: 15, childId: items, slot: 0, action: 2, handled: false });
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.deepEqual(contents(p).at(-1).items, [[FIRE_RUNE, 13]]);
+
+  // The bag is banked: the client's copy is emptied, so no View is offered on a bag it no longer sees.
+  p.inv.getItems()[0] = null;
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.deepEqual(contents(p).at(-1).items, []);
+  const emptied = contents(p).length;
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.equal(contents(p).length, emptied);
+
+  // Withdrawn again with the bank still open: its contents go out at once.
+  p.inv.getItems()[0] = bag;
+  hooks.events[core.Bank.REFRESHED_EVENT]({ player: p });
+  assert.deepEqual(contents(p).at(-1).items, [[FIRE_RUNE, 13]]);
+
+  // A bank opened afresh is always told, whatever the last one was sent (a new login's client knows nothing).
+  const reopened = contents(p).length;
+  hooks.events[core.Bank.OPENED_EVENT]({ player: p });
+  assert.equal(contents(p).length, reopened + 1);
+  assert.deepEqual(contents(p).at(-1).items, [[FIRE_RUNE, 13]]);
 });
 
 test("the bank's looting bag view: View, Deposit-1/5/10/X/All, Deposit loot, Dismiss (rsprox 454, 457, 464, 1545)", () => {
@@ -411,7 +455,7 @@ test("the bank's looting bag view: View, Deposit-1/5/10/X/All, Deposit loot, Dis
   ]);
   const p = player({ at: LUMBRIDGE, items: [bag] });
   p.bankOpen = true;
-  const view = { player: p, item: bag, slot: 0, op: 1, option: "View", handled: false };
+  const view = { player: p, item: bag, slot: 0, op: 1, handled: false };
   hooks.events[core.Bank.INVENTORY_OP_EVENT](view);
   assert.equal(view.handled, true);
   assert.equal(p.varbits.get(core.Bank.VIEW_CONTAINER_VARBIT), 1);
@@ -797,4 +841,12 @@ test('native bank container button and bag Deposit loot preserve notes, metadata
     assert.equal(stored(closed.bag)[0].amount, 3);
     assert.equal(closed.p.getBank(0).getAmount(base), 0);
   });
+});
+
+test("a leaver who stays a ranked Group Ironman loses what is in the looting bag; the bag stays (Wiki)", () => {
+  const bag = bagWith(OPEN_BAG, [{ id: KARAMBWAN, amount: 1 }, { id: COINS, amount: 7 }]);
+  const p = player({ items: [bag] });
+  hooks.events["group-ironman:wipe-tradeables"]({ player: p });
+  assert.deepEqual(bag.getMetaValue("lootingBag"), []);
+  assert.equal(p.getInventory().getItems().includes(bag), true);
 });

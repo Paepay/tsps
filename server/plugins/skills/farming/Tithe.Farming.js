@@ -211,6 +211,9 @@ function titheItem(event) {
         if (rules.keepSeed !== true) player.getInventory().deleteNumber(id, 1);
         plot.plant = { crop, stage: rules.grown === true ? 3 : 0, watered: false, dead: false, fertilized: false,
             nextAt: Date.now() + 60000 };
+
+        // `tithe-farm:planted` { player, crop }: "Golovanova", "Bologano" or "Logavano" (a league's "Plant 100 ... seeds").
+        core.PluginManager.emitCustomEvent("tithe-farm:planted", { player, crop: CROPS[crop].name });
         player.getPacketSender().sendVarbit(4901, crop + 1);
         player.performAnimation(new core.Animation(2291));
         if (typeof rules.message === "string") player.sendMessage(rules.message);

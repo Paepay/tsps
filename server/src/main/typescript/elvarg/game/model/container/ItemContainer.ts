@@ -2,6 +2,7 @@ import { Item } from "../Item";
 import type { Player } from "../../entity/impl/player/Player";
 
 import { StackType, MAX_STACK_AMOUNT } from "./StackType";
+import { lazyRequire } from "../../../util/LazyRequire";
 // Avoid eager imports here to prevent circular dependency when containers extend ItemContainer.
 // Use dynamic requires in methods where needed.
 const placeholder = (name: string) => {
@@ -33,8 +34,8 @@ const ensureContainersLoaded = () => {
   }
 };
 // Lazy requires to dodge circular deps during bootstrap.
-const getItemDefinition = () => require("../../definition/ItemDefinition").ItemDefinition as typeof import("../../definition/ItemDefinition").ItemDefinition;
-const getItemOnGroundManager = () => require("../../entity/impl/grounditem/ItemOnGroundManager").ItemOnGroundManager as typeof import("../../entity/impl/grounditem/ItemOnGroundManager").ItemOnGroundManager;
+const getItemDefinition = lazyRequire(() => require("../../definition/ItemDefinition").ItemDefinition as typeof import("../../definition/ItemDefinition").ItemDefinition);
+const getItemOnGroundManager = lazyRequire(() => require("../../entity/impl/grounditem/ItemOnGroundManager").ItemOnGroundManager as typeof import("../../entity/impl/grounditem/ItemOnGroundManager").ItemOnGroundManager);
 
 export abstract class ItemContainer {
   public player: Player;
@@ -494,7 +495,15 @@ export abstract class ItemContainer {
     return Math.min(requested, this.getFreeSlots());
   }
 
-  public add(item: Item, refresh: boolean): ItemContainer {
+  /** Observes accepted additions after mutation, before refresh; copies may ignore them. */
+  protected onItemsAdded(_itemId: number, _amount: number): void {}
+
+  /**
+   * `refresh` defaults to true, as addItem: plugin code calls add(item) with no flag, and without the
+   * refresh the item reached the client only with the next unrelated refresh (issue 6415, the In Aid
+   * of the Myreque cellar finds showing up seconds after their objectbox).
+   */
+  public add(item: Item, refresh: boolean = true): ItemContainer {
     ensureContainersLoaded();
     if (
       item.getId() < 0 ||
@@ -502,6 +511,7 @@ export abstract class ItemContainer {
     ) {
       return this;
     }
+    let accepted = 0;
     if (
       getItemDefinition().forId(item.getId()).isStackable() ||
       this.stackType() == StackType.STACKS
@@ -550,7 +560,8 @@ export abstract class ItemContainer {
       if (this.items[slot].getId() < 0 || this.items[slot].getAmount() <= 0) {
         this.items[slot] = item.clone().setAmount(0);
       }
-      let totalAmount = this.items[slot].getAmount() + item.getAmount();
+      const previousAmount = this.items[slot].getAmount();
+      let totalAmount = previousAmount + item.getAmount();
       this.items[slot].setId(item.getId());
       this.items[slot].setMeta(item.getMeta());
       if (totalAmount > MAX_STACK_AMOUNT) {
@@ -560,22 +571,26 @@ export abstract class ItemContainer {
           this.items[slot].getAmount() + item.getAmount()
         );
       }
+      accepted = this.items[slot].getAmount() - previousAmount;
     } else {
       let amount = item.getAmount();
       while (amount > 0) {
         let slot = this.getEmptySlot();
         if (slot == -1) {
           this.getPlayer().sendMessage("You couldn't hold all those items.");
+          if (accepted > 0) this.onItemsAdded(item.getId(), accepted);
           if (refresh) {
             this.refreshItems();
           }
           return this;
         } else {
           this.items[slot] = item.clone().setAmount(1);
+          accepted++;
         }
         amount--;
       }
     }
+    if (accepted > 0) this.onItemsAdded(item.getId(), accepted);
     if (refresh) {
       this.refreshItems();
     }

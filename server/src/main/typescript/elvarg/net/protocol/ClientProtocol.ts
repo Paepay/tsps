@@ -104,6 +104,8 @@ export type PlayerView = Tile & ActorUpdateView & {
   index: number;
   appearance: Buffer;
   movementType?: 1 | 2;
+  /** One-update traversal override; independent of movement geometry and cached speed. */
+  temporaryMovementType?: 1 | 2;
   resetPath?: boolean;
   appearanceDirty?: boolean;
   faceDirection?: number;
@@ -195,6 +197,14 @@ export type PlayerSyncState = {
   updateBlocks: Buffer[];
 };
 
+/** NpcView.typeCustomisation: what one NPC shows in place of its type's own values. */
+export type NpcTypeCustomisationView = {
+  models?: number[];
+  recolours?: { from: number; to: number }[];
+  name?: string;
+  combatLevel?: number;
+};
+
 export type NpcView = Tile & ActorUpdateView & {
   index: number;
   typeId: number;
@@ -208,12 +218,20 @@ export type NpcView = Tile & ActorUpdateView & {
   modelCustomisation?: { slot: number; modelId: number }[];
   /** Stand / walk / turn sequence overrides (0 idle, 1 walk, 2 turn left, 3 turn right); an empty list resets them. */
   baseAnimations?: { slot: number; seqId: number }[];
+  /**
+   * One NPC's type, changed for every viewer (OSRS npc body customisation, name change and level
+   * change): its whole model list, its recolours (an empty list clears the type's), a name and a
+   * combat level. Each field is optional; an object with none resets them all.
+   */
+  typeCustomisation?: NpcTypeCustomisationView;
   /** A fade of its model (OSRS npc transparency): `from` (-1 its current look) to `to`, 0 opaque to 255 invisible. */
   transparency?: { startCycles: number; endCycles: number; from: number; to: number };
   /** OSRS tinting, as for players: an HSL tint over client cycles. */
   tint?: { startCycle: number; endCycle: number; hue: number; saturation: number; lightness: number; weight: number };
   /** Its walk step is sent as a crawl (half walking speed on the client). */
   crawl?: boolean;
+  /** false: a move this tick is re-added without the jump flag, so clients walk it (NPC.teleportInView). */
+  jump?: boolean;
   /** The boat/static ship this NPC stands on (its deck) rather than the main world. */
   worldView?: number;
   rotation: number;
@@ -1114,6 +1132,8 @@ export const ChatType = {
   TRADE: 102,
   /** An NPC's overhead line, shown as "Name: text"; the NPC's name goes in `from`. */
   NPC_SAY: 116,
+  /** Spoken dialogue history, with "Name|text" in the message (rsprox `type=dialogue`). */
+  DIALOGUE: 114,
   /** A message box's text, logged in the chatbox as live does when one opens (rsprox `type=mesbox`). */
   MESBOX: 115,
   /** The login greeting, "Welcome to Old School RuneScape." (rsprox `type=108`). */
@@ -2224,6 +2244,11 @@ export function encodeSystemUpdate(remainingCentis: number): Buffer {
   return encodeServerPacket(ServerPacketId.SYSTEM_UPDATE, payload);
 }
 
+/** OSRS url_open: the client opens [url] in the player's web browser. */
+export function encodeUrlOpen(url: string): Buffer {
+  return encodeServerPacket(ServerPacketId.URL_OPEN, string(url));
+}
+
 export function encodeDestination(x: number, y: number): Buffer {
   const payload = Buffer.alloc(4);
   payload.writeUInt16BE(x & 0xffff);
@@ -2508,16 +2533,37 @@ export function encodeWidgetRunScript(
   );
 }
 
-export function encodeRunClientScript(scriptId: number, args: (number | string)[] = []): Buffer {
+export function encodeRunClientScript(scriptId: number, args: ScriptArg[] = []): Buffer {
   const id = Buffer.alloc(2);
   id.writeUInt16BE(scriptId & 0xffff);
   return encodeServerPacket(ServerPacketId.RUN_CLIENT_SCRIPT, Buffer.concat([id, scriptArgs(args)]));
 }
 
-function scriptArgs(args: (number | string | bigint)[]): Buffer {
+/**
+ * A clientscript argument. An array is one of the cache's array arguments (stringarray,
+ * intarray): it goes as type 3 (ints) or 4 (strings), a u16 length and the values. An empty
+ * array goes as an int array.
+ */
+export type ScriptArg = number | string | bigint | number[] | string[];
+
+function scriptArgs(args: ScriptArg[]): Buffer {
   const parts: Buffer[] = [Buffer.from([args.length])];
   for (const arg of args) {
-    if (typeof arg === "bigint") {
+    if (Array.isArray(arg)) {
+      const strings = arg.length > 0 && typeof arg[0] === "string";
+      const head = Buffer.alloc(3);
+      head[0] = strings ? 4 : 3;
+      head.writeUInt16BE(arg.length, 1);
+      parts.push(head);
+      for (const value of arg as (number | string)[]) {
+        if (strings) parts.push(string(String(value)));
+        else {
+          const int = Buffer.alloc(4);
+          int.writeInt32BE(Number(value) | 0);
+          parts.push(int);
+        }
+      }
+    } else if (typeof arg === "bigint") {
       const value = Buffer.alloc(9);
       value[0] = 2;
       value.writeBigInt64BE(arg, 1);
@@ -3104,7 +3150,11 @@ const NPC_MASK = {
   TRANSPARENCY: 0x8000,
   SPOT_ANIM: 0x20000,
   TINT: 0x100,
+  TYPE_CUSTOMISATION: 0x40000,
 } as const;
+
+/** TYPE_CUSTOMISATION's leading flags: which fields follow. None resets the customisation. */
+const NPC_TYPE_CUSTOMISATION = { MODELS: 0x1, RECOLOURS: 0x2, NAME: 0x4, COMBAT_LEVEL: 0x8 } as const;
 
 /** Overhead prayer icons (sprite group headicons_prayer); an NPC's head icon is an index in it. */
 const HEADICONS_PRAYER_ARCHIVE = 440;
@@ -3219,7 +3269,7 @@ function playerUpdateMask(
     (writeInteraction ? PLAYER_MASK.FACE_ENTITY : 0) |
     (view.forcedMovement ? PLAYER_MASK.FORCE_MOVEMENT : 0) |
     (writeMovementType ? PLAYER_MASK.MOVEMENT_TYPE : 0) |
-    (view.resetPath ? PLAYER_MASK.MOVEMENT_FLAG : 0) |
+    (view.resetPath || view.temporaryMovementType !== undefined ? PLAYER_MASK.MOVEMENT_FLAG : 0) |
     (view.tint ? PLAYER_MASK.TINT : 0) |
     (view.graphics?.length ? PLAYER_MASK.SPOT_ANIM : 0);
 }
@@ -3236,7 +3286,29 @@ function npcUpdateMask(view: NpcView, writeInteraction: boolean, writeHeadIcon =
     (view.modelCustomisation ? NPC_MASK.MODEL_CUSTOMISATION : 0) |
     (view.baseAnimations ? NPC_MASK.BASE_ANIMATIONS : 0) |
     (view.transparency ? NPC_MASK.TRANSPARENCY : 0) |
-    (view.graphics?.length ? NPC_MASK.SPOT_ANIM : 0);
+    (view.graphics?.length ? NPC_MASK.SPOT_ANIM : 0) |
+    (view.typeCustomisation ? NPC_MASK.TYPE_CUSTOMISATION : 0);
+}
+
+/** A flags byte, then the flagged fields: model ids, recolour pairs, a name, a combat level. */
+function writeTypeCustomisation(bytes: number[], view: NpcTypeCustomisationView): void {
+  const { MODELS, RECOLOURS, NAME, COMBAT_LEVEL } = NPC_TYPE_CUSTOMISATION;
+  const flags = (view.models ? MODELS : 0) | (view.recolours ? RECOLOURS : 0) |
+    (view.name !== undefined ? NAME : 0) | (view.combatLevel !== undefined ? COMBAT_LEVEL : 0);
+  bytes.push(flags);
+  if (view.models) {
+    bytes.push(view.models.length & 0xff);
+    for (const model of view.models) shortBE(bytes, model & 0xffff);
+  }
+  if (view.recolours) {
+    bytes.push(view.recolours.length & 0xff);
+    for (const { from, to } of view.recolours) {
+      shortBE(bytes, from & 0xffff);
+      shortBE(bytes, to & 0xffff);
+    }
+  }
+  if (view.name !== undefined) writeText(bytes, view.name);
+  if (view.combatLevel !== undefined) shortBE(bytes, view.combatLevel & 0xffff);
 }
 
 /** The forced-movement fields, as players' forced movement writes them. */
@@ -3278,7 +3350,8 @@ function writePlayerUpdateBlock(
     bytes.push(...view.appearance.subarray(0, length));
   }
   if (view.forcedMovement) writeForcedMovement(bytes, view.forcedMovement);
-  if (view.resetPath) byteS(bytes, 127);
+  if (view.resetPath || view.temporaryMovementType !== undefined)
+    byteS(bytes, view.resetPath ? 127 : view.temporaryMovementType!);
   if (view.graphics?.length) {
     byteA(bytes, view.graphics.length);
     for (const graphic of view.graphics) {
@@ -3366,6 +3439,7 @@ function writeNpcUpdateBlock(view: NpcView, writeInteraction: boolean, writeHead
     shortBE(bytes, view.transparency.from < 0 ? 0xffff : view.transparency.from & 0xff);
     bytes.push(view.transparency.to & 0xff);
   }
+  if (view.typeCustomisation) writeTypeCustomisation(bytes, view.typeCustomisation);
   return Buffer.from(bytes);
 }
 
@@ -3719,7 +3793,7 @@ export function encodeNpcSync(
     const worldView = view.worldView;
     writer.writeBits(1, worldView != null ? 1 : 0);
     if (worldView != null) writer.writeBits(32, worldView & 0xffff);
-    writer.writeBits(1, readd.has(view.index) ? 1 : 0);
+    writer.writeBits(1, readd.has(view.index) && view.jump !== false ? 1 : 0);
     writer.writeBits(large ? 8 : 5, signed(view.y - base.y, large ? 8 : 5));
     writer.writeBits(large ? 8 : 5, signed(view.x - base.x, large ? 8 : 5));
     writer.writeBits(3, view.rotation & 7);

@@ -36,7 +36,7 @@ test('search results number rows across every category, so the keybinds come aft
   const before = [0, 1, 2].reduce((rows, index) => {
     const category = CacheDefinitions.getStructParams(Number(CacheDefinitions.getEnumValues(422).get(index)));
     return rows + CacheDefinitions.getEnumValues(Number(category.get(745))).size;
-  }, 0);
+  }, 1); // the independently verified native4452 row restored after the cache Chat entries
   assert.ok(before + 27 > 63, 'past the old 0..63 transmit range');
   assert.equal(Settings.keybindVarbitForRow(viewing(-1), before + 27), COMBAT_KEY);
   assert.equal(Settings.keybindVarbitForRow(viewing(-1), before + 36), INVENTORY_KEY);
@@ -84,6 +84,7 @@ function recordingPlayer() {
     },
     getVarp: (id) => vars.get(`varp ${id}`) ?? 0,
     sendClientScript: (id) => { sent.push(`script ${id}`); return sender; },
+    sendContentData: () => sender,
     sendInterfaceFlagsRange: () => sender,
     sendEnterAmountPrompt: (title) => { sent.push(`amount prompt ${title}`); return sender; },
   };
@@ -204,9 +205,9 @@ test('a desktop layout change reopens the orbs on the new root after the root, a
     assert.equal(dropdown({ player, slot }), true);
     return player.sent.filter(entry => entry.startsWith('root ') || entry.startsWith('open '));
   };
-  assert.deepEqual(layoutChange(3), ['root 161', `open ${orbsUid}:160:1`], 'resizable modern');
+  assert.deepEqual(layoutChange(3), ['root 164', `open ${orbsUid}:160:1`], 'resizable modern');
   assert.deepEqual(layoutChange(1), ['root 548', `open ${orbsUid}:160:1`], 'fixed: the orbs are placed again');
-  assert.deepEqual(layoutChange(2), ['root 164', `open ${orbsUid}:160:1`], 'resizable classic');
+  assert.deepEqual(layoutChange(2), ['root 161', `open ${orbsUid}:160:1`], 'resizable classic');
 });
 
 test('as captured: the search bar takes the keyboard, and closing All Settings by any route gives it back', () => {
@@ -280,6 +281,16 @@ const DROPDOWN_CLOSE = (134 << 16) | 26;
 const CATEGORIES = (134 << 16) | 24;
 const SEARCH = (134 << 16) | 11;
 
+/** Search indices follow the effective native category entries. */
+function searchRowOf(settingId) {
+  const ids = [];
+  for (const [, categoryId] of CacheDefinitions.getEnumValues(422)) {
+    const category = CacheDefinitions.getStructParams(Number(categoryId));
+    for (const [, structId] of Settings.settingsEnumEntries(Number(category.get(745)))) ids.push(CacheDefinitions.getStructParams(Number(structId)).get(1077));
+  }
+  return ids.indexOf(settingId);
+}
+
 /** The All Settings handlers and a player looking at them, starting on `category`. */
 function allSettings(category) {
   const { buttons, logins } = registered();
@@ -292,11 +303,12 @@ function allSettings(category) {
 
 test('as captured: "Level-up pop-up notifications" from search results, each option', () => {
   const { player, click, varbit } = allSettings('search');
-  // Search result 301 is setting 315; its category (Interfaces, 6) is shown behind the results.
-  assert.deepEqual(click(CLICKZONE, 301), ['varbit 9657=315', 'varbit 9656=6']);
+  // Restoring a Chat row shifts search indices; the native setting identity is stable.
+  const row = searchRowOf(315);
+  assert.deepEqual(click(CLICKZONE, row), ['varbit 9657=315', 'varbit 9656=6']);
   const options = { 2: [1, 0], 5: [0, 0], 8: [0, 1] };
   for (const [button, [disabled, list]] of Object.entries(options)) {
-    click(CLICKZONE, 301);
+    click(CLICKZONE, row);
     const sent = click(DROPDOWN, Number(button));
     assert.equal(varbit(20157), disabled, `option ${button / 3 | 0}: option_level_up_message_disabled`);
     assert.equal(varbit(4371), list, `option ${button / 3 | 0}: option_level_up_popup_list`);
@@ -307,10 +319,10 @@ test('as captured: "Level-up pop-up notifications" from search results, each opt
 
 test('as captured: the level-up chatbox and guide lists are toggles beside it', () => {
   const { click, varbit } = allSettings('search');
-  assert.deepEqual(click(CLICKZONE, 302), ['varbit 9657=493', 'varbit 9656=6', 'varbit 20158=1']);
-  click(CLICKZONE, 302);
+  assert.deepEqual(click(CLICKZONE, searchRowOf(493)), ['varbit 9657=493', 'varbit 9656=6', 'varbit 20158=1']);
+  click(CLICKZONE, searchRowOf(493));
   assert.equal(varbit(20158), 0);
-  assert.deepEqual(click(CLICKZONE, 303), ['varbit 9657=494', 'varbit 9656=6', 'varbit 20159=1']);
+  assert.deepEqual(click(CLICKZONE, searchRowOf(494)), ['varbit 9657=494', 'varbit 9656=6', 'varbit 20159=1']);
 });
 
 test('as captured: a category click ends the search', () => {
@@ -347,7 +359,7 @@ test('the native master clue warning toggles both ways and survives actual playe
   const ids = [];
   for (const [, categoryId] of [...CacheDefinitions.getEnumValues(422)].sort(([a], [b]) => a - b)) {
     const category = CacheDefinitions.getStructParams(Number(categoryId));
-    for (const [, structId] of [...CacheDefinitions.getEnumValues(Number(category.get(745)))].sort(([a], [b]) => a - b))
+    for (const [, structId] of Settings.settingsEnumEntries(Number(category.get(745))))
       ids.push(CacheDefinitions.getStructParams(Number(structId)).get(1077));
   }
   const row = ids.indexOf(settingId); assert.ok(row >= 0, 'the setting is present in native search results');
@@ -548,7 +560,7 @@ const CHAT_TIMESTAMPS_SCRIPT = 4586;
 /** A setting's row in a settings category's list (enum 422 -> struct param 745 -> struct param 1077). */
 function rowOf(categoryId, settingId, label) {
   const category = CacheDefinitions.getStructParams(Number(CacheDefinitions.getEnumValues(422).get(categoryId)));
-  const rows = [...CacheDefinitions.getEnumValues(Number(category.get(745)))].sort(([a], [b]) => a - b)
+  const rows = Settings.settingsEnumEntries(Number(category.get(745)))
     .map(([, struct]) => CacheDefinitions.getStructParams(Number(struct)).get(1077));
   const row = rows.indexOf(settingId);
   assert.ok(row >= 0, `setting ${settingId} is in the ${label} category`);
@@ -616,6 +628,7 @@ function varpPlayer({ native = false } = {}) {
       return sender;
     },
     sendInterfaceFlagsRange: (uid, from, to, value) => { flags.push([uid, from, to, value]); return sender; },
+    sendContentData: () => sender,
     sendSubInterface: () => sender,
   };
   return { varps, flags, getPacketSender: () => sender, setAttribute: (k, v) => attributes.set(k, v), getAttribute: (k) => attributes.get(k) };
@@ -641,6 +654,42 @@ test('XP drops setup: a dropdown row sets its varbit to the row - 1 (script 1036
   next.setAttribute('settings:xpdrops-setup', player.getAttribute('settings:xpdrops-setup'));
   logins.forEach((login) => login({ player: next }));
   assert.equal(next.varps.get(XPDROPS_VARP), varp);
+});
+
+test('native XP setup enables the Most recent row on both skill dropdowns', () => {
+  const { buttons } = registered();
+  const player = varpPlayer({ native: true });
+  buttons.get((160 << 16) | 6)({ player, opId: 2 });
+  // Cache CS2 1032 creates Most recent at dynamic child 31 + 1, not 31.
+  for (const child of [54, 55]) {
+    assert.ok(player.flags.some(([uid, from, to, flags]) =>
+      uid === ((XPDROPS_SETUP << 16) | child) && from <= 32 && to >= 32 && (flags & 2) !== 0
+    ), 'the native client must transmit op1 on row 32 of dropdown ' + child);
+  }
+});
+
+test('native XP counter and progress Most recent choices survive a serialized save and relog', () => {
+  const { buttons, logins } = registered();
+  const player = varpPlayer({ native: true });
+  // Preserve the existing position while the counter/progress fields change.
+  player.getPacketSender().sendVarbit(4692, 2);
+  for (const [child, varbit] of [[54, 4697], [55, 4698]]) {
+    const buttonId = (XPDROPS_SETUP << 16) | child;
+    const choose = buttons.get(buttonId);
+    assert.equal(choose({ player, buttonId, slot: 32 }), true, 'Most recent row is accepted');
+    const def = CacheDefinitions.getVarbit(varbit);
+    assert.equal((player.varps.get(def.baseVar) >>> def.startBit) & 31, 31);
+    assert.equal(choose({ player, buttonId, slot: 33 }), false, 'past the five-bit value range');
+  }
+  const saved = JSON.parse(JSON.stringify(player.getAttribute('settings:xpdrops-setup')));
+  const next = varpPlayer({ native: true });
+  next.setAttribute('settings:xpdrops-setup', saved);
+  logins.forEach((login) => login({ player: next }));
+  assert.equal(next.varps.get(XPDROPS_VARP), player.varps.get(XPDROPS_VARP),
+    'the signed packed varp, including the progress field high bit, survives');
+  assert.equal(next.varps.get(XPDROPS_VARP) & 3, 2, 'position stays unchanged');
+  assert.equal((next.varps.get(XPDROPS_VARP) >>> 22) & 31, 31, 'counter follows most recent skill');
+  assert.equal((next.varps.get(XPDROPS_VARP) >>> 27) & 31, 31, 'progress follows most recent skill');
 });
 
 test('XP drops setup: the browser transmits the whole varp, which is kept and echoed', () => {
@@ -771,7 +820,7 @@ test('"Shift click to drop items" (setting 51) starts on and is a plain toggle',
   const ids = [];
   for (const [, categoryId] of [...CacheDefinitions.getEnumValues(422)].sort(([a], [b]) => a - b)) {
     const category = CacheDefinitions.getStructParams(Number(categoryId));
-    for (const [, structId] of [...CacheDefinitions.getEnumValues(Number(category.get(745)))].sort(([a], [b]) => a - b))
+    for (const [, structId] of Settings.settingsEnumEntries(Number(category.get(745))))
       ids.push(CacheDefinitions.getStructParams(Number(structId)).get(1077));
   }
   const row = ids.indexOf(51);

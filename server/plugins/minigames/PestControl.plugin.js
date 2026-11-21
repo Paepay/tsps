@@ -481,6 +481,12 @@ class PestControlMatchArea extends PrivateArea {
     super.postLeave(mobile, logout);
   }
 
+  npcAggression(player, npc) {
+    // A splatter, or a ravager with a gate or barricade still to break, doesn't hunt players.
+    if (npc.__pcType === "splatter" || (npc.__pcType === "ravager" && npc.__pcStructure)) return false;
+    return undefined;
+  }
+
   process(mobile) {
     this.match.processOnce();
     if (mobile.isNpc?.()) {
@@ -773,12 +779,18 @@ class PestControlMatch {
   }
 
   processStructurePest(npc, type) {
-    npc.getCombat().reset();
     let structure = npc.__pcStructure;
     if (!structure || structure.damage >= structure.maxDamage) {
       structure = this.closestStandingStructure(npc);
       npc.__pcStructure = structure;
     }
+    // Wiki (Ravager): attacked, it keeps tearing at a nearby gate or barricade before it fights back.
+    // While one stands it neither retaliates nor hunts (npcAggression below), so only this route moves
+    // it: a hit re-arming its target walked it one step toward the attacker every other tick.
+    const fightsBack = type === "ravager" && !structure;
+    npc.setFlag("combat:no-retaliate", !fightsBack);
+    if (fightsBack) return;
+    npc.getCombat().reset();
     if (!structure) return;
     const distance = npc.getLocation().getDistance(structure.object.getLocation());
     if (distance > 1) {
@@ -1062,6 +1074,31 @@ class PestControlOutpostArea extends Area {
   getName() { return "Void Knights' Outpost"; }
 }
 
+function deployLanderBots(world, state, count, create, track) {
+  const leaving = new Set(world.getRemovePlayerQueue());
+  const waiting = new Set(state.queue);
+  const includePending = bot => {
+    if (bot?.getAttribute?.(ATTR_WAITING_BOAT) === state.boat.key) waiting.add(bot);
+  };
+  world.getAddPlayerQueue().forEach(includePending);
+  world.getPlayers().forEach(includePending);
+  for (const player of leaving) waiting.delete(player);
+  if (waiting.size + count > MAX_PLAYERS) return { ok: false, status: 409, error: "Not enough space on the novice lander." };
+  const bots = [];
+  for (let i = 0; i < count; i++) {
+    // The same native gear sampler can roll a level below novice admission.
+    let bot;
+    for (let attempt = 0; !bot && attempt < 5; attempt++) bot = create(state, true);
+    if (!bot) {
+      for (const created of bots) created.requestLogout();
+      return { ok: false, status: 409, error: "Could not create an eligible novice lander roster." };
+    }
+    bots.push(bot);
+  }
+  for (const bot of bots) track(bot);
+  return { ok: true, spawned: bots.map(bot => bot.getUsername()) };
+}
+
 function createPestControl(api) {
   const matches = new Set();
   const stateByBoat = new Map();
@@ -1103,7 +1140,7 @@ function createPestControl(api) {
   const outpostArea = new PestControlOutpostArea();
   AreaManager.areas.push(...[...stateByBoat.values()].map((state) => state.area), outpostArea);
 
-  function spawnLanderBot(state) {
+  function spawnLanderBot(state, checkAdmission = false) {
     const username = `PCBot${++botSerial}`;
     const bot = createBotPlayer(username, state.boat.waitingLocation, {
       api,
@@ -1121,8 +1158,19 @@ function createPestControl(api) {
       { pvp: buildRoamingPvpMetadata({ excludeF2p: true }) },
       { api }
     );
+    if (checkAdmission && (bot.getSkillManager().getCombatLevel() < state.boat.level || bot.getAttribute?.(CURRENT_PET_ATTRIBUTE))) {
+      const queue = World.getAddPlayerQueue();
+      const index = queue.indexOf(bot);
+      if (index >= 0) queue.splice(index, 1);
+      return null;
+    }
     api.emitPlayerLogin({ player: bot, username });
+    return bot;
   }
+
+  api.onCustomEvent("bots:deploy-pest-control-plan", request => {
+    request.result = deployLanderBots(World, stateByBoat.get("novice"), request.count, spawnLanderBot, request.track);
+  });
 
   function joinBoat(player, boat) {
     const combatLevel = player.getSkillManager().getCombatLevel();
@@ -1331,6 +1379,7 @@ module.exports = {
     boardingParty,
     moveBetweenAreas,
     adoptPendingBots,
+    deployLanderBots,
     chooseDefenceTarget: Bots.chooseDefenceTarget,
     DefilerCombatMethod,
     TorcherCombatMethod,

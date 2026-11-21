@@ -361,6 +361,7 @@ import {
 import { initPlayerSyncHuffman } from "./sync/HuffmanProvider";
 import { NpcUpdateDecoder } from "./sync/NpcUpdateDecoder";
 import { baseNpcTypeId, registerNpcModelOverride } from "../custom/npcs/NpcModelOverrideRegistry";
+import type { NpcModelOverride, NpcTypeCustomisation } from "../custom/npcs/NpcModelOverrideRegistry";
 import { applyNpcExactMove } from "./sync/NpcExactMove";
 import { applyNpcFaceTile } from "./sync/NpcFaceTile";
 import { PlayerSyncManager } from "./sync/PlayerSyncManager";
@@ -1258,8 +1259,12 @@ export class OsrsClient {
     private readonly npcInstances: NpcInstanceFlushController;
     /** Overhead icons the server set on NPCs, by server index (they override the type's own). */
     readonly npcHeadIcons = new Map<number, Array<{ archiveId: number; spriteId: number }>>();
-    /** Server NPC id -> synthetic render type id for its model customisation (enrage legs). */
+    /** Server NPC id -> synthetic render type id for its model and type customisations. */
     private readonly npcModelOverrides = new Map<number, number>();
+    /** Server NPC id -> its model customisation (slot swaps, enrage legs). */
+    private readonly npcSlotOverrides = new Map<number, NpcModelOverride[]>();
+    /** Server NPC id -> its type customisation (models, recolours, name, level: an Echo boss). */
+    private readonly npcTypeCustomisations = new Map<number, NpcTypeCustomisation>();
 
     /** The icon the cache's chat scripts show for the account type (varbit 1777), or -1. */
     private getAccountTypeChatIcon(): number {
@@ -1334,6 +1339,12 @@ export class OsrsClient {
                     (event.key.length === 1 || ["Enter", "Backspace", "Escape", "Tab", "PageUp", "PageDown"].includes(event.key))) {
                     this.inputManager.onKeyDown(event, true);
                     this.widgetInputController.handleConstructionKeyboardInput();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                // An open custom panel's declared hotkeys (e.g. F1-F6) come before the side-panel keys.
+                if (this.isLoggedIn() && this.customInterfaces?.handleHotkey(event)) {
+                    event.preventDefault();
                     event.stopImmediatePropagation();
                     return;
                 }
@@ -1487,7 +1498,9 @@ export class OsrsClient {
         if (ecsId === undefined) {
             return undefined;
         }
-        const baseTypeId = this.npcEcs.getNpcTypeId(ecsId) | 0;
+        // A customised NPC (an Echo boss, Araxxor's enrage) renders a synthetic type: the server
+        // knows only the cache type it stands for.
+        const baseTypeId = baseNpcTypeId(this.npcEcs.getNpcTypeId(ecsId) | 0);
         if (baseTypeId < 0) {
             return undefined;
         }
@@ -1904,6 +1917,7 @@ export class OsrsClient {
             clanRank: 0,
             friendsChatMinKick: 0,
             sendFriendsChatAction,
+            invTypeLoader: this.loaderFactory.getInvTypeLoader(),
             paramTypeLoader: this.loaderFactory.getParamTypeLoader(),
             enumTypeLoader: this.loaderFactory.getEnumTypeLoader(),
             structTypeLoader: this.loaderFactory.getStructTypeLoader(),
@@ -4580,7 +4594,7 @@ export class OsrsClient {
     private runWidgetScopedClientScript(
         widgetUid: number,
         scriptId: number,
-        args: (number | string)[],
+        args: unknown[],
         phase: "pre" | "post" | "run_script",
     ): void {
         if (!this.cs2Vm || !this.widgetManager) return;
@@ -4588,10 +4602,12 @@ export class OsrsClient {
         if (!script) return;
 
         const intArgs: number[] = [];
-        const strArgs: string[] = [];
+        // Strings and array arguments (Cs2ArrayObject) both go on the object stack.
+        const strArgs: any[] = [];
         for (const arg of args ?? []) {
             if (typeof arg === "number") intArgs.push(arg | 0);
             else if (typeof arg === "string") strArgs.push(arg);
+            else if (arg !== null && typeof arg === "object") strArgs.push(arg);
         }
 
         const prevActiveWidget = this.cs2Vm.activeWidget;
@@ -5082,7 +5098,7 @@ export class OsrsClient {
                 serverId = options.npcServerId | 0;
                 const ecsId = this.npcEcs.getEcsIdForServer(serverId);
                 if (ecsId !== undefined) {
-                    npcTypeId = this.npcEcs.getNpcTypeId(ecsId) | 0;
+                    npcTypeId = baseNpcTypeId(this.npcEcs.getNpcTypeId(ecsId) | 0);
                 }
             } else if (typeof options.npcTypeId === "number" && options.npcTypeId >= 0) {
                 npcTypeId = options.npcTypeId | 0;
@@ -5734,7 +5750,7 @@ export class OsrsClient {
                 // Look up npcTypeId from ECS for fallback dialogue
                 const ecsId = this.npcEcs.getEcsIdForServer(serverId);
                 if (ecsId !== undefined) {
-                    npcTypeId = this.npcEcs.getNpcTypeId(ecsId) | 0;
+                    npcTypeId = baseNpcTypeId(this.npcEcs.getNpcTypeId(ecsId) | 0);
                 }
             } else if (typeof options.npcTypeId === "number" && options.npcTypeId >= 0) {
                 npcTypeId = options.npcTypeId | 0;
@@ -5771,8 +5787,25 @@ export class OsrsClient {
 
     // URL/search params are not supported
 
-    init(): void {
+    /** Resolve the selected world's appearance alongside the cache download. */
+    prepareLoginScreen(): Promise<void> {
+        setServerUrl(
+            `${this.loginState.serverSecure ? "wss" : "ws"}://${this.loginState.serverAddress}`,
+            this.loginState.serverTransport === "webrtc" &&
+                this.loginState.serverSignalUrl &&
+                this.loginState.serverWorldId
+                ? {
+                      signalUrl: this.loginState.serverSignalUrl,
+                      worldId: this.loginState.serverWorldId,
+                      iceServers: this.loginState.serverIceServers,
+                  }
+                : null,
+        );
         void this.loginState.refreshServerName();
+        return this.loginRenderer.refreshClientBackground();
+    }
+
+    init(): void {
         // Initialize default controlled player if not set by server
         if (this.controlledPlayerServerId === -1) {
             this.controlledPlayerServerId = 0; // Default server ID
@@ -5881,19 +5914,6 @@ export class OsrsClient {
             try {
                 this.inputManager.flushInput();
             } catch {}
-            // Apply persisted server URL so sendLogin connects to the right place
-            setServerUrl(
-                `${this.loginState.serverSecure ? "wss" : "ws"}://${this.loginState.serverAddress}`,
-                this.loginState.serverTransport === "webrtc" &&
-                    this.loginState.serverSignalUrl &&
-                    this.loginState.serverWorldId
-                    ? {
-                          signalUrl: this.loginState.serverSignalUrl,
-                          worldId: this.loginState.serverWorldId,
-                          iceServers: this.loginState.serverIceServers,
-                      }
-                    : null,
-            );
         }
 
         if (newState === GameState.CONNECTING) {
@@ -5912,8 +5932,8 @@ export class OsrsClient {
         // This ensures this.gameState returns the new state when callbacks fire
         this.stateMachine.transition(newState, true);
 
-        if (newState === GameState.LOGIN_SCREEN && !this.loginState.titleMusicDisabled) {
-            this.scheduleLoginMusicStart(100);
+        if (newState === GameState.LOGIN_SCREEN) {
+            if (!this.loginState.titleMusicDisabled) this.scheduleLoginMusicStart(100);
         }
 
         // AFTER transition: set up callbacks that depend on the new state
@@ -6427,6 +6447,7 @@ export class OsrsClient {
                               }
                             : null,
                     );
+                    void this.loginRenderer.refreshClientBackground();
                     void this.loginState.refreshServerName();
                     this.loginState.saveLastServer();
                     this.loginState.showRememberedLogin();
@@ -7696,7 +7717,7 @@ export class OsrsClient {
         // Helper to compute distance and update best match
         const consider = (serverId: number, ecsId: number) => {
             if (!this.npcEcs.isActive(ecsId)) return;
-            if ((this.npcEcs.getNpcTypeId(ecsId) | 0) !== (npcTypeId | 0)) return;
+            if (baseNpcTypeId(this.npcEcs.getNpcTypeId(ecsId) | 0) !== baseNpcTypeId(npcTypeId | 0)) return;
 
             let dist = 0;
             if (targetTile) {
@@ -8272,7 +8293,7 @@ export class OsrsClient {
                     // Keep ECS map ownership in sync with movement state so map-bucketed systems
                     // (raycast/menu/projectiles/overlays) continue to see this NPC after crossing.
                     this.npcEcs.rebaseToMapSquare(ecsId, nextMapX, nextMapY);
-                    const typeId = this.npcEcs.getNpcTypeId(ecsId) | 0;
+                    const typeId = baseNpcTypeId(this.npcEcs.getNpcTypeId(ecsId) | 0);
                     if (typeId >= 0) {
                         this.upsertNpcInstanceFromBinary(
                             serverId,
@@ -8356,6 +8377,10 @@ export class OsrsClient {
             this.applyNpcModelCustomisation(serverId, block.modelCustomisation);
         }
 
+        if (block.typeCustomisation) {
+            this.applyNpcTypeCustomisation(serverId, block.typeCustomisation);
+        }
+
         if (Array.isArray(block.baseAnimations) && ecsId !== undefined) {
             this.npcEcs.setBaseAnimations(ecsId, block.baseAnimations);
         }
@@ -8399,29 +8424,45 @@ export class OsrsClient {
         }
     }
 
-    /**
-     * A server model customisation for one NPC: register the overrides under a synthetic
-     * type id and re-point the NPC's render instance at it (or back at the cache type on a
-     * reset). The square reload rebuilds the geometry with the new models.
-     */
+    /** A server model customisation (slot swaps) for one NPC; an empty list resets it. */
     private applyNpcModelCustomisation(
         serverId: number,
         entries: Array<{ slot: number; modelId: number }>,
     ): void {
         const sid = serverId | 0;
-        const key = `sid:${sid}`;
-        const instance = this.npcInstances.instanceMap.get(key);
-        console.info("[npc-models] customisation for", sid, "entries", entries.length, "instance?", !!instance);
+        console.info("[npc-models] customisation for", sid, "entries", entries.length);
+        if (entries.length === 0) this.npcSlotOverrides.delete(sid);
+        else this.npcSlotOverrides.set(sid, entries.map((entry) => ({ slot: entry.slot | 0, modelId: entry.modelId | 0 })));
+        this.refreshNpcTypeOverride(sid);
+    }
+
+    /** A server type customisation (models, recolours, name, level) for one NPC; no fields resets it. */
+    private applyNpcTypeCustomisation(serverId: number, custom: NpcTypeCustomisation): void {
+        const sid = serverId | 0;
+        if (Object.keys(custom).length === 0) this.npcTypeCustomisations.delete(sid);
+        else this.npcTypeCustomisations.set(sid, custom);
+        this.refreshNpcTypeOverride(sid);
+    }
+
+    /**
+     * Registers the NPC's customisations under one synthetic type id and re-points its render
+     * instance at it (or back at the cache type when it has none). The square reload rebuilds
+     * the geometry with the new models; menus read the synthetic type's name and level.
+     */
+    private refreshNpcTypeOverride(sid: number): void {
+        const instance = this.npcInstances.instanceMap.get(`sid:${sid}`);
         if (!instance) return;
         const baseId = baseNpcTypeId(instance.typeId);
-        if (entries.length === 0) {
+        const slots = this.npcSlotOverrides.get(sid) ?? [];
+        const type = this.npcTypeCustomisations.get(sid);
+        if (slots.length === 0 && !type) {
             this.npcModelOverrides.delete(sid);
             delete instance.modelOverride;
         } else {
-            const syntheticId = registerNpcModelOverride(baseId, entries);
+            const syntheticId = registerNpcModelOverride(baseId, slots, type);
             this.npcModelOverrides.set(sid, syntheticId);
             // The worker is another thread: the override rides the instance to it.
-            instance.modelOverride = { baseId, models: entries.map((entry) => ({ slot: entry.slot | 0, modelId: entry.modelId | 0 })) };
+            instance.modelOverride = { baseId, models: slots, ...(type ? { type } : {}) };
         }
         const nextTypeId = this.npcModelOverrides.get(sid) ?? baseId;
         // The WebGPU actor renderer resolves each NPC's model per frame from the
@@ -8455,11 +8496,22 @@ export class OsrsClient {
                     : undefined
                 : prev?.worldViewId;
         const owner = this.npcOwnerMap(worldTileX, worldTileY);
-        // A model override only rides its own base type: a transformation (the corpse) drops it.
-        const override = this.npcModelOverrides.get(sid);
+        // Slot swaps only ride their own base type: a transformation (the corpse) drops them. A
+        // type customisation (an Echo boss's models, name and level) carries over to the new form.
+        let override = this.npcModelOverrides.get(sid);
+        let carried: NpcInstance["modelOverride"];
         if (override !== undefined && baseNpcTypeId(override) !== (typeId | 0)) {
             this.npcModelOverrides.delete(sid);
+            this.npcSlotOverrides.delete(sid);
             if (prev) delete (prev as { modelOverride?: unknown }).modelOverride;
+            override = undefined;
+            const type = this.npcTypeCustomisations.get(sid);
+            if (type) {
+                override = registerNpcModelOverride(typeId | 0, [], type);
+                this.npcModelOverrides.set(sid, override);
+                carried = { baseId: typeId | 0, models: [], type };
+                if (prev) prev.modelOverride = carried;
+            }
         }
         const renderTypeId = override !== undefined && baseNpcTypeId(override) === (typeId | 0) ? override : typeId | 0;
         // Keep the ECS render type authoritative alongside the instance snapshot
@@ -8476,6 +8528,7 @@ export class OsrsClient {
             level: level | 0,
             ...(nextWorldViewId !== undefined ? { worldViewId: nextWorldViewId } : {}),
             ...(owner.instance ? { ownerMapId: getMapSquareId(owner.mapX, owner.mapY) } : {}),
+            ...(carried ? { modelOverride: carried } : {}),
         };
         const mapId = this.getNpcInstanceRenderMapId(nextInstance);
 
@@ -8532,6 +8585,8 @@ export class OsrsClient {
         // The ECS unmap callback owns head-icon cleanup. A remove/re-add in the same
         // NPC_INFO can change this NPC's type without ending its customized icon lifetime.
         this.npcModelOverrides.delete(sid);
+        this.npcSlotOverrides.delete(sid);
+        this.npcTypeCustomisations.delete(sid);
         try {
             (this.renderer as any)?.clearNpcHealthBars?.(sid);
         } catch {}

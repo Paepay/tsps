@@ -219,6 +219,16 @@ test('the rejoin at login shows the join messages', () => {
   assert.match(member.texts(), /Now talking in chat-channel Blur/);
 });
 
+test('login to a vanished channel shows only the missing-channel refusal', () => {
+  const member = player('Member');
+  member.getRelations().setFriendsChatLastOwner('Missing');
+  Manager.onLogin(member);
+  assert.match(member.texts(), /The channel you tried to join does not exist\./);
+  assert.doesNotMatch(member.texts(), /Attempting to join chat-channel/);
+  assert.equal(Manager.channelOf(member), null);
+  assert.equal(member.getRelations().getFriendsChatLastOwner(), 'Missing');
+});
+
 test('a system channel is joined by its name, wins over an account of that name and has no owner', () => {
   // Live (rev 242): the Grouping tab's Shooting Stars channel, owner "osrs star cc", kick rank General.
   // The cache writes the name with no-break spaces; a typed one has ordinary spaces or underscores.
@@ -330,7 +340,7 @@ test('the social tab mounts side_channels with the chat-channel inside it', () =
   assert.ok(bootstrap.includes(inner), 'the login mounts the same content');
 });
 
-function panel({ members = true } = {}) {
+function panel({ members = true, emitCustomEvent } = {}) {
   const hooks = { custom: new Map() };
   const plugin = require('../plugins/interface/SideChannels.plugin.js');
   plugin.register({
@@ -343,6 +353,7 @@ function panel({ members = true } = {}) {
     onPlayerLogin: (hook) => { hooks.login = hook; },
     onInterfaceActionClick: (hook) => { hooks.click = hook; },
     onCustomEvent: (name, hook) => hooks.custom.set(name, hook),
+    emitCustomEvent,
   });
   const sent = [];
   const attributes = new Map();
@@ -413,6 +424,30 @@ test('a raid party stands in for the chat-channel tab until it ends', () => {
   assert.equal(mounted, 2);
   replace({ player: someone, group: null });
   assert.deepEqual(sent.at(-1), ['mount', 707, 7, 7]);
+});
+
+test('a Group Ironman gets side_channels_large, its tab_gim showing what the Group Ironman plugin names', () => {
+  let answer = null;
+  let mounted = 0;
+  const { hooks, sent, someone } = panel({ emitCustomEvent: (name, request) => {
+    if (name === 'side-channels:gim-tab' && answer) Object.assign(request, answer);
+  } });
+  answer = { tab: 4, group: 726, onMount: () => mounted++ };
+  hooks.custom.get('player:bootstrap-complete')({ player: someone });
+  assert.deepEqual(sent, [['mount', 161, 83, 727], ['varbit', 13071, 0], ['mount', 727, 8, 7]], 'the large frame, on the chat-channel');
+  sent.length = 0;
+  const gim = { player: someone, groupId: 727, childId: 2 };
+  hooks.click(gim);
+  assert.equal(gim.handled, true);
+  assert.deepEqual(sent, [['varbit', 13071, 4], ['mount', 727, 8, 726]], 'tab_gim: the ironman varbit value, the named panel');
+  assert.equal(mounted, 1);
+  hooks.click({ player: someone, groupId: 727, childId: 4 });
+  assert.deepEqual(sent.slice(-2), [['varbit', 13071, 1], ['mount', 727, 8, 701]], 'tab_1 is Your Clan');
+  hooks.click(gim);
+  answer = null;
+  sent.length = 0;
+  hooks.custom.get('side-channels:refresh')({ player: someone });
+  assert.deepEqual(sent, [['mount', 161, 83, 707], ['varbit', 13071, 0], ['mount', 707, 7, 7]], 'no longer a Group Ironman: back to 707');
 });
 
 // Display names (DisplayNames, ::displayname): lists, PMs and channels show them and take them typed.

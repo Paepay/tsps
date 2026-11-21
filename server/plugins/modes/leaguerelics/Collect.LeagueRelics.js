@@ -1,11 +1,11 @@
 /**
- * The Leagues Tutor's Collect-items for every league: the player asks "Do I have any League items
+ * The Leagues Tutor's Collect-items (237/01098, 1107): the player asks "Do I have any League items
  * to collect?" (chatquiz1); on Continue the item box names the Tutor and the items go into the
- * inventory. What is owed: each item the character's relics hand out (the Reloaded pick's too),
- * Trailblazer Reloaded's Crystal of memories when that passive is unlocked, and the league's
- * `tutorCollect` free reclaimables (Demonic Pacts: the Dramen staff), that it owns none of,
- * carried, worn or banked; as many as the inventory takes. Ours (unrecorded): the lines when
- * nothing is owed and when the inventory is too full for the rest.
+ * inventory. The Tutor offers missing starter supplies and items from chosen relics (including
+ * Reloaded), Trailblazer Reloaded's Crystal of memories when that passive is unlocked, and the
+ * league's `tutorCollect` free reclaimables (Demonic Pacts: the Dramen staff). Carried, equipped
+ * and banked items count as owned. Ours (unrecorded): the lines when nothing is owed and when the
+ * inventory is too full for the rest. The Talk-to transcript uses the same handover.
  */
 const Common = require("./Common.LeagueRelics");
 const Unlock = require("./Unlock.LeagueRelics");
@@ -44,9 +44,11 @@ function tutorCollectIds(type) {
   return names.map((name) => CacheDefinitions.getObjId(name)).filter((id) => Number.isInteger(id));
 }
 
-/** The relic items the character owns none of, each once. */
+/** The relic items and starter supplies the character owns none of, each once. */
 function owed(player, type) {
-  const ids = heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic));
+  const supplies = Common.cacheLeague(type)?.tutor?.starterSupplies ?? [];
+  const ids = supplies.map((name) => Common.core.CacheDefinitions.getObjId(name)).filter(Number.isInteger);
+  ids.push(...heldRelics(player, type).flatMap((relic) => Unlock.grantedItems(relic)));
   // The Crystal of memories passive, wherever the world assigned it (cache name Crystal of Echoes).
   const crystal = Common.data.effects.crystalOfMemories;
   if (Common.activePassiveValues(player, "crystalOfMemories").length > 0) {
@@ -91,6 +93,12 @@ function handOver(player, type, npcId) {
   if (given.length < items.length) player.sendMessage(Common.message("collectFull", {}, type));
 }
 
+function tutorLeague(player, npcId) {
+  const type = Common.leagueOf(player);
+  const tutor = Common.cacheLeague(type)?.tutor;
+  return tutor && npcId === Common.core.CacheDefinitions.getNpcId(tutor.npc) ? type : null;
+}
+
 /** Collect-items: the recorded question, then the items on Continue. */
 function collectItems({ player, npcId }) {
   const type = Common.leagueOf(player);
@@ -103,8 +111,17 @@ function collectItems({ player, npcId }) {
   return true;
 }
 
+function collectFromDialogue(event) {
+  if (event.text !== "Player receives missing items") return;
+  const type = tutorLeague(event.player, event.npcId);
+  if (type === null) return;
+  event.handled = true;
+  handOver(event.player, type, event.npcId);
+}
+
 module.exports = function attach(api) {
   api.onNpcInteraction("Leagues Tutor", { "Collect-items": collectItems });
+  api.onCustomEvent("npc-dialogue:action", collectFromDialogue);
 };
 
 Object.assign(module.exports, { owed });

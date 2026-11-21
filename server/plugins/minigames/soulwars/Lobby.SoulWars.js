@@ -28,12 +28,13 @@ let lobbyArea = null;
 const source = { players: () => lobbyArea?.getPlayers?.() ?? [] };
 let countdown = null;
 /** Bots (when a world seeds them): who they are, and filling the queue. */
-const bots = { isBot: () => false, seed: () => {} };
+const bots = { isBot: () => false, seed: () => {}, filterWaiting: players => players, fit: players => players, team: () => null };
 
-/** The Wiki's 20, or a world's own (never under 2: a game needs both sides). */
+/** Never request more players (including seeded bots) than the world can register. */
 function minPlayers() {
-  const configured = Number(Common.api.getPluginConfig?.(MIN_PLAYERS_CONFIG, Common.data.minPlayers)) || Common.data.minPlayers;
-  return Math.max(Common.data.minPlayersFloor, configured);
+  const configured = Number(Common.api.getPluginConfig?.(MIN_PLAYERS_CONFIG, Common.data.minPlayers));
+  const requested = Number.isFinite(configured) ? Math.floor(configured) : Common.data.minPlayers;
+  return Math.max(Common.data.minPlayersFloor, Math.min(Common.core.World.getPlayers().capacityReturn() - 1, requested));
 }
 
 function locId(name) {
@@ -145,7 +146,7 @@ function closeHud(player) {
 function tick() {
   const min = minPlayers();
   bots.seed(waitingPlayers(), min, source.players());
-  const queued = waitingPlayers();
+  const queued = bots.filterWaiting(waitingPlayers());
   if (!Match.current && queued.length >= min && countdown === null) countdown = Common.data.countdownTicks;
   if (countdown !== null && (queued.length < min || Match.current)) countdown = null;
   if (countdown !== null) {
@@ -154,14 +155,14 @@ function tick() {
     if (countdown <= 0) {
       countdown = null;
       // Whatever they've put on or picked up while waiting is checked again (a cape would be lost).
-      const ready = queued.filter((player) => {
+      const ready = bots.fit(queued.filter((player) => {
         const refused = bots.isBot(player) ? null : refusal(player);
         if (refused) player.sendMessage(refused);
         return !refused;
-      });
+      }));
       if (ready.length >= min) {
         for (const player of ready) closeHud(player);
-        new Match.Game(ready).start();
+        new Match.Game(ready, bots.team).start();
       }
     }
   }
@@ -205,6 +206,15 @@ function allowBountyHunterWeapons(event) {
     && event.target.getPrivateArea() === game.area) event.allowed = true;
 }
 
+function describeSafePvp(event) {
+  const { attacker, target } = event;
+  const game = Match.gameOf(attacker);
+  if (game && !game.over && Match.gameOf(target) === game
+    && game.area.contains(attacker.getLocation()) && game.area.contains(target.getLocation())
+    && attacker.getArea() === game.area && target.getArea() === game.area
+    && attacker.getPrivateArea() === game.area && target.getPrivateArea() === game.area) event.safe = true;
+}
+
 function attachLobby(api) {
   const [x0, y0, x1, y1] = Common.data.lobby.bounds;
   lobbyArea = new (lobbyAreaClass())([new Common.core.Boundary(x0, x1, y0, y1, 0)]);
@@ -214,6 +224,7 @@ function attachLobby(api) {
   api.onObjectInteraction("Barrier", { Pass: barrier });
   api.onPlayerLogout(forget);
   api.onCustomEvent("bounty-hunter:weapon-area", allowBountyHunterWeapons);
+  api.onCustomEvent("combat:safe-pvp", describeSafePvp);
   Common.every(tick);
 }
 

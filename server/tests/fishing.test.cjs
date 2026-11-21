@@ -152,7 +152,8 @@ test("fishing spots, catch chances and the catch cascade follow OSRS", async () 
   const tooWeak = player({ fishing: 99, levels: { Strength: 14 }, inventory: [I.BARBARIAN_ROD, I.FEATHER] });
   assert.equal(hasToolRequirements(tooWeak, TOOLS.BARBARIAN_ROD), null);
   assert.match(tooWeak.messages[0], /Strength level of at least 15/);
-  assert.ok(hasToolRequirements(player({ inventory: [I.BARBARIAN_ROD, I.FISH_OFFCUTS] }), TOOLS.BARBARIAN_ROD));
+  assert.equal(hasToolRequirements(player({ inventory: [I.BARBARIAN_ROD, I.FISH_OFFCUTS] }), TOOLS.BARBARIAN_ROD), null,
+    "rod permission fails closed without its training owner, including on free worlds");
   assert.deepEqual(FISH.LEAPING_STURGEON.extraXp, [[Skill.STRENGTH, 7], [Skill.AGILITY, 7]]);
 
   // Infernal eels need ice gloves worn; dark crabs need dark fishing bait.
@@ -811,6 +812,58 @@ test("a one-step walk stops fishing even after the route has drained", async () 
       if (walked) assert.equal(lobster.animations.at(-1), 65535, "the walk resets the fishing animation");
     }
   });
+});
+
+test("a spot that moves ends the session with no message or animation reset (rsprox captures)", async () => {
+  const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N, Location } = core;
+  await withRandom(0.02, async () => {
+    const netter = fisher({ items: [[I.SMALL_FISHING_NET]] });
+    const swamp = spot(N.FISHING_SPOT_30, 40);
+    let at = new Location(3240, 3146, 0);
+    swamp.getLocation = () => at;
+    netter.at = new Location(3241, 3146, 0);
+    start(netter, swamp, "Net");
+    ticks(6);
+    const caught = amount(netter, I.RAW_SHRIMPS) + amount(netter, I.RAW_ANCHOVIES);
+    assert.ok(caught >= 1, "fishing before the move");
+    const messages = netter.messages.length;
+    const animations = netter.animations.length;
+    at = new Location(3241, 3148, 0);
+    ticks(1);
+    assert.equal(Fishing.isFishingActive(netter), false);
+    assert.equal(netter.messages.length, messages, "no message when the spot moves");
+    assert.equal(netter.animations.length, animations, "no animation reset when the spot moves");
+    ticks(12);
+    assert.equal(amount(netter, I.RAW_SHRIMPS) + amount(netter, I.RAW_ANCHOVIES), caught);
+  });
+});
+
+test("only spots on no captured site still stop sessions at random", async () => {
+  const { core, Fishing, fisher, amount, spot, start, ticks } = await fishingLoop();
+  const { ItemIdentifiers: I, NpcIdentifiers: N, Location, NpcDefinition } = core;
+  const Relocation = require("../plugins/skills/fishing/Relocation.Fishing");
+  Relocation.reset();
+  // Math.random 0: every roll lands, and Misc.getRandom(90) is 0, the random stop's number.
+  await withRandom(0, async () => {
+    for (const captured of [false, true]) {
+      const netter = fisher({ items: [[I.SMALL_FISHING_NET]] });
+      const npc = spot(N.FISHING_SPOT_30, captured ? 51 : 50);
+      const at = captured ? new Location(3240, 3147, 0) : new Location(2900, 3120, 0);
+      npc.getLocation = () => at;
+      netter.at = new Location(at.getX() + 1, at.getY(), 0);
+      npc.getDefinition = () => NpcDefinition.forId(N.FISHING_SPOT_30);
+      npc.getPrivateArea = () => null;
+      Relocation.track(npc, Fishing.FISHING_SPOT_NAMES);
+      assert.equal(Relocation.isRelocating(npc), captured);
+      start(netter, npc, "Net");
+      ticks(30);
+      const caught = amount(netter, I.RAW_SHRIMPS) + amount(netter, I.RAW_ANCHOVIES);
+      if (captured) assert.ok(caught > 2, `a spot that moves isn't stopped at random (${caught})`);
+      else assert.equal(caught, 1, "an uncaptured spot still stops at random after a catch");
+    }
+  });
+  Relocation.reset();
 });
 
 test("a used karambwan vessel refills even when another vessel is baited", async () => {

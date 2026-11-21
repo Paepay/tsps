@@ -12,6 +12,10 @@ data/saves/gauntlet-scoreboard.json
 data/saves/clans.json
 data/saves/groups.json
 data/saves/groups.json.tmp
+data/saves/group-storage.json
+data/saves/group-storage.json.tmp
+data/saves/group-ironman.json
+data/saves/group-ironman.json.tmp
 data/saves/hardcore-world.json
 data/saves/hardcore-world.json.tmp
 data/saves/display-names.json
@@ -28,6 +32,12 @@ Server
 
 # AI bots roster (plugins/bots/ai/AiBotRoster.js)
 data/saves/ai-bots.json
+data/saves/bot-activation.json
+data/saves/bot-activation.json.tmp
+data/saves/bot-deployment-plans.json
+data/saves/bot-deployment-plans.json.tmp
+data/saves/bot-routine-setups.json
+data/saves/bot-routine-setups.json.tmp
 data/saves/colosseum-scoreboard.json
 data/saves/araxxor-scoreboard.json
 # Every boss/minigame scoreboard keeps its world records here (and a .tmp while saving).
@@ -38,3 +48,6 @@ data/saves/seasonal-rares.json
 data/saves/seasonal-rares.json.tmp
 # The Bank PIN host-key secret (plugins/interface/bankpin/Common.BankPin.js); never in a player save.
 data/saves/bank-pin-host.key
+
+# Per-world uploads from the host panels
+data/client-artwork/

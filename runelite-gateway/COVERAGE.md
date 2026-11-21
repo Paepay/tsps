@@ -18,7 +18,7 @@ sessions, so the browser wire format doesn't change.
 | 4 LOGOUT_RESPONSE | LOGOUT / MESSAGE_GAME | mapped | 4 | a refusal becomes a game message |
 | 6 PLUGIN_MESSAGE | — | dropped | 1 | plugin features (quest helper, voice, pest control) |
 | 20 PLAYER_SYNC | PLAYER_INFO | mapped | 2–3 | every player tsps shows gets an avatar in the session's world; update blocks become extended info; worn slots hide by the cache's wearpos2/3 |
-| 21 NPC_INFO | NPC_INFO | mapped | 3, 8 | tsps's remove-and-re-add (jump, type change) becomes a teleport/setId of the same avatar; rsprot's own range culling is off, tsps decides visibility. Model customisation: tsps's per-slot overrides are applied to the type's models from the cache (an empty list resets). Tint: tsps sends NPC tint (mask 0x100) as it does for players. Hit delays and exact-move pass through |
+| 21 NPC_INFO | NPC_INFO | mapped | 3, 8 | tsps's remove-and-re-add (jump, type change) becomes a teleport/setId of the same avatar; rsprot's own range culling is off, tsps decides visibility. Model customisation: tsps's per-slot overrides are applied to the type's models from the cache (an empty list resets). Type customisation (mask 0x40000, an Echo boss): its models become the body customisation's list, its recolour pairs one destination per source colour of the type (a source it doesn't name keeps its own colour, so an empty list clears the type's recolours), its name and level the name and combat level changes; no fields resets all three. Tint: tsps sends NPC tint (mask 0x100) as it does for players. Hit delays and exact-move pass through |
 | 22 ANIM | — | dropped | 1 | base anims are in appearance |
 | 23 MOVEMENT_POSITION | — | dropped | 2 | sub-tile movement has no OSRS form |
 | 24 / 25 NPC_ANIM_SPECIFIC / NPC_SPOTANIM_SPECIFIC | NPC_ANIM_SPECIFIC / NPC_SPOTANIM_SPECIFIC | mapped | — | observer-local one-shot effects after NPC info; delay, height, slot and reset sentinel pass through. Unknown targets are discarded. Deck NPCs select their session world and restore the root before flushing |
@@ -69,6 +69,7 @@ sessions, so the browser wire format doesn't change.
 | 190 COLLECTION_LOG_SNAPSHOT | UPDATE_INV_FULL (620) | mapped | 5 | |
 | 210 GAMEMODE_DATA | — | dropped | 4 | custom items/models, league overrides; custom items fall back to `baseItemId`. A league world's struct, enum and DB row overrides (tasks, relics, areas, ranks, tutorial) are served over JS5 instead, read from tsps's `/api/league-content` (`ServedCache`, `ContentPatches`); other senders' overrides (custom items, the Easter lock on a plain world) aren't |
 | 220 SYSTEM_UPDATE | UPDATE_REBOOT_TIMER_V2 | mapped | 7 | centiseconds → ticks |
+| 221 URL_OPEN | URL_OPEN | mapped | — | the page opens in the player's browser (the welcome screen's banner) |
 | (equipment) | UPDATE_INV_FULL (94) | mapped | 5 | native bit: tsps sends inventory 94 on WIDGET_RUN_SCRIPT at login and on every change, with quantities; otherwise built from the local appearance |
 | (GE varps 7900–7955) | UPDATE_STOCKMARKET_SLOT_V2 | mapped | 5 | 8 slots × 7 fields; selling states are buying + 8 |
 

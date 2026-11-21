@@ -19,7 +19,10 @@
  * Lumbridge Swamp Caves
  *  - Dark hole at 3169,3172 > Use Rope: ties a rope and sets the SWAMP_CAVES_ROPED_ENTRANCE
  *    varbit (279) for good (Wiki). The rope is used up.
- *  - Dark hole > Climb-down: the tile below the side the player used, once roped.
+ *  - Dark hole > Climb-down: the tile below the side the player used, once roped. Without a
+ *    tinderbox the swamp cave warning (cws_warning_13, shown by WarningScreens) comes first:
+ *    "...Are you sure you want to go in without a tinderbox?", its answers rewritten as live does
+ *    (rsprox_transcripts/242/911917.txt tick 21674).
  *  - Symbol (the cave goblin markers on the cave walls) > Look-at: shows that marker in the
  *    cave_goblin_markers modal (rsprox.net rec 3182, rev 232).
  */
@@ -36,6 +39,47 @@ const EDGEVILLE_DUNGEON_LANDING = { x: 3096, y: 9867, z: 0 };
 // Varrock
 const VARROCK_MANHOLE = { x: 3237, y: 3458, z: 0 };
 const VARROCK_SEWER_LADDER = { x: 3237, y: 9858, z: 0 };
+
+const INTRO = "There's a large selection of books, the majority of which look fairly<br>old. Some very strange names... You pick one at random :";
+// The Wiki gives different spellings for the ground-floor library and Traiborn's room.
+const LIBRARY_BOOKS = [
+  "101 Ways to Impress Your Mates with Magic",
+  "The Dark Arts of Magical Wands",
+  "Fire, Earth and Water ~ What's it all About?",
+  "How to become the Ultimate Wizard of the Universe",
+  "The Life & Times of a Thingummywut by Traiborn the Wizard",
+  "Life With a Wizard Husband ~ a Housewife's Story",
+  "So You Think You're a Mage? Volume 28",
+  "Wind Strike for Beginners",
+];
+const TRAIBORN_BOOKS = [
+  "101 Ways to Impress your Mates with Magic",
+  "The Dark Arts of Magical Wands",
+  "Fire, Earth and Water - What's it all about?",
+  "How to become the Ultimate Wizard of the Universe",
+  "The Life & Times of a Thingummywut by Traiborn the Wizard",
+  "Living with a Wizard Husband - A housewife's Story",
+  "So you think you're a Mage? Volume 28",
+  "Wind Strike for Beginners",
+];
+
+function searchBooks(event) {
+  const { location, objectId, player } = event;
+  // The same name is used by other bookcases, including the basement clue.
+  if ((objectId !== CacheDefinitions.getLocId("fai_wiztower_bookcase") &&
+       objectId !== CacheDefinitions.getLocId("fai_wiztower_bookcase_wall")) ||
+      !location || location.x < 3100 || location.x > 3119 || location.y < 3150 || location.y > 3169 ||
+      (location.z !== 0 && location.z !== 1)) return false;
+  const { DialogueChainBuilder, StatementDialogue } = pluginApi.core;
+  const books = location.z === 0 ? LIBRARY_BOOKS : TRAIBORN_BOOKS;
+  const title = books[Math.floor(Math.random() * books.length)];
+  player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(
+    new StatementDialogue(0, INTRO),
+    new StatementDialogue(1, `'${title}'`),
+    new StatementDialogue(2, "Interesting..."),
+  ));
+  return true;
+}
 
 // Wizards' Tower basement
 const TOWER_LADDER = { x: 3104, y: 3162, z: 0 };
@@ -60,6 +104,10 @@ const SWAMP_CAVE_NEEDS_ROPE = "There is a sheer drop below the hole. You'll need
 const SWAMP_CAVE_TIED_ROPE = "You tie the rope to the top of the hole and throw it down.";
 const SWAMP_CAVE_ROPE_QUESTION = "Attach a rope to the top of the hole?";
 const SWAMP_CAVE_ROPE_SOUND = 1774;
+/** cws_warning_13 (572), "Lumbridge Swamp Cave Rope". */
+const SWAMP_CAVE_WARNING = 13;
+/** That screen's answers (572:17, 18), as live rewrites them. */
+const SWAMP_CAVE_WARNING_TEXTS = { 17: "I'll be fine without a tinderbox.", 18: "I'll come back with a tinderbox." };
 /**
  * The cave goblin markers' Look-at. rsprox.net rec 3182 (rev 232): on arrival the player faces
  * the wall, then live sets cave_goblin_markers:symbol to the marker's model (6923 for the north
@@ -234,9 +282,21 @@ function climbDownDarkHole(event) {
     player.sendMessage(SWAMP_CAVE_NEEDS_ROPE);
     return true;
   }
-  const landing = swampCavesLanding(player.getLocation());
-  pluginApi.emitCustomEvent("ladders:climbDown", { player, destination: toLocation(landing) });
+  const climb = () => pluginApi.emitCustomEvent("ladders:climbDown", { player, destination: toLocation(swampCavesLanding(player.getLocation())) });
+  if (hasTinderbox(player)) {
+    climb();
+    return true;
+  }
+  const warning = { player, warning: SWAMP_CAVE_WARNING, texts: SWAMP_CAVE_WARNING_TEXTS, proceed: climb };
+  pluginApi.emitCustomEvent("warning-screen:show", warning);
+  if (!warning.handled) climb();
   return true;
+}
+
+/** The warning asks about going in "without a tinderbox": a tinderbox or golden tinderbox held. */
+function hasTinderbox(player) {
+  const tinderboxes = [Items.TINDERBOX, Items.GOLDEN_TINDERBOX];
+  return tinderboxes.some((id) => player.getInventory().contains(id));
 }
 
 function swampCaveMarkerModel(objectId) {
@@ -290,6 +350,7 @@ module.exports = {
       "Climb-down": varrockClimbDownManhole,
     });
     api.onObjectInteraction("Ladder", { "Climb-up": varrockClimbUpToManhole });
+    api.onObjectInteraction("Bookcase", { Search: searchBooks });
     // Wizards tower basement
     api.onObjectInteraction("Ladder", {
       "Climb-down": wizardsTowerClimbDown,

@@ -223,12 +223,39 @@ the generic Ladders plugin's `ladders:climb`, which otherwise claims every Climb
   telescope's accuracy (Wiki: oak 24, teak 9, mahogany 2 minutes), via
   `shooting-stars:forecast`. Which regions take "the" is inferred beyond the captured
   "the Kharidian Desert".
+- **S.T.A.S.H chart:** the wall chart space's fourth chart (furniture row 5790,
+  `poh_wallchart_4`): Construction 40, a bolt of cloth and a S.T.A.S.H blueprint, 16 experience,
+  `human_poh_build_wall` and synth 938 (rsprox.net rec 2804, rev 229, ticks 4949 and 5330). View
+  opens the same STASH units chart as Watson's noticeboard (ticks 5337-5338; see
+  [treasure-trails.md](treasure-trails.md)). The blueprint is Watson's (500 coins, rec 2804
+  tick 5098); his sale is not wired yet.
+- **Build menu names:** the furniture row's name, sentence-cased ("Spice Rack" is sent as
+  "Spice rack", "Oak Telescope" as "Oak telescope"; recs 271 and 2804).
 - **Crystal ball, elemental sphere, crystal of power:** change an elemental staff's element;
   battlestaffs cost 100 and mystic staffs 1,000 runes of the new element (Wiki).
 - **Bookcases:** `poh_bookcase` (910) lists enum 5210's books and shows the found ones from
   varps 805, 261-266 and 1037 (cache scripts 7834-7843); a click takes a copy with the captured
-  messages. A book counts as found once the player has carried or banked it when they search a
-  bookcase (the live game marks it when the book is obtained).
+  messages. Successful additions to the player's actual inventory immediately remember catalog
+  books, including when the last copy is dropped before the first Search. Planning inventories,
+  save snapshots, failed additions and bank placeholders do not discover books. Login/Search
+  also remember positive quantities already carried or banked by older saves; previously lost,
+  unrecorded history cannot be reconstructed.
+  [Book on chemicals](https://oldschool.runescape.wiki/w/Book_on_chemicals?oldid=15282307),
+  [Translation book](https://oldschool.runescape.wiki/w/Translation_book?oldid=15282283) and
+  [Beaten book](https://oldschool.runescape.wiki/w/Beaten_book) become recoverable only after
+  The Dig Site, The Grand Tree and Elemental Workshop II respectively. Both the displayed
+  found state and Take enforce these requirements, including for older premature saved flags;
+  acquisition history itself is retained. Original recovery sources remain separate, including
+  the Exam Centre. These three requirements do not constitute an audit of every catalog entry.
+  Grand Exchange collection uses its committed receipt event, since it stages items on a copy
+  before replacing the inventory or bank contents. A failed collection discovers nothing.
+  `tests/poh-bookcase-discovery.test.cjs` exercises real shop purchase, native Drop/Take, the
+  existing Exam Centre quest source, all three registered quest gates, GE/Bank/pickup/trade
+  transfers, item identity/metadata, partial/clamped additions, capacity and a save round trip.
+  Capture 230/02922 also supplies Take's spam channel and sound 2582 with delay 5, and the
+  full-inventory refusal; duplicate and capacity refusals do not play the Take sound.
+  Search enables the captured Take/Check and Examine actions on every interactive catalog row;
+  the range follows the cache enum so the actual client can transmit these clicks.
 - **Tip jars:** guests tip coins or platinum tokens (amount prompt ours); the owner sees the
   captured contents box and takes them to the inventory or bank; Setup shows and switches
   notifications and banking on logout. One balance per house; Ironmen can't tip (Wiki).
@@ -302,12 +329,32 @@ Using a pet on menagerie furniture stores it; the pet house's View lists the sto
 2013) lets them roam the menagerie outside building mode. Stored pets count as owned
 (`pets:held-elsewhere`).
 
+The Pet list's Read opens `poh_petlist` (210) as rsprox captures 2581, 2777, 2782, 2793 and
+3121 send it: script 2524 (-1, -1), the modal, Examine (op10) on list slots 0 to the last slot
+of enum 985, and script 647 with one green "Owned" or red "Not owned" cell per slot, each
+followed by `|`. A slot is Owned when the reader owns that pet (`pets:owns`, the insurance
+record): recording 2581's nine Owned slots are exactly its nine `pet_insurance_*` bits, with
+nothing stored in the menagerie. Examine sends the pet's examine for owned and unowned slots
+alike (2581: "A tiny frost nagua." on the unowned Moxi, slot 61).
+
+Pick-up on a roaming pet takes it back as Take does (rsprox captures 2779-2784, rev 229,
+on Dagannoth Supreme Jr., K'ril Tsutsaroth Jr., the phoenix, Lil' Zik, the rift guardian and
+others): on the tick the owner reaches it the NPC goes, the pet item arrives and its stored bit
+and form varbit clear, with no animation or sound. Only that pet goes; the others keep roaming.
+Ours: a full backpack gets "You don't have enough inventory space." (as Take), a guest's
+Pick-up does nothing, and an account with a bank PIN is asked for it first (as Take).
+
 ### Dungeon and throne room
 
 - **Guards and guardians** stand in for their furniture as NPCs outside building mode and come
   back when the house next loads; in challenge mode they attack guests nearby.
 - **Doors and cages** open and close; in challenge mode they are locked to guests, who pick or
   force them at the Wiki's odds.
+- **Oubliette cage Build-in:** the floor sits inside the cage, so the cage's Build-in (op4) opens
+  the floor space's build menu (Spikes, Tentacle pool, Flame pit, Rocnar). With a floor built it
+  asks "Select an option" / "Remove the contents of the oubliette|Never mind", then the usual
+  "Really remove it?" Yes/No, and Yes removes it like any Remove (rsprox captures 2872 ticks 176
+  and 196, 2873, 2877; rev 230). Outside building mode it does nothing (ours: not captured).
 - **Traps** (challenge mode, Agility dodges) and oubliette floors hurt guests; damage the Wiki
   doesn't give is ours.
 - **Treasure chests** hold the owner's coins up to the chest's limit, added every 5 minutes;
@@ -453,6 +500,17 @@ oubliette's ladder), "... the basement level." for a ground floor room with stai
 shows the basement-level warning on a study, which holds no stairs; Remove on stair furniture,
 which on live goes on to removing the room at the other end (recordings 251, 2551, 2864).
 
+Remove-room on stair furniture (staircases, the oubliette's ladder, the throne room's trapdoors)
+removes the room at its other end (rsprox captures: recordings 2551, 2608, 2611, 2613, 2617, 2620,
+2621, 2632, 3897 and one of the user's own, rev 229-235): stairs up take the room above, stairs
+down the room below, and a spiral staircase asks "Remove which room?" with Room above / Room
+below. That room then goes as through its door: its floor warning, "Remove the skill hall?",
+"Room deleted!". Message boxes refuse: "You can only do that in building mode.", "There is no
+room above to remove." and, on the upper floor's stairs down, "The room below is supporting this
+room!". Ours: "There is no room below to remove." mirrors the captured line for the room above;
+the garden's dungeon entrance (loc 4529, with the same Remove-room option) removes the dungeon
+stairs room below it like the other stairs down, which no recording shows.
+
 ### Building furniture
 
 Captures of the build menu (`poh_furniture_creation`, 542 picks in 123 recordings, rev 226-239):
@@ -488,6 +546,14 @@ there!", or "Hmph. Come back when you have 5,000 coins.". Twisted theme first sa
 let me borrow your blueprints ..."; leaving it shows "The Estate agent returns your blueprints."
 (message box). The Wilderness theme is only listed once it can be used (the captures show it
 rarely, so when it shows otherwise isn't known).
+
+The exit portal's Lock and Remove board advert (rsprox captures local 1001005, local 1001008 and
+248, rev 229): Lock answers on the click's tick in a message box, "Your house is now locked to all
+visitors." or "Visitors can now enter your house.", and sets `poh_house_locked`; a guest gets "You
+can only lock your own house." (message box). Remove board advert asks the board's "Remove your
+advert?" (Yes. / No.); Yes says "Your house is no longer being advertised.". A guest gets "This is
+not your portal to configure." and an owner with no advert up "You are not currently advertising
+your house." (both game messages).
 
 A new house's save lists its garden's exit portal by hotspot only; loading a house now places
 such furniture, so the portal shows, and you arrive in front of it.

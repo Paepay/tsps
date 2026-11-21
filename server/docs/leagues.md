@@ -184,6 +184,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `minigame:chance` | the Motherlode Mine (`golden-nugget`), Hunter's drift nets and the Volcanic Mine (`fossil-island` `fossil`); the Fishing Trawler (`angler-outfit`), the Hallowed Sepulchre (`ring-of-endurance`), Pyramid Plunder (`pharaohs-sceptre`), Tai Bwo Wannai Cleanup (`gout-tuber`) and aerial fishing (`golden-tench`), which the league answers through `MINIGAME_FINDS`; also asked, with nothing in a league answering: the Hallowed Sepulchre's `strange-lockpick` and the Gnome Restaurant's hard tip (`unique`: the goggles and scarf rows) | `{ player, minigame, kind, multiplier }`: the find `multiplier` times as likely (below 1 counts as 1) |
 | `big-chompy-bird-hunting:kill-credit` | Big Chompy Bird Hunting's kill count | `{ player, kills }` a chompy kill counts for |
 | `thieving:pickpocket-target` (extended) | Thieving | now with `chanceBonus` (a percent more success, stacking as the gloves of silence do) and `painless` (a stun without the damage) |
+| `thieving:looted` | Thieving | `{ player, npc, target, loot }` after the loot is handed over, as given (every `thieving:loot` change applied); `pickpocket-loot` tasks count it |
 | `thieving:loot` (extended) | Thieving | now with `multiplier`, applied with the rogue outfit's doubling as the loot is handed over |
 | `prayer:bury` (extended) | Prayer | now scatters demonic ashes too (never for the bonecrusher's `crushed`) |
 | `teleport:landed` | core `TeleportHandler`, as a teleport lands; the home teleport, fairy rings, spirit trees and Wilderness obelisks, which move the player themselves | `{ player, from, fromInstance, to }`: where it began, whether in an instance, and where it landed |
@@ -672,10 +673,11 @@ rule from the Wiki's Shattered Relics pages. They draw only for league type 3 (v
   server's, said once per boss every few seconds.
 
 Not yet: Barbarian Assault's honour points and the Rogues' Den safe, which this server
-doesn't have; Rune Escape, which needs the Ourania Altar this server doesn't have; Plank
+doesn't have; Rune Escape's fragment effect (the Ourania Altar itself is implemented); Plank
 Stretcher outside a house build, as Mahogany Homes; the ranged weapons' own charges, which
 no hook reports; the league's waystone objects themselves (only the portable one's teleports
-are here); The Alchemist's jugs of wine (no wine making here). Fishing has no clue bottles of
+are here); The Alchemist's wine batching (wine making exists, but its `make` loop is not among
+the set's supported `cook` activities). Fishing has no clue bottles of
 its own, so Message In A Bottle reaches only Hunter's aerial fishing and drift nets for bottles.
 A listed fragment can also be dragged onto a slot (no recording; the cache's drag scripts):
 each fragment's icon gets DEPTH1, a slot's fragment (735:36) and its frame (735:35) DRAGTARGET,
@@ -1097,8 +1099,9 @@ Animal Wrangler's Hunter and cooking ones) do not.
   pottery, gems, glassblowing, spinning), and a 25% chance of the same product again, banked with
   its XP (`skills:produced`; only when the bank has room). "All at once" is up to 28 a cycle, the
   inventory's slots: ours. Molten glass, smelted at a furnace, is Crafting and not on either
-  list. Not here: jugs of wine (no wine making in this server); Guardians of the Rift's essence is
-  not a Crafting loop here, so the Wiki's exclusion holds.
+  list. Wine making and fermentation are implemented, but the wine-making `make` loop is not
+  batched by this relic's `cook` activity. Guardians of the Rift's essence is not a Crafting loop
+  here, so the Wiki's exclusion holds.
 - **Production Master** (Raging Echoes tier 5): the same list all at once, plus arrow shafts,
   headless arrows, arrows, bolts and gem-tipped bolts, and darts (10 times the usual a cycle,
   Wiki; darts and bolts by default fletch in one click, and that click makes 10 too), and amethyst
@@ -1479,6 +1482,10 @@ progress in `league:mastery-progress`.
   append two cases reading varp 2616 bits 10 and 11, the same completion bits
   `Complete.LeagueTasks` sends, so the task list and the mastery list agree. Each patch is
   guarded by the script's SHA-256, leaving another cache revision's script untouched.
+
+  The [Echo encounters](../../docs/echo-bosses.md) are available. The three Raging Echoes mastery
+  challenges for distinct Echo kills are still marked `_missing` and only available through
+  `::mastery point`.
 - **The interface, as captured.** The league side panel's mastery button (656:32) opens
   `league_combat_mastery` (311) as the main modal with `if_setevents` on its clickzones (311:36,
   0-18), menu frame (311:78, 10-18) and style tabs (311:73, 0-26), then runs 3186 on the panel's
@@ -1574,19 +1581,20 @@ Each boss's own entrance emits `echo-boss:entry` `{ player, boss, enter, handled
 it lets the player in: the Iron Winch's Turn (after its task check), the Queen's roped tunnel,
 the Kings' ladder (Standard and Slayer), the smoke devil's crevice going in, the Roof Entrance
 (after its key and task checks), the Corrupted Gauntlet's entrance (before its checks, as live
-asks with a full pack), the King Black Dragon's ladder down, Hespori's cave in the Farming Guild
+asks with a full pack), the King Black Dragon's lever in the spider room, Hespori's cave in the Farming Guild
 and Amoxliatl's door. A league character carrying that boss's orb (Wiki: in the inventory; not
 used up) gets the captured menu, "Fight the Echo of the Thermonuclear Smoke Devil?" /
 "Fight the Echo of the Hunllef?" with "Yes." and "No.": No goes in as without the orb, Yes calls
-`startEchoFight(player, boss)`, which answers false until echo bosses exist, and the player stays
-outside with "Nothing interesting happens.".
+`startEchoFight(player, boss)`, which asks the boss's plugin to start its private Echo encounter.
+The player keeps their orb. See [Echo bosses](../../docs/echo-bosses.md) for the current encounters
+and remaining combat differences.
 
 #### Ours (echo orbs)
 
 - The menu titles of the seven bosses with no capture follow the captured pattern
   (`titleOurs` in the data).
-- No continues the normal entry; Yes is the placeholder message and leaves the player outside.
-  No comes later than the click, so it goes in only while the player is still on the tile the menu
+- No continues the normal entry. The answer comes later than the click, so normal entry proceeds
+  only while the player is still on the tile the menu
   opened on, logged in and alive, and each entrance asks its own rules again (the winch's and the
   Roof Entrance's task, the Kings' Slayer task, the Queen's rope still tied, Amoxliatl's quest and
   open chamber), with the usual refusal and without asking about the orb a second time.
@@ -1903,7 +1911,12 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
 - **The map** is ours, since the cache has no map-square to area table: each area lists 64 x 64
   map squares (`rects` and `squares`, map coordinates = tile >> 6) drawn from the Wiki's
   descriptions, over the cache's own map list (`CacheMaps.getRegionIds`). The lowest-numbered area
-  naming a square owns it, a league's `overrides` reassign squares (the Stranglewood: Kourend in
+  naming a square owns it. `tilePolygons` refine named mixed squares using sourced tile-grid outlines,
+  sampling each tile at its centre (`x + 0.5`, `y + 0.5`) with the crossing rule; outline edges
+  are not included separately.
+  The northeast Lumbridge squares use the Wiki's mainland Misthalin outline, leaving Al Kharid's
+  mine outside it. Explicit underground squares include the Chasm of Tears and the Dorgesh-Kaan
+  mine; they do not inherit the Desert from the unrelated surface square. A league's `overrides` reassign squares (the Stranglewood: Kourend in
   Trailblazer Reloaded, Varlamore in Raging Echoes), an unnamed underground square (map y >= 100)
   follows its surface square (the Wiki's "underground areas with an entrance in X"; Taverley
   Dungeon is Asgarnia's, the Underground Pass Tirannwn's by explicit squares; dungeons on no surface
@@ -1931,7 +1944,11 @@ is `select_button` 512:84 and the unlock `confirm_button` 512:62 (rev 227's echo
   before its exit portal opens, and a locked destination becomes the league home (the respawn rule
   applied to the portal; ours, as no capture shows a locked exit). The league home is the world's spawn, or Misthalin's hub
   (Lumbridge) when the spawn is locked (this world's spawn sits on the Wilderness ditch), so it is
-  always open; a character that logs in inside a locked square (a new one at that spawn, an old
+  always open. Within mixed squares, the synchronous `onPlayerLocationChange` hook checks the
+  committed tile after occupancy and existing map-square hooks, before the movement queue continues.
+  The tile briefly exists in memory before correction; this is post-commit correction, not a veto.
+  A callback redirect clears stale queue directions and synchronizes the actual location as placement.
+  No Area ownership or global player-tick sweep is added. A character that logs in inside a locked square (a new one at that spawn, an old
   one whose square the data no longer gives it) starts there.
 - **The interface**, as captured (227/00070, 00075, 00095, 00196, 01710): the side panel's View
   Areas (656:40) opens `trailblazer_areas` (512) as the main modal with `if_setevents` on its menu
@@ -2120,6 +2137,233 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   lists the kill tasks it could not map. To map more: add a kind (a trigger kind is a few lines in Triggers.LeagueTasks),
   a rule in the generator, or an entry in the overlay; or have the plugin that knows the deed emit
   `league:complete-task`. Everything else in the catalog is visible and counts once mapped.
+- **Conditions** on any counted deed trigger (`Actions.LeagueTasks.js`, `conditionsMet`):
+  `wearing: [items]` (or `{ items }`), one of the items worn as the deed happens ("Cook something with an
+  apron": a Brown or White apron; the Wiki: a Golden apron does not work), and `near { npcs?,
+  objects?, options?, distance }`, an NPC or loc of one of the names, or a loc offering one of the
+  options (an altar's `Pray-at`; "near an altar" takes `Pray-at` and `Pray`, so a god statue,
+  shrine or statuette with Pray counts too, ours), within `distance` tiles of the player (Chebyshev, to the nearest
+  tile of its footprint, same plane and instance). The Demonic Pacts tasks the generator could not
+  word-map are in the overlay (issue 6108). The distances are fitted to rsprox.net recording 1098
+  (rev 237, Leagues VI), the only one that completes them; the Wiki gives none:
+  - "Cry near a child" (Cry, slot 16): cried 2 tiles from a child at tick 14398, the task at 14399; distance 2.
+  - "Dance near a bard" (Dance, slot 12): no task 3 tiles from the Avium Savannah bards (tick 25550),
+    completed 1 tile from one (25555); distance 2.
+  - "Bow near a quetzal" (Bow, slot 2): completed 2 tiles from Civitas' quetzal (spawn 13355, a
+    size-3 multinpc with no name of its own, whose forms are Renu; tick 14440); distance 2. A
+    multinpc matches by the form the player sees and by its forms' names.
+  - "Salute next to a statue of Quoatlos" (Salute, slot 21): completed 3 tiles from the Grand
+    Museum statue's 3x3 footprint at 1719,3155 (tick 15055); distance 3.
+  - "Activate a prayer near an altar": completed beside the altar at 1225,3103 (tick 9770);
+    distance 2 is ours (the nearest the other tasks use).
+  The other mapped deeds, each on the tick the recordings show: "Cast Home Teleport" on the landing
+  (`magic:home-teleport-landed` { player, to }, from the standard home teleports and the league's
+  own, 1098 tick 4444), "Light a Torch" as the torch lights (LightSources' `light-sources:lit`
+  { player, itemId }, 1098 tick 16024), "Turn any Logs Into a Plank" on the sawmill choice
+  (`sawmill:planks-made` { player, npcId, itemId, amount }, 1103 tick 485), "Chop Some Logs" on the
+  log (1098 tick 11083), "Pet a Caique" on the peck (`caique:pecked` { player, npc }, 1098 tick
+  27022) and "Pet Xolo in Civitas" on the Pet (`npc-op`, in Varlamore, area 21: the catalog names no
+  Civitas place, so the Xolo of Aldarin, 1354,2951, counts too; 1098 tick 14824). The four Varlamore
+  emote tasks also count only in Varlamore (area 21), as their region says: a "Child" stands in many
+  towns. Leagues 4 and 5 share the first four of these tasks and take the
+  same triggers. Five more are the content's own `deed` events (docs/varlamore-small-interactions.md):
+  "Milk a Buffalo" (`dairy-buffalo:milked`), "Drink from a bird bath" (`bird-bath:drank`), "Admire
+  some beautiful scenery" (`scenery:admired`), "Give Oli some Stew" (`oli:fed-stew`) and "Fill a
+  Grape Barrel for the Foreman" (`vineyard:barrel-handed-in`); Raging Echoes shares the buffalo, Oli
+  and the barrel.
+- **Small content built for its task**: the Alpaca's Shear (`alpaca:sheared`, docs/varlamore-small-interactions.md)
+  and Karamja's pineapple plants (`world:picked` of a Pineapple, docs/karamja-pineapple-plants.md).
+- **Wilderness and leftover deeds**, from their content's events:
+  - The ecumenical key: `obtain` of a dropped "Ecumenical key" (Keys.GodWars adds it to the drop).
+  - `revenants:bracelet-full` { player } when ether takes the bracelet to 16,000; `mage-arena:cape-imbued`
+    { player, itemId } on Kolodion's imbue.
+  - Pickpockets by the Thieving target group: `thieving:success` `where` method "pickpocket" and target "vyre"
+    or "elf" (50 each), or "bandit" (the desert Bandit Camp's, the target's only npc ids).
+  - `desert-quarry:claimed` { player, amount } on Drew's claim, `atLeast` 500 in one claim (the Raging Echoes
+    Wiki row: "All buckets of sand must be claimed in one go"); `waterskins:cactus-cut` { player } on every cut
+    (Ours: watered or not); `zulrah:unique-dismantled` { player, itemId } on the blowpipe's Dismantle.
+- **Kourend and Karamja deeds**, from their content's events:
+  - TzHaar-Ket-Rak: `tzhaar-ket-rak:challenge-completed` { player, number } as the last Jad falls (`where`
+    number 1-6); `tzhaar-ket-rak:infinite-ended` { player, kills } (`atLeast` 18 for "6,6,6").
+  - `inferno:cape-sacrificed` { player } on TzHaar-Ket-Keh's hand-over; `brimhaven-dungeon:permanent-access`
+    { player } on Saniboch's 1,000,000 coins.
+  - Existing: `piscarilius-crane:repaired`; `stealing-artefacts:handed-in` (1, and 15 for "Steal 15 Artefacts",
+    whose Wiki description says 10: Ours, the name and id); `mining:saltpetre` summed; `farming:harvested` of
+    Zamorak's grapes summed; Omnishop's `omnishop:purchase` of a Seed box.
+  - `tithe-farm:planted` { player, crop } (`where` crop: Golovanova, Bologano, Logavano);
+    `woodcutting:shrine-offered` { player, count }; `ornament-kits:applied` { player, kit, result } (`where`
+    kit "Sanguine ornament kit" or "Holy ornament kit").
+- **Varlamore deeds**, from their content's events:
+  - Quetzals: `quetzals:flown` { player, site } on landing (Renu's and Primio's flights, not the whistle's
+    teleport); `quetzals:site-built` { player, site, all } (all: every site that needs building is built);
+    `quetzals:whistle-crafted` { player, itemId }.
+  - `smithing:calcified-crushed` { player, itemId } per deposit; `fletching:spool-filled` { player, added,
+    stored } (`atLeast` stored 10,000); `hunter:barehand-caught` { player, name }, `where` "moonlight moth".
+  - Achilka: Ferries' existing `ferries:arrived`, `where` route varla-kastori, -tal-teklan or -gloomthorn.
+  - `gemstone-crab:burrowed` { player } for each player at its mine when it burrows.
+  - The Cam Torum beard: Makeover's existing `makeover:applied` with type 1 (facial hair), `near` Sonalo.
+- **Forestry deeds**, from the Forestry events' own rewards:
+  - `forestry:root-chopped` { player, kind } on a rising root's bark; `forestry:entling-pruned` { player } on a
+    cut an entling wanted; `forestry:leprechaun-banked` { player } when the leprechaun banked something.
+  - `forestry:event-completed` { player, event }, `where` event: "flowering" and "sapling" with their gifts,
+    "ritual" for a player with a step done, "pheasant" at the event's end for each player who handed in an
+    eligible egg (Ours: the Wiki's end bonus of Woodcutting XP and bark isn't paid yet).
+- **General deeds**, from their content's events:
+  - Slayer: `slayer:on-task-kill` { player, npcName } for a kill that counts for the player's own task (250 of
+    them; an "Abyssal demon" by name).
+  - Random events: `random-events:jekyll-traded` { player, herbId } on Dr Jekyll's trade (rsprox.net 560);
+    `random-events:sandwich-lady-cross` { player } when the wrong food is taken ("Hey, I didn't say you could
+    have that!"; Ours: that is what makes her cross); Postie Pete is the existing `random-events:completed`
+    kind "eviltwin".
+  - `construction:jester-won` { player } (Jacky Jester); `deaths-office:coffer-sacrificed` { player, itemId,
+    amount, value }; `scaly-dragonhide:scraped` { player }; `abyssal-sire:font-consumed` { player, itemId }.
+  - `herblore:extra-dose` { player, itemId }: a recipe's 3-dose potion that came out 4-dose.
+  - Anvil smithing's `smithing:success` now names `metal` ("runite") and the slot's `label`; "Smith a Runite
+    Item" excludes, with a deed's new `notWhere`, what each league's row names: rune dart tips, arrowtips,
+    nails, bolts (unf) and javelin tips in Demonic Pacts, dart tips, arrowtips and bolts in Trailblazer
+    Reloaded, rune nails in Raging Echoes (its Wiki row: "Rune nails do not work"; the generated catalogue
+    doesn't carry that note). Furnace jewellery's `crafting:made` now names `bar` ("Silver
+    bar", 20 of them).
+  - Existing: `farming:protected`; `firemaking:success` of red, green, blue, white or purple logs; `produce` of
+    100 empty light orbs (Ours: glassblown, not filled), 100 pies of any kind, and a mith grapple.
+- **Player-owned house and altar deeds**, from Construction's and BoneAltars' events:
+  - The estate agents: `construction:house-bought` { player }; `construction:house-moved` { player, location }
+    with the town's name, `where` the task's town (Yanille, Prifddinas; league 4's Taverley, Pollnivneach, Rellekka); the existing `construction:house-redecorated`.
+  - Daddy's Home's free house (`construction:grant-house`) also sends `construction:house-bought`.
+  - Entering: the existing `poh:entered`, now also sent by a teleport into the house (location null). Rooms: `construction:room-built` { player, room } from the viewer, a
+    door hotspot or a staircase (not a move).
+  - Furniture: `construction:furniture-built` now carries `key` (the buildable) and `hotspot` flat, `where` key:
+    OAK_LARDER, MAHOGANY_PORTAL_FRAME, GILDED_ALTAR, DEMONIC_THRONE, LUMBRIDGE_LANDSCAPE. Ours: the Lumbridge
+    landscape is the task's "Painting of Lumbridge Watermill".
+  - The games room: `construction:ranging-hit` { player, game, score } on a scoring shot, `where` game "hoop".
+  - Altars: BoneAltars' `bone-altars:offered` { player, itemId, site, burners } per bone offered; site is the
+    data altar's loc ("chaosaltar", the Western Chaos Temple) or a house altar's buildable ("GILDED_ALTAR", with
+    `atLeast` 2 burners for the dagannoth bone).
+- **Morytania and Desert deeds**, from their content's events:
+  - The Sorceress's Garden: `sorceress-garden:picked` { player, season } on a sq'irk picked, `where` season;
+    `sorceress-garden:juice-handed-in` { player, season, amount } on a glass given to Osman or Selim. The winter
+    juice and the 50 summer ones (summed over hand-ins; its description has no "in one go") are mapped. The
+    10 spring and 25 autumn tasks say "in one go", and this server hands in one glass per talk, so they aren't.
+  - Simon Templeton: `pyramid-plunder:pyramid-tops-sold` { player, amount }.
+  - The Taxidermist: `taxidermist:stuffed` { player, itemId }.
+  - The Necropolis obelisk: `pharaohs-sceptre:communed` { player } on Commune with a sceptre in the pack (league 4
+    spells its task id "pharaoh", leagues 5 and 6 "pharoah").
+  - The bark runescrolls: BarkArmour's existing `runecrafting:bark-learnt`, `where` kind.
+  - Shades of Mort'ton's existing `shades-of-mortton:cremated`: one pyre log burnt per cremation.
+  - Sacred eels: `cooking:sacred-eel-dissected`; Andras: `ferries:andras-permanent-access`.
+- **Asgarnia, Kandarin and Fremennik deeds**, from their content's events (all new but Castle Wars' and Fishing's):
+  - The Warriors' Guild: `warriors-guild:shot-put` { player, distance } on a landed throw (`atLeast` 12), and
+    `warriors-guild:kegs-balanced` { player, kegs } as each keg goes on the head (`atLeast` 5).
+  - `gnomeball:goal` { player } on a goal; Kylie's `minnows:traded` { player, amount }, summed to 1,000.
+  - Barbarian Assault: `barbarian-assault:role-levelled` { player, role, level } on an upgrade (`atLeast` 5).
+  - Castle Wars: the existing `castlewars:player-result`, `where` result "win".
+  - The Fishing Trawler: `fishing-trawler:completed` { player } on docking back in port.
+  - The Fountain of Heroes: `jewellery:recharged` { player, site, piece } once per kind of piece charged,
+    `where` site "heroes" and piece "glory" or "glory_trimmed" (piece is undefined for rings of wealth, whose
+    table entry has no key; no trigger reads it).
+  - Taverley Dungeon: `taverley-dungeon:key-door` { player, key } when a locked door's key lets the player
+    through, `where` key "DUSTY_KEY".
+  - The Blast Furnace: `blast-furnace:bars-taken` { player, itemId, amount } from the dispenser, by bar, summed.
+  - Camdozaal: `camdozaal:lockbox-opened` { player, itemId }, the Ornate lockbox.
+  - The pyre ship: `barbarian-pyre:lit` { player, logsId } on lighting it.
+  - Barehanded sharks: Fishing's `fishing:success`, `where` barehand true.
+- **Varlamore and Kourend deeds**, from their content's events:
+  - Fortis Colosseum waves: Run's new `colosseum:wave-completed` { player, wave }, with `atLeast` wave 1
+    and wave 12.
+  - Mixology's Reagent pouch and Chugging barrel: Omnishop's `omnishop:purchase`, by item.
+  - Stealing Valuables:
+    - valuables taken: HouseRobbery's new `house-robbery:stole` { player, amount }, counted with a deed's
+      new `sum` field (a shiny object is 14);
+    - house keys: `pickpocket-loot` of the wealthy citizen's "House keys". `pickpocket-loot` now reads the new
+      `thieving:looted` (the loot as given), so the 40th dry pick's key counts;
+    - an urchin paid: HouseRobberyCrew's new `house-robbery:informed`, on a paid Yes only (a Gladiator's free word
+      sends nothing, as the task names paying).
+  - The Arceuus Library's books: `arceuus-library:book-handed-in`.
+  - The Chambers of Xeric completions: credited kills of the CoX plugin's "Chambers of Xeric" and "CM:
+    Chambers of Xeric".
+  - Doom of Mokhaiotl at delve level 8 or deeper: the new `doom:delve-defeated` { player, level }, with
+    `atLeast` level 8.
+  - The Garden of Death: `quest`.
+- **Spells and item teleports**, each from its own content's event:
+  - Moonclan Teleport: `spell:teleport-arrival`, which LunarSpells already sends for its teleports.
+  - Spellbook Swap: `cast` on LunarSpell's new `magic:lunar-cast` { player, name }. It is sent for every
+    Lunar spell cast through `LunarSpell.cast`, except the teleports, which have their arrival. Spells that
+    pay per item (Bake Pie, String Jewellery, Plank Make) don't send it.
+  - Fertile Soil: Farming's `farming:spell-fertilized` { spell: "fertile soil" }.
+  - Degrime "26 herbs at the same time": ArceuusUtilities' new `magic:degrimed` { player, herbs }, with a
+    `deed` `atLeast { herbs: 26 }`.
+  - Xeric's talisman to Xeric's Honour: `xerics-talisman:teleported` { destination: "honour" }.
+  - The Calcified Moth: `cam-torum:arrived`.
+  - The Giantsoul amulet to the Royal Titans: its new `giantsoul-amulet:teleported` { lair: "branda and
+    eldric" } on the landing.
+  - Icy Basalt to Weiss: BasaltTeleports' new `basalt:teleported` { itemId } on the landing.
+  - The teleport anchoring scroll: TeleportAnchoringScroll's new `teleport-anchoring:learnt` { player } when
+    the scroll is absorbed, not when Read opens the question (a Cancel, or a player who already knows it,
+    is no use of it).
+  - Crafting runes: a combination rune (Mist, Dust, Mud, Smoke, Steam, Lava), and 200 / 2500 essence
+    whatever the rune. That is the new `rc-essence` kind, counting `runecrafting:success`'s `rolls` (a
+    combination craft its `runeAmount`, the essence it bound).
+  - The churn's butter: `produce`.
+  - A piece of Crystal armour: CrystalSinging's new `crystal-singing:sung` { itemId, amount }. It is not
+    `skills:produced`, which production relics would double.
+  - Claws of Guthix, Flames of Zamorak and Saradomin Strike: `cast`, with a new `outside { rects, z }`
+    condition. Its box is the Mage Arena as `Spells.MageArena.js` bounds it (3089-3117 x 3921-3946, plane 0),
+    since a player's first casts are the arena's 100 before the spells work outside it.
+- **More conditions** (`Actions.LeagueTasks.js`, `Triggers.LeagueTasks.js`):
+  - `resetOn { event, items?, npcs? }` on a counted trigger: that event starts its count again.
+    - "Cook 5 pieces of food in a row without burning them" is `cook` reset by `cooking:burnt`.
+    - "Cook 20 Karambwans in a row" is the Cooked karambwan reset by a Burnt karambwan.
+    - "Successfully pickpocket a regular Citizen 10 times in a row" is the man table's picks reset by
+      Pickpocket's new `thieving:failure` { player, method, target, npcId }. That event is sent on every
+      failed pick, a Shadow Veil save too. Ours: Varlamore's Citizens share the man table, so men and
+      women count too, as the generated "Pickpocket a Citizen" already does.
+  - `prayer-bonus { min }`: the worn items' prayer bonus at least that, as BonusManager sums it
+    (checked with the equip kinds). Used by "Reach a Prayer Bonus of 15 / 30".
+  - `hit { min, spells?, weapons? }`: one hit of at least `min` a player lands on an NPC, from
+    `onCombatHitResolved`, as its hitsplat shows it: capped at the hitpoints left after the damage queued
+    ahead of it the same tick. Used by "deal at least 66 damage ... using elemental spells" (the 20 Strike to
+    Surge spells) and "Hit 150 damage or more with the Keris Partisan" (25979, as "Defeat a Kalphite
+    with the Keris Partisan" names it).
+  - `ca-boss { monsters }`: the Wiki task rows' groups of Combat Achievement monsters (below).
+  Not yet: the solo kills ("Royal Titans without any other player joining", "Nex in a private
+  instance"), the timed runs (Prifddinas lap 1:10, Corrupted Gauntlet 4:30, Sepulchre 6:30) and "Vorkath
+  15 times without leaving". Each needs its encounter's own event first.
+- **Places from location lines** (`generate-league-tasks.ts`, `PLACE_DEFS` with `locLines`): a task
+  whose place is where its subject stands takes the subject pages' own location lines for bounds. The
+  `{{LocLine}}` / `{{ObjectLocLine}}` pins whose `location` links the place, three tiles round each (a pin
+  is the object's south-west tile: a 3x3 object's far sides are three off, and a pin may be a tile off its
+  object), or their whole map square for an area of its own:
+  - `stonecutter-outpost-rocks`: Coal rocks and Mithril rocks at "Stonecutter Outpost".
+  - `tlati-rainforest-trees`: Teak and Mahogany trees in the "Tlati Rainforest".
+  - `shayzien-yew-trees`: Yew trees in "Shayzien".
+  - `forsaken-tower-magic-trees`: Magic trees at "The Forsaken Tower (location)".
+  - `rellekka-sand-pit` and `sunset-coast-sand-pit`: the Sand pit page's two.
+  - `lands-end-bank-chest`: the Bank chest at "Land's End".
+  - `puro-puro`: Baby impling's "Puro Puro" lines, their map square 2560-2623 x 4288-4351. That matches
+    the server's own Puro-Puro bounds (`Catching.Hunter.js` `inPuroPuro`).
+  These are named for their subject ("Stonecutter Outpost rocks"), so the phrase rules never take one
+  for a whole town. The overlay names them by key, and the generator writes every place the overlay
+  names as well as the ones its own triggers name; an overlay place with no `PLACE_DEFS` row fails the
+  run. Mapped with them, in each league that has the task:
+  - Mine some Coal from / 20 Mithril Ore in the Stonecutter Outpost;
+  - Chop a tree in the Tlati Rainforest (any logs, at a teak or mahogany: ours, the only Tlati trees
+    the Wiki locates);
+  - Chop 15 Yew Logs in Shayzien, and a Magic log at the Forsaken Tower;
+  - fill buckets of sand at Rellekka (20) and the Sunset Coast (`sand-pit:filled`);
+  - Bank at Land's End;
+  - catch 50 / 200 implings in Puro-Puro.
+- **A second batch of Demonic Pacts mappings** (overlay only, existing kinds): the hunter catches
+  (snared birds, butterflies, swamp lizards and salamanders, the Feldip Hills' crimson swift and spined
+  larupia in Kandarin, the sabre-toothed kyatt), Tirannwn's gold ore and cooked rabbit, the nine
+  crafted snelms (broken bark too), rune brutal and broad ammunition, the Fish stall, Civitas' Spice stall (by its loc id, 51936: Port Roberts' has the same name and
+  area; Stalls now sends `objectId` with `thieving:success`) and Hosidius'
+  Golovanova fruit top, and shooting stars (Mining's new `shooting-stars:mined` { player, size } per
+  stardust: "Mine a Shooting Star", and `where` size 8 or 9). "Activate Deadeye" / "Activate Mystic
+  Vigour" count Eagle Eye's / Mystic Might's slot with its prayer scroll read (PrayerHandler's own
+  `deadeyeActive` / `mysticVigourActive`). Not mapped yet: what needs a named place the catalog lacks
+  ("in Shayzien", "in the Stonecutter Outpost"), a Lunar or item teleport the server names no cast
+  of, or content the server doesn't have (pineapples are not pickable). Trailblazer Reloaded and Raging
+  Echoes take the same entries for the tasks they share.
 - **Deeds** (`Actions.LeagueTasks.js`) listen to the events the skills already emit, counted per
   task in `league:task-progress` (task id -> count) until done (a trigger with an `area` counts
   only deeds done on its map there, where the player stands, `league:area-at`; a potion counts by
@@ -2186,6 +2430,9 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   "on normal or hard mode 25 times"; the server's raid sends normal and entry),
   `emote { slots, count }` from the emotes plugin's `player:emote` (by the tab's slot; "Use the
   Fortis Salute emote", named as its locked emotes are in `emotes.json`),
+  `chop-logs { count }` from Woodcutting's `woodcutting:success` (any item named "... logs" given:
+  "Chop Some Logs"), `cook { count }` from Cooking's `skills:produced` of kind `cook` (anything
+  cooked on a fire or range), `prayer { any: true }` (whichever prayer is switched on),
   `take { items, source, count }` from ItemOnGroundManager's `ground-items:taken` (a ground item
   picked up, "pickup", or telegrabbed, "telegrab": "Pick up 10 White berries in Tirannwn", "Telegrab
   a Bloody bracer in Slepe"; a field's crop is a pick),
@@ -2407,8 +2654,12 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
 - **Combat Achievements**: `ca-tier { tier }` ("Combat Achievements Easy Tier", the plugin's
   `combat-achievements:tier`), `ca-count { count, type? }` ("100 Combat Achievements", "Complete
   5 Speed Tasks"), `ca-bosses { count }` ("Complete all tasks for 3 bosses") and `ca-boss
-  { monster }` ("Kraken Combat Achievements": a monster of enum 3970, the plugin's list; a group
-  such as "all three Dagannoth Kings" is left unmapped), from the plugin's new
+  { monster }` or `{ monsters }` ("Kraken Combat Achievements": a monster of enum 3970, the plugin's list;
+  a group every one of them, as the Wiki's task row names it: "all three Dagannoth Kings" are DK: Prime,
+  Rex and Supreme, "the Gauntlet & Corrupted Gauntlet" both Hunllefs, Chambers of Xeric "Normal mode and
+  Challenge mode", Theatre of Blood and Tombs of Amascut their three modes, Godwars Dungeon "including
+  Nex" its five bosses; the single-monster rows the generator could not word, such as "for the Kalphite
+  Queen", are in the overlay), from the plugin's new
   `combat-achievements:summary` { player } -> completed, speed, monsters, checked on
   `combat-achievements:completed` and at login. "Within the areas you have unlocked" is not
   checked.
@@ -2427,9 +2678,11 @@ of LeaguePoints' `league:tasks` (id -> points); the task's points are its tier's
   Zombie Pirate Lockers (the plugin drops loot with no menu-option event), the Ornate Lockbox (a
   "Take", no lockbox handler), the Varlamore Moon Chest and its "moon key" chest (no content); so do
   a bucket of sand (no sandpit fill), a grape barrel for the Foreman (its loc has no actions), the
-  icy basalt's Weiss teleport, a herring on a Mighty tree, an Elven teleport crystal and a
-  teleport-anchoring scroll (no plugin answers their use), and a Sacred eel dissection (no dissection
-  interaction). Obtain tasks with no content behind them also stay unmapped: Arnold Lydspor's Swan
+  icy basalt's Weiss teleport, a herring on a Mighty tree, an Elven teleport crystal, and a
+  teleport-anchoring scroll (its Read task is now mapped; Abyssal demon player teleports are handled,
+  while Elder Chaos druid pulls remain unsupported; see teleport-anchoring-scroll.md), and a Sacred
+  eel dissection (no dissection interaction). Obtain tasks with no content behind them also stay
+  unmapped: Arnold Lydspor's Swan
   Song hands over only a small fishing net ("Receive a gift from Arnold"), a Gorak exists only in
   its quest and has no drop table ("Get a Gem from a Gorak"), an Ecumenical Key is only a Nex shard
   combine here, not the Wilderness God Wars drop the task names ("Obtain an Ecumenical Key"), the

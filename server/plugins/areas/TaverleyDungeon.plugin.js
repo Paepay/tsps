@@ -61,7 +61,12 @@ function checkDoorKey(api, event) {
   const door = doorAt(core, event);
   if (!door) return;
   if (door.freeExit && at(event.player.getLocation(), door.inside)) return;
-  if (hasKey(api, event.player, core.ItemIdentifiers[door.key])) return;
+  if (hasKey(api, event.player, core.ItemIdentifiers[door.key])) {
+    // `taverley-dungeon:key-door` { player, key }: a locked door opened with its key (a league's "Unlock a gate
+    // in Taverley Dungeon using the Dusty Key"); key is the identifier, "DUSTY_KEY".
+    api.emitCustomEvent('taverley-dungeon:key-door', { player: event.player, key: door.key });
+    return;
+  }
   event.player.sendMessage('The door is locked.');
   event.handled = true;
 }
@@ -204,16 +209,42 @@ function wakeSuit(api, event) {
   watchSuit(api, key, suit.object, npc);
 }
 
+/** Slieve's upper black-dragon lair, including both baby groups; ground-floor dragons are public. */
+function createBlackDragonArea(api) {
+  const { Area, Boundary, DialogueChainBuilder, NpcDialogue, NpcIdentifiers } = api.core;
+  class BlackDragonLair extends Area {
+    canAttack(attacker, target) {
+      if (!attacker?.isPlayer?.() || !target?.isNpc?.()) return null;
+      const name = (target.getCurrentDefinition?.() ?? target.getDefinition())?.getName();
+      if (name !== "Black dragon" && name !== "Baby black dragon") return null;
+      if (!this.getBoundaries().some(boundary => boundary.inside(target.getLocation()))) return null;
+      const request = { player: attacker, npc: target, onTask: false };
+      api.emitCustomEvent("slayer:on-task", request);
+      if (request.onTask) return null;
+      const combat = attacker.getCombat();
+      // Permission probes and auto-retaliation must not keep reopening the guardian's dialogue.
+      if (combat.getTarget() === target && !combat.isAutoRetaliating()) {
+        attacker.getDialogueManager().startDialogues(new DialogueChainBuilder().add(
+          new NpcDialogue(0, NpcIdentifiers.SLIEVE,
+            "Hey, go and train somewhere else! I'm not having people mess with my dragons unless a Slayer Master's told them to do it.", "Slieve")));
+      }
+      return false;
+    }
+  }
+  return new BlackDragonLair([new Boundary(2752, 2880, 9792, 9855, 1)]);
+}
+
 module.exports = {
   name: 'TaverleyDungeon',
-  description: 'Taverley Dungeon\'s key doors, Velrak\'s dusty key and the suits of armour that come alive at the Cauldron of Thunder prison door.',
+  description: 'Taverley Dungeon\'s key doors, dusty key, animated suits of armour and Slieve\'s task-only black-dragon lair.',
   members: true,
   register(api) {
+    api.registerArea(createBlackDragonArea(api));
     api.onCustomEvent('door:toggle', checkDoorKey.bind(null, api));
     api.onCustomEvent('door:toggle', wakeSuit.bind(null, api));
     api.onItemOnObject(useKey.bind(null, api), { noted: false });
     api.onNpcDialogueCondition(answerVelrak.bind(null, api));
     api.onCustomEvent('npc-dialogue:action', giveDustyKey.bind(null, api));
   },
-  _test: { awakeSuits },
+  _test: { awakeSuits, createBlackDragonArea },
 };

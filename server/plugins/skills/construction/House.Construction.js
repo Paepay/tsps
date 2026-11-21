@@ -152,7 +152,8 @@ const NAME_INPUT_SCRIPT = 109; // meslayer_mode8, answered by resume_p_namedialo
 const VISIT_PROMPT = "Enter name:";
 const VISIT_OFFLINE = "That player is offline, or has privacy mode enabled.";
 const IRONMAN_VISIT = "Ironmen do not visit their friends.<br>Ironmen stand alone.";
-const IRON_MODES = ["ironman", "ultimate", "hardcore"];
+const IRON_MODES = ["ironman", "ultimate", "hardcore", "group", "group-hardcore", "group-unranked"];
+const GROUP_IRON_MODES = ["group", "group-hardcore", "group-unranked"];
 const kickOptionVisible = new WeakSet();
 
 const activeHouses = new WeakMap();
@@ -161,6 +162,8 @@ const activeHouses = new WeakMap();
 const adverts = new Map();
 const lastAdvertised = new Map();
 const lastVisited = new WeakMap();
+/** A teleport on its way to a group mate's house (Teleport to House's Group options): player -> owner. */
+const groupVisits = new WeakMap();
 const pendingFurnitureMenus = new WeakMap();
 
 function defaultHouse() {
@@ -241,6 +244,8 @@ function grantHouse(request) {
   request.player.setAttribute(HOUSE_ATTRIBUTE, house);
   syncHouseOptions(request.player);
   request.granted = true;
+  // Daddy's Home's free house counts as one bought (Wiki: leagues 4 and 5 take "1,000 coins or Daddy's Home").
+  api.emitCustomEvent("construction:house-bought", { player: request.player, granted: true });
 }
 
 /** Refusals before entering your own house: guests or a follower in the way, or a locked Bank PIN. */
@@ -395,6 +400,9 @@ function teleportIntoHouse(player, buildingMode, landing = null) {
   if (tile) player.moveTo(tile);
   showHouseLoading(player, { sound: false, jingle: houseFor(player).save });
   loadHouse(player, { 2: () => hideHouseLoading(player) });
+  // A teleport into the house is an entry too; no portal, so `location` is null (the Kebos diary's
+  // Hosidius-portal task stays the portal's).
+  api.emitCustomEvent("poh:entered", { player, location: null });
 }
 
 function hasFollower(player) {
@@ -403,10 +411,22 @@ function hasFollower(player) {
   return !!request.pet;
 }
 
-function isIronman(player) {
+function ironModeOf(player) {
   const mode = { player, mode: "none" };
   api.emitCustomEvent("ironman:mode", mode);
-  return IRON_MODES.includes(mode.mode);
+  return mode.mode;
+}
+
+function isIronman(player) {
+  return IRON_MODES.includes(ironModeOf(player));
+}
+
+/** Wiki (Player-owned house): a Group Ironman may enter a group member's house. */
+function groupMateHouse(player, owner) {
+  if (!GROUP_IRON_MODES.includes(ironModeOf(player))) return false;
+  const query = { player, other: owner, same: false, ironman: false };
+  api.emitCustomEvent("grouping:same-group", query);
+  return query.same === true && query.ironman === true;
 }
 
 /**
@@ -415,7 +435,7 @@ function isIronman(player) {
  */
 function visitRefusal(player, owner, house, location) {
   if (!owner || !owner.getRelations().canReceivePrivateMessageFrom(player)) return VISIT_OFFLINE;
-  if (owner !== player && isIronman(player)) return Menu.messageBox(IRONMAN_VISIT);
+  if (owner !== player && isIronman(player) && !groupMateHouse(player, owner)) return Menu.messageBox(IRONMAN_VISIT);
   if (!house || house.isDestroyed() || (location != null && Estate.houseLocation(house.save).id !== location)) {
     return "That house is unavailable or its owner is not accepting guests.";
   }
@@ -467,10 +487,10 @@ function arriveAsGuest(player, owner, house) {
   player.getPacketSender().sendVarbit(HOUSE_LOCKED_VARBIT, house.save.locked ? 1 : 0);
 }
 
-/** Friend's house: Ironmen are refused at once; anyone else names the host. */
+/** Friend's house: Ironmen are refused at once (a Group Ironman may still name a group member); anyone else names the host. */
 function promptVisit({ player, objectId, location: portalLocation, sourceLocation, object }) {
   portalClickTiles.delete(player);
-  if (isIronman(player)) {
+  if (isIronman(player) && !GROUP_IRON_MODES.includes(ironModeOf(player))) {
     Menu.refuse(player, Menu.messageBox(IRONMAN_VISIT));
     return true;
   }
@@ -579,9 +599,22 @@ function placeAdvert(player) {
   Menu.refuse(player, Menu.messageBox(`Your house is now being advertised on the noticeboard for the next ${ADVERT_MINUTES} minutes. If your house is closed or you log off, your advert will be removed.`));
 }
 
-/** The exit portal's advert option. Ours: nothing is said when there was no advert. */
+/** Takes the player's advert down after Yes on "Remove your advert?" (board or exit portal). */
 function removeAdvertisement({ player }) {
   if (endAdvert(player)) player.sendMessage("Your house is no longer being advertised.");
+  return true;
+}
+
+/**
+ * The exit portal's Remove board advert: only in your own house, and only with an advert up, then
+ * the board's "Remove your advert?" question (rsprox local 1001005 ticks 4693 and 4841; 248 for a guest).
+ */
+function removeAdvertisementAtPortal({ player }) {
+  const house = houseFor(player);
+  if (!house) return false;
+  if (house.owner !== player) { player.sendMessage("This is not your portal to configure."); return true; }
+  if (!isAdvertised(player)) { player.sendMessage("You are not currently advertising your house."); return true; }
+  askYesNo(player, "Remove your advert?", () => removeAdvertisement({ player }));
   return true;
 }
 
@@ -910,6 +943,8 @@ function buildRoom(player, viewer, reopenViewer = true) {
     if (problem) return Menu.refuse(player, problem);
     player.getInventory().delete(COINS_ID, room.cost);
     house.placeRoom(target, room, rotation);
+    // `construction:room-built` { player, room }: a new room paid for (a league's "Build a room"), not a move.
+    api.emitCustomEvent("construction:room-built", { player, room: room.key ?? room.name ?? null });
   }
   rebuildRooms(player, house, reopenViewer ? () => openHouseViewer(player) : undefined);
 }
@@ -964,11 +999,12 @@ function toggleHouseLock(event) {
   const player = event.player;
   const house = houseFor(player);
   if (!house) return false;
-  if (house.owner !== player) { player.sendMessage("Only the owner can lock this portal."); return true; }
+  // Each answer is a message box on the click's tick (rsprox local 1001005, local 1001008; 248 for a guest).
+  if (house.owner !== player) { Menu.refuse(player, Menu.messageBox("You can only lock your own house.")); return true; }
   house.save.locked = !house.save.locked;
   for (const occupant of house.getPlayers()) occupant.getPacketSender().sendVarbit(HOUSE_LOCKED_VARBIT, house.save.locked ? 1 : 0);
   player.setAttribute(HOUSE_ATTRIBUTE, house.save);
-  player.sendMessage(house.save.locked ? "You lock the house portal." : "You unlock the house portal.");
+  Menu.refuse(player, Menu.messageBox(house.save.locked ? "Your house is now locked to all visitors." : "Visitors can now enter your house."));
   return true;
 }
 
@@ -1094,9 +1130,40 @@ function handleHouseOptions(event) {
 /** Cast follows the house's teleport setting; the spell's "Outside" option (`option`) always stays outside. */
 function houseTeleportArrival({ player, name, option }) {
   if (name !== "teleport to house") return;
+  if (option === "group") return groupHouseArrival(player);
   const saved = houseStateFor(player);
   if (option === "outside" || saved.teleportOutside) player.moveTo(Estate.houseExit(saved));
   else teleportIntoHouse(player, saved.defaultBuildingMode);
+}
+
+/**
+ * "construction:group-house" { player, owner, destination, onArrival, refused }: Teleport to House's
+ * Group options take a Group Ironman to a group mate's house (Update:Group Ironman Improvements:
+ * the owner on the same world, not in building mode, and the house open to them as at its portal).
+ * `destination` is the owner's house portal; arriving (`onArrival`, or the spell's arrival with
+ * option "group") takes them in as a guest. Refused, the reason is shown and `refused` set.
+ */
+function groupHouse(request) {
+  const { player, owner } = request;
+  const refusal = owner === player ? "That's your own house." : visitRefusal(player, owner, owner && activeHouses.get(owner), null);
+  if (refusal) {
+    request.refused = true;
+    Menu.refuse(player, refusal);
+    return;
+  }
+  groupVisits.set(player, owner);
+  request.destination = Estate.houseExit(houseStateFor(owner));
+  request.onArrival = () => groupHouseArrival(player);
+}
+
+/** The group teleport has landed: in as a guest, if the house is still open to them. */
+function groupHouseArrival(player) {
+  const owner = groupVisits.get(player);
+  groupVisits.delete(player);
+  const house = owner && activeHouses.get(owner);
+  const late = visitRefusal(player, owner, house, null);
+  if (late) Menu.refuse(player, late);
+  else arriveAsGuest(player, owner, house);
 }
 
 /**
@@ -1514,7 +1581,8 @@ function completeFurniture(player, house, target, buildable, materials) {
   }
   GardenPlants.complete(player, buildable);
   house.setFurniture(target, buildable);
-  api.emitCustomEvent("construction:furniture-built", { player, buildable });
+  // `key` and `hotspot` flat, for triggers that match a field ("OAK_LARDER" on a kitchen's hotspot).
+  api.emitCustomEvent("construction:furniture-built", { player, buildable, key: buildable.key, hotspot: target.hotspotKey });
   // Keyed to the house, so a click straight after the build doesn't cancel the redraw.
   TaskManager.submit(new CountdownTask(house, 1, () => {
     if (houseFor(player) === house) rebuildHouse(player, house);
@@ -1529,8 +1597,11 @@ function materialName(material) {
 }
 
 function furnitureCreationText(buildable) {
-  // The build menu shows the cache's own name ("Crude wooden chair|Plank: 2<br>Nails: 2<br><br>").
-  const name = buildable.name ?? formatBuildable(buildable);
+  // The build menu shows the cache's own name ("Crude wooden chair|Plank: 2<br>Nails: 2<br><br>"),
+  // sentence-cased: rows "Spice Rack", "Oak Telescope" and "S.T.A.S.H chart" are sent as "Spice rack",
+  // "Oak telescope" and "S.t.a.s.h chart" (rsprox.net recs 271 and 2804, rev 229).
+  const full = buildable.name ?? formatBuildable(buildable);
+  const name = full.charAt(0).toUpperCase() + full.slice(1).toLowerCase();
   const materials = buildable.materials.slice(0, 4).map((material) => `${materialName(material)}: ${material.amount.toLocaleString()}`);
   // Four lines whatever the count: "Oak chair|Oak plank: 2<br><br><br>" (rsprox captures, rev 229).
   return `${name}|${[...materials, "", "", "", ""].slice(0, 4).join("<br>")}`;
@@ -1607,7 +1678,12 @@ function tryRemoveFurniture(event) {
   const house = houseFor(player);
   const type = event.object?.getType?.() ?? 10;
   if (!house || !isBuildingMode(player) || !house.getFurnitureAt(event.location, event.objectId, type)) return false;
-  const problem = house.canRemoveFurniture(event.location, event.objectId, type);
+  return removeFurniturePrompt(player, house, event.location, event.objectId, type);
+}
+
+/** "Really remove it?" for the building-mode owner, then the piece at `location` comes out. */
+function removeFurniturePrompt(player, house, location, objectId, type) {
+  const problem = house.canRemoveFurniture(location, objectId, type);
   if (problem) {
     Menu.refuse(player, problem);
     return true;
@@ -1615,16 +1691,16 @@ function tryRemoveFurniture(event) {
   // rsprox captures ("Remove" on poh_chair1, rev 229): "Really remove it?", and the Yes is silent.
   const confirm = () => api.sendMultiChatboxPrompt(player, "Really remove it?", "Yes", () => {
     if (houseFor(player) !== house || !isBuildingMode(player)) return;
-    const currentProblem = house.canRemoveFurniture(event.location, event.objectId, type);
+    const currentProblem = house.canRemoveFurniture(location, objectId, type);
     if (currentProblem) return Menu.refuse(player, currentProblem);
-    const furniture = house.removeFurniture(event.location, event.objectId, type);
+    const furniture = house.removeFurniture(location, objectId, type);
     if (!furniture) return;
     player.performAnimation(new Animation(REMOVE_ANIMATION));
     rebuildHouse(player, house);
     api.emitCustomEvent("construction:furniture-removed", { player, house, furniture });
   }, "No", () => {});
   // A piece whose removal costs the player something warns first (rsprox captures: the portal nexus).
-  const removal = { player, house, furniture: house.getFurnitureAt(event.location, event.objectId, type), warning: null };
+  const removal = { player, house, furniture: house.getFurnitureAt(location, objectId, type), warning: null };
   api.emitCustomEvent("construction:furniture-removing", removal);
   if (removal.warning) Menu.warn(player, removal.warning, confirm);
   else confirm();
@@ -2029,7 +2105,7 @@ function attach(api) {
   api.onObjectInteraction("House Advertisement", { View: showAdvertisements, "Add-House": offerAdvert, "Visit-Last": visitLastHouse });
   api.onObjectFirstClick(EXIT_PORTAL_ID, leaveHouse);
   api.onObjectSecondClick(EXIT_PORTAL_ID, toggleHouseLock);
-  api.onObjectThirdClick(EXIT_PORTAL_ID, removeAdvertisement);
+  api.onObjectThirdClick(EXIT_PORTAL_ID, removeAdvertisementAtPortal);
   api.registerCommand("house", houseCommand, PlayerRights.NONE, "Open your house options");
   api.registerCommand("hotspots", Commands.listHotspots, PlayerRights.DEVELOPER, "List the Construction hotspots in the room you stand in");
   api.registerCommand("housemats", Commands.houseMaterials, PlayerRights.DEVELOPER, "Spawn the materials to build a piece of furniture or a room");
@@ -2057,6 +2133,7 @@ function attach(api) {
   api.onCustomEvent("interface:closed", closeFurnitureMenu);
   api.onCustomEvent("spell:teleport-arrival", houseTeleportArrival);
   api.onCustomEvent("construction:house-tablet", houseTablet);
+  api.onCustomEvent("construction:group-house", groupHouse);
   api.onCustomEvent("construction:owns-house", ownsHouse);
   api.onCustomEvent("construction:grant-house", grantHouse);
   api.onCustomEvent("construction:spirit-tree", spiritTreeHouse);
@@ -2070,4 +2147,4 @@ function attach(api) {
   api.onPlayerLogout(logoutHouse);
 }
 
-Object.assign(module.exports, { completeFurniture, enterHouse, visitHouse, storedAmount, houseStateFor, releaseHouse, canVisitHouse, syncHouseOptions, isSeatedForDinner, houseFor, saveHouse, rebuildHouse, removeRoomPrompt, isBuildingMode, constructionLevel, furnitureLevel, hasHammer, hasSaw, getBuildMaterials, useMaterial, useMaterials, hammer, hammerNails, nailsOf, hotspotChoices, furnitureCreationText, processOccupant, leftHouse, attach });
+Object.assign(module.exports, { completeFurniture, enterHouse, visitHouse, storedAmount, houseStateFor, releaseHouse, canVisitHouse, syncHouseOptions, isSeatedForDinner, houseFor, saveHouse, rebuildHouse, removeRoomPrompt, isBuildingMode, constructionLevel, furnitureLevel, hasHammer, hasSaw, getBuildMaterials, useMaterial, useMaterials, hammer, hammerNails, nailsOf, hotspotChoices, chooseFurniture, removeFurniturePrompt, furnitureCreationText, processOccupant, leftHouse, attach });

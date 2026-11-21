@@ -219,7 +219,7 @@ function awardPendingPlantExperience(player, patch, state = stateFor(player, pat
 }
 function syncPatch(player, patch) {
     const state = stateFor(player, patch);
-    const value = patch.type.includes("COMPOST") ? Services.binValue(patch, state) : Model.patchValue(patch, state);
+    const value = Hespori.echoPatchValue(player, patch) ?? (patch.type.includes("COMPOST") ? Services.binValue(patch, state) : Model.patchValue(patch, state));
     if (value === undefined) return;
     const sender = player.getPacketSender();
     let rendered = RENDERED.get(player);
@@ -921,6 +921,7 @@ function objectInteraction(event) {
     const { player, object, location } = event;
     WORK.delete(player);
     Hespori.hesporiCave(event);
+    if (!event.handled) Hespori.echoPatchInteraction(event);
     if (!event.handled) Tithe.titheObject(event);
     if (!event.handled) Guild.guildObject(event);
     if (event.handled) return;
@@ -1122,7 +1123,6 @@ const redwoodRegrowth = new Map();
 // Players standing in a map square with patches nearby -> their last tile, so nearby patches
 // follow them tile by tile without checking anyone who is nowhere near a patch.
 const nearPatches = new Map();
-let lastMinute = null;
 
 function autoBusy(player) { return AUTO_RUNNING.has(player); }
 
@@ -1308,11 +1308,10 @@ function farmingTick() {
     }
     // Due times are bucketed per second because each character can have a different growth rate.
     const minute = Math.floor(Date.now() / DUE_RESOLUTION_MS);
-    lastMinute ??= minute;
-    while (lastMinute < minute) {
-        const due = dueByMinute.get(++lastMinute);
-        if (!due) continue;
-        dueByMinute.delete(lastMinute);
+    // Visit occupied buckets instead of replaying every minute after a long pause.
+    for (const [dueMinute, due] of dueByMinute) {
+        if (dueMinute > minute) continue;
+        dueByMinute.delete(dueMinute);
         for (const player of due) { dueMinuteOf.delete(player); immediate.add(player); }
     }
     if (immediate.size === 0) return;
@@ -1373,7 +1372,7 @@ function logout({ player }) {
     tracked.delete(player);
     cancelAuto(player);
     AUTO_DISCONNECTED.add(player);
-    Hespori.hesporiLogout({ player });
+    Hespori.hesporiLogout({ player, logout: true });
     runPending(player, true);
     redwoodRegrowth.delete(player);
     WORK.delete(player); RENDERED.delete(player);
@@ -1401,6 +1400,7 @@ function attach(api) {
     api.onPlayerLogin(Tithe.titheLogin);
     api.onPlayerLogin(Rewards.login);
     api.onPlayerLogin(Services.settingsLogin);
+    api.onCustomEvent("group-ironman:wipe-tradeables", Vault.wipeForGroupIronman);
     api.onCustomEvent("settings:setting-clicked", Services.settingClicked);
     api.onCustomEvent("equipment:effects", addFarmerSetText);
     api.onCanShop(Rewards.canShop);
@@ -1461,8 +1461,10 @@ function attach(api) {
     api.onCustomEvent("player:world-input", cancelWork);
     api.onCustomEvent("player:interaction-cleared", cancelWork);
     api.onCustomEvent("npc-drops:generated", Hespori.hesporiLoot);
+    Hespori.attachEcho(api);
     api.onCustomEvent("hespori:quest-challenge", Hespori.challengeHespori);
     api.onCustomEvent("item-retrieval:items", retrievalItems);
+    api.onCustomEvent("group-ironman:wipe-tradeables", Hespori.wipeForGroupIronman);
     api.onCustomEvent("hespori:quest-process", Hespori.hesporiProcess);
     api.onCustomEvent("hespori:quest-can-attack", Hespori.hesporiCanAttack);
     api.onCustomEvent("hespori:quest-leave", Hespori.hesporiLogout);

@@ -222,7 +222,9 @@ function handleRingAction(event, action) {
   } else if (action.type === "coin-collection") {
     toggleAutoCollect(event.player);
   } else {
-    event.player.sendMessage("Boss log is not available yet.");
+    const open = { player: event.player, log: "boss", handled: false };
+    pluginApi.emitCustomEvent("kill-log:open", open);
+    if (!open.handled) event.player.sendMessage("Boss log is not available yet.");
   }
   return true;
 }
@@ -239,6 +241,10 @@ function removeImbueOnDeath(event, itemOnGroundManager) {
     return;
   }
   event.item.setId(unimbuedId);
+  // LootKeys retains this event before the conversion. Its later decision must see
+  // the normal ring's player-tradeability, while respecting kept/preset/safe deaths.
+  event.dropEligible = event.shouldDropItems === true && event.kept !== true
+    && event.item.isPlayerTradeable() && !event.item.isLostOnDeath();
   const coins = new Item(COINS, IMBUE_COST);
   const killer = event.killer;
   if (killer && killer !== event.player && killer.isPlayer?.() === true && killer.getInventory) {
@@ -247,6 +253,16 @@ function removeImbueOnDeath(event, itemOnGroundManager) {
     return;
   }
   if (Array.isArray(event.extraDrops)) event.extraDrops.push(coins);
+}
+
+/** Read-only PvP preview: an unprotected imbued ring becomes its tradeable normal ring. */
+function answerLostToPvpKiller(query) {
+  const item = query?.item;
+  const unimbuedId = UNIMBUED_RING_IDS.get(item?.getId?.());
+  if (unimbuedId && !item.isLostOnDeath()
+      && new Item(unimbuedId, item.getAmount(), item.getMeta()).isPlayerTradeable()) {
+    query.lost = true;
+  }
 }
 
 module.exports = {
@@ -300,6 +316,9 @@ module.exports = {
     });
 
     api.onPlayerDeathItemDrop((event) => removeImbueOnDeath(event, itemOnGroundManager));
+    api.onCustomEvent("items:lost-to-pvp-killer", answerLostToPvpKiller);
+    require("./JewelleryPlaceholders")(api, [false, true].map(imbued =>
+      [...CHARGED_RINGS].filter(([, state]) => Boolean(state.imbued) === imbued).map(([id]) => id)));
   },
   isWearingRingOfWealth,
   isWearingImbuedRingOfWealth,

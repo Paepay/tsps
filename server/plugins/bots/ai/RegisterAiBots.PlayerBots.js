@@ -129,7 +129,6 @@ function registerAiBots({ api, botApi, runtime, registry, world, resetMovementSt
   const toolContext = { activityIds: catalog.map((entry) => entry.id), placeIds: PLACES.map((place) => place.id) };
   const roster = new AiBotRoster();
   const minds = new Map();
-  const graphMinds = new WeakMap();
   const services = {
     core,
     config,
@@ -150,21 +149,6 @@ function registerAiBots({ api, botApi, runtime, registry, world, resetMovementSt
     emitCustomEvent: (name, payload) => api.emitCustomEvent(name, payload),
   };
   services.router = new AiBotChatRouter({ core, config, minds });
-  function getAiGraphAgent(bot) {
-    const username = String(bot?.getUsername?.() ?? "");
-    if (!username || providers.length === 0) return null;
-    const existing = minds.get(username.toLowerCase());
-    if (existing?.bot === bot) return existing;
-    let mind = graphMinds.get(bot);
-    if (!mind) {
-      const providerIndex = [...username].reduce((sum, character) => sum + character.charCodeAt(0), 0);
-      const profile = { name: username, persona: rollPersona(), notes: [] };
-      mind = new AiBotMind({ bot, profile, provider: providerFor(providers, null, providerIndex), services });
-      graphMinds.set(bot, mind);
-    }
-    return mind;
-  }
-  world.getAiGraphAgent = getAiGraphAgent;
   const tiers = JSON.parse(fs.readFileSync(ACTIVITIES_FILE, "utf8")).tiers ?? {};
 
   function nameTaken(name) {
@@ -342,7 +326,7 @@ function registerAiBots({ api, botApi, runtime, registry, world, resetMovementSt
     whenBotStartAuthorized(() => setTimeout(() => presence.start(), SPAWN_DELAY_MS));
   });
   log("ai_bots_enabled", { count: config.count, providers: providers.map((provider) => `${provider.name}:${provider.model}`) });
-  return { minds, roster, getAiGraphAgent };
+  return { minds, roster };
 }
 
 module.exports = { registerAiBots, buildCatalog, heldByAdmin, logOutAiBot, tickMinds, nameHeld };

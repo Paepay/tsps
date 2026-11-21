@@ -93,7 +93,8 @@
  *  - Instanced fights are owner-only spawns: Kruk (6805), Kob (7107), Keef (7105),
  *    the three lab gorillas (7095), four Stronghold gorillas (7097) and demonic
  *    Glough (7101). The Crash Site gorillas (7150/7151, 7144-7149) already exist
- *    as static spawns and are counted instead. Multi-phase Glough is one spawn.
+ *    as static spawns and are counted instead. Glough's owned encounter supplies
+ *    its copied cave, room retreats and attempt/final-credit lifecycle.
  *  - Nieve does not follow: being "recruited" is the stage, and the fight credit
  *    is counted on the player's own kills.
  *  - Zooknock's Kruk-greegree conversation has no MM2 transcript anywhere in the
@@ -337,6 +338,23 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   const CHARGED_ONYX_ITEM = ItemIdentifiers.CHARGED_ONYX; // 19560
   const DECONSTRUCTED_ONYX_ITEM = ItemIdentifiers.DECONSTRUCTED_ONYX; // 19562
   const ROYAL_SEED_POD_ITEM = ItemIdentifiers.ROYAL_SEED_POD; // 19564
+  const SEED_POD_WILDERNESS_LIMIT = 30;
+  // Commune, as in rsprox.net recordings 1060, 1067, 2950, 3434, 4042, 4155 and 4263 (rev 230-239): on the click
+  // aluft_human_plant_teleport and aluft_plant_pod (both delay 5) and varbit busy; the landing on tick 4 at
+  // 2465,3495; on tick 5 aluft_human_plant_teleport_revers and aluft_plant_pod_revers; on tick 8 the animation
+  // reset, the spam line and busy 0. Sound 469 on the click and the landing is in recording 4042 only.
+  const SEED_POD_LANDING = new Location(2465, 3495, 0);
+  const SEED_POD_LANDING_TICK = 4;
+  const SEED_POD_UNFOLD_AFTER = 1;
+  const SEED_POD_RELEASE_AFTER = 4;
+  const SEED_POD_SEQ = "aluft_human_plant_teleport";
+  const SEED_POD_SEQ_REVERSE = "aluft_human_plant_teleport_revers";
+  const SEED_POD_SPOTANIM = "aluft_plant_pod";
+  const SEED_POD_SPOTANIM_REVERSE = "aluft_plant_pod_revers";
+  const SEED_POD_SOUND = 469;
+  const SEED_POD_CLIENT_DELAY = 5;
+  const SEED_POD_MESSAGE = "The Royal seed pod teleports you to the Grand Tree.";
+  const BUSY_VARBIT = "busy";
   const BANANA_ITEM = ItemIdentifiers.BANANA; // 1963
 
   // The cache resolves these multi-locs per player through the mm2 varbits, but the
@@ -422,7 +440,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     new Location(2432, 3510, 0),
   ];
   const CRASH_LANDING = new Location(2130, 5645, 0);
-  const GLOUGH_SPAWN = new Location(2075, 5677, 0);
   const CRASH_ZONE = { minX: 2050, maxX: 2167, minY: 5640, maxY: 5695, levels: [0] };
   const GRAND_TREE_KING = new Location(2465, 3496, 0);
   const AWOWOGEI_SPAWN = new Location(2803, 2764, 0);
@@ -464,6 +481,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   const npcs = new Map(); // player -> { kruk, lab: [], stronghold: [], glough, awowogei, kob, keef }
 
   let quest;
+  let gloughEncounter;
 
   // ==========================================================================
   // Small helpers
@@ -702,9 +720,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   }
 
   function spawnDemonicGlough(player) {
-    const state = playerState(player);
-    if (alive(state.glough)) return;
-    state.glough = spawnOwnerNpc(player, GLOUGH_DEMON_ID, GLOUGH_SPAWN);
+    return gloughEncounter.start(player);
   }
 
   // ==========================================================================
@@ -1165,6 +1181,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
       case "d_zUT5": // Glough consumes the mutagen
         return;
       case "DPLs0V": // Glough retreats
+        if (stageOf(player) === STAGE_CRASH_GORILLAS) spawnDemonicGlough(player);
         return;
       case "7wLJF6": // Glough falls, the cavern collapses
         advance(player, STAGE_ZOOKNOCK_SAVED);
@@ -1610,6 +1627,10 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
       player.sendMessage("You see a dark cavern ahead.");
       return;
     }
+    if (stage === STAGE_CRASH_GORILLAS) {
+      spawnDemonicGlough(player);
+      return;
+    }
     if (stage >= STAGE_CRASH_ENTERED) {
       player.moveTo(CRASH_LANDING);
       return;
@@ -1624,6 +1645,17 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     if (stageOf(player) !== STAGE_GARKOR_BREACH) return;
     play(player, GLOUGH_CAVERN_ID, "chapter-v-confronting-glough");
     advance(player, STAGE_CRASH_ENTERED);
+  }
+
+  // LocTeleports can own the cache cavern's Enter before this quest's generic
+  // object hook. Its successful-arrival event is the normal retry producer;
+  // returning from a failed fight to the parent cave is not another entry.
+  function handleRecordedCavernArrival({ player, objectId, location }) {
+    if (objectId !== CRASH_CAVERN_ID || stageOf(player) !== STAGE_CRASH_GORILLAS
+      || location?.x !== 2026 || location?.y !== 5612 || location?.z !== 0
+      || player.getPrivateArea() != null
+      || !player.getLocation().equals(new Location(2128, 5647, 0))) return;
+    spawnDemonicGlough(player);
   }
 
   // ==========================================================================
@@ -1695,9 +1727,75 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     }
   }
 
+  let seedPodType = null;
+  /** The pod's own teleport: no landing animation of its own; the pod unfolds again the tick after (seedPodTeleport). */
+  function seedPodTeleportType() {
+    const { Animation, Graphic, Priority, Sound, CacheDefinitions } = api.core;
+    const start = new Animation(CacheDefinitions.getSeqId(SEED_POD_SEQ), SEED_POD_CLIENT_DELAY);
+    start.priority = Priority.HIGH;
+    return seedPodType ??= new TeleportType(SEED_POD_LANDING_TICK, start,
+      null, null,
+      new Graphic(CacheDefinitions.getSpotanimId(SEED_POD_SPOTANIM)).withDelay(SEED_POD_CLIENT_DELAY),
+      null, null,
+      { sound: new Sound(SEED_POD_SOUND, 1, 0, 0) });
+  }
+
+  /**
+   * Varbit busy stays set, and the player held, from the click until the pod has folded away on tick 8. One task owns
+   * the hold, keyed to its own object rather than the player (another system's TaskManager.cancelTasks(player) must not
+   * strand them), and its stop() always frees the player.
+   */
+  function seedPodTeleport(player) {
+    const { Animation, Graphic, Priority, CacheDefinitions, Task, TaskManager } = api.core;
+    const sender = player.getPacketSender();
+    TeleportHandler.teleport(player, SEED_POD_LANDING.clone(), seedPodTeleportType(), false, () => {
+      player.getMovementQueue().setBlockMovement(true).reset();
+      sender.sendSound(SEED_POD_SOUND, 1, 0);
+      const hold = new Task(1, {}, false);
+      let ticks = 0, released = false;
+      hold.execute = () => {
+        // Gone (logged out): nothing more to show.
+        if (!player.isRegistered()) return void hold.stop();
+        // Dying: the death owns the movement block and the animation now; only busy is cleared.
+        if (player.isDyingReturn()) {
+          released = true;
+          sender.sendVarbit(CacheDefinitions.getVarbitId(BUSY_VARBIT), 0);
+          return void hold.stop();
+        }
+        ticks++;
+        if (ticks === SEED_POD_UNFOLD_AFTER) {
+          player.performAnimation(new Animation(CacheDefinitions.getSeqId(SEED_POD_SEQ_REVERSE), Priority.HIGH));
+          player.performGraphic(new Graphic(CacheDefinitions.getSpotanimId(SEED_POD_SPOTANIM_REVERSE)));
+        }
+        if (ticks >= SEED_POD_RELEASE_AFTER) {
+          player.performAnimation(Animation.DEFAULT_RESET_ANIMATION);
+          hold.stop();
+          player.sendMessage(SEED_POD_MESSAGE);
+        }
+      };
+      const stop = hold.stop.bind(hold);
+      hold.stop = () => {
+        stop();
+        if (released) return;
+        released = true;
+        player.getMovementQueue().setBlockMovement(false);
+        sender.sendVarbit(CacheDefinitions.getVarbitId(BUSY_VARBIT), 0);
+      };
+      TaskManager.submit(hold);
+    });
+    sender.sendVarbit(CacheDefinitions.getVarbitId(BUSY_VARBIT), 1);
+  }
+
   function handleItemAction(event) {
     const { player, itemId } = event;
     const option = String(event.option ?? "").toLowerCase();
+    if (itemId === ROYAL_SEED_POD_ITEM && option === "commune") {
+      event.handled = true;
+      // Wiki (Royal seed pod): it "can teleport up to level 30 wilderness"; the usual teleport rules apply otherwise.
+      if (!TeleportHandler.checkReqs(player, SEED_POD_LANDING, SEED_POD_WILDERNESS_LIMIT)) return;
+      TeleportHandler.confirm(player, SEED_POD_LANDING, () => seedPodTeleport(player), SEED_POD_WILDERNESS_LIMIT);
+      return;
+    }
     if (option !== "read") return;
     if (itemId === MYSTERIOUS_NOTE_ITEM) {
       event.handled = true;
@@ -1778,7 +1876,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
       return;
     }
     if (npcId === GLOUGH_DEMON_ID) {
-      if (stageOf(player) !== STAGE_CRASH_GORILLAS) return;
+      if (!gloughEncounter.claimDeath(event)) return;
       advance(player, STAGE_GLOUGH_DEFEATED);
       play(player, GLOUGH_CAVERN_ID, "chapter-v-after-defeating-glough");
     }
@@ -1795,7 +1893,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     if (attribute(player, CRASH_DEMONIC_ATTRIBUTE) < 2) return;
     advance(player, STAGE_CRASH_GORILLAS);
     play(player, GLOUGH_CAVERN_ID, "chapter-v-after-defeating-all-the-gorillas");
-    spawnDemonicGlough(player);
   }
 
   // ==========================================================================
@@ -2162,6 +2259,8 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     onReward: grantReward,
   });
 
+  gloughEncounter = require("../monkeymadnessii/Scene.MonkeyMadnessII").attach(api, { stageOf });
+
   api.onCustomEvent("monkey-madness-ii:zooknock-ownership", answerZooknockOwnership);
   api.onNpcDialogueVariant(selectNarnodeVariant);
   api.onNpcInteraction(handleNpcInteraction);
@@ -2173,6 +2272,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   require("../RoyalSeedPod.Quests").register(api);
   api.onNpcDeath(handleNpcDeath);
   api.onZoneEnter(CRASH_ZONE, handleCrashZone);
+  api.onCustomEvent("loc-teleports:arrived", handleRecordedCavernArrival);
   api.onNpcDialogueCondition(answerCondition);
   api.onCustomEvent("quest:completed", handleQuestCompleted);
   api.onCustomEvent("npc-dialogue:action", handleDialogueAction);

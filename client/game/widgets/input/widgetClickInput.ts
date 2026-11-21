@@ -68,6 +68,20 @@ export function processWidgetClickInput(
                 (id) => deps.getVarManager?.()?.getVarbit(id) ?? 0,
                 (uid) => widgetManager?.getWidgetByUid(uid),
             );
+            // A custom window's search box: a left-click on it focuses it and a click anywhere
+            // else blurs it, as the right-click menu path does (WidgetActionRouter). What was
+            // clicked is the top widget offering an op, as the click below decides: the top hit
+            // itself can be an empty layer over the whole screen (the resizable frame's 161:98),
+            // which would make every click, the search box's own, a click elsewhere.
+            const topHit = [...clickHits].reverse().find((w: any) => offersMenuOp(w, getWidgetFlags, getWidgetOpMask))
+                ?? clickHits[clickHits.length - 1];
+            deps.getCustomInterfaces?.()?.handleWidgetClick?.(
+                topHit ? ((topHit.groupId ?? topHit.uid >>> 16) | 0) : -1,
+                !topHit ? -1
+                    : topHit.fileId != null && topHit.fileId >= 0 ? topHit.fileId | 0
+                    : typeof topHit.childIndex === "number" ? topHit.childIndex | 0
+                    : topHit.uid & 0xffff,
+            );
             for (let i = clickHits.length - 1; i >= 0; i--) {
                 const w = clickHits[i];
                 if (chatClickThrough && isChatMessageAreaWidget(w)) continue;

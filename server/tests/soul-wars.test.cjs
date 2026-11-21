@@ -4,6 +4,7 @@
 // lobby and countdown, the start, avatars, the obelisk, area control, deaths and barriers,
 // supplies, bones, activity and the end with Zeal.
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const { test, before, beforeEach } = require('node:test');
 
 const { Server } = require('../dist/Server');
@@ -687,6 +688,27 @@ test('bots: with seeding on, a waiting player is joined by bots up to the minimu
   } finally {
     Bots.engine.create = create;
     Bots.engine.gear = gear;
+  }
+});
+
+test('an extreme imported lobby minimum cannot freeze bot seeding or exceed world capacity', () => {
+  config = { 'SoulWars:seedBots': true, 'SoulWars:minPlayers': 1e16 };
+  const capacity = core.World.getPlayers().capacityReturn() - 1;
+  assert.equal(Lobby.minPlayers(), capacity);
+  assert.equal(require('../plugins/minigames/SoulWars.plugin').config['SoulWars:minPlayers'].max, capacity);
+  let attempts = 0;
+  const create = Bots.engine.create;
+  Bots.engine.create = () => { attempts++; return null; };
+  try {
+    online.push(fakePlayer());
+    vm.runInNewContext('tick()', { tick: Lobby.tick }, { timeout: 1000 });
+    assert.equal(attempts, capacity - 1, 'failed spawns also stop after the bounded number of attempts');
+    config['SoulWars:minPlayers'] = Infinity;
+    assert.equal(Lobby.minPlayers(), Common.data.minPlayers);
+    config['SoulWars:minPlayers'] = 4.9;
+    assert.equal(Lobby.minPlayers(), 4);
+  } finally {
+    Bots.engine.create = create;
   }
 });
 
@@ -1690,4 +1712,32 @@ test("the barricade table gives the team's barricade item", () => {
   const table = { getId: () => 40443 };
   assert.equal(Supplies.take(p, table, 1), true);
   assert.equal(p.inventory.getAmount(Common.data.barricades.items[team]), 1);
+});
+
+/** Runs fn with World.getNpcsNear answering from `npcs` (radius and plane honoured) and World.getNpcs() refused. */
+function withNpcsNear(World, npcs, fn) {
+  const { getNpcs, getNpcsNear } = World;
+  World.getNpcs = () => { throw new Error('walked every NPC slot'); };
+  World.getNpcsNear = (at, radius) => npcs.filter((npc) => npc.getLocation().getZ() === at.getZ()
+    && Math.max(Math.abs(npc.getLocation().getX() - at.getX()), Math.abs(npc.getLocation().getY() - at.getY())) <= radius);
+  try {
+    return fn();
+  } finally {
+    World.getNpcs = getNpcs;
+    World.getNpcsNear = getNpcsNear;
+  }
+}
+
+test("the lobby's Nomad is found by a region query over the lobby and takes his transforming form", () => {
+  const nomad = (x, y, index) => {
+    const npc = { transform: -1, getId: () => 10528, getIndex: () => index, getLocation: () => new Location(x, y, 0),
+      setNpcTransformationId: (id) => { npc.transform = id; } };
+    return npc;
+  };
+  const lobby = nomad(2212, 2857, 5);
+  const away = nomad(2020, 5929, 1);
+  const found = withNpcsNear(Common.core.World, [away, lobby], () => Rewards.findNomad());
+  assert.equal(found, false, 'found: the task stops');
+  assert.equal(lobby.transform, 10555);
+  assert.equal(away.transform, -1);
 });

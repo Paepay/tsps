@@ -41,6 +41,38 @@ their own rows by id.
   bonus scales both ends. Several fish on one spot roll highest first, and the first success is
   the catch (a big net rolls each on its own).
 
+## Barbarian rod instruction
+
+The [Barbarian Training](https://oldschool.runescape.wiki/w/Barbarian_Training) rod instruction
+unlocks leaping-fish catches before the fishing task or the whole miniquest is complete.
+`TOOLS.BARBARIAN_ROD` declares `unlock: "barbarian_rod"`; the shared requirements check asks
+`fishing:unlocked`, and BarbarianTraining answers from its existing saved `fishingRod` stage.
+No answer means locked. Other tools' quest requirements and the independent barehand lesson
+remain separate.
+
+Recording **237/01149, tick 8766** sets `brut_fishing_r` to 1 as Otto starts his final instruction
+reply. Selecting the topic or closing an earlier line grants nothing. The final reply requires
+an actual transcript and Otto still nearby. The first leaping catch advances 1 to 2; telling
+Otto advances it to 3. Each stage retains rod permission through the existing save and login
+varbit synchronization. The untaught refusal wording is implementation text, not captured text.
+
+`server/tests/barbarian-rod-native.test.cjs` exercises real players, containers, spots, native
+NPC/dialogue packets and the fishing task: interrupted instruction, the exact final-reply
+boundary, catch resources and XP, movement cancellation, queued-catch permission recheck,
+missing transcript/distance refusal and real save-codec/apply/login round trips. A separate
+disk regression uses native lesson/catch progression, real player logout cleanup, SQLite
+save/worker flush, closed and reopened stores, and loaded players' login hooks for stages
+0/1/2/3. It seeds gear and levels and controls catch RNG; these checks do not claim a rendered
+client or a full network login handshake.
+
+A separate slot26 live walkthrough on the shipped cache verified the rendered refusal,
+Otto's actual menu and Continue controls, early Escape interruption, stage1 while the final
+instruction reply was displayed, real rod animation/catches and stage2 retained after native
+logout and a real client login. Levels, rod, bait and starting location were seeded; NPC
+operations used the agent's decoded native packets while dialogue and logout/login controls
+used actual canvas pointer/keyboard input. This does not claim complete miniquest or
+free-world visual coverage.
+
 ## Karambwanji and karambwan
 
 - **Karambwanji (Holy Lake, small net, 5 Fishing):** chart 100/250, then shrimps 48/256 when the
@@ -92,6 +124,47 @@ roll at the Wiki's tick lengths, so their timing is used; the others are used fo
   left." (barbarian rod) without bait; "You need to be at least level # Fishing to harpoon these
   fish." and "You need at least level # Fishing to bait these fish." below the level.
   Tempoross uses the same full-inventory box.
+
+## Spot movement
+
+`server/plugins/skills/fishing/Relocation.Fishing.js` moves spots, and
+`server/plugins/skills/data/fishing-spot-sites.json` lists where they can go.
+
+- **Timers (Wiki: [Fishing spots](https://oldschool.runescape.wiki/w/Fishing_spots)):** "Most spots
+  take a minimum of 250 ticks (2.5 minutes) and a maximum of 530 ticks (5.3 minutes) to move".
+  Sacred and infernal eel spots take 100-300 ticks and anglerfish spots 8-830 (`moveTicks` on their
+  tools). Each spot has its own timer, and the first move after boot comes anywhere in its range.
+  Spots whose tool is `stationary` (karambwan, Civitas illa Fortis) never move. Neither do the
+  minnow platform's spots: their own unit moves them.
+- **Where to (rsprox captures):** a spot jumps to a tile of its site, which is the set of tiles
+  live spots of that kind were seen on. `rsprox_index.py fishing-spots` in osrs-captures
+  (`rsprox_fishing_spots.py`) generates the sites from every recording. It leaves out instances,
+  boats, Leagues/event/beta worlds and sites with no recorded jump. A spawn joins the site that
+  holds its tile for its own spot id, else the best-recorded site on that tile, since our spawn
+  ids don't always match live's and several spot kinds share tiles.
+- **The jump:** a teleport (`telejump` in the captures, never a walk) to a random tile of the site
+  that is neither its own nor held by any fishing spot. At Lumbridge Swamp, 5 spots share 8
+  tiles, and in 268 of 268 jumps no spot landed on a held tile or its own (recordings 1434, 3173,
+  local 1001517, 1001439, 1001502 and others). The spot moves by `NPC.telejump`, so it snaps
+  there in view. Sound 2601 (range 5) plays at the tile left. Live sends that sound twice on the
+  tick (e.g. local 1001517 tick 9131), and it is played once here as a recorded difference. If
+  every tile is held, the spot waits for its next timer.
+  Occupancy comes from currently registered fishing spots in the same public world when the
+  destination is chosen, independently of the slower discovery scan that enrolls movement timers.
+  Late public registrations reserve their tiles immediately; private-area copies do not reserve
+  public tiles, and a tracked spot that becomes private or unregisters stops relocating here.
+- **The fisher:** a session on a spot that moves ends with no message, no animation reset and no
+  facing change (about 25 captured cases, e.g. local 1001517 ticks 9180-15037). Endless Harvest
+  follows the spot as before. The minnow platform's own rotation isn't captured, so its sessions
+  keep the animation reset.
+- **Not captured:** a spot on no captured site doesn't move. It keeps the old 1-in-91 chance per
+  catch of ending the session instead. In our spawns, 229 of the 520 spots (61 spot ids, 74 sites)
+  move. Some of our spawn tiles hold more spots than live shows at once, and a few sites are full
+  with our spawns (0_23_53, 0_24_43, 0_18_43, 0_29_53, 0_32_49, 0_38_42, 0_49_37), so those spots
+  stay put until the spawns are corrected.
+- **Camdozaal:** its spots move too. The Wiki doesn't list them among the spots that never move,
+  and recording 1444 shows one moving 7 times, 350-499 ticks apart. Our spawn at (2922, 5788) is
+  on no captured site, so it doesn't move and has the random stop like other uncaptured spots.
 
 ## Civitas illa Fortis park pond
 

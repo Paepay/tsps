@@ -114,6 +114,15 @@ const completed = (player) => Object.keys(player.getAttribute("league:tasks") ??
 const points = (player) => { const query = { player, points: 0, tasks: 0 }; for (const handler of custom["league:points"]) handler(query); return query.points; };
 const npc = (name) => ({ getCurrentDefinition: () => ({ getName: () => name }), getMaxHitpoints: () => 10 });
 const kill = (player, name) => hooks.onNpcDeath({ killer: player, npc: npc(name), npcId: 0, location: { x: 0, y: 0, z: 0 } });
+
+test('Echo-marked forms never satisfy ordinary same-name league kill tasks', () => {
+  const player=character('EchoNoNormal'),target=npc('Guard');
+  target.getAttribute=key=>key==='echo-boss:encounter'?{boss:'fixture',token:'token'}:null;
+  hooks.onNpcDeath({killer:player,npc:target,npcId:0,location:{x:0,y:0,z:0}});
+  const completed=()=>require('../plugins/modes/leaguetasks/Common.LeagueTasks').completedIds(player);
+  assert.equal(completed().includes('defeat-a-guard'),false);
+  kill(player,'Guard');assert.equal(completed().includes('defeat-a-guard'),true,'ordinary kill remains eligible');
+});
 function setLevel(player, skill, level) {
   const skills = player.getSkillManager();
   const previous = skills.getMaxLevel(skill);
@@ -968,4 +977,66 @@ test("league:complete-task and ::leaguetask complete a catalog task once; a main
   const request = { player: main, id: "defeat-a-goblin" };
   for (const handler of custom["league:complete-task"]) handler(request);
   assert.deepEqual([request.found, request.completed], [false, false]);
+});
+
+test("opening the Grubby Chest credits its league tasks, including the pact task", () => {
+  const overlay = require("../plugins/modes/data/league-task-triggers.json");
+  assert.deepEqual(overlay["6"]["open-1-grubby-chest"], { kind: "open-chest", chests: ["Grubby Chest"], count: 1 });
+
+  worldLeague = 6;
+  const opener = character("grubbyopener");
+  worldLeague = 4;
+  assert.ok(!completed(opener).includes("open-1-grubby-chest"));
+  emit("chests:opened", { player: opener, chest: "Grubby Chest" });
+  assert.ok(completed(opener).includes("open-1-grubby-chest"), "the first chest completes the pact task");
+  for (let i = 0; i < 24; i++) emit("chests:opened", { player: opener, chest: "Grubby Chest" });
+  assert.ok(completed(opener).includes("open-10-grubby-chests"), "ten chests");
+  assert.ok(completed(opener).includes("open-25-grubby-chests"), "twenty-five chests");
+});
+
+test("the trigger overlay names only its league's own tasks, and maps the shared deeds in every league that has them (issue 6108)", () => {
+  const overlay = require("../plugins/modes/data/league-task-triggers.json");
+  for (const [type, entries] of Object.entries(overlay)) {
+    if (type === "$comment") continue;
+    const ids = new Set(catalog.leagues[type].tasks.map((task) => task.id));
+    for (const id of Object.keys(entries)) assert.ok(ids.has(id), `league ${type} has no task ${id}`);
+  }
+  for (const type of ["4", "5", "6"]) {
+    for (const id of ["cast-home-teleport", "chop-some-logs", "light-a-torch", "turn-any-logs-into-a-plank"]) {
+      assert.ok(overlay[type][id]?.kind, `league ${type}: ${id} is mapped`);
+    }
+  }
+});
+
+test("the trigger overlay's NPC and item names are the cache's (a misspelt name never matches)", () => {
+  const overlay = require("../plugins/modes/data/league-task-triggers.json");
+  const npcs = new Set(), items = new Set();
+  const counts = CacheDefinitions.getCounts();
+  for (let id = 0; id < counts.npcs; id++) { const name = CacheDefinitions.getNpc(id)?.name; if (name) npcs.add(name.toLowerCase()); }
+  for (let id = 0; id < counts.items; id++) { const name = CacheDefinitions.getItem(id)?.name; if (name) items.add(name.toLowerCase()); }
+  for (const [type, entries] of Object.entries(overlay)) {
+    if (type === "$comment") continue;
+    for (const [id, trigger] of Object.entries(entries)) {
+      // A credited kill names the Combat Achievements monster its plugin credits ("CM: Chambers of Xeric"), no NPC.
+      if (["hunt", "pickpocket", "kill", "npc-op"].includes(trigger.kind) && !trigger.credited) for (const npc of trigger.npcs ?? []) assert.ok(npcs.has(npc.toLowerCase()), `${type}/${id}: NPC ${npc}`);
+      if (trigger.credited) {
+        const monsters = new Set([...CacheDefinitions.getEnumValues(3970)].map(([, name]) => String(name).toLowerCase()));
+        for (const npc of trigger.npcs ?? []) assert.ok(monsters.has(npc.toLowerCase()), `${type}/${id}: CA monster ${npc}`);
+      }
+      if (["produce", "eat", "deed", "steal", "obtain", "equip"].includes(trigger.kind)) for (const each of trigger.items ?? []) if (typeof each === "string") assert.ok(items.has(each.toLowerCase()), `${type}/${id}: item ${each}`);
+      for (const each of (Array.isArray(trigger.wearing) ? trigger.wearing : trigger.wearing?.items) ?? []) assert.ok(items.has(String(each).toLowerCase()), `${type}/${id}: worn ${each}`);
+    }
+  }
+});
+
+test("the overlay's Combat Achievement monsters are enum 3970's names", () => {
+  const overlay = require("../plugins/modes/data/league-task-triggers.json");
+  const names = new Set([...CacheDefinitions.getEnumValues(3970)].map(([, name]) => String(name).toLowerCase()));
+  for (const [type, entries] of Object.entries(overlay)) {
+    if (type === "$comment") continue;
+    for (const [id, trigger] of Object.entries(entries)) {
+      if (trigger.kind !== "ca-boss") continue;
+      for (const monster of trigger.monsters ?? [trigger.monster]) assert.ok(names.has(String(monster).toLowerCase()), `${type}/${id}: ${monster}`);
+    }
+  }
 });

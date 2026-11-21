@@ -33,6 +33,9 @@
     {"product": "guamvial", "level": 3, "xp": 0, "ticks": 1, "ingredients": [["guam_leaf", 1], ["vial_water", 1]], "message": "You put the Guam Leaf into the vial of water."},
     {"product": "3doseantipoison", "level": 5, "xp": 37.5, "ticks": 2, "ingredients": [["marrentillvial", 1], ["unicorn_horn_dust", 1]], "message": "You mix the unicorn horn into your potion."},
     {"product": "marrentillvial", "level": 5, "xp": 0, "ticks": 1, "ingredients": [["marentill", 1], ["vial_water", 1]], "message": "You put the Marrentill into the vial of water."},
+    {"product": "rogues_purse_sol", "level": 8, "xp": 0, "ticks": 1, "ingredients": [["rogues_purse", 1], ["vial_water", 1]], "message": "You put the Rogue's Purse into the vial of water.", "unlock": "relicyms_balm", "lockedMessage": "You're not sure what effect this might have."},
+    {"product": "relicyms_balm3", "level": 8, "xp": 40, "ticks": 2, "ingredients": [["rogues_purse_sol", 1], ["snake_weed", 1]], "message": "You mix the snake weed into your potion.", "unlock": "relicyms_balm"},
+    {"product": "relicyms_balm3", "level": 8, "xp": 40, "ticks": 2, "ingredients": [["snakeweed_sol", 1], ["rogues_purse", 1]], "message": "You mix the rogue's purse into your potion.", "unlock": "relicyms_balm"},
     {"product": "3dose1strength", "level": 12, "xp": 50, "ticks": 2, "ingredients": [["tarrominvial", 1], ["limpwurt_root", 1]], "message": "You mix the limpwurt root into your potion."},
     {"product": "tarrominvial", "level": 12, "xp": 0, "ticks": 1, "ingredients": [["tarromin", 1], ["vial_water", 1]], "message": "You put the Tarromin into the vial of water."},
     {"product": "3dosestatrestore", "level": 22, "xp": 62.5, "ticks": 2, "ingredients": [["harralandervial", 1], ["red_spiders_eggs", 1]], "message": "You mix the eggs into your potion."},
@@ -229,6 +232,11 @@
     {"item": "lava_scale", "product": "lava_shard", "amount": [3, 6], "diaryBonus": ["wilderness", "hard"], "message": "You grind the lava dragon scale into {count} shards."},
     {"item": "dragon_bones_superior", "product": "crushed_dragon_bones", "message": "You grind down the superior dragon bones."},
     {"item": "nihil_shard", "product": "nihil_dust", "message": "You grind the nihil shard into dust."},
+    {"item": "tbwt_raw_karambwanji", "product": "tbwt_raw_karambwanji_paste", "message": "You grind the raw Karambwanji to form a sticky paste."},
+    {"item": "tbwt_quest_cooked_karambwanji", "product": "tbwt_cooked_karambwanji_paste", "message": "You grind the cooked Karambwanji to form a sticky paste."},
+    {"item": "tbwt_poorly_cooked_karambwan", "product": "tbwt_poisonous_karambwan_paste", "message": "You grind the cooked Karambwan to form a sticky paste."},
+    {"item": "tbwt_raw_karambwan", "product": "tbwt_raw_karambwan_paste", "message": "You grind the karambwan to form a sticky paste."},
+    {"item": "tbwt_cooked_karambwan", "product": "tbwt_cooked_karambwan_paste", "message": "You grind the cooked Karambwan to form a sticky paste."},
     {"item": "prif_crystal_shard", "product": "prif_crystal_shard_crushed", "amount": [10, 10], "quantityPrompt": "How many shards would you like to crush? (0 - {count})", "partialMessage": "You crush some of your crystal shards down to a powdery form.", "message": "You crush your crystal shards down to a powdery form."}
   ]
 }

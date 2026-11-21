@@ -24,6 +24,7 @@ import { GameConstants } from "../../../GameConstants";
 import { Animation } from "../../../model/Animation";
 import { PluginManager } from "../../../../plugins/PluginManager";
 import type { NpcSpawnLineage } from "./NpcSpawnLineage";
+import type { NpcTypeCustomisationView } from "../../../../net/protocol/ClientProtocol";
 
 /**
  * A headbar besides the hitpoints one, for this tick's update: `fill` to `endFill` (in the
@@ -128,7 +129,7 @@ export class NPC extends Mobile {
     private movementCoordinator: NPCMovementCoordinator = new NPCMovementCoordinator(this);
     private hitpoints: number;
     private maxHitpointsOverride = -1;
-    private combatOverride: { stats?: number[]; maxHit?: number } | null = null;
+    private combatOverride: { stats?: number[]; maxHit?: number; attackSpeed?: number } | null = null;
     private combatOverrideViews: Map<NpcDefinition, NpcDefinition> | null = null;
     /** Multiplies this NPC's attack and defence rolls (raid scaling); 1 leaves them alone. */
     private rollFactor = 1;
@@ -139,6 +140,8 @@ export class NPC extends Mobile {
     /** This tick's glide, sent with the NPC's update and cleared after it. */
     private exactMoveState: NpcExactMove | null = null;
     private telejumped = false;
+    /** This tick's in-view move was a plain teleport (no jump flag), which clients walk over. */
+    private teleportedInView = false;
     /** This tick's headbars besides the hitpoints one, sent with the NPC's update and cleared after it. */
     private headbars: NpcHeadbar[] = [];
     /** This tick's fade, sent with the NPC's update and cleared after it. */
@@ -156,6 +159,13 @@ export class NPC extends Mobile {
     private baseAnimations: { slot: number; seqId: number }[] | undefined = undefined;
     private baseAnimationsResetUntil = 0;
     private modelCustomisationResetUntil = 0;
+    /**
+     * This NPC's type as every viewer sees it (OSRS npc body customisation, name change and level
+     * change): its whole model list, recolours, name and combat level. Sent like the model
+     * customisation: with every update while set, then a reset ({}) for a few ticks.
+     */
+    private typeCustomisation: NpcTypeCustomisationView | undefined = undefined;
+    private typeCustomisationResetUntil = 0;
     private isDying: boolean;
     private owner: Player;
     private ownerOnly: boolean = false;
@@ -184,7 +194,9 @@ export class NPC extends Mobile {
     /** Encounter-owned raises to this NPC's base combat levels (a boss's enrage); the definition is untouched. */
     private maxLevelBoosts: Map<Skill, number> | null = null;
     private static readonly STAT_RESTORE_TICKS = 100;
-    /** Ticks per level a drained stat comes back; a boss can restore faster (the Corporeal Beast). */
+    /** NPC turns since the last hitpoint regenerated (process()). */
+    private hitpointRegenClock = 0;
+    /** Ticks per level a drained stat, or a hitpoint, comes back; a boss can restore faster (the Corporeal Beast). */
     private statRestoreTicks = NPC.STAT_RESTORE_TICKS;
 
     constructor(id: number, position: Location) {
@@ -376,22 +388,19 @@ export class NPC extends Mobile {
             }
 
             AreaManager.process(this);
-            // "combat:no-regen": a boss whose fight has phases it can't be hit in (Vet'ion's hounds)
-            // keeps its damage. The damage clock includes untagged hits; lastAttack also
-            // preserves existing boss scripts that explicitly reset that clock to hold healing.
-            // Idle regen only: leash / low-HP walk-home must not heal mid-fight (10%/tick while
-            // RETREATING made ranged Fire giants and similar look immortal). Mole uses
-            // combat:no-regen for its own resurface case.
-            if (this.hitpoints > 0 && !this.hitpointsLocked && !this.hasFlag("combat:no-regen")
-                && this.getCombat().getLastDamage().hasElapsed(20000)
-                && this.getCombat().getLastAttack().hasElapsed(20000)) {
-                const max = this.getMaxHitpoints();
-                if (max > this.hitpoints) {
-                    // OSRS hitpoints are integers. Floor the 10% step and the stored value so
-                    // regeneration can never leave a fractional HP (the old code produced
-                    // 1.5 from max 5 and a fractional target could no longer be finished).
-                    const regen = Math.max(1, Math.floor(max * 0.1));
-                    this.setHitpoints(Math.min(max, Math.floor(this.hitpoints + regen)));
+            // Hitpoints come back 1 per regen interval on a clock that runs whatever the NPC is
+            // doing - fighting, walking home or idle - so a reset monster keeps its damage. The
+            // interval is the stat one: measured NPC regen rates list the same hitpoint and stat
+            // rate for every NPC that regenerates both, 100 ticks unless listed (Wiki,
+            // User:Orion/Regen; Monster: "All monsters will recover hitpoints fairly slowly").
+            // PaeScape keeps the idle-only guard: leash / low-HP walk-home must not heal mid-fight.
+            if (++this.hitpointRegenClock >= this.statRestoreTicks) {
+                this.hitpointRegenClock = 0;
+                if (this.hitpoints > 0 && !this.hitpointsLocked && !this.hasFlag("combat:no-regen")
+                    && this.getCombat().getLastDamage().hasElapsed(20000)
+                    && this.getCombat().getLastAttack().hasElapsed(20000)
+                    && this.hitpoints < this.getMaxHitpoints()) {
+                    this.setHitpoints(Math.floor(this.hitpoints) + 1);
                 }
             }
         }
@@ -476,11 +485,13 @@ export class NPC extends Mobile {
     }
 
     /**
-     * Gives this one NPC its own combat stats (NpcDefinition.getStats layout) and/or max hit,
-     * e.g. a raid scaling its monsters by party; null restores the definition's.
+     * Gives this one NPC its own combat stats (NpcDefinition.getStats layout), max hit and/or
+     * attack speed, e.g. a raid scaling its monsters by party; null restores the definition's.
      */
-    public setCombatOverride(override: { stats?: number[]; maxHit?: number } | null): NPC {
-        this.combatOverride = override ? { stats: override.stats ? [...override.stats] : undefined, maxHit: override.maxHit } : null;
+    public setCombatOverride(override: { stats?: number[]; maxHit?: number; attackSpeed?: number } | null): NPC {
+        this.combatOverride = override
+            ? { stats: override.stats ? [...override.stats] : undefined, maxHit: override.maxHit, attackSpeed: override.attackSpeed }
+            : null;
         this.combatOverrideViews = null;
         return this;
     }
@@ -490,10 +501,11 @@ export class NPC extends Mobile {
         if (!this.combatOverride || !definition) return definition;
         let view = this.combatOverrideViews?.get(definition);
         if (!view) {
-            const { stats, maxHit } = this.combatOverride;
+            const { stats, maxHit, attackSpeed } = this.combatOverride;
             view = Object.create(definition) as NpcDefinition;
             if (stats) view.getStats = () => stats;
             if (maxHit != null) view.getMaxHit = () => maxHit;
+            if (attackSpeed != null) view.getAttackSpeed = () => attackSpeed;
             (this.combatOverrideViews ??= new Map()).set(definition, view);
         }
         return view;
@@ -732,8 +744,47 @@ export class NPC extends Mobile {
     }
 
     public setOwner(owner: Player): NPC {
-        this.owner = owner;
+        if (this.owner !== owner) {
+            if (this.owner) NPC.ownedNpcs.get(this.owner)?.delete(this);
+            this.owner = owner;
+            // Only NPCs in the world are indexed (World's NPC list adds and drops them), so the
+            // index never holds an NPC that was removed, or that never entered the world.
+            if (this.isRegistered()) NPC.indexOwner(this);
+        }
         return this;
+    }
+
+    /**
+     * NPCs by owner, so content can find a player's own NPCs without scanning every NPC in the
+     * world (quests did, on each login and logout: seconds per minute with hundreds of players).
+     * It holds exactly the owned NPCs in the world: World's NPC list indexes one as it is added
+     * and drops it as it is removed, by any route, and setOwner moves a registered one.
+     */
+    private static readonly ownedNpcs = new WeakMap<object, Set<NPC>>();
+
+    /** The registered NPCs `owner` owns: what a scan of World.getNpcs() for getOwner() === owner finds. */
+    public static ownedBy(owner: Player | null | undefined): NPC[] {
+        const owned = owner ? NPC.ownedNpcs.get(owner) : undefined;
+        if (!owned) return [];
+        const found: NPC[] = [];
+        for (const npc of owned) {
+            if (npc.owner === owner && npc.isRegistered()) found.push(npc);
+        }
+        return found;
+    }
+
+    /** Indexes an NPC under its owner (when it is added to the world, or given an owner there). */
+    public static indexOwner(npc: NPC): void {
+        const owner = npc.owner;
+        if (!owner) return;
+        let owned = NPC.ownedNpcs.get(owner);
+        if (!owned) NPC.ownedNpcs.set(owner, owned = new Set());
+        owned.add(npc);
+    }
+
+    /** Drops an NPC from its owner's index (when it is removed from the world). */
+    public static forgetOwner(npc: NPC): void {
+        if (npc.owner) NPC.ownedNpcs.get(npc.owner)?.delete(npc);
     }
 
     public getSpawnLineage(): NpcSpawnLineage | null {
@@ -817,6 +868,38 @@ export class NPC extends Mobile {
             return undefined;
         }
         return this.baseAnimations;
+    }
+
+    /**
+     * Changes this NPC's type for every viewer, e.g. a Leagues Echo boss: the normal boss with
+     * another model list, no recolours, its own name and combat level. Omitted fields keep the
+     * type's; null resets everything.
+     */
+    public setTypeCustomisation(customisation: NpcTypeCustomisationView | null): NPC {
+        if (!customisation || !Object.values(customisation).some((value) => value !== undefined)) {
+            this.typeCustomisation = {};
+            this.typeCustomisationResetUntil = World.getProcessCycle() + 5;
+            return this;
+        }
+        const { models, recolours, name, combatLevel } = customisation;
+        this.typeCustomisation = {
+            ...(models ? { models: models.map((model) => model | 0) } : {}),
+            ...(recolours ? { recolours: recolours.map(({ from, to }) => ({ from: from | 0, to: to | 0 })) } : {}),
+            ...(name !== undefined ? { name: String(name) } : {}),
+            ...(combatLevel !== undefined ? { combatLevel: combatLevel | 0 } : {}),
+        };
+        this.typeCustomisationResetUntil = 0;
+        return this;
+    }
+
+    /** The type customisation to send this update, or undefined when there is none (or a reset expired). */
+    public getTypeCustomisationForUpdate(): NpcTypeCustomisationView | undefined {
+        if (this.typeCustomisation === undefined) return undefined;
+        if (Object.keys(this.typeCustomisation).length === 0 && World.getProcessCycle() > this.typeCustomisationResetUntil) {
+            this.typeCustomisation = undefined;
+            return undefined;
+        }
+        return this.typeCustomisation;
     }
 
     /** The customisation to send this update, or undefined when there is none (or a reset expired). */
@@ -927,9 +1010,25 @@ export class NPC extends Mobile {
         return this;
     }
 
-    /** Whether the NPC telejumped this tick (cleared with the tick's update). */
+    /**
+     * Moves the NPC to `destination` at once, staying in view, with the teleport's jump flag clear
+     * (rsprox prints it as `teleport`, a telejump as `telejump`): clients within 8 tiles walk it
+     * there over the tick rather than snapping it. Live moves Motherlode Mine pay-dirt this way.
+     */
+    public teleportInView(destination: Location): NPC {
+        this.telejump(destination);
+        this.teleportedInView = true;
+        return this;
+    }
+
+    /** Whether the NPC telejumped (or teleported in view) this tick (cleared with the tick's update). */
     public isTelejumping(): boolean {
         return this.telejumped;
+    }
+
+    /** Whether this tick's in-view move goes out without the jump flag (teleportInView). */
+    public isTeleportingWithoutJump(): boolean {
+        return this.teleportedInView;
     }
 
     /** The orientation facing along (dx, dy): 0 south, 512 west, 1024 north, 1536 east. */
@@ -1020,6 +1119,7 @@ export class NPC extends Mobile {
         super.resetUpdating();
         this.exactMoveState = null;
         this.telejumped = false;
+        this.teleportedInView = false;
         this.headbars = [];
         this.faceTileState = null;
         this.transparencyState = null;

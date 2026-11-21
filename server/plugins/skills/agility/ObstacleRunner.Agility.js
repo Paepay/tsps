@@ -16,6 +16,8 @@
  *                                     reached (a tightrope's XP), not the tick after
  *   { walk: [[x, y], ...], tilesPerTick: 2 }
  *                                     two tiles a tick, sent as a run step (Seers' tightrope)
+ *   { walk: [[x, y], ...], traversalType: 1 | 2 }
+ *                                     this movement's traversal, independent of tile count
  *   { move: [x, y, z?], anim?, speed?, dir?, ticks? }
  *                                     exact-move to a tile, landing after `ticks` ticks;
  *                                     `ticks: 0` starts the move and leaves landing to a `tele`
@@ -114,7 +116,9 @@ function toLocation(player, tile) {
 }
 
 function setRender(player, animationId) {
-  player.setSkillAnimation(animationId ?? RESET_ANIMATION);
+  const next = animationId ?? RESET_ANIMATION;
+  if (player.getSkillAnimation() === next) return;
+  player.setSkillAnimation(next);
   player.getUpdateFlag().flag(Flag.APPEARANCE);
 }
 
@@ -209,6 +213,7 @@ function createObstacleTask(Task) {
       this.walkedTiles = 0;
       this.walkArrives = false;
       this.walkTilesPerTick = 1;
+      this.walkTraversalType = undefined;
       this.finished = false;
       this.completed = false;
       // Ticks run, and the tick this obstacle last started an animation on.
@@ -248,15 +253,22 @@ function createObstacleTask(Task) {
           stepped++;
           if (this.walkArrives && this.walkPath.length === 1 && this.atTile(this.walkPath[0])) {
             this.walkPath = null;
+            this.recordWalkTraversal(stepped);
             return;
           }
-          if (stepped >= this.walkTilesPerTick) return;
+          if (stepped >= this.walkTilesPerTick) { this.recordWalkTraversal(stepped); return; }
           continue;
         }
-        if (stepped > 0) return;
+        if (stepped > 0) { this.recordWalkTraversal(stepped); return; }
         this.walkPath.shift();
       }
       this.walkPath = null;
+      this.recordWalkTraversal(stepped);
+    }
+
+    recordWalkTraversal(stepped) {
+      if (stepped > 0 && this.walkTraversalType !== undefined)
+        this.player.setTemporaryMovementType(this.walkTraversalType);
     }
 
     atTile(tile) {
@@ -282,6 +294,7 @@ function createObstacleTask(Task) {
         this.walkedTiles = 0;
         this.walkArrives = step.arrive === true;
         this.walkTilesPerTick = step.tilesPerTick ?? 1;
+        this.walkTraversalType = step.traversalType;
         this.advanceWalk();
       } else if (step.moveStart) {
         this.startMove(step.moveStart);
@@ -417,10 +430,16 @@ function closeFade(player) {
 }
 
 function lock(player, task) {
+  // A run that replaces an agility run takes over its release, so it lets go of that run's stall.
+  if (player.getAttribute(BUSY_ATTRIBUTE)?.agility && !task.agility) player.getCombat().releaseFullStall();
   player.setAttribute(BUSY_ATTRIBUTE, task);
   player.getMovementQueue().reset();
   player.getMovementQueue().setBlockMovement(true);
   if (task.busyVarbit) player.getPacketSender().sendVarbit(BUSY_VARBIT, 1);
+  // Wiki: Animation stall. An agility obstacle is a full stall: the player can't act (attack,
+  // eat, walk or click anything else; those clicks are dropped, rsprox 241/1001438) and the hits
+  // coming in are queued until it's done. A fall's own damage has no source, so it still lands.
+  if (task.agility) player.getCombat().holdFullStall(true);
 }
 
 function release(player, keepAnimation = false) {
@@ -429,6 +448,7 @@ function release(player, keepAnimation = false) {
   player.setAttribute(BUSY_ATTRIBUTE, null);
   player.getMovementQueue().setBlockMovement(false);
   if (task.busyVarbit) player.getPacketSender().sendVarbit(BUSY_VARBIT, 0);
+  if (task.agility) player.getCombat().releaseFullStall();
   // A fade step's overlay closes as the run ends, cut short or not (rsprox 4001: with BUSY's clear).
   if (task.fadeOverlay) closeFade(player);
   if (player.getForceMovement() != null) {
@@ -445,7 +465,7 @@ function release(player, keepAnimation = false) {
  * `onFinish(completed)` fires once; `completed` is false if the player died or left.
  * `busyVarbit` sets the client's BUSY varbit for the run (Agility course obstacles).
  * `agility` marks the run as crossing an Agility obstacle, which pauses run energy recovery
- * (see `isCrossingAgilityObstacle`).
+ * (see `isCrossingAgilityObstacle`) and holds the player in a full stall (see `lock`).
  * `keepAnimation` lets a successful delayed pose finish after movement unlocks; cancellation resets it.
  */
 function run(context, steps, { render = null, onFinish = null, busyVarbit = false, keepAnimation = false, agility = false } = {}) {

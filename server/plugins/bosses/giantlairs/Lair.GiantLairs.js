@@ -244,6 +244,22 @@ function quickExit(event) {
   return true;
 }
 
+/**
+ * Check-Count on a lair's gate (only Bryophyta's has the option): the chests opened, the gate locked
+ * or not. Live sent it twice in the same tick, a game message and the mesbox's own chat line, then the
+ * mesbox (rsprox captures: rec 3275 tick 21841, "a total of 0 times").
+ * Ours: the singular wording at 1 was not recorded; the recorded template is kept.
+ */
+function checkCount(event) {
+  const lair = lairBy("gates", event.objectId);
+  if (!lair?.messages.checkCount) return false;
+  const { player } = event;
+  const text = lair.messages.checkCount.replace("{count}", String(count(player, lair)));
+  player.sendMessage(text);
+  player.getDialogueManager().startDialogues(new core.DialogueChainBuilder().add(new core.StatementDialogue(0, text)));
+  return true;
+}
+
 /** "Open" on any gate: a lair's way in, or its way out. */
 function gate(event) {
   return openGate(event) || exitLair(event);
@@ -261,6 +277,13 @@ function lootLocation(lair) {
   return toLocation(lair.loot);
 }
 
+/** The ground options NpcDrops gives a kill's loot ("npc-drops:ground-options": the Wiki's 200-tick tradeable lifetime). */
+function lootOptions(player, itemId, area) {
+  const request = { player, itemId, area, options: {} };
+  api.emitCustomEvent("npc-drops:ground-options", request);
+  return request.options;
+}
+
 function dropLoot(session, drops) {
   const { Item, ItemDefinition } = core;
   const manager = api.getItemOnGroundManager();
@@ -270,8 +293,8 @@ function dropLoot(session, drops) {
     const noteId = ItemDefinition.forId(drop.itemId).getNoteId();
     const itemId = drop.noted && noteId >= 0 && ItemDefinition.forId(noteId).isNoted() ? noteId : drop.itemId;
     const stackable = ItemDefinition.forId(itemId).isStackable();
-    if (stackable) manager.registerLocation(session.player, new Item(itemId, drop.amount), location, session.area);
-    else for (let i = 0; i < drop.amount; i++) manager.registerLocation(session.player, new Item(itemId, 1), location, session.area);
+    if (stackable) manager.registerLocation(session.player, new Item(itemId, drop.amount), location, session.area, lootOptions(session.player, itemId, session.area));
+    else for (let i = 0; i < drop.amount; i++) manager.registerLocation(session.player, new Item(itemId, 1), location, session.area, lootOptions(session.player, itemId, session.area));
     api.emitCustomEvent("collection-log:obtain", { player: session.player, itemId: drop.itemId, amount: drop.amount });
   }
 }
@@ -358,7 +381,7 @@ function attach(pluginApi) {
   core = pluginApi.core;
   for (const key of [...Object.values(UNLOCKED_ATTRIBUTE), ...Object.values(CHESTS_ATTRIBUTE)]) pluginApi.persistAttribute(key);
   pluginApi.onPlayerLogin(restore);
-  pluginApi.onObjectInteraction("Gate", { Open: gate, "Quick-exit": quickExit });
+  pluginApi.onObjectInteraction("Gate", { Open: gate, "Check-Count": checkCount, "Quick-exit": quickExit });
   pluginApi.onObjectInteraction("Rock Pile", { Clamber: exitLair, "Quick-exit": quickExit });
   pluginApi.onObjectInteraction("Chest", { Open: openChest });
   pluginApi.onNpcDeath(onBossDeath);
@@ -367,6 +390,6 @@ function attach(pluginApi) {
 
 module.exports = attach;
 Object.assign(module.exports, {
-  sessionOf, sessionForNpc, gate, openGate, exitLair, quickExit, openChest, onBossDeath, restore,
+  sessionOf, sessionForNpc, gate, openGate, checkCount, exitLair, quickExit, openChest, onBossDeath, restore,
   collectionLogCount, enter, leave,
 });

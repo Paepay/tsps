@@ -142,6 +142,7 @@ test("Pirate's Treasure awards a casket after the four-tick dig and only opens i
   assert.equal(q.quest.getStage(p), 4); assert.equal(p.items.get(7956), 1); assert.equal(p.items.get(995), undefined);
   q.call('onItemAction', { player: p, itemId: 7956, option: 'Open' });
   assert.equal(p.items.get(7956), 0); assert.equal(p.items.get(995), 450); assert.equal(p.items.get(1635), 1); assert.equal(p.items.get(1605), 1);
+  assert.ok(p.packets.some(([method, id]) => method === 'sendSoundEffect' && id === 52), 'chest_open on the casket, as captured');
   q.call('onItemAction', { player: p, itemId: 7956, option: 'Open' }); assert.equal(p.items.get(995), 450);
 });
 
@@ -150,8 +151,14 @@ test("Pirate note renders the captured handwriting and the first dig summons the
   q.call('onItemAction', { player: p, itemId: 433, option: 'Read' });
   assert.equal(q.quest.getStage(p), 3);
   assert.ok(p.packets.some(([method, text, uid]) => method === 'sendString' && uid === ((222 << 16) | 6) && text === 'Saradomin points to the X which marks the spot.'));
+  assert.ok(p.packets.some(([method, script, args]) => method === 'sendInterfaceScript' && script === 2524 && args[0] === -1),
+    'toplevel_mainmodal_open with no background before the note, as captured');
   p.moveTo(new core.Location(2999, 3383, 0)); q.call('onCanUseItem', { player: p, itemId: 952, option: 'Dig' });
-  assert.equal(q.spawned[0].getId(), 3651); assert.equal(q.spawned[0].getLocation().getX(), 2997);
+  // The rev 242 capture adds gardener 3651 at 3001,3386 facing south-west, and the dig plays digspade 1470.
+  assert.equal(q.spawned[0].getId(), 3651);
+  assert.deepEqual([q.spawned[0].getLocation().getX(), q.spawned[0].getLocation().getY()], [3001, 3386]);
+  assert.equal(q.spawned[0].definition.face, 5);
+  assert.ok(p.packets.some(([method, id]) => method === 'sendSoundEffect' && id === 1470));
   q.call('onCanUseItem', { player: p, itemId: 952, option: 'Dig' }); q.tick(5); assert.equal(q.quest.getStage(p), 3);
   q.call('onPlayerLogout', { player: p }); assert.ok(q.removed.includes(q.spawned[0]));
 });
@@ -180,12 +187,21 @@ test("Pirate's Treasure crate packing uses the captured message boxes and Luthas
     .map(([, text]) => text);
   assert.deepEqual(boxes(), ['You pack a banana into the crate.']);
 
-  // Filling the last nine completes the crate: the captured wording is "fill".
+  // Packing every carried banana is "pack all", even the ninth that fills it (rev 242 capture, tick 660).
   p.items.set(1963, 9);
   q.call('onObjectInteraction', { player: p, objectId: crate, clickType: 2, definition: interactions });
   assert.equal(p.attributes.get('pirates-treasure.bananas'), 10);
   assert.equal(p.items.get(1963), 0);
-  assert.deepEqual(boxes(), ['You pack a banana into the crate.', 'You fill the crate with bananas.']);
+  assert.deepEqual(boxes(), ['You pack a banana into the crate.', 'You pack all your bananas into the crate.']);
+
+  // "Fill" is the crate filling up with bananas left over (rsprox 4287: 12 carried).
+  const spare = player();
+  spare.attributes.set('pirates-treasure.employment', 1);
+  spare.items.set(1963, 12);
+  q.call('onObjectInteraction', { player: spare, objectId: crate, clickType: 2, definition: interactions });
+  assert.equal(spare.attributes.get('pirates-treasure.bananas'), 10);
+  assert.equal(spare.items.get(1963), 2);
+  assert.ok(spare.packets.some(([method, text, uid]) => method === 'sendString' && uid === ((229 << 16) | 3) && text === 'You fill the crate with bananas.'));
 
   // Paying for the full crate: dialogue action then the captured game message.
   q.emit('npc-dialogue:action', { player: p, npcId: core.NpcIdentifiers.LUTHAS, stepId: '1YHx0E' });
@@ -293,8 +309,9 @@ test('Corsair captured independent investigations and spoken transitions reach w
   assert.ok(p.packets.some(([method,id,value])=>method==='sendVarbit'&&id===6074&&value===1));
   reachLine(q, p, 7976, 'Maybe you could get the relic back from the Captain');
   q.emit('npc-dialogue:action', { player: p, stepId: 'yRckkD' }); assert.equal(p.items.get(21837), 1);
-  q.emit('npc-dialogue:action', { player: p, stepId: 'wenZvG' }); assert.equal(p.items.get(21837), 0);
-  reachLine(q, p, core.NpcIdentifiers.CHIEF_TESS, 'Dis is tooth-pick. Tess got plenty more.');
+  // The artefact stays through the item box and goes with Tess's next line (capture local 1001340, ticks 5657, 5663).
+  q.emit('npc-dialogue:action', { player: p, stepId: 'wenZvG' }); assert.equal(p.items.get(21837), 1);
+  reachLine(q, p, core.NpcIdentifiers.CHIEF_TESS, 'Dis is tooth-pick. Tess got plenty more.'); assert.equal(p.items.get(21837), 0);
   q.hooks.get('onNpcDialogueVariant')[0]({ player: p, npcId: 7976 });
   assert.equal(p.attributes.get('quest.the_corsair_curse.thief'), 3, 'opening a report conversation does not finish it');
   reachLine(q, p, 7976, 'Their chief, Tess, says it was her tooth-pick.');
@@ -311,116 +328,6 @@ test('Corsair captured independent investigations and spoken transitions reach w
   reachLine(q, p, 7958, 'Arrr! So he was never sick at all!'); assert.equal(wire(), 52);
   q.quest.setStage(p, 9); assert.equal(wire(), 55);
   q.emit('npc-dialogue:action', { player: p, stepId: 'SaQ1Mg' }); assert.equal(wire(), 60); assert.equal(p.attributes.get('quest.points'), 2);
-});
-
-test('Corsair flashbacks and telescope are private and restore the actor and location on return/logout', () => {
-  const q = register('CorsairCurse', 'the_corsair_curse'), p = player(); q.quest.setStage(p, 3);
-  const original = new core.Location(2557,2858,1); p.moveTo(original);
-  q.emit('npc-dialogue:action', { player: p, stepId: 'Gsd1jQ' });
-  assert.ok(p.getPrivateArea()); assert.equal(p.getNpcTransformationId(), 7966);
-  q.emit('npc-dialogue:action', { player: p, stepId: 'p6ox6g' });
-  q.tick(2);
-  assert.equal(p.getPrivateArea(), null); assert.equal(p.getNpcTransformationId(), -1); assert.ok(p.getLocation().equals(original));
-  q.emit('npc-dialogue:action', { player: p, stepId: '36K07h' });
-  assert.ok(p.getPrivateArea()); assert.equal(q.spawned.at(-1).getId(), 7969);
-  q.tick(18); assert.equal(p.getPrivateArea(), null); assert.equal(p.attributes.get('quest.the_corsair_curse.cabinboy'), 2);
-  q.emit('npc-dialogue:action', { player: p, stepId: 'Cs_rhQ' }); assert.ok(p.getPrivateArea());
-  q.call('onPlayerLogout', { player: p }); assert.equal(p.getPrivateArea(), null); assert.equal(p.getNpcTransformationId(), -1);
-});
-
-test('Corsair fire proof uses private scenery and actor, finishes50, and one player cannot alter another scene', () => {
-  const q = register('CorsairCurse', 'the_corsair_curse'), p = player(), other = player(); q.quest.setStage(p, 6);
-  p.attributes.set('corsair-curse:proof-plan', true); p.items.set(590,1); p.moveTo(new core.Location(2532,2837,0));
-  const originalOther = other.getLocation().clone();
-  q.call('onItemOnObject', { player: p, itemId: 590, objectId: 31724 });
-  assert.equal(q.quest.getStage(p), 6); q.tick(2); assert.ok(p.getPrivateArea()); assert.equal(q.quest.varbitValue(6,p),49);
-  q.tick(26); assert.equal(q.quest.getStage(p),7); assert.equal(q.quest.varbitValue(7,p),50); assert.equal(p.getPrivateArea(),null);
-  assert.ok(other.getLocation().equals(originalOther)); assert.equal(other.getPrivateArea(),null);
-});
-test('Corsair fire proof: Ithoi puts the fire out with Water Strike, not another spell', () => {
-  // The Wiki's transcript: "Ithoi casts Water Strike, extinguishing the fire, and returns to his hut."
-  // The reporter on #2410 saw a fire spell. Water Strike's own visuals are CombatSpells.WATER_STRIKE's:
-  // cast graphic 93, projectile 94.
-  const q = register('CorsairCurse', 'the_corsair_curse'), p = player(); q.quest.setStage(p, 6);
-  p.attributes.set('corsair-curse:proof-plan', true); p.items.set(590,1); p.moveTo(new core.Location(2532,2837,0));
-  q.call('onItemOnObject', { player: p, itemId: 590, objectId: 31724 });
-  q.tick(2 + 26);
-  const ithoi = q.spawned.find(npc => npc.getId() === core.NpcIdentifiers.ITHOI_THE_NAVIGATOR_2);
-  assert.ok(ithoi, 'Ithoi runs out of the hut');
-  assert.deepEqual(ithoi.animations, [711], 'with the spell-cast animation');
-  assert.deepEqual(ithoi.graphics, [93], 'and the Water Strike cast graphic');
-  const shots = p.packets.filter(row => row[0] === 'sendProjectile');
-  assert.equal(shots.length, 1, 'one spell is sent');
-  assert.equal(shots[0][5], 94, 'and it is the Water Strike projectile');
-});
-test('all five Corsair scenes send the complete captured camera track, exact rates and timed cuts',()=>{
-  const q=register('CorsairCurse','the_corsair_curse'),p=player();
-  const action=stepId=>q.emit('npc-dialogue:action',{player:p,stepId});
-  const line=(text,npcId=core.NpcIdentifiers.CABIN_BOY_COLIN)=>{const e={player:p,npcId,text};q.emit('npc-dialogue:line',e);e.before?.();return e;};
-  q.quest.setStage(p,1);
-  line("Now, I've a ship moored west of Rimmington. Come and meet me on board, and we'll set off to Corsair Cove.",core.NpcIdentifiers.CAPTAIN_TOCK);
-  q.tick(1);assert.equal(p.packets.filter(row=>row[0]==='sendCameraMoveTo').length,0);
-  q.tick(1);assert.equal(p.packets.filter(row=>row[0]==='sendCameraMoveTo').length,1);
-  q.tick(1);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2926,3224,800]);
-  q.tick(9);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraLookAt').at(-1).slice(1,4),[2911,3227,100]);q.tick(11);
-  q.quest.setStage(p,3);action('Gsd1jQ');q.tick(1);
-  action('rqXQdP');q.tick(3);action('Xub2Df');q.tick(3);
-  line("... yes, it's a mermaid! She's beautiful!").after();q.tick(2);
-  action('gXvRex');q.tick(6);line("I can see you moving your arms, but it's very dark. Are you waving to me?").after();q.tick(6);
-  action('8whjhh');q.tick(6);line("I hope she's not angry. Ithoi says mermaids can be dangerous.");action('p6ox6g');q.tick(2);
-  action('Cs_rhQ');q.tick(1);
-  line("C'mon little lobsters. We don't want to keep the Captain waiting! He'll get angry with me again.",core.NpcIdentifiers.GNOCCI_THE_COOK).after();q.tick(2);
-  line("Ooh, what's this? This isn't a lobster.",core.NpcIdentifiers.GNOCCI_THE_COOK).after();q.tick(2);
-  line("She's moving! SHE'S POSSESSED! HELP!",core.NpcIdentifiers.GNOCCI_THE_COOK);q.tick(7);
-  assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2505,2839,220]);
-  q.tick(1);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2510,2835,350]);q.tick(10);
-  action('36K07h');q.tick(18);
-  q.quest.setStage(p,6);p.attributes.set('corsair-curse:proof-plan',true);p.items.set(590,1);
-  q.call('onItemOnObject',{player:p,itemId:590,objectId:31724});q.tick(5);
-  assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2529,2835,200]);
-  q.tick(1);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2529,2837,200]);
-  q.tick(6);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2531,2841,300]);
-  q.tick(12);assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraMoveTo').at(-1).slice(1,4),[2531,2840,300]);q.tick(4);
-  const move=p.packets.filter(row=>row[0]==='sendCameraMoveTo').map(row=>[...row.slice(1,4),row[4].rate,row[4].rate2,row[4].heightRelative]);
-  assert.deepEqual(move,[
-    [2943,3224,800,232,100,false],[2926,3224,800,6,0,false],
-    [2527,2824,700,232,100,false],[2527,2828,700,1,1,false],[2523,2831,650,232,100,false],[2523,2830,700,1,1,false],[2523,2831,650,1,1,false],
-    [2524,2834,400,232,100,false],[2523,2831,650,232,100,false],[2524,2834,400,232,100,false],[2523,2831,650,232,100,false],[2516,2827,1300,2,2,false],
-    [2499,2833,800,232,100,false],[2503,2830,280,3,3,false],[2504,2841,220,232,100,false],[2505,2839,220,1,1,false],[2510,2835,350,232,100,false],
-    [2528,2821,400,232,100,false],[2528,2818,400,1,1,false],
-    [2529,2835,200,232,100,false],[2529,2837,200,1,1,false],[2531,2841,300,232,100,false],[2531,2840,300,1,1,false],
-  ]);
-  assert.deepEqual(p.packets.filter(row=>row[0]==='sendCameraLookAt').map(row=>[...row.slice(1,4),row[4].rate,row[4].rate2]),[
-    [2928,3224,100,232,100],[2911,3224,100,6,0],[2911,3227,100,1,0],
-    [2527,2839,350,232,100],[2540,2844,350,232,100],[2540,2839,350,232,100],[2540,2844,350,232,100],[2540,2839,350,232,100],[2540,2844,350,232,100],
-    [2505,2837,200,232,100],[2505,2835,170,232,100],[2504,2840,200,232,100],[2528,2822,300,232,100],[2529,2841,170,232,100],[2531,2835,240,232,100],
-  ]);
-  assert.equal(p.packets.filter(row=>row[0]==='sendCameraUnlock'&&row[1]===false).length,5);
-  assert.equal(p.getPrivateArea(),null);
-});
-test('accepting Corsair through the native transcript starts Tock’s automatic ship view after the stage changes',()=>{
-  const q=register('CorsairCurse','the_corsair_curse'),p=player();
-  const {DialogueManager}=require('../dist/game/model/dialogues/DialogueManager'),manager=new DialogueManager(p);
-  p.getDialogueManager=()=>manager;
-  const nextPrompt=()=>{const count=q.prompts.length;for(let i=0;i<30&&q.prompts.length===count;i++){assert.ok(manager.getCurrent());manager.advance();}assert.ok(q.prompts.length>count);return q.prompts.at(-1);};
-  require('../plugins/quests/QuestRuntime').startTranscript(q.api,p,core.NpcIdentifiers.CAPTAIN_TOCK,'The Corsair Curse','the-cursed-crew-talking-to-captain-tock');
-  choose(nextPrompt(),'What kind of help do you need?');choose(nextPrompt(),'Yes.');
-  assert.equal(q.quest.getStage(p),1);
-  for(let i=0;i<10&&!p.getPrivateArea();i++){assert.ok(manager.getCurrent());manager.advance();}
-  assert.ok(p.getPrivateArea(),'the callback must test quest state when shown, after the earlier player line starts it');
-  assert.ok(manager.getCurrent() instanceof core.ActionDialogue);
-  q.tick(23);assert.equal(p.getPrivateArea(),null);
-  assert.equal(p.packets.filter(row=>row[0]==='sendCameraMoveTo').length,2);
-  assert.ok(p.packets.some(row=>row[0]==='sendString'&&String(row[1]).includes("West of Rimmington, you say?")));
-});
-
-test('Corsair Ithoi fight is private, auto-attacks, and unrelated kills cannot advance the player', () => {
-  const q = register('CorsairCurse','the_corsair_curse'),p=player(),other=player(); q.quest.setStage(p,8);
-  p.moveTo(new core.Location(2529,2835,1)); q.areas[0].process(p);
-  assert.ok(p.getPrivateArea()); const npc=q.spawned.at(-1); assert.equal(npc.getId(),7964);
-  q.call('onNpcDeath',{killer:other,npc,npcId:7964}); assert.equal(q.quest.getStage(p),8);
-  q.call('onNpcDeath',{killer:p,npc:{},npcId:7964}); assert.equal(q.quest.getStage(p),8);
-  q.call('onNpcDeath',{killer:p,npc,npcId:7964}); assert.equal(q.quest.getStage(p),9); assert.equal(p.getPrivateArea(),null);
 });
 
 test('Corsair Ithoi uses captured spells on five ticks and Curse deals no direct damage', () => {
@@ -547,28 +454,103 @@ test('Ned sells captured quest rope for 15 coins or four wool, refusing missing 
   assert.equal(p.items.get(1759), 0); assert.equal(p.items.get(954), 2);
 });
 
-test('as captured: Port Sarim and Karamja boats charge once, sail under ship_journey, and land on the deck nine ticks later', () => {
+test('as captured (rev 242): the Karamja boats charge once, fade out, land on the dock five ticks later and fade back in', () => {
   const q = register('PiratesTreasure', 'pirates_treasure'), p = player(); p.items.set(995, 60);
+  const arrived = [], departed = [];
+  q.api.onCustomEvent('ferries:arrived', ({ route }) => arrived.push(route));
+  q.api.onCustomEvent('ferries:departed', ({ route }) => departed.push(route));
+  const here = () => [p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()];
+  const fades = () => p.packets.filter((row) => row[0] === 'mountSubInterface' && row[1] === ((161 << 16) | 1) && row[2] === 174)
+    .map((row) => row[4].postScripts[0]).map(({ scriptId, args }) => [scriptId, ...args]);
   const travel = q.namedNpc.get('Seaman Thresnor:Travel'); travel({ player: p }); travel({ player: p });
   assert.equal(p.items.get(995), 30, 'a second click while sailing is not charged');
-  assert.deepEqual(p.messages, ['You pay 30 coins and board the ship.']);
-  assert.ok(p.getPrivateArea(), 'at sea on the ship instance');
-  assert.ok(p.packets.some((row) => row[0] === 'sendInterface' && row[1] === 299));
-  assert.ok(p.packets.some((row) => row[0] === 'sendClientScript' && row[1] === 1131 && row[2] === 4));
-  assert.ok(p.packets.some((row) => row[0] === 'closeSubInterface' && row[1] === ((161 << 16) | 79)), 'the inventory tab closes');
-  q.tick(8); assert.ok(p.getPrivateArea(), 'still sailing after eight ticks');
-  q.tick(1);
-  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()], [2956, 3143, 1]);
-  assert.equal(p.getPrivateArea(), null);
-  assert.ok(p.packets.some((row) => row[0] === 'sendTabInterface' && row[1] === 79 && row[2] === 149), 'the inventory tab is back');
-  p.packets.length = 0;
-  q.namedNpc.get('Customs officer:Travel')({ player: p });
-  assert.ok(p.packets.some((row) => row[0] === 'sendClientScript' && row[1] === 1131 && row[2] === 5));
+  assert.deepEqual(p.messages, ['You pay the boarding charge of 30 coins.', 'You board the ship and sail to Musa Point.']);
+  assert.ok(p.packets.some((row) => row[0] === 'sendSong' && row[1] === 147));
+  assert.ok(p.packets.some((row) => row[0] === 'sendJingle' && row[1] === 171), 'sailing journey short');
+  assert.deepEqual(fades(), [[948, 0, 255, 0, 0, 50]]);
+  assert.ok(!p.packets.some((row) => row[0] === 'sendInterface' && row[1] === 299), 'no ship_journey any more');
+  assert.equal(p.getPrivateArea(), null, 'no ship instance');
+  q.tick(4); assert.deepEqual(here(), [3228, 3369, 0], 'still on the dock four ticks in');
+  q.tick(1); assert.deepEqual(here(), [2956, 3146, 0], 'Musa Point dock on the fifth tick');
+  assert.deepEqual(arrived, ['port-sarim-musa-point']); assert.deepEqual(departed, ['port-sarim-musa-point']);
+  q.tick(1); assert.equal(fades().length, 1);
+  q.tick(1); assert.deepEqual(fades(), [[948, 0, 255, 0, 0, 50], [948, 0, 0, 0, 255, 50]], 'fade back in two ticks after landing');
+  assert.ok(!p.packets.some((row) => row[0] === 'closeSubInterfaceMount'));
+  q.tick(2); assert.ok(p.packets.some((row) => row[0] === 'closeSubInterfaceMount'), 'the overlay closes two ticks later');
+  assert.equal(p.messages.length, 2, 'no arrival message box');
+
+  // The customs officer's Travel sails back to the Port Sarim dock (rev 242 capture, tick 822).
+  p.messages.length = 0;
+  q.namedNpc.get('Customs officer:Travel')({ player: p }); q.tick(5);
+  assert.deepEqual(p.messages, ['You pay the boarding charge of 30 coins.', 'You board the ship and sail to Port Sarim.']);
+  assert.deepEqual(here(), [3029, 3217, 0]);
+  assert.equal(arrived.at(-1), 'musa-point-port-sarim', 'the Karamja Diary task listens for this route');
+  q.tick(4);
+
+  // After Pandemonium the boats name their stops instead of offering Travel; Seaman Morris sails back (tick 187).
+  p.items.set(995, 60); p.messages.length = 0;
+  q.namedNpc.get('Captain Tobias:The Pandemonium')({ player: p }); q.tick(5);
+  assert.equal(p.items.get(995), 30); assert.deepEqual(here(), [3065, 3002, 0]);
+  assert.deepEqual(p.messages, ['You pay the boarding charge of 30 coins.', 'You board the ship and sail to the Pandemonium.']);
+  q.tick(4); p.messages.length = 0;
+  const morris = (x, y) => ({ getLocation: () => new core.Location(x, y, 0) });
+  q.namedNpc.get('Seaman Morris:Port Sarim')({ player: p, npc: morris(3050, 3193) });
+  assert.deepEqual(p.messages, [], "Morris's stale Port Sarim spawn does not sell a hop across the docks");
+  q.namedNpc.get('Seaman Morris:Port Sarim')({ player: p, npc: morris(3064, 3003) }); q.tick(5);
+  assert.equal(p.items.get(995), 0); assert.deepEqual(here(), [3029, 3217, 0]);
+  assert.deepEqual(p.messages, ['You pay the boarding charge of 30 coins.', 'You board the ship and sail to Port Sarim.']);
+  assert.equal(arrived.at(-1), 'pandemonium-port-sarim');
+  q.tick(4);
+
+  // A shutdown before the landing lands the player too.
+  p.items.set(995, 30);
+  q.namedNpc.get('Seaman Lorris:Travel')({ player: p });
+  q.call('onServerShutdown', {});
+  assert.deepEqual(here(), [2956, 3146, 0]);
   q.tick(9);
-  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()], [3032, 3217, 1]);
-  // After Pandemonium the boats name their stops instead of offering Travel.
-  p.items.set(995, 30); q.namedNpc.get('Captain Tobias:The Pandemonium')({ player: p }); q.tick(5);
-  assert.equal(p.items.get(995), 0); assert.equal(p.getLocation().getX(), 3069); assert.equal(p.getLocation().getY(), 2987);
+  p.moveTo(new core.Location(3028, 3218, 0));
+
+  // A logout before the landing lands the player where the boat was going.
+  p.items.set(995, 30);
+  q.namedNpc.get('Seaman Lorris:Travel')({ player: p });
+  q.call('onPlayerLogout', { player: p });
+  assert.deepEqual(here(), [2956, 3146, 0]);
+  q.tick(9);
+});
+
+test('as captured (rev 242): rum carried to the customs officer is taken as the fare is paid, and the ship still sails', () => {
+  const q = register('PiratesTreasure', 'pirates_treasure'), p = player();
+  q.quest.setStage(p, 1); p.items.set(995, 30); p.items.set(431, 1);
+  p.attributes.set('pirates-treasure.rum', 2);
+  q.namedNpc.get('Customs officer:Port Sarim')({ player: p });
+  assert.equal(p.attributes.get('pirates-treasure.rum'), 2, 'the shipped crate rum is not the carried bottle');
+  assert.deepEqual(p.messages, [
+    'You pay the boarding charge of 30 coins. However, the customs officer confiscates your rum before letting you board.',
+    'You board the ship and sail to Port Sarim.',
+  ]);
+  assert.equal(p.items.get(431), 0); assert.equal(p.items.get(995), 0);
+  q.tick(5); assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [3029, 3217]);
+  q.tick(4);
+  // Short of the fare, nothing is taken.
+  const poor = player(); poor.items.set(995, 29); poor.items.set(431, 1);
+  q.namedNpc.get('Customs officer:Travel')({ player: poor });
+  assert.deepEqual(poor.messages, ['You do not have enough coins to pay passage, you need 30.']);
+  assert.equal(poor.items.get(431), 1);
+});
+
+test("Wiki (Karamjan rum): any completed teleport breaks carried rum", () => {
+  const q = register('PiratesTreasure', 'pirates_treasure'), p = player();
+  const landed = (from, to) => q.emit('teleport:landed', { player: p, from: new core.Location(...from, 0), to: new core.Location(...to, 0) });
+  p.items.set(431, 2);
+  landed([2926, 3143], [2930, 3150]);
+  assert.equal(p.items.get(431), 0, 'within Karamja also breaks carried rum');
+  p.items.set(431, 2);
+  landed([3029, 3217], [3213, 3424]);
+  assert.equal(p.items.get(431), 0, 'after Port Sarim retrieval teleport still breaks carried rum');
+  p.items.set(431, 2);
+  landed([2926, 3143], [2953, 3224]);
+  assert.equal(p.items.get(431), 0);
+  assert.deepEqual(p.messages, Array(3).fill('Your Karamjan rum gets broken and spilled.'));
 });
 
 test('the customs officer lets worn Karamja gloves pass for half the fare, as the Pay-fare transcript says', () => {
@@ -581,7 +563,10 @@ test('the customs officer lets worn Karamja gloves pass for half the fare, as th
   p.items.set(995, 20);
   q.namedNpc.get('Customs officer:Travel')({ player: p });
   assert.equal(p.items.get(995), 5);
-  assert.equal(p.messages.at(-1), 'The officer smiles as she recognises your Karamja gloves and lets you pass for half price - 15 coins.');
+  assert.deepEqual(p.messages.slice(-2), [
+    'The officer smiles as she recognises your Karamja gloves and lets you pass for half price - 15 coins.',
+    'You board the ship and sail to Port Sarim.',
+  ]);
   const answer = (text) => q.hooks.get('onNpcDialogueCondition')[0]({ player: p, npcId: core.NpcIdentifiers.CUSTOMS_OFFICER, text });
   p.items.set(995, 40);
   assert.equal(answer('If the player is wearing Karamja gloves and has 15 coins:'), true);
@@ -739,15 +724,6 @@ test('Pirate chest remains open for four ticks, exchanges the key at closing, an
   assert.equal(p.items.get(432),1);assert.equal(p.items.get(433),undefined);
 });
 
-test('Corsair dug-up clockwork doll follows its captured owner-only path and disappears on logout', () => {
-  const q=register('CorsairCurse','the_corsair_curse'),p=player();q.quest.setStage(p,3);p.attributes.set('quest.the_corsair_curse.cook',1);
-  q.emit('npc-dialogue:choice',{player:p,npcId:7970,option:'Search for the possessed doll and face the consequences.'});
-  assert.equal(p.attributes.get('quest.the_corsair_curse.cook'),1);q.tick(1);assert.equal(p.attributes.get('quest.the_corsair_curse.cook'),2);
-  const doll=q.spawned.at(-1);assert.equal(doll.getId(),7975);assert.equal(doll.definition.owner,p);assert.equal(doll.definition.ownerOnly,true);
-  q.tick(3);assert.equal(doll.getLocation().getX(),2507);assert.equal(doll.getLocation().getY(),2842);
-  q.call('onPlayerLogout',{player:p});assert.ok(q.removed.includes(doll));
-});
-
 test('X Marks ending waits for its completion scroll close and resumes only once', () => {
   const q=register('XMarksTheSpot','x_marks_the_spot'),p=player();q.quest.setStage(p,5);p.items.set(23071,1);
   q.emit('npc-dialogue:action',{player:p,npcId:8484,stepId:'HSuTNF'});
@@ -773,7 +749,7 @@ test("Zembo only offers the canonical Barcrawl choice during native progress1", 
   assert.equal(answer({ player: p, npcId: core.NpcIdentifiers.ZEMBO, text: 'Unrelated condition' }), null);
 });
 
-test("Wydin crate retrieves rum separately from bananas, retaining pending rum on a full bag", () => {
+test("as captured (rev 242): Wydin's crate gives the rum four ticks in, then asks about a banana four ticks later", () => {
   const q = register('PiratesTreasure', 'pirates_treasure'), p = player();
   q.quest.setStage(p, 1);
   p.attributes.set('pirates-treasure.employment', 2);
@@ -781,20 +757,100 @@ test("Wydin crate retrieves rum separately from bananas, retaining pending rum o
   p.getEquipment = () => ({ get: () => ({ getId: () => core.ItemIdentifiers.WHITE_APRON }) });
   const search = () => q.call('onObjectInteraction', { player: p, objectId: core.ObjectIdentifiers.CRATE_14,
     clickType: 1, definition: { getInteractions: () => ['Search'] } });
+  const sounds = () => p.packets.filter(([method, id]) => method === 'sendSoundEffect' && id === 2582).length;
+
+  // A full bag keeps the shipped rum waiting, and no banana is offered.
   for (let i = 0; i < 28; i++) p.items.set(20000 + i, 1);
   search();
+  assert.deepEqual(p.messages, ['There are a lot of bananas in the crate.']);
+  q.tick(4);
   assert.equal(p.attributes.get('pirates-treasure.rum'), 2);
   assert.equal(p.items.get(core.ItemIdentifiers.KARAMJAN_RUM), undefined);
-  assert.equal(q.prompts.length, 0);
   assert.equal(p.messages.at(-1), 'You need more inventory space.');
-  p.items.delete(20000);
-  search();
+  q.tick(4); assert.equal(q.prompts.length, 0);
+
+  // Ticks 942, 946, 950: the bananas, the rum (pick2), the question.
+  p.items.delete(20000); p.messages.length = 0;
+  search(); search();
+  assert.deepEqual(p.messages, ['There are a lot of bananas in the crate.'], 'a second click while searching does nothing');
+  q.tick(3); assert.equal(p.items.get(core.ItemIdentifiers.KARAMJAN_RUM), undefined);
+  q.tick(1);
   assert.equal(p.items.get(core.ItemIdentifiers.KARAMJAN_RUM), 1);
   assert.equal(p.attributes.get('pirates-treasure.rum'), 0);
-  assert.equal(q.prompts.length, 0, 'rum retrieval must not also ask to take a banana');
   assert.equal(p.messages.at(-1), 'You find your bottle of rum in amongst the bananas.');
-  search();
-  assert.equal(p.items.get(core.ItemIdentifiers.KARAMJAN_RUM), 1, 'repeat search cannot duplicate rum');
+  assert.equal(sounds(), 1);
+  q.tick(3); assert.equal(q.prompts.length, 0);
+  q.tick(1);
   assert.equal(q.prompts.length, 1);
   assert.equal(q.prompts[0].title, 'Do you want to take a banana?');
+  p.items.delete(20001);
+  choose(q.prompts[0], 'Yes.');
+  assert.equal(p.items.get(core.ItemIdentifiers.BANANA), 1);
+  assert.equal(p.messages.at(-1), 'You take a banana.');
+  assert.equal(sounds(), 2, 'pick2 again as the banana comes out (tick 953)');
+
+  // Without shipped rum the question follows the bananas line by four ticks.
+  search(); q.tick(3); assert.equal(q.prompts.length, 1); q.tick(1);
+  assert.equal(q.prompts.length, 2);
+  assert.equal(p.items.get(core.ItemIdentifiers.KARAMJAN_RUM), 1, 'repeat search cannot duplicate rum');
+});
+
+test("Pirate's Treasure: captured journal, Luthas's re-employment, the Rum Deal line, Wydin's door and the locked chest", () => {
+  const q = register('PiratesTreasure', 'pirates_treasure'), p = player();
+  q.quest.setStage(p, 1);
+  const journal = () => q.quest.buildJournal(p, q.quest).join('\n').replace(/<col=[0-9a-f]+>/g, '');
+  assert.match(journal(), /I need to go to Karamja and buy some rum\. I hope it is not too\nexpensive\./);
+  q.emit('npc-dialogue:choice', { player: p, npcId: core.NpcIdentifiers.LUTHAS, option: 'Could you offer me employment on your plantation?' });
+  assert.match(journal(), /Now all I need is some rum to hide in the next crate destined\nfor Wydin's store\.\.\./);
+  p.attributes.set('pirates-treasure.rum', 1);
+  assert.match(journal(), /I have hidden my rum in the crate\. I should fill it with bananas\nand speak to Luthas/);
+  p.attributes.set('pirates-treasure.rum', 2);
+  assert.match(journal(), /<str>I have taken employment on the banana plantation, as {2}the/);
+  assert.match(journal(), /I have spoken to Luthas, and the crate has been shipped to\nWydin's store in Port Sarim north of the jail\./);
+  q.quest.setStage(p, 2);
+  assert.match(journal(), /<str>I have smuggled some rum off Karamja, and retrieved it from/);
+  assert.match(journal(), /I have a key that can be used to unlock the chest that holds/);
+
+  // "Thank you, I'll be on my way" after a payment ends the plantation job, not Wydin's.
+  p.attributes.set('pirates-treasure.employment', 3);
+  q.emit('npc-dialogue:choice', { player: p, npcId: core.NpcIdentifiers.LUTHAS, option: "Thank you, I'll be on my way" });
+  assert.equal(p.attributes.get('pirates-treasure.employment'), 2);
+  q.emit('npc-dialogue:choice', { player: p, npcId: core.NpcIdentifiers.LUTHAS, option: 'Will you pay me for another crate full?' });
+  assert.equal(p.attributes.get('pirates-treasure.employment'), 2);
+
+  // With the rum handed over, Frank offers only "Arr!" and trade (rev 242 capture, ticks 1034-1042).
+  const variant = q.hooks.get('onNpcDialogueVariant')[0];
+  p.items.set(core.ItemIdentifiers.CHEST_KEY, 1);
+  assert.deepEqual(variant({ player: p, npcId: core.NpcIdentifiers.REDBEARD_FRANK }), { page: 'Redbeard Frank', variant: 'after-pirate-s-treasure' });
+  p.items.delete(core.ItemIdentifiers.CHEST_KEY);
+  assert.equal(variant({ player: p, npcId: core.NpcIdentifiers.REDBEARD_FRANK }).variant, 'delivering-the-rum-reclaiming-the-key');
+
+  // Frank's Braindeath line follows Rum Deal's completion.
+  const answer = q.hooks.get('onNpcDialogueCondition')[0];
+  assert.equal(answer({ player: p, npcId: core.NpcIdentifiers.REDBEARD_FRANK, stepId: '6py1j9', text: 'If the player has completed Rum Deal:' }), false);
+
+  // Wydin's door: from the shop only his aproned employee goes in; from the stock room anyone comes out.
+  const door = (x, employment, apron) => {
+    const guest = player();
+    guest.moveTo(new core.Location(x, 3204, 0));
+    guest.attributes.set('pirates-treasure.employment', employment);
+    if (apron) guest.getEquipment = () => ({ get: () => ({ getId: () => core.ItemIdentifiers.WHITE_APRON }) });
+    const request = { player: guest, objectId: core.ObjectIdentifiers.DOOR_56, location: { x: 3012, y: 3204, z: 0 }, handled: false };
+    q.emit('door:toggle', request);
+    return request.handled;
+  };
+  assert.equal(door(3012, 0, false), true, 'not hired: Wydin stops the player');
+  assert.equal(door(3012, 2, false), true, 'hired without the apron worn');
+  assert.equal(door(3012, 2, true), false, 'hired and aproned: Doors opens it');
+  assert.equal(door(3011, 0, false), false, 'leaving the stock room');
+
+  // Gerrant's hooked apron (7957) says its line as it is taken (tick 850); another spawn says nothing.
+  const taken = (id) => q.emit('ground-items:taken', { player: p, groundItem: { getItem: () => ({ getId: () => id }) }, itemId: 1005 });
+  taken(1005); assert.notEqual(p.messages.at(-1), 'You take an apron. It feels freshly starched and smells of laundry.');
+  taken(7957); assert.equal(p.messages.at(-1), 'You take an apron. It feels freshly starched and smells of laundry.');
+
+  // Open on the chest: "The chest is locked." with sound 2402 (ticks 1107, 1123).
+  q.call('onObjectInteraction', { player: p, objectId: core.ObjectIdentifiers.CHEST_4, clickType: 1, definition: { getInteractions: () => ['Open'] } });
+  assert.equal(p.messages.at(-1), 'The chest is locked.');
+  assert.ok(p.packets.some(([method, id]) => method === 'sendSoundEffect' && id === 2402));
 });

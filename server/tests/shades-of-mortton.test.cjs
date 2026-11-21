@@ -32,6 +32,8 @@ before(async () => {
   const logoutFns = [];
   const api = {
     core,
+    persistAttribute() {},
+    onItemAction: (name, actions) => { for (const [op, fn] of Object.entries(actions)) chain(hooks.objects, name + ':' + op, fn); },
     onObjectInteraction: (name, actions) => { for (const [op, fn] of Object.entries(actions)) chain(hooks.objects, `${name}:${op}`, fn); },
     onNpcHitModify: (fn) => hooks.npcHit.push(fn),
     onNpcDeath: (fn) => hooks.npcDeath.push(fn),
@@ -89,7 +91,9 @@ function container(capacity = 28) {
 
 function fakePlayer(at = new Location(3485, 3321, 0)) {
   const p = {
-    location: at, messages: [], pages: [], inventory: container(),
+    location: at, messages: [], pages: [], inventory: container(), attributes: new Map(), banks: [],
+    getAttribute: k => p.attributes.get(k), setAttribute: (k,v) => p.attributes.set(k,v),
+    getBank: tab => p.banks[tab], getEquipment: () => ({getItems: () => [], getAmount: () => 0}),
     getLocation: () => p.location, moveTo(l) { p.location = l; },
     getInventory: () => p.inventory, sendMessage: (m) => p.messages.push(m), performAnimation() {},
     getPacketSender: () => ({ sendSound() {}, sendInterfaceRemoval() {} }),
@@ -809,5 +813,285 @@ test('a cremation key is asked as minigame:points (an answer is how many); coins
     }
   } finally {
     Math.random = random;
+  }
+});
+
+/** Runs fn with World.getNpcsNear answering from `npcs` (radius and plane honoured) and World.getNpcs() refused. */
+function withNpcsNear(World, npcs, fn) {
+  const { getNpcs, getNpcsNear } = World;
+  World.getNpcs = () => { throw new Error('walked every NPC slot'); };
+  World.getNpcsNear = (at, radius) => npcs.filter((npc) => npc.getLocation().getZ() === at.getZ()
+    && Math.max(Math.abs(npc.getLocation().getX() - at.getX()), Math.abs(npc.getLocation().getY() - at.getY())) <= radius);
+  try {
+    return fn();
+  } finally {
+    World.getNpcs = getNpcs;
+    World.getNpcsNear = getNpcsNear;
+  }
+}
+
+test("shadows are looked for in their two regions only, and those hold every shadow spawn", () => {
+  const spawns = require('../data/definitions/npc-spawns.json');
+  const ids = new Set(Common.data.shades.map(({ shadow }) => Common.npcId(shadow)));
+  const keys = new Set(Common.data.shades.map(({ shadow }) => shadow));
+  const shadowSpawns = spawns.filter((s) => ids.has(s.id) || keys.has(s.key));
+  assert.ok(shadowSpawns.length > 0);
+  const inArea = (x, y, z) => Common.data.shadowAreas.some(([x0, y0, x1, y1, az]) => az === z && x >= x0 && x <= x1 && y >= y0 && y <= y1);
+  for (const s of shadowSpawns) assert.ok(inArea(s.x, s.y, s.level ?? 0), `shadow spawn at ${s.x},${s.y},${s.level} is in a shadow area`);
+
+  const at = (shadow, x, y, index) => Object.assign(shadow, { getLocation: () => new Location(x, y, 0), getIndex: () => index });
+  const catacombs = at(fakeShadow(Common.npcId('shadeshadow_level3')), 3472, 9705, 7);
+  const elsewhere = at(fakeShadow(Common.npcId('shadeshadow_level3')), 3222, 3218, 3);
+  catacombs.target = {};
+  elsewhere.target = {};
+  Shades.watch([]);
+  withNpcsNear(core.World, [catacombs, elsewhere], () => Shades.process());
+  assert.equal(catacombs.transform, Common.npcId('shade_level3'), 'the catacombs shadow was found and rose to fight');
+  assert.equal(elsewhere.transform, null, 'one outside the areas is not watched');
+  Shades.risen.delete(catacombs);
+  Shades.watch([]);
+});
+
+test("shadowReach covers a shadow's wander radius and how far a fight can lead it from its spawn", () => {
+  const { NpcSpawnDefinitionLoader } = require('../dist/game/definition/loader/impl/NpcSpawnDefinitionLoader');
+  const spawns = require('../data/definitions/npc-spawns.json');
+  const ids = new Set(Common.data.shades.map(({ shadow }) => Common.npcId(shadow)));
+  for (const s of spawns.filter((each) => ids.has(each.id))) {
+    assert.ok((s.radius ?? NpcSpawnDefinitionLoader.DEFAULT_WANDER_RADIUS) <= Common.data.shadowReach, `the shadow at ${s.x},${s.y} wanders within reach`);
+  }
+  for (const id of ids) {
+    const follow = core.NpcDefinition.forId(id).getCombatFollowDistance();
+    assert.ok(follow + 1 <= Common.data.shadowReach, `shadow ${id} is walked home within reach of its spawn (follow distance ${follow})`);
+  }
+});
+
+test("a real shadow that walked out of its spawn region is still found, and rises when it fights", () => {
+  // Review of #6062: the Loar shadow spawned at 3489,3267 can walk south to 3489,3263, below the region (y 3264+).
+  const { NPC } = require('../dist/game/entity/impl/npc/NPC');
+  const { PathFinder } = require('../dist/game/model/movement/path/PathFinder');
+  const { World } = core;
+  RegionManager.loadMapFiles(3489, 3267);
+  const LOAR_SHADOW = Common.npcId('shadeshadow_level1');
+  const walkOut = () => {
+    const npc = new NPC(LOAR_SHADOW, new Location(3489, 3267, 0));
+    npc.getMovementCoordinator().setRadius(5);
+    assert.equal(World.getNpcs().add(npc), true);
+    PathFinder.calculateWalkRoute(npc, 3489, 3263);
+    for (let i = 0; i < 8 && !(npc.getLocation().getY() === 3263); i++) npc.getMovementQueue().process();
+    assert.deepEqual([npc.getLocation().getX(), npc.getLocation().getY()], [3489, 3263], 'it walked out of the region by its real route');
+    return npc;
+  };
+  const fight = (npc) => {
+    const target = new NPC(LOAR_SHADOW, npc.getLocation().clone().add(0, -1));
+    npc.getCombat().setTarget(target);
+    return () => { npc.getCombat().setTarget(null); Shades.risen.delete(npc); World.getNpcs().removes(npc); };
+  };
+
+  // Never watched before (a fresh list), found there by a refresh: the widened area holds it.
+  Shades.watch([]);
+  const fresh = walkOut();
+  const endFresh = fight(fresh);
+  try {
+    Shades.process();
+    assert.equal(fresh.getId(), Common.npcId('shade_level1'), 'a refresh finds it outside the region and it rises');
+  } finally { endFresh(); }
+
+  // Watched while home, then walked further than any area: still the same watched NPC.
+  const home = new NPC(LOAR_SHADOW, new Location(3489, 3267, 0));
+  assert.equal(World.getNpcs().add(home), true);
+  Shades.watch([]);
+  Shades.process();
+  home.moveTo(new Location(3400, 3200, 0));
+  const endHome = fight(home);
+  try {
+    for (let i = 0; i < 100; i++) Shades.process();
+    assert.equal(home.getId(), Common.npcId('shade_level1'), 'it is kept on the list across refreshes and rises');
+  } finally { endHome(); Shades.watch([]); }
+});
+
+// Silver rewards: confirmed item set/mechanics; unconditional rates are explicitly
+// provisional because the Wiki's listed probabilities sum to > 1 (see docs).
+const Rewards = require('../plugins/minigames/shadesofmortton/Rewards.ShadesOfMortton');
+function sequence(values) {
+  let index = 0;
+  return () => { assert.ok(index < values.length, 'unexpected RNG draw'); return values[index++]; };
+}
+function silverRoll(p, values, colour = 'bloodred') {
+  return Rewards.rollSilver(p, colour, sequence(values));
+}
+
+test('silver tables contain every confirmed main item, resolved from cache, with no unreachable tail', () => {
+  const expected = [1245,1259,4580,1289,1391,1345,1371,1317,1301,1333,1303,
+    1125,1085,1147,1111,1073,1091,1199,1123,1183,1121,1113,
+    3470,12851,1643,1731,560,565,3678,1515,1513,2722].sort((a,b)=>a-b);
+  for (const colour of ['bloodred','brown','crimson','black','purple']) {
+    const rows = Rewards.mainRows(colour, false, true);
+    assert.deepEqual(rows.map(r=>r.id).sort((a,b)=>a-b),expected);
+    const total = rows.reduce((s,r)=>s+r.weight,0);
+    assert.ok(Math.abs(total-152)<1e-9);
+    let start = 0;
+    for (const row of rows) {
+      const result = silverRoll(fakePlayer(), [0.99,0.99,(start+row.weight/2)/total,0],colour);
+      assert.equal(result.id,row.id,core.ItemDefinition.forId(row.id).getName());
+      assert.equal(result.amount,row.min);
+      start += row.weight;
+    }
+  }
+});
+
+test('silver colours increase fine-cloth weight and decrease both noted log weights', () => {
+  const cloth=Common.objId('fine_cloth'),yew=Common.objId('yew_logs'),magic=Common.objId('magic_logs');
+  for (const [i,colour] of ['bloodred','brown','crimson','black','purple'].entries()) {
+    for(const wealth of [false,true]){
+      const rows=Rewards.mainRows(colour,wealth,true),q=Math.min(4,i+(wealth?2:0));
+      assert.equal(rows.find(r=>r.id===cloth).weight,16+q);
+      assert.ok(Math.abs(rows.find(r=>r.id===yew).weight-3*(5-q)/5)<1e-9);
+      assert.ok(Math.abs(rows.find(r=>r.id===magic).weight-2*(5-q)/5)<1e-9);
+      assert.ok(rows.filter(r=>[yew,magic].includes(r.id)).every(r=>r.noted));
+    }
+  }
+});
+
+test('all charged/uncharged and imbued wealth rings count only when worn', () => {
+  for (const id of [2572,11980,11982,11984,11986,11988,12785,20786,20787,20788,20789,20790]) {
+    const p=fakePlayer();p.inventory.add(new core.Item(id,1));
+    assert.equal(Rewards.wearingWealth(p),false);
+    const items=[];items[core.Equipment.RING_SLOT]=new core.Item(id,1);
+    p.getEquipment=()=>({getItems:()=>items,getAmount:()=>0});
+    assert.equal(Rewards.wearingWealth(p),true);
+  }
+});
+
+test('locks are the first gate, colour-specific, and wealth improves the gate', () => {
+  const colours=['bloodred','brown','crimson','black','purple'];
+  for(const [i,colour] of colours.entries())for(const wealth of [false,true]){
+    const p=fakePlayer();
+    if(wealth){const items=[];items[core.Equipment.RING_SLOT]=new core.Item(2572,1);p.getEquipment=()=>({getItems:()=>items});}
+    const odds=63-i-(wealth?2:0);
+    assert.equal(silverRoll(p,[(1-1e-6)/odds],colour).id,Common.objId('shades_lock_silver'));
+    assert.notEqual(silverRoll(p,[1/odds,0.99,0,0],colour).id,Common.objId('shades_lock_silver'));
+  }
+});
+
+test('scroll gate chooses the first book, then the corresponding runescroll after receipt', () => {
+  for (const [i,book] of Rewards.BOOKS.entries()) {
+    const p=fakePlayer(),value=i===0?0:0.999;
+    const first=silverRoll(p,[0.99,0,value]);
+    assert.equal(first.id,Common.objId(book.book));
+    assert.equal(first.receivedAttribute,book.received);
+    assert.equal(p.getAttribute(book.received),undefined,'a roll is not a receipt');
+    p.setAttribute(book.received,true);
+    assert.equal(silverRoll(p,[0.99,0,value]).id,Common.objId(book.scroll));
+    p.setAttribute(book.received,false);
+    p.banks[1]=container();p.banks[1].add(new core.Item(Common.objId(book.book),1));
+    assert.equal(silverRoll(p,[0.99,0,value]).id,Common.objId(book.scroll),'existing bank book');
+  }
+});
+
+test('clue capacity excludes the hard clue weight and resolves accepted rewards into boxes', () => {
+  const emit=Common.api.emitCustomEvent;
+  try {
+    Common.api.emitCustomEvent=(name,q)=>{
+      if(name==='treasure-trails:can-receive')q.allowed=false;
+      else emit(name,q);
+    };
+    assert.notEqual(silverRoll(fakePlayer(),[0.99,0.99,84/150,0]).id,2722);
+    Common.api.emitCustomEvent=(name,q)=>{
+      if(name==='treasure-trails:can-receive')q.allowed=true;
+      if(name==='treasure-trails:clue-item')q.itemId=core.ItemIdentifiers.SCROLL_BOX_HARD_;
+    };
+    const rows=Rewards.mainRows('bloodred',false,true),i=rows.findIndex(r=>r.id===2722);
+    const before=rows.slice(0,i).reduce((s,r)=>s+r.weight,0);
+    assert.equal(silverRoll(fakePlayer(),[0.99,0.99,(before+1)/152,0]).id,core.ItemIdentifiers.SCROLL_BOX_HARD_);
+    assert.ok(!Rewards.mainRows('bloodred',false,false).some(r=>r.id===2722));
+  } finally {Common.api.emitCustomEvent=emit;}
+});
+
+test('Flamtaer bag replaces paste only when absent from inventory, equipment and every bank tab', () => {
+  const id=Common.objId('flamtaer_bag'),p=fakePlayer();
+  assert.equal(Rewards.rollSecondary(p,()=>0).id,id);
+  assert.equal(Rewards.rollSecondary(p,()=>0.5),null);
+  p.banks[2]=container();p.banks[2].add(new core.Item(id,0));
+  assert.equal(Rewards.rollSecondary(p,()=>0).id,id,'zero placeholders are not bags');
+  p.banks[2].add(new core.Item(id,1));
+  assert.equal(Rewards.rollSecondary(p,()=>0),null);
+  p.banks=[];p.inventory.add(new core.Item(id,1));
+  assert.equal(Rewards.rollSecondary(p,()=>0),null);
+});
+
+test('a successful silver chest consumes one matching key and logs locks and bag rewards', (t) => {
+  const p=fakePlayer(),book=Rewards.BOOKS[0],bag=Common.objId('flamtaer_bag');
+  p.inventory.add(new core.Item(key('silver','bloodred'),1));
+  t.mock.method(Math,'random',()=>0); // locks gate
+  const chest=loc('shadechest_silver_bloodred',3461,9694);
+  hooks.objects.get('Silver Chest:Open')({player:p,object:chest});
+  assert.equal(p.inventory.getAmount(key('silver','bloodred')),0);
+  assert.equal(p.inventory.getAmount(Common.objId('shades_lock_silver')),1);
+  assert.equal(p.inventory.getAmount(bag),1);
+  assert.equal(p.inventory.getAmount(Common.objId('swamppaste')),0);
+  assert.ok(hooks.events.emitted.some(([n,q])=>n==='collection-log:obtain'&&q.player===p&&q.itemId===bag));
+  Catacombs.forgetZealots({player:p});
+});
+
+test('a failed silver opening keeps its key and first-book eligibility', (t) => {
+  const p=fakePlayer(),book=Rewards.BOOKS[0];
+  p.inventory=container(1);p.inventory.add(new core.Item(key('silver','bloodred'),1));
+  // lock miss, scroll hit, swamp book; coin roll; paste; bag hit.
+  t.mock.method(Math,'random',sequence([0.99,0,0,0,0,0]));
+  hooks.objects.get('Silver Chest:Open')({player:p,object:loc('shadechest_silver_bloodred',3461,9694)});
+  assert.equal(p.inventory.getAmount(key('silver','bloodred')),1);
+  assert.equal(p.getAttribute(book.received),undefined);
+  assert.equal(p.inventory.getAmount(Common.objId(book.book)),0);
+  assert.equal(p.messages.at(-1),Common.message('noRoom'));
+});
+
+test('each first book awards its scroll once, with capacity and stale-item checks', () => {
+  for(const book of Rewards.BOOKS){
+    const p=fakePlayer(),id=Common.objId(book.book),scroll=Common.objId(book.scroll);
+    const read=hooks.objects.get(core.ItemDefinition.forId(id).getName()+':Read');
+    read({player:p,itemId:id,handled:false});
+    assert.equal(p.inventory.getAmount(scroll),0,'not held');
+    p.inventory=container(1);p.inventory.add(new core.Item(id,1));
+    read({player:p,itemId:id,handled:false});
+    assert.equal(p.getAttribute(book.read),undefined,'full inventory keeps eligibility');
+    p.inventory=container();p.inventory.add(new core.Item(id,1));
+    read({player:p,itemId:id,handled:false});read({player:p,itemId:id,handled:false});
+    assert.equal(p.inventory.getAmount(scroll),1);
+    assert.equal(p.inventory.getAmount(id),1,'book remains');
+    assert.equal(p.getAttribute(book.received),true);
+  }
+});
+
+test('receiving the first silver book commits its persisted receipt only after delivery', (t) => {
+  const p=fakePlayer(),book=Rewards.BOOKS[0];
+  p.inventory.add(new core.Item(key('silver','bloodred'),1));
+  // Lock miss; scroll gate hit; swamp book; coin amount; paste amount; bag miss; zealot miss.
+  t.mock.method(Math,'random',sequence([0.99,0,0,0,0,0.99,0.99]));
+  hooks.objects.get('Silver Chest:Open')({player:p,object:loc('shadechest_silver_bloodred',3461,9694)});
+  assert.equal(p.inventory.getAmount(key('silver','bloodred')),0);
+  assert.equal(p.inventory.getAmount(Common.objId(book.book)),1);
+  assert.equal(p.getAttribute(book.received),true);
+  assert.equal(p.inventory.getAmount(Common.objId('swamppaste')),25);
+});
+
+test('silver chest noted logs deliver notes and calculate coins using the unnoted value', (t) => {
+  const p=fakePlayer();p.inventory.add(new core.Item(key('silver','bloodred'),1));
+  const rows=Rewards.mainRows('bloodred',false,true),id=Common.objId('yew_logs'),index=rows.findIndex(r=>r.id===id);
+  const before=rows.slice(0,index).reduce((s,r)=>s+r.weight,0);
+  t.mock.method(Math,'random',sequence([0.99,0.99,(before+1)/152,0.999,0,0,0.99,0.99]));
+  hooks.objects.get('Silver Chest:Open')({player:p,object:loc('shadechest_silver_bloodred',3461,9694)});
+  assert.equal(p.inventory.getAmount(core.ItemDefinition.forId(id).getNoteId()),10);
+  assert.equal(p.inventory.getAmount(id),0);
+  const worth=Common.core.CacheDefinitions.getItem(id).price*10;
+  assert.equal(p.inventory.getAmount(995),Math.max(0,Math.floor((3600-worth)/3)));
+});
+
+test('silver scroll gates reflect every colour and the worn wealth modifier', () => {
+  for(const [i,colour] of ['bloodred','brown','crimson','black','purple'].entries())for(const wealth of [false,true]){
+    const p=fakePlayer();
+    if(wealth){const items=[];items[core.Equipment.RING_SLOT]=new core.Item(2572,1);p.getEquipment=()=>({getItems:()=>items});}
+    const odds=76-i-(wealth?2:0);
+    assert.equal(silverRoll(p,[0.99,(1-1e-6)/odds,0],colour).id,Common.objId('shades_swamp_diary'));
+    assert.notEqual(silverRoll(p,[0.99,1/odds,0,0],colour).id,Common.objId('shades_swamp_diary'));
   }
 });

@@ -116,7 +116,11 @@ function chosenOption(
     config: MenuSwapperPluginConfig,
     context: SwapContext,
 ): string | undefined {
-    const saved = (kind === "left" ? config.swaps : config.shiftSwaps)[group.key];
+    const swaps = kind === "left" ? config.swaps : config.shiftSwaps;
+    // Shop items keep their own key so they cannot collide with the backpack, but an entry saved
+    // by an older client under the shared item key still applies.
+    const saved = swaps[group.key]
+        ?? (group.key.startsWith("shopitem:") ? swaps[`item:${group.key.slice("shopitem:".length)}`] : undefined);
     if (saved) return saved.option.toLowerCase();
     const groupId =
         context.surface === "inventory" && typeof context.widgetId === "number"

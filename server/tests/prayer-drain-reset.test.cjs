@@ -12,6 +12,7 @@ const Altars = require("../plugins/objects/Altars.plugin");
 const Pool = require("../plugins/objects/RejuvenationPool.plugin");
 const Prison = require("../plugins/bosses/nex/Prison.Nex");
 const NexCommon = require("../plugins/bosses/nex/Common.Nex");
+const GodWars = require("../plugins/bosses/godwars/Common.GodWars");
 
 test("praying at an altar and drinking from a Rejuvenation pool clear the prayer drain counter (Wiki)", async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -20,6 +21,7 @@ test("praying at an altar and drinking from a Rejuvenation pool clear the prayer
   core.RegionManager.init();
   const api = PluginManager.createApi("PrayerDrainResetTest");
   Altars.register(api);
+  GodWars.init(PluginManager.createApi("PrayerDrainResetGodWarsTest"));
   NexCommon.init(api);
 
   let index = 2000;
@@ -65,12 +67,20 @@ test("praying at an altar and drinking from a Rejuvenation pool clear the prayer
     onLogin() {},
     onLogout() {},
   });
-  const drink = (name, player) => handlers[name]({ player, handled: false });
+  const drink = (name, player) => {
+    assert.equal(typeof handlers[name], "function", `${name} has a Drink handler`);
+    handlers[name]({ player, handled: false });
+  };
   for (const [name, cleared] of [
     ["Pool of Restoration", false],
     ["Pool of Revitalisation", false],
     ["Pool of Rejuvenation", true],
     ["Fancy pool of Rejuvenation", true],
+    ["Ornate pool of Rejuvenation", true],
+    ["Frozen Pool of Rejuvenation", true],
+    ["Frozen fancy pool of Rejuvenation", true],
+    ["Frozen ornate pool of Rejuvenation", true],
+    ["Fiery Ornate Pool of Rejuvenation", true],
   ]) {
     const player = actor();
     player.setPrayerPointDrain(40);

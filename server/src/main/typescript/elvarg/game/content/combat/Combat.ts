@@ -14,6 +14,8 @@ import { StatementDialogue } from "../../model/dialogues/entries/impl/StatementD
 import { TickStopwatch } from "../../../util/TickStopwatch";
 import { ServerPerf } from "../../../util/ServerPerf";
 import { World } from "../../World";
+import { Wilderness } from "../wilderness/Wilderness";
+import { hasGlobalWorldTag } from "../../definition/WorldDefinition";
 import { CombatConstants } from "./CombatConstants";
 import { CombatFactory, CanAttackResponse } from "./CombatFactory";
 import { CombatRange } from "./CombatRange";
@@ -153,12 +155,27 @@ export class Combat {
      * (https://oldschool.runescape.wiki/w/PJ_timer).
      */
     private static readonly PJ_TIMER_MS = 8 * 600;
-    /**
-     * Player-versus-player keeps the existing 10-tick hold here. Live uses a longer PvP PJ
-     * timer (20 ticks in Wilderness singles, 16 on PvP worlds), which is a separate change;
-     * the PvM fix must not shorten PvP protection.
-     */
+    /** Other player-versus-player holds keep the old 10-tick window. */
     private static readonly PVP_TIMER_MS = 10 * 600;
+    /** Wiki (PJ timer): 20 ticks in Wilderness single-way and singles-plus combat. */
+    private static readonly WILDERNESS_PVP_TIMER_MS = 20 * 600;
+    /** Wiki (PJ timer): 16 ticks in single-way combat on a PvP world. */
+    private static readonly PVP_WORLD_TIMER_MS = 16 * 600;
+
+    /**
+     * The player-versus-player PJ window for the character being attacked. The timer only
+     * exists in single-way/singles-plus combat: Wilderness fights use 20 ticks and PvP worlds
+     * 16, while every other PvP context keeps the old 10-tick hold.
+     */
+    public static pvpPjTimerMs(character: Mobile, pvpWorld: boolean = hasGlobalWorldTag("pvp")): number {
+        const location = character.getLocation();
+        if (!location) return this.PVP_TIMER_MS;
+        // Multi-combat has no PJ lock; leave its existing retarget hold alone.
+        if (Wilderness.isMulti(location.getX(), location.getY(), location.getZ())) return this.PVP_TIMER_MS;
+        if (Wilderness.isGeographicPvp(location)) return this.WILDERNESS_PVP_TIMER_MS;
+        if (pvpWorld) return this.PVP_WORLD_TIMER_MS;
+        return this.PVP_TIMER_MS;
+    }
 
     public preserveMovementForTicks(ticks = 1): void {
         this.manualMovementUntilCycle = World.getProcessCycle() + Math.max(0, ticks) - 1;
@@ -242,8 +259,32 @@ export class Combat {
         };
     }
 
+    /**
+     * A full stall content holds open until it lets go, for actions whose length isn't known up
+     * front (an agility obstacle: Wiki, Animation stall, "most agility actions, such as the log
+     * balance in the Wilderness agility course"). Unlike a timed stall's, the clicks made during it
+     * are dropped, not held for its end (rsprox 241/1001438 ticks 19815-19828: the next tightrope,
+     * clicked four times during the first, waits for a fresh click after the landing). With
+     * `holdsHits` the hits coming in wait until `releaseFullStall`.
+     */
+    private heldStall: { holdsHits: boolean } | null = null;
+
+    public holdFullStall(holdsHits: boolean): void {
+        this.heldStall = { holdsHits };
+    }
+
+    public releaseFullStall(): void {
+        this.heldStall = null;
+    }
+
+    /** Whether a content-held full stall is on, so a click made now is dropped (see `holdFullStall`). */
+    public isHeldStall(): boolean {
+        return this.heldStall != null;
+    }
+
     /** Ticks before this character may act again; only a full stall holds them at all. */
     public getAnimationStallTicks(): number {
+        if (this.heldStall != null) return Number.MAX_SAFE_INTEGER;
         const stall = this.animationStall;
         if (stall == null || stall.kind !== "full" || stall.untilCycle <= World.getProcessCycle()) return 0;
         return stall.untilCycle - World.getProcessCycle();
@@ -260,6 +301,7 @@ export class Combat {
      * stops holding anything from that tick.
      */
     public getIncomingHitCycle(): number {
+        if (this.heldStall?.holdsHits) return Number.MAX_SAFE_INTEGER;
         const stall = this.animationStall;
         if (stall == null || !stall.holdsHits || stall.untilCycle <= World.getProcessCycle()) return -1;
         return stall.untilCycle;
@@ -328,12 +370,13 @@ export class Combat {
 
         if (this.attacker) {
             // Wiki (PJ timer): 8 ticks of protection while a monster is attacking; a kill ends
-            // it early (NPC.appendDeath). PvP keeps its longer window for now. Only the attacker
-            // expires here: the logout timer runs on to its own 16 ticks. Before the
-            // scripted-walk return, so a long plugin walk still lets it expire.
+            // it early (NPC.appendDeath). PvP uses 20 ticks in the Wilderness and 16 on PvP
+            // worlds (single-way only). Only the attacker expires here: the logout timer runs
+            // on to its own 16 ticks. Before the scripted-walk return, so a long plugin walk
+            // still lets it expire.
             const timerMs = this.attacker.isNpc() || this.character.isNpc()
                 ? Combat.PJ_TIMER_MS
-                : Combat.PVP_TIMER_MS;
+                : Combat.pvpPjTimerMs(this.character);
             if (this.lastAttack.elapsedTime(timerMs)) this.clearAttacker();
         }
 
@@ -443,9 +486,11 @@ export class Combat {
         if (reachable) {
             this.trace("inRange", target);
             // An NPC flagged combat:close-in (ToA's Akkha) keeps walking in while it attacks
-            // from range, until it stands beside its target.
-            const closesIn = this.character.isNpc() && this.character.hasFlag?.("combat:close-in") === true
-                && !CombatRange.beside(this.character, target);
+            // from range, until it stands beside its target; one with a numeric
+            // "combat:close-in-distance" attribute (the Alchemical Hydra's 4) until it is that
+            // many tiles from it, footprint to footprint.
+            const closeIn = this.character.isNpc() ? Combat.closeInDistance(this.character) : null;
+            const closesIn = closeIn !== null && !CombatRange.within(this.character, target, closeIn);
             if (!closesIn) {
                 this.character.getMovementQueue().reset();
                 return;
@@ -558,11 +603,9 @@ export class Combat {
             if (targetMoved || state.mobilityBlocked || movement.didMoveThisCycle()) {
                 return;
             }
-            if (this.character.isNpc() && state.routeRequested &&
-                !movement.wasBlockedByDynamicOccupancy()) {
-                if (!this.isSafespotted(target)) this.cancelIfCurrent(target, generation);
-                return;
-            }
+            // An NPC whose step the map refuses keeps its target and tries again next cycle, as
+            // live's do behind a safespot: only the aggression range (shouldRetreat) lets go.
+            if (this.character.isNpc()) return;
             if (movement.size() > 0) return;
             if (this.character.isPlayer() && (state.routeRequested || movement.wasRouteEvaluated())) {
                 if (this.character.getAsPlayer().isPlayerBot?.() !== true) {
@@ -795,6 +838,15 @@ export class Combat {
         if (attacker?.isPlayer()) this.lastAttackedByPlayerCycle = World.getProcessCycle();
         this.applyAttacker(attacker);
     }
+    /**
+     * A hit from `attacker` came due but a full stall is holding it (HitQueue). It still counts as
+     * being in combat for the logout timer, or an obstacle would let the target log out before
+     * the hit lands; the attacker, retaliation and the rest wait for the hit itself.
+     */
+    public markHeldHit(attacker: Mobile): void {
+        this.lastAttackedCycle = World.getProcessCycle();
+        if (attacker.isPlayer()) this.lastAttackedByPlayerCycle = World.getProcessCycle();
+    }
     /** Ticks since a player last hit this character, or Infinity when none has. */
     public ticksSinceAttackedByPlayer(): number {
         return this.lastAttackedByPlayerCycle < 0 ? Infinity : World.getProcessCycle() - this.lastAttackedByPlayerCycle;
@@ -875,17 +927,22 @@ export class Combat {
         }
 
         const target = this.target;
-        if (target == null || this.isSafespotted(target)) return false;
+        if (target == null) return false;
+        // "combat:keep-target": content whose monsters never give up on their target (the Fight
+        // Cave's waves).
+        if (npc.hasFlag("combat:keep-target")) return false;
         // Instanced content owns its arena and its reset rules (Zulrah's phase moves, the raid
         // rooms): the open-world aggression range must not cut a scripted fight short.
         if (npc.getPrivateArea() != null) return false;
 
-        // Outside its aggression range an NPC cannot attack the target at all, so it loses
-        // interest and walks home: the Wiki draws the aggression range from the static spawn
-        // (max range + attack range, measured from the spawn footprint), and osrs-docs has an
-        // NPC dragged outside its max range lose its target. A target still fighting it (a
-        // safespot or a normal engagement) keeps it, so this bounds hunting, not the fight the
-        // player started. The footprint already extends `size - 1` north and east.
+        // The leash is where the target stands, nothing else. The Wiki's aggression range (max
+        // range + attack range, from the static spawn) "defines the outer limit of where the
+        // player can stand and still be attacked by the NPC", the NPC itself may stand outside
+        // it while the player is inside, and "Retreat mode is initiated by attacking an NPC from
+        // outside the aggression range" (Aggressiveness, Retreat). Whether the target is still
+        // fighting it, or can be reached at all (a safespot), does not matter: a safespotted NPC
+        // keeps its target for as long as the target stands in range (#6297). The footprint
+        // already extends `size - 1` north and east.
         const aggressionRange = definition.getAggressionRange(method.attackDistance(npc));
         const crossFloorRangedFight = method.type() !== CombatType.MELEE &&
             CrossFloor.canCross(npc.getLocation(), target.getLocation());
@@ -895,12 +952,21 @@ export class Combat {
             target.getLocation(),
             crossFloorRangedFight,
         );
-        if (spawnDistance > definition.getCombatFollowDistance()
-            || targetDistance > aggressionRange) {
+        if (targetDistance > aggressionRange) {
             coordinator.setCoordinateState(CoordinateState.RETREATING);
             return true;
         }
         return false;
+    }
+
+    /** Attribute naming how close (footprint to footprint) an NPC walks in while attacking from range. */
+    public static readonly CLOSE_IN_DISTANCE_ATTRIBUTE = "combat:close-in-distance";
+
+    /** How near an NPC keeps walking in while it attacks from range, or null when it stands its ground. */
+    private static closeInDistance(npc: Mobile): number | null {
+        const distance = Number(npc.getAttribute?.(Combat.CLOSE_IN_DISTANCE_ATTRIBUTE));
+        if (Number.isInteger(distance) && distance >= 1) return distance;
+        return npc.hasFlag?.("combat:close-in") === true ? 1 : null;
     }
 
     private processNpcUnderTarget(state: CombatCycleState): void {
@@ -914,7 +980,7 @@ export class Combat {
             (state.target.getFollowing?.() != null ||
                 TaskManager.hasActiveTask(state.target.getIndex?.(), "MovementTask") ||
                 TaskManager.wasTaskActiveThisCycle(state.target.getIndex?.(), "MovementTask"));
-        if (targetBusy) return;
+        if (targetBusy || state.method.canStepOffOverlappingTarget(this.character) === false) return;
 
         const size = Math.max(1, this.character.getSize() | 0);
         if (size <= 1) {
@@ -960,8 +1026,9 @@ export class Combat {
     }
 
     /**
-     * Ends combat with a target the actor has stopped trying to get to. Both give-up paths in
-     * postMovementProcess are skipped by an actor that cannot move (a stun, a placement, a
+     * Ends a player's combat with a target they have stopped trying to get to (NPCs are bounded by
+     * their aggression range instead, see shouldRetreat). The player's give-up path in
+     * postMovementProcess is skipped by an actor that cannot move (a stun, a placement, a
      * teleport in transit - `setBlockMovement`) and by a route whose step the mover rejects,
      * which keeps its checkpoint (`MovementQueue.process`), so the queue never empties; without
      * this deadline either side stays in combat with an unreachable target indefinitely.
@@ -976,7 +1043,9 @@ export class Combat {
      * @return true when the interaction was dropped, so this cycle does nothing else.
      */
     private giveUpUnreachableTarget(target: Mobile, generation: number): boolean {
-        if (this.isSafespotted(target)) {
+        // NPCs have no deadline: one out of reach keeps trying for as long as its target stands in
+        // its aggression range (shouldRetreat), however long it is stuck (#6297).
+        if (this.character.isNpc()) {
             this.resetUnreachableTracking();
             return false;
         }
@@ -998,19 +1067,6 @@ export class Combat {
         this.resetUnreachableTracking();
         this.cancelIfCurrent(target, generation);
         return true;
-    }
-
-    /**
-     * An NPC whose target is fighting it from where it cannot be reached (a safespot) keeps it,
-     * facing it and trying its step every cycle, as live does; it does not reset and walk home
-     * between the target's hits. Fighting it means attacking it, or having hit it within the
-     * attacker window. A target that stops fighting is let go by the usual releases, unless content
-     * says it never lets go ("combat:keep-target", the Fight Cave's monsters).
-     */
-    private isSafespotted(target: Mobile): boolean {
-        return this.character.isNpc() &&
-            (this.character.hasFlag("combat:keep-target")
-                || target.getCombat().getTarget() === this.character || this.attacker === target);
     }
 
     /** Every new engagement, and every actor with no engagement, starts with full patience. */

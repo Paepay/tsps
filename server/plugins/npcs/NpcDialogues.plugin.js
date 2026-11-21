@@ -15,7 +15,9 @@
  * `box: { items }` (one or two item ids) to show it as an item box, as OSRS shows
  * hand-outs, instead of a chat message, and `after` to run once the player continues past
  * that box. A statement box can also hold its continue for `box.holdTicks` while a scene
- * plays, then continue normally or, with `box.advance`, move on by itself. A line's `pauseTicks`
+ * plays, then continue normally or, with `box.advance`, move on by itself; `box.delayTicks` closes
+ * the chatbox and opens the box that many ticks later instead, and `box.pauseTicks` closes it once the
+ * box is continued and waits that many ticks before carrying on. A line's `pauseTicks`
  * closes the chatbox after it and waits that many ticks before the conversation carries on (a
  * scene between two lines). "npc-dialogue:start" plays a named variant on demand
  * and returns an optional request.cancel handle scoped to that playback's chain/chatbox.
@@ -23,11 +25,15 @@
  * with versions emits "npc-dialogue:shop" ({ player, npcId, target, shops, shop }) to pick one.
  * A counted random ({type: "random", count, non_repeating: true}) emits "npc-dialogue:draw" ({ player, npc, npcId,
  * definition, draw, count, text, question }) before each draw: `question` is the first spoken line of the drawn
- * alternative before the ordinal placeholder is filled.
+ * alternative before the ordinal placeholder is filled. A plain random emits "npc-dialogue:random" ({ player, npc,
+ * npcId, definition, options, index }) before it plays: a plugin can set `index` to the alternative this player
+ * always gets (an ogre's chosen seasoning).
  */
 const fs = require("fs");
 const path = require("path");
 const { isDeepStrictEqual } = require("node:util");
+/** A paged menu's back option ("~ previous ~"), as the wiki labels it. */
+const PREVIOUS_PAGE_OPTION = /^~\s*previous\s*~$/i;
 /** successor id -> the retired id whose transcript it plays until it has its own (data/retired-npcs.json). */
 const PREDECESSOR = new Map(Object.entries(require("./data/retired-npcs.json").successors)
   .map(([retired, successor]) => [successor.id, Number(retired)]));
@@ -719,7 +725,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
 
   const resolveCondition = (step) =>
     PluginManager.emitNpcDialogueCondition({
-      player, npc: event.npc, npcId, definition, pages: context.pages,
+      player, npc: event.npc, npcId, definition, pages: context.pages, playing: context.playing,
       text: step.text, stepId: step.id,
     }) ?? combatLevelCondition(player, step.text) ?? skillLevelCondition(player, step.text);
 
@@ -734,6 +740,11 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
       ? { menu: history[0] ?? context.pageInitialMenu } : "end";
     const match = /^previous(\d*)/i.exec(reference);
     const back = match && match[1] ? Number(match[1]) : 1;
+    // A submenu's way back is the menu whose option opened it (Daero's "Return to previous menu" goes back to his
+    // topics, whichever topic was opened before), not merely the menu shown before it.
+    let opened = current;
+    for (let step = 0; opened && step < back; step++) opened = menuThatOpened(opened);
+    if (opened) return { menu: opened };
     const index = current ? history.indexOf(current) : history.length - 1;
     // "previous" on the first menu means the menu the option came from; only walk
     // further back when the conversation actually has earlier menus.
@@ -748,6 +759,16 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
       return { menu: context.pageMenuBefore };
     }
     return "end";
+  };
+
+  // The menu shown in this chat with an option that opens `menu` (its first step is that menu). Steps are rebuilt per
+  // run, so menus are matched on their option texts; the latest copy shown wins.
+  const menuTexts = (menuStep) => (menuStep?.options || []).map((entry) => String(entry?.text ?? "")).join("|");
+  const menuThatOpened = (menu) => {
+    const texts = menuTexts(menu?.step);
+    if (!texts) return undefined;
+    return [...context.menuHistory].reverse().find((shown) => shown !== menu && (shown.step?.options || []).some((entry) =>
+      entry?.steps?.[0]?.type === "choice" && menuTexts(entry.steps[0]) === texts));
   };
 
   // "jump above" targets the same option's earlier occurrence, else the option
@@ -979,10 +1000,17 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
           // The native option prompt is already closed; preserve any replacement UI.
           if (hook.end) return;
         }
-        const choice = { player, npc: event.npc, npcId, definition, option: option.text, prompt: step.prompt, stepId: option.id, pages: context.pages };
+        const choice = { player, npc: event.npc, npcId, definition, option: option.text, prompt: step.prompt, stepId: option.id, pages: context.pages, playing: context.playing };
         api.emitCustomEvent("npc-dialogue:choice", choice);
         if (choice.end) return;
         const own = ownMenu(option);
+        // A paged menu's "~ previous ~" goes back a page. The wiki writes it as a bare option with no action
+        // (Transcript:Observatory Quest's sign menu), so the dump leaves it without steps.
+        if (!option.steps?.length && PREVIOUS_PAGE_OPTION.test(String(option.text ?? "").trim())) {
+          // The page shown before is the menu with an option that opens this one.
+          const page = menuThatOpened(own);
+          if (page) return presentMenu(page);
+        }
         context.currentMenu = own;
         context.lastChoice = option.text;
         run([...(option.steps || []), ...(own === menu ? rest : own.rest || []), ...tail], recordOption(option));
@@ -1120,7 +1148,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
         const speech = typeof step.player === "string" ? step.player : typedLine ? step.text : step.npc;
         // Let a plugin skip a line through the mutable payload (as slayer:assignment),
         // e.g. a hand-over line for an item the player is no longer carrying.
-        const request = { player, npc: event.npc, npcId, definition, step, text: speech, pages: context.pages, skip: false };
+        const request = { player, npc: event.npc, npcId, definition, step, text: speech, pages: context.pages, playing: context.playing, skip: false };
         api.emitCustomEvent("npc-dialogue:line", request);
         if (request.skip) {
           if (step.steps?.length) {
@@ -1192,8 +1220,11 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
           return;
         }
         playedAny = true;
+        // The Wiki's colour, as live draws the line (`styled`: Client of Kourend's possessed Veos in
+        // <col=000080>), unless a handler rewrote the words.
+        const shown = request.text === speech && typeof step.styled === "string" ? formatPlayerText(step.styled, player) : formatted;
         // Pages as the chatbox holds them: four lines of font 497 in 380 pixels (ChatTextLayout).
-        const pages = api.core?.ChatTextLayout?.pages(formatted) ?? characterPages(formatted);
+        const pages = api.core?.ChatTextLayout?.pages(shown) ?? characterPages(shown);
         // A typed line spoken by someone other than the NPC being talked to (a
         // paired NPC talking to them, a cutscene actor) gets that speaker's head.
         // An item's own transcript has no NPC; a named speaker still gets their head.
@@ -1276,7 +1307,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
         if (step.type === "message") {
           // Item hand-outs are also `message` steps; let quests hook their id.
           const message = {
-            player, npc: event.npc, npcId, definition, step, pages: context.pages,
+            player, npc: event.npc, npcId, definition, step, pages: context.pages, playing: context.playing,
             text: step.text, target: step.target, stepId: step.id, kind: "message", handled: false,
           };
           const previous = manager.getCurrent?.();
@@ -1290,7 +1321,9 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
           playedAny = true;
           const [first, second] = Array.isArray(message.box?.items) ? message.box.items : [];
           if (first !== undefined || message.box?.statement === true) {
-            const text = formatPlayerText(String(message.text ?? ""), player);
+            // A box keeps the Wiki's colour (`styled`) unless a handler rewrote its words.
+            const words = message.text === step.text && typeof step.styled === "string" ? step.styled : message.text;
+            const text = formatPlayerText(String(words ?? ""), player);
             const box = new DialogueChainBuilder();
             // `box.holdTicks` (statement boxes): the box first shows that many ticks without
             // "Click here to continue" while a scene plays out, as live sends it; then it gains
@@ -1315,9 +1348,43 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
                   : new DoubleItemStatementDialogue(boxIndex++, first, second, text));
             }
             box.add(new ActionDialogue(boxIndex, { execute: () => {
+              const pause = Number.isInteger(message.box?.pauseTicks) && message.box.pauseTicks > 0 ? message.box.pauseTicks : 0;
+              const current = pause ? manager.getCurrent?.() : null;
               message.after?.();
-              run(rest, currentRecord);
+              if (!pause) return run(rest, currentRecord);
+              // `box.pauseTicks`: once the box is continued the chatbox closes and the conversation
+              // waits that many ticks (an NPC eating what it was handed), as a line's `pauseTicks` does;
+              // like it, an `after` that started another conversation keeps the chat.
+              if (current && manager.getCurrent() !== current) return;
+              const waiting = new ActionDialogue(0, { execute: () => {} }, true);
+              const idle = new DialogueChainBuilder();
+              idle.add(waiting);
+              const packets = player.getPacketSender();
+              const open = packets.getChatboxGroupId?.() ?? -1;
+              if (open >= 0) packets.closeInterface(open);
+              startChain(idle);
+              api.core.TaskManager.submit(new api.core.CountdownTask(player, pause, () => {
+                if (cancelled || manager.getCurrent?.() !== waiting) return;
+                run(rest, currentRecord);
+              }));
             } }));
+            // `box.delayTicks`: the chatbox closes and the box opens that many ticks later, while a scene
+            // the handler started plays out (an idle entry holds the conversation, as `pauseTicks` does).
+            const delayTicks = Number.isInteger(message.box?.delayTicks) && message.box.delayTicks > 0 ? message.box.delayTicks : 0;
+            if (delayTicks) {
+              const waiting = new ActionDialogue(0, { execute: () => {} }, true);
+              const idle = new DialogueChainBuilder();
+              idle.add(waiting);
+              const packets = player.getPacketSender();
+              const open = packets.getChatboxGroupId?.() ?? -1;
+              if (open >= 0) packets.closeInterface(open);
+              startChain(idle);
+              api.core.TaskManager.submit(new api.core.CountdownTask(player, delayTicks, () => {
+                if (cancelled || manager.getCurrent?.() !== waiting) return;
+                startChain(box);
+              }));
+              return;
+            }
             startChain(box);
             return;
           }
@@ -1325,7 +1392,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
           return run(rest, currentRecord);
         }
         const action = {
-          player, npc: event.npc, npcId, definition, step, pages: context.pages,
+          player, npc: event.npc, npcId, definition, step, pages: context.pages, playing: context.playing,
           text: step.text, action: step.action, target: step.target, stepId: step.id, handled: false,
         };
         const current = manager.getCurrent?.();
@@ -1333,6 +1400,25 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
         // Quest actions may start a different conversation (for example, after
         // a cutscene action). Do not let this transcript's remaining tail replace it.
         if (current && manager.getCurrent() !== current) return;
+        // A handler can hold the conversation with `wait(resume)`: the chatbox closes, an idle
+        // entry holds the chain, and the transcript carries on when the handler calls resume()
+        // (a document it opened is closed, say). Another conversation meanwhile owns the chat.
+        if (typeof action.wait === "function") {
+          const waiting = new ActionDialogue(0, { execute: () => {} }, true);
+          const idle = new DialogueChainBuilder();
+          idle.add(waiting);
+          const packets = player.getPacketSender();
+          const open = packets.getChatboxGroupId?.() ?? -1;
+          if (open >= 0) packets.closeInterface(open);
+          startChain(idle);
+          action.wait(() => {
+            // A main interface the handler opened clears the idle entry; only a new chat stops it.
+            const now = manager.getCurrent?.();
+            if (cancelled || (now && now !== waiting)) return;
+            run(rest, currentRecord);
+          });
+          return;
+        }
         // A handler can also hand back `steps` to play first (a story picked from another page).
         if (action.handled) return action.end ? close() : run([...(action.steps ?? []), ...rest], currentRecord);
         if (step.type === "end") return close();
@@ -1357,7 +1443,12 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
           if (Number.isInteger(step.count) && step.count > 1 && step.non_repeating === true) {
             return countedRandom.start(step, options, rest, currentRecord);
           }
-          const index = Math.floor(Math.random() * options.length);
+          // "npc-dialogue:random" lets a plugin pick the alternative (`index`) a player is always given:
+          // the wiki's "Dialogue 1 / Dialogue 2" for what differs from player to player, not per talk.
+          const draw = { player, npc: event.npc, npcId, definition, options, index: Math.floor(Math.random() * options.length) };
+          api.emitCustomEvent("npc-dialogue:random", draw);
+          const index = Number.isInteger(draw.index) && draw.index >= 0 && draw.index < options.length
+            ? draw.index : Math.floor(Math.random() * options.length);
           const option = options[index];
           if (option.hook) return unavailable();
           // The record lets an "above" jump see the other random alternatives
@@ -1515,6 +1606,9 @@ module.exports = {
       const withOptions = (page, result) => {
         if (page && data[page]) {
           result.page = page;
+          // The transcript being played, for hooks: `pages` lists every page that reaches the NPC
+          // (Vanstrom's five quests), not the one this conversation came from.
+          result.context.playing = Object.freeze({ page, variant: result.variant });
           const pageOptions = collectPageOptions(data[page]);
           result.context.pageOptions = pageOptions.byText;
           result.context.pageOptionList = pageOptions.list;
@@ -1589,6 +1683,7 @@ module.exports = {
       const context = {
         player: request.player, pages: [{ page, variants: Object.keys(record.variants ?? { "standard-dialogue": steps }) }],
         speakerIdByName, pageOptions: pageOptions.byText, pageOptionList: pageOptions.list,
+        playing: Object.freeze({ page, variant }),
         pageLines: collectPageLines(record), pageMenuBefore: collectMenuBefore(record, variant),
         pagePreviousVariant: collectPreviousVariant(record, variant),
         pageInitialMenu: collectMenuBefore(record, variant, { initial: true }),

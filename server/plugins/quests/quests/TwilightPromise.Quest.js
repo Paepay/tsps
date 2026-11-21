@@ -1250,6 +1250,7 @@ module.exports = function registerTwilightPromiseQuest(api) {
       return;
     }
     if (stepId === STEP.VELAM_KILLED) {
+      if (scene.ennius && scene.velam) Scenes.face(scene.ennius, scene.velam.getLocation());
       scene.ennius?.performAnimation(new Animation(ENNIUS_STRIKE_ANIMATION, 5));
       Scenes.later(scene, 1, () => {
         scene.velam?.performAnimation(new Animation(VELAM_FALL_ANIMATION, 20));
@@ -1486,8 +1487,7 @@ module.exports = function registerTwilightPromiseQuest(api) {
     attacker.performAnimation(new Animation(swing));
     defender.performAnimation(new Animation(block));
     // These are scripted blows, so neither fighter has a combat target. Refresh the combat
-    // stopwatch the same way an ordinary hit would, or NPC.process() treats both as out of
-    // combat and regenerates the damage back while the pair is still trading swings.
+    // stopwatch the same way an ordinary hit would, so both count as fighting.
     attacker.getCombat()?.getLastAttack?.().reset?.();
     defender.getCombat()?.getLastAttack?.().reset?.();
     const damage = SPAR_DAMAGE.min + Math.floor(Math.random() * (SPAR_DAMAGE.max - SPAR_DAMAGE.min + 1));

@@ -1,3 +1,4 @@
+import { subscribeProtocolNotice, type ProtocolNotice } from "../network/serverConnection/protocolCompatibility";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { registerSerializer } from "threads";
@@ -100,6 +101,8 @@ if (typeof module !== "undefined" && module.hot) {
 
 function OsrsClientApp() {
     const [errorMessage, setErrorMessage] = useState<string>();
+    const [protocolNotice, setProtocolNotice] = useState<ProtocolNotice>();
+    useEffect(() => subscribeProtocolNotice(setProtocolNotice), []);
     const [osrsClient, setOsrsClient] = useState<OsrsClient>();
     const [storageWarnings, setStorageWarnings] = useState<string[]>([]);
     const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent>();
@@ -322,6 +325,7 @@ function OsrsClientApp() {
                 // No cache yet - will be initialized after download
             );
             clientToDispose = client;
+            const loginAppearanceReady = client.prepareLoginScreen();
 
             // Set OsrsClient immediately so GameContainer can render the login overlay
             setOsrsClient(client);
@@ -372,9 +376,14 @@ function OsrsClientApp() {
 
             if (disposed) return;
 
+            // Keep default title art and flames offscreen until appearance resolves or times out.
+            await loginAppearanceReady;
+            if (disposed) return;
+
             // ========== Initialize cache and finalize OsrsClient ==========
             client.initCache(cache);
             client.init();
+            client.clientPlugins.clientReady(abortController.signal);
 
             // ========== Login Screen Flow ==========
             setAutoSendHandshake(false);
@@ -455,7 +464,7 @@ function OsrsClientApp() {
         content = <div className="center-container max-height content-text">{errorMessage}</div>;
     } else if (osrsClient) {
         // Show GameContainer - LoginRenderer handles all loading states (DOWNLOADING and LOADING)
-        content = <GameContainer osrsClient={osrsClient} />;
+        content = <GameContainer osrsClient={osrsClient} protocolNotice={protocolNotice} />;
     } else {
         // Brief loading state before OsrsClient is created (checking storage, opening caches, etc.)
         content = (

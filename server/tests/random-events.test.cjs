@@ -712,14 +712,18 @@ test('Sandwich tray validates owner, selection and open interface, with a wrong 
   h.random(0); trayClick(h, p, 10726); trayClick(h, p, 10726);
   assert.deepEqual(p.rewards, [I.STALE_BAGUETTE]); assert.equal(p.interfaceId, -1);
   assert.deepEqual(npcLines(p), ['Hope that fills you up!']);
+  const cross = [];
+  h.api.onCustomEvent('random-events:sandwich-lady-cross', (event) => cross.push(event.player));
   const normal = h.player(), npc2 = h.spawn(normal, 1, 0);
   h.hooks['Sandwich lady']['Talk-to']({ player: normal, npc: npc2 }); openOptions(h, normal);
   h.random(1 / 64); trayClick(h, normal, 10726);
   assert.deepEqual(normal.rewards, [I.BAGUETTE]);
+  assert.deepEqual(cross, [], "the right food makes her no cross");
   // The Wiki transcript's line for the wrong food; no reward and she leaves.
   const greedy = h.player(), npc4 = h.spawn(greedy, 1, 0);
   h.hooks['Sandwich lady']['Talk-to']({ player: greedy, npc: npc4 }); openOptions(h, greedy);
   trayClick(h, greedy, 10730); assert.deepEqual(greedy.rewards, []); assert.equal(greedy.interfaceId, -1);
+  assert.deepEqual(cross, [greedy], "random-events:sandwich-lady-cross, for the wrong food only (a league's task)");
   assert.deepEqual(npcLines(greedy), ["Hey, I didn't say you could have that!"]);
   leaves(h, greedy); assert.equal(npc4.removed, true);
   // Live: a pie that doesn't fit is placed on the ground for three hours.
@@ -926,9 +930,12 @@ test('Jekyll selects the highest clean herb and all fourteen exchanges work with
     assert.equal(h.prompts.at(-1).title, 'Select an option');
     assert.deepEqual(h.prompts.at(-1).options.map(option => option.label), ['Here you are.', 'No, I need it myself.']);
     const yes = h.prompts.at(-1).options[0].cb;
+    const traded = [];
+    h.api.onCustomEvent('random-events:jekyll-traded', (event) => { if (event.player === p) traded.push(event.herbId); });
     yes(); assert.deepEqual(npcLines(p), ['Here you are.']); assert.deepEqual(p.rewards, []);
     openOptions(h, p);
     assert.deepEqual(p.rewards, [potionId]);
+    assert.deepEqual(traded, [herbId], "random-events:jekyll-traded with the potion (rsprox 560)");
     assert.deepEqual(npcLines(p), ['Thank you so much! Here, take this potion in return.']);
     yes(); openOptions(h, p); assert.deepEqual(p.rewards, [potionId], 'only once');
     leaves(h, p); assert.equal(npc.removed, true);
@@ -1159,9 +1166,7 @@ test('gift events follow the captured overhead timeline, smoke and refusal lines
   // The spoken line is copied to the chatbox as a type 114 message when the page opens.
   h.hooks['Rick Turpentine']['Talk-to']({ player: r, npc: rick });
   assert.deepEqual(npcLines(r), ['Today is your lucky day, madam!<br>I am donating to the victims of crime to atone for my<br>past actions!']);
-  const [line] = r.dialogue.getDialogues().values();
-  try { line.send(r); } catch { /* the fake sender has no chathead packets */ }
-  assert.deepEqual(r.typed.at(-1), [114, 'Today is your lucky day, madam! I am donating to the victims of crime to atone for my past actions!', 'Rick Turpentine']);
+  // The exact wire echo is checked on real Player/PacketSender in dialogue-chat-history.test.cjs.
 });
 
 const FROG_TOUCH = ["Very well, if a touch is all you need, I'll do it.", "Yes, I will touch you.",
@@ -3089,6 +3094,7 @@ test('spoken dialogue preserves text for native wrapping and spaces its lines as
   const { Dialogue } = require('../dist/game/model/dialogues/entries/Dialogue');
   const strings = [], scripts = [], flags = [];
   const sender = {
+    sendTypedMessage() { return this; },
     sendChatboxInterface() { return this; }, sendNpcHeadOnInterface() { return this; },
     sendPlayerHeadOnInterface() { return this; }, sendInterfaceAnimation() { return this; },
     sendString(...args) { strings.push(args); return this; },

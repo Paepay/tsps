@@ -25,7 +25,7 @@ function uid([group, child]) {
 
 /** The message for a league, with the days left until `end` (ms) when it is known and still ahead. */
 function messageOfTheWeek(type, end, now = Date.now()) {
-  const { welcome } = data;
+  const welcome = WELCOME;
   const fill = (text, values) => text.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match);
   let text = fill(welcome.text, { colour: welcome.colour, league: Common.league(type).name });
   if (Number.isFinite(end) && end > now) {

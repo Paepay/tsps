@@ -151,7 +151,8 @@ module.exports = function registerIdesOfMilkQuest(api) {
 
   class BullArena extends PrivateArea {
     constructor(player) {
-      super([new Boundary(3240, 3268, 3265, 3301, 0)]);
+      // The southern fence is below the two troughs, with a walkable tile between them at 3259, 3255.
+      super([new Boundary(3240, 3268, 3255, 3301, 0)]);
       this.player = player;
       this.bull = null;
       this.demonic = false;
@@ -233,6 +234,16 @@ module.exports = function registerIdesOfMilkQuest(api) {
     attackSpeed(npc) {
       return npc.getArea() instanceof BullArena ? (this.nextAttack(npc, npc.getCombat().getTarget()) ? 8 : 5) : super.attackSpeed(npc);
     }
+    handleAfterHitEffects(hit) {
+      super.handleAfterHitEffects(hit);
+      const npc = hit.getAttacker();
+      const arena = npc.getArea();
+      // "Smarter than a Cow" fails when an attack connects, even if protection reduces it to zero.
+      // Starting an animation (or a special whose footprint misses) is not a successful attack.
+      if (arena instanceof BullArena && arena.bull === npc && !arena.special && hit.isAccurate()) {
+        api.emitCustomEvent("ides-of-milk:brutus-hit", { player: hit.getTarget() });
+      }
+    }
     start(npc, player) {
       const arena = npc.getArea();
       if (!(arena instanceof BullArena)) return super.start(npc, player);
@@ -291,6 +302,7 @@ module.exports = function registerIdesOfMilkQuest(api) {
           npc.setNeedsPlacement(false);
         }
         if (hit) {
+          api.emitCustomEvent("ides-of-milk:brutus-hit", { player });
           const hp = player.getSkillManager().getMaxLevel(Skill.HITPOINTS);
           // shortcut: quest scaling is documented as roughly 30–40%; capture low-level hits to establish exact rounding.
           const min = Math.min(15, Math.max(1, Math.floor(hp * 0.3)));
@@ -666,6 +678,9 @@ module.exports = function registerIdesOfMilkQuest(api) {
     // ponytail: timed from the bull entering; live may start it at the first hit.
     arena.startTick = World.getProcessCycle();
     arena.enter(npc);
+    if (quest.isComplete(arena.player)) {
+      api.emitCustomEvent("ides-of-milk:brutus-spawn", { player: arena.player });
+    }
     bullsByPlayer.set(arena.player, npc);
     npc.performAnimation(new Animation(ANIMATION.spawn));
   }

@@ -6,6 +6,7 @@ import {
 } from "../../common/authentication";
 import {
     getBrowserHostWorldConfig,
+    getClientConfig,
     getConfiguredDefaultServer,
     getConfiguredServers,
     getDefaultServerAddress,
@@ -87,6 +88,15 @@ export class LoginState {
     /** Load settings that should persist between sessions */
     private loadPersistedSettings(): void {
         this.titleMusicDisabled = getClientPreference("titleMusicDisabled");
+        const config = getClientConfig();
+        if (!config.restoreLastServer) {
+            const server = config.defaultServer;
+            this.serverTransport = server.transport ?? "websocket";
+            this.serverSignalUrl = server.signalUrl;
+            this.serverWorldId = server.worldId;
+            this.serverIceServers = server.iceServers ?? [];
+            return;
+        }
         const browserHostWorld = getBrowserHostWorldConfig();
         if (browserHostWorld) {
             this.serverName = "Browser World";

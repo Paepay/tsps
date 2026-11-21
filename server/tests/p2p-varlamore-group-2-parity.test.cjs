@@ -71,6 +71,8 @@ function harness(name) {
           return queue;
         },
         addFirstStep(to) { queue.reset(); return queue.addSteps(to); },
+        // Open map: a walk to a checkpoint takes the same tiles as the straight line.
+        addCheckpoint(to) { return queue.addSteps(to); },
         hasPendingWork: () => queue.points.length > 0,
         size: () => queue.points.length,
         isMovings: () => queue.points.length > 0,
@@ -887,8 +889,24 @@ test('TP Mezan prays against a style used four times, falls without dying and an
   const blocked = hit(core.CombatType.MELEE); h.hooks.onNpcHitModify.forEach(fn => fn({ npc: mezan, hit: blocked })); assert.equal(blocked.parts[0].damage, 0);
   const event = { npc: mezan, preventDeath: false }; h.hooks.onNpcBeforeDeath.forEach(fn => fn(event)); assert.equal(event.preventDeath, true);
   h.tick(2); assert.equal(p.varbits.get(9832), 2);
-  h.tick(6); assert.match(p.text, /^You fought well in there/);
+  h.tick(6); assert.deepEqual(src(p, p.getLocation()), [1803, 9521], 'the player returns to the captured lobby tile');
+  const lobbyMezan = require('../data/definitions/npc-spawns.json').find(row => row.id === 13396 && row.name === 'Knight of Varlamore');
+  assert.deepEqual([lobbyMezan.x, lobbyMezan.y, lobbyMezan.direction], [1804, 9520, 2], 'the stationary lobby Mezan anchor matches his captured post-fight tile and facing');
+  assert.match(p.text, /^You fought well in there/);
   h.continueUntil(p, () => p.text === 'Perfect! Thanks.'); assert.equal(p.varbits.get(9832), 3); assert.equal(h.quest.getStage(p), 16);
+});
+
+test('TP Mezan Quick-exit returns to the captured lobby tile beside the stationary NPC spawn', () => {
+  const { h, p } = tp(); h.quest.setStage(p, 14); p.attrs.set('quest.twilights_promise.recruits', 1 << 6);
+  tpTalk(h, p, N.KNIGHT_OF_VARLAMORE_21); continueToMenu(h, p); h.choose(p, "I'm ready. Let's do this.");
+  h.continueUntil(p, () => p.text === 'Kuani!'); p.manager.advance(); h.tick(2);
+  assertCopy(p, [222, 381]);
+  const event = { player: p };
+  h.namedObjects.get('Gate')['Quick-exit'](event);
+  assert.equal(event.handled, true);
+  assert.deepEqual(src(p, p.getLocation()), [1803, 9521], 'Quick-exit uses the same captured return tile as the fight result');
+  const lobbyMezan = require('../data/definitions/npc-spawns.json').find(row => row.id === 13396 && row.name === 'Knight of Varlamore');
+  assert.deepEqual([lobbyMezan.x, lobbyMezan.y, lobbyMezan.direction], [1804, 9520, 2], 'the lobby NPC stays on his recorded post-fight tile and facing');
 });
 
 test('TP judgement: the crest goes back (24), the letter (26) and its paper (28), then the verdict (30, 32) and Regulus (34)', () => {
@@ -921,7 +939,9 @@ test('TP judgement: the crest goes back (24), the letter (26) and its paper (28)
   p.manager.advance(); h.tick(3); assert.match(p.text, /found to be a traitor/);
   assert.deepEqual(src(p, ennius.getLocation()), [1679, 3158], 'Ennius stands beside Velam before the execution');
   h.continueUntil(p, () => p.text === "For you, this is the only thing that's right."); p.manager.advance();
-  h.tick(1); assert.ok(h.npcs.find(npc => npc.id === 12909).animations.includes(836));
+  const executioner = h.npcs.find(npc => npc.id === 12893), victim = h.npcs.find(npc => npc.id === 12909);
+  assert.deepEqual(src(p, executioner.faceTo), src(p, victim.getLocation()), 'Ennius faces Velam as the strike starts');
+  h.tick(1); assert.ok(victim.animations.includes(836));
   h.tick(6); assert.equal(p.text, 'The rest of you are dismissed.');
   p.manager.advance(); h.tick(3); assert.equal(h.quest.getStage(p), 32); assert.equal(p.items.get(I.INCRIMINATING_LETTER), 0);
   h.tick(6); assert.equal(p.text, 'You killed him!'); assert.ok(!live().includes(12893));
@@ -1056,29 +1076,24 @@ test('TP ending: below The Heart of Darkness requirements Itzla says "Timoiva fo
   }
 });
 
-test('TP battle: the scripted spar keeps real NPC.process() from regenerating the cultist', () => {
+test('TP battle: real NPC.process() does not heal the spar damage back between swings', () => {
   const npc = new core.NPC(12923, new core.Location(1438, 3172, 0));
   npc.__skipDefaultRespawn = true;
   const cycle = core.World.getProcessCycle();
   try {
     assert.equal(npc.getMaxHitpoints(), 25, 'the real cache cultist has 25 hitpoints');
     // What sparHit() does to both fighters after each exchange, four ticks apart.
+    // sparHit() gives neither fighter a combat target; NPC regeneration is 1 hitpoint per
+    // 100 ticks whatever the NPC is doing (#6297), so a spar's damage stays.
     npc.setHitpoints(23);
-    core.World.processCycle = 100;
-    npc.getCombat().getLastAttack().reset();
-    for (let tick = 1; tick <= 40; tick++) {
+    for (let tick = 1; tick <= 99; tick++) {
       core.World.processCycle = 100 + tick;
-      if (tick % 4 === 0) npc.getCombat().getLastAttack().reset();
       npc.process();
     }
-    assert.equal(npc.getHitpoints(), 23, 'real out-of-combat regeneration never starts while the pair fights');
-    // Control: the same processing heals it once the combat stopwatch is stale.
-    npc.setHitpoints(23);
-    core.World.processCycle = 100;
-    npc.getCombat().getLastAttack().reset();
-    core.World.processCycle = 140;
+    assert.equal(npc.getHitpoints(), 23, 'no healing inside the 100-tick regen interval');
+    core.World.processCycle = 200;
     npc.process();
-    assert.equal(npc.getHitpoints(), 25, 'the production regeneration path is still live');
+    assert.equal(npc.getHitpoints(), 24, 'one hitpoint on the 100th tick');
   } finally {
     core.World.processCycle = cycle;
   }
@@ -1264,6 +1279,24 @@ test('HOD ruins require all levers and icons in the random mural order, then awa
   h.quest.complete(p); assert.equal(p.xp.length, 4);
 });
 
+test('HOD the tower staircase never climbs to the static upper floor, and its Exit leads out outside a trial (issue 6267)', () => {
+  const climb = (h, p, value) => { h.quest.setStage(p, value); p.manager.reset(); p.text = ''; const event = { player: p, objectId: 54369 }; h.emit('ladders:climb', event); return event; };
+  for (const [value, text] of [[0, "Hey you! You're not allowed up there."], [24, "Hey you! You're not allowed up there."],
+    [46, "You don't need to be going up there. You've already completed your trials."],
+    [74, "You've already completed the trials so have no need to go back up there."], [76, "You've already completed the trials so have no need to go back up there."]]) {
+    const { h, p } = hod(); p.moveTo(new core.Location(1636, 3223, 0));
+    const event = climb(h, p, value); h.tick(4);
+    assert.equal(event.handled, true, `stage ${value}: the quest claims the staircase before the generic Ladders climb`);
+    if (value >= 74) assert.deepEqual(p.messages, [text], `stage ${value}`); else assert.equal(p.text, text, `stage ${value}`);
+    assert.equal(p.getLocation().getZ(), 0);
+  }
+  for (const value of [50, 76]) for (const [id, z] of [[54370, 1], [54371, 2]]) for (const option of ['Exit', 'Quick-exit']) {
+    const { h, p, action } = hod(); h.quest.setStage(p, value); p.moveTo(new core.Location(1636, 3223, z));
+    assert.equal(action('Staircase', option, id), true);
+    assert.deepEqual([p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()], [1637, 3221, 0], `stage ${value}: ${option} on ${id}`);
+  }
+});
+
 test('HOD the private ruins restore their mining blockage and damaging traps on relog', () => {
   const { h, p } = hod(); p.attrs.set('the-heart-of-darkness:stage-version', 1);
   h.quest.setStage(p, 58); p.moveTo(new core.Location(1693, 9633, 2));
@@ -1311,8 +1344,8 @@ function doti() {
     const event = { player: p, npcId: id, clickType: 1, definition: { getActions: () => [option] }, ...extra };
     h.hooks.onNpcInteraction.forEach(fn => fn(event)); return event;
   };
-  const object = id => {
-    const event = { player: p, objectId: id, definition: { id } };
+  const object = (id, extra = {}) => {
+    const event = { player: p, objectId: id, definition: { id }, ...extra };
     h.hooks.onObjectInteraction.forEach(fn => fn(event)); return event;
   };
   return { h, p, npc, object };
@@ -1380,15 +1413,100 @@ test('DOTI backstage requires searching the real bookshelf and discussing every 
 test('DOTI backstage bookshelf is a player-scoped stage spawn, not a global object spawn', () => {
   assert.equal(require('../data/definitions/object-spawns.json').some(spawn => [54734, 54735].includes(spawn.id)), false);
   const { h, p } = doti(); h.quest.setStage(p, 36);
-  const shelf = h.objects.find(object => object.getId() === 54734);
+  const shelf = h.objects.find(object => object.getId() === 54734 && object.getLocation().getX() === 1461);
   assert.ok(shelf, 'the searchable changing bookshelf appears for this player');
   assert.equal(shelf.getOwner(), p);
   assert.deepEqual([shelf.getLocation().getX(), shelf.getLocation().getY(), shelf.getLocation().getZ()], [1461, 9331, 0]);
   h.quest.setStage(p, 40);
   assert.equal(h.objects.some(object => object.getId() === 54734), false);
-  const base = h.objects.find(object => object.getId() === 54735);
+  const base = h.objects.find(object => object.getId() === 54735 && object.getLocation().getX() === 1461);
   assert.ok(base, 'the cache bookshelf returns once the backstage clue is done');
   assert.equal(base.getOwner(), p);
+});
+
+test('DOTI replaces both cache bookshelf placements so either wall can be searched', () => {
+  const { h, p, object } = doti(); h.quest.setStage(p, 36);
+  const shelves = h.objects.filter(object => object.getId() === 54734)
+    .map(object => [object.getLocation().getX(), object.getLocation().getY()]);
+  assert.deepEqual(shelves.sort(), [[1458, 9331], [1461, 9331]],
+    'both loc 54735 placements on the cellar wall become the searchable clue variant');
+  for (const shelf of h.objects.filter(object => object.getId() === 54734)) assert.equal(shelf.getOwner(), p);
+  // Clicking the west replacement must go through the real resolved Bookshelf id, not 54735.
+  object(54735, { definition: { id: 54726 }, location: { x: 1458, y: 9331, z: 0 } });
+  assert.equal(p.attrs.get('quest.death_on_the_isle.backstage.bookshelf'), true);
+  h.quest.setStage(p, 40);
+  assert.equal(h.objects.some(object => object.getId() === 54734), false);
+  assert.deepEqual(h.objects.filter(object => object.getId() === 54735)
+    .map(object => [object.getLocation().getX(), object.getLocation().getY()]).sort(), [[1458, 9331], [1461, 9331]]);
+});
+
+test('DOTI cellar entrance and stair exit land beside the cache locs, not on them', () => {
+  const { h, p, object } = doti(); h.quest.setStage(p, 18);
+  object(55047, { location: { x: 1447, y: 2938, z: 0 }, sourceLocation: { x: 1450, y: 2934, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()], [1445, 9337, 0]);
+  object(54716, { location: { x: 1447, y: 9338, z: 0 }, sourceLocation: { x: 1445, y: 9337, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ()], [1450, 2934, 0]);
+  assert.notDeepEqual([p.getLocation().getX(), p.getLocation().getY()], [1447, 2938],
+    'the exit does not land on the blocked cellar entrance loc');
+});
+
+test('DOTI theatre stairs avoid Stradius and the bookshelf passage crosses the cellar wall', () => {
+  const { h, p, object } = doti(); h.quest.setStage(p, 42);
+  object(54717, { location: { x: 1469, y: 9327, z: 0 }, sourceLocation: { x: 1468, y: 9329, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1472, 2926]);
+  assert.ok(require('../data/definitions/npc-spawns.json').some(spawn => spawn.x === 1472 && spawn.y === 2925),
+    'the world spawns Stradius on the old landing tile');
+  assert.notDeepEqual([p.getLocation().getX(), p.getLocation().getY()], [1472, 2925], 'never land on Stradius');
+  h.quest.setStage(p, 50);
+  object(54735, { definition: { id: 54728 }, location: { x: 1461, y: 9331, z: 0 }, sourceLocation: { x: 1462, y: 9331, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1457, 9331],
+    'the theatre-side passage lands in the wine cellar beside the opposite shelf');
+  object(54735, { definition: { id: 54728 }, location: { x: 1458, y: 9331, z: 0 }, sourceLocation: { x: 1457, y: 9331, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1462, 9331],
+    'the wine-cellar-side passage lands in the theatre cellar');
+});
+
+test('DOTI entryway pass-through crosses both entryways, including the stage side during the quest', () => {
+  const { h, p, object } = doti(); h.quest.setStage(p, 20);
+  object(54707, { location: { x: 1454, y: 2934, z: 0 }, sourceLocation: { x: 1455, y: 2934, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1453, 2934],
+    'the stage-side entryway still passes through during the party');
+  object(54707, { location: { x: 1454, y: 2934, z: 0 }, sourceLocation: { x: 1453, y: 2934, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1455, 2934]);
+  const before = [p.getLocation().getX(), p.getLocation().getY()];
+  object(54707, { location: { x: 1426, y: 2933, z: 0 }, sourceLocation: { x: 1427, y: 2933, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], before,
+    'the guest entrance keeps its guard dialogue during the party');
+  h.quest.setStage(p, 50);
+  object(54707, { location: { x: 1426, y: 2933, z: 0 }, sourceLocation: { x: 1425, y: 2933, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [1427, 2933],
+    'the guest entrance passes through after the quest');
+});
+
+test('DOTI guest entrance refuses before admission too', () => {
+  const { h, p, object } = doti();
+  h.quest.setStage(p, 10); p.moveTo(new core.Location(1425, 2933, 0));
+  const before = [p.getLocation().getX(), p.getLocation().getY()];
+  object(54707, { location: { x: 1426, y: 2933, z: 0 }, sourceLocation: { x: 1425, y: 2933, z: 0 } });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], before,
+    'the guest entrance stays guarded while the quest is pre-admission');
+  assert.match(p.text, /guest|staff|entrance|invite|party/i, 'the Villa Guard refusal plays');
+
+  const fresh = doti();
+  fresh.object(54707, { location: { x: 1426, y: 2933, z: 0 }, sourceLocation: { x: 1425, y: 2933, z: 0 } });
+  assert.deepEqual([fresh.p.getLocation().getX(), fresh.p.getLocation().getY()], [1427, 2933],
+    'an unstarted quest can still use the guest entrance');
+});
+
+test('DOTI landing tiles are walkable in the cache map and the replaced tiles are not', () => {
+  const rm = core.RegionManager; rm.init();
+  const blocked = (x, y, z = 0) => rm.blocked(new core.Location(x, y, z), null);
+  for (const [x, y] of [[1445, 9337], [1450, 2934], [1472, 2926], [1457, 9331], [1462, 9331]]) {
+    assert.equal(blocked(x, y), false, `${x},${y} is a walkable landing`);
+  }
+  for (const [x, y] of [[1447, 9338], [1447, 2938], [1445, 9336]]) {
+    assert.equal(blocked(x, y), true, `${x},${y} is a blocked loc tile`);
+  }
 });
 
 test('DOTI Attack uses the staged combat method and preserves actors through their scripted moves', () => {

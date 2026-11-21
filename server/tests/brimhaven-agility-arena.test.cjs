@@ -22,7 +22,13 @@ const {
   obstacleXp, familyAt, crossingTarget, ropeSwingSteps, routeToObstacle,
 } = plugin._test;
 
-init({ core: PluginManager.getCoreApi(), emitCustomEvent() {} });
+const collectionAwards = [];
+init({
+  core: PluginManager.getCoreApi(),
+  emitCustomEvent(event, award) {
+    if (event === "collection-log:obtain") collectionAwards.push(award);
+  },
+});
 ObstacleRunner.init({ core: PluginManager.getCoreApi(), getTaskManager: () => TaskManager });
 
 // Successful floor traps resolve their physical entry loc before animating it.
@@ -61,7 +67,11 @@ function player({ agility = 50, coins = 0, hitpoints = 99, x = 2804, y = 9590, z
       setCurrentLevel: (skill, level) => { if (skill === Skill.AGILITY) p.agility = level; },
     }),
     getHitpoints: () => hitpoints,
-    getCombat: () => ({ getHitQueue: () => ({ addPendingDamage: (hits) => p.hits.push(hits[0]) }) }),
+    getCombat: () => ({
+      getHitQueue: () => ({ addPendingDamage: (hits) => p.hits.push(hits[0]) }),
+      holdFullStall: (holdsHits) => { p.stall = { holdsHits }; },
+      releaseFullStall: () => { p.stall = null; },
+    }),
     isRegistered: () => true,
     setSkillAnimation() {},
     getUpdateFlag: () => ({ flag() {} }),
@@ -185,6 +195,10 @@ test("tagging the active dispenser pays a ticket, a voucher and scaled XP once p
   assert.equal(p.inventory.get(TICKET), 1);
   assert.equal(p.inventory.get(VOUCHER), 1);
   assert.ok(p.messages.includes("You can only get one ticket at a time, wait till the arrow moves again."));
+  assert.deepEqual(collectionAwards.filter((award) => award.player === p), [
+    { player: p, itemId: ItemIds.AGILITY_ARENA_TICKET, amount: 1 },
+    { player: p, itemId: VOUCHER, amount: 1 },
+  ]);
 });
 
 test("a miss on an inactive dispenser awards nothing and says so", () => {

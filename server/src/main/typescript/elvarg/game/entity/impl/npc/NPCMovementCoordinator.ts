@@ -83,7 +83,7 @@ export class NPCMovementCoordinator {
             return;
         }
         this.nextRetreatRepathCycle = cycle + NPCMovementCoordinator.RETREAT_REPATH_COOLDOWN_TICKS;
-        PathFinder.calculateWalkRoute(this.npc, spawn.getX(), spawn.getY());
+        PathFinder.calculateWalkRoute(this.npc, spawn.getX(), spawn.getY(), true);
     }
 
     /** Chebyshev distance from the NPC's current tile to its spawn (same axes as wander). */
@@ -106,8 +106,10 @@ export class NPCMovementCoordinator {
 
     public updateCoordinator() {
         if (CombatFactory.inCombat(this.npc)) {
+            // Walking home after a fight ended is not a retreat: one attacked on the way fights
+            // back (#6297). A retreat (shouldRetreat) is still walked out to the spawn.
             if (this.coordinateState == CoordinateState.AWAY) {
-                this.coordinateState = CoordinateState.RETREATING;
+                this.coordinateState = CoordinateState.HOME;
             }
             if (this.coordinateState == CoordinateState.RETREATING) {
                 // Exact spawn for rooted NPCs; for wanderers, inside the radius is enough so a

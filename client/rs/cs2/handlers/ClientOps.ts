@@ -15,6 +15,7 @@ import { VARBIT_ROOF_REMOVAL } from "../../../common/vars";
 import { MenuTargetType } from "../../MenuEntry";
 import { chatHistory } from "../ChatHistory";
 import { getHoverTarget, getInteractionCanvases, minMenuSnapshot, type MinMenuSnapshot } from "../minimenu";
+import { getRootRenderTransform } from "../../../widgets/menu/utils";
 import { Opcodes } from "../Opcodes";
 import type { HandlerContext, HandlerMap } from "./HandlerTypes";
 import { locHighlightKey, type ModelHighlightManager } from "../../../game/highlights/ModelHighlightManager";
@@ -148,9 +149,15 @@ export function registerClientOps(handlers: HandlerMap): void {
         const inv = ctx.getInventory(invId);
         let size: number;
         if (inv) {
+            // Explicit runtime capacities include custom containers (the legacy shop wire
+            // uses 516 with 300 slots, while the native cache's 516 is a 28-slot bag).
             size = inv.capacity;
+        } else if (ctx.invTypeLoader) {
+            // Interface initialization can precede the first inventory packet. Its slot
+            // count must come from the definition even when no live container exists yet.
+            size = ctx.invTypeLoader.load(invId).size;
         } else {
-            // Default sizes for common inventories
+            // Legacy caches without inventory definitions retain the common defaults.
             const defaultSizes: Record<number, number> = {
                 93: 28, // Backpack
                 94: 14, // Equipment (11 slots but indexed 0-13)
@@ -613,11 +620,6 @@ export function registerClientOps(handlers: HandlerMap): void {
         ctx.pushInt(pressed ? 1 : 0);
     });
 
-    handlers.set(Opcodes.CLIENT_SET_SIDE_PANEL, (ctx) => {
-        const interfaceId = ctx.intStack[--ctx.intStackSize];
-        ctx.openMobileTab?.(interfaceId);
-    });
-
     // === Settings ===
     handlers.set(Opcodes.MOUSECAM, (ctx) => {
         const enabled = ctx.intStack[--ctx.intStackSize] === 1;
@@ -713,31 +715,26 @@ export function registerClientOps(handlers: HandlerMap): void {
         ctx.intStackSize--; // pop enabled
     });
 
-    // Key input mode control opcodes ()
-    // These opcodes control the key input state for chatbox dialogs
-    // Type 0 = no dialog active (all widgets can receive input)
-    // Type 1 = default/reset state
-    // Type 2 = interface-scoped (only widgets in specified interface)
-    // Type 3 = widget-scoped (only specified widget can receive input)
-
-    // Opcode 3138: SETKEYINPUTMODE_ALL - Clear input dialog (type 0)
-    // No widgets are restricted, input mode is cleared
+    // Widget shortcut scope is independent of chatbox count/name input dialogs.
+    handlers.set(Opcodes.SETKEYINPUTMODE_COMPONENT, (ctx) => {
+        ctx.cs2Vm.widgetKeyInputMode = 3;
+        ctx.cs2Vm.widgetKeyInputTarget = ctx.intStack[--ctx.intStackSize];
+    });
+    handlers.set(Opcodes.SETKEYINPUTMODE_INTERFACE, (ctx) => {
+        ctx.cs2Vm.widgetKeyInputMode = 2;
+        ctx.cs2Vm.widgetKeyInputTarget = ctx.intStack[--ctx.intStackSize];
+    });
     handlers.set(Opcodes.SETKEYINPUTMODE_ALL, (ctx) => {
-        ctx.cs2Vm.inputDialogType = 0;
-        ctx.cs2Vm.inputDialogWidgetId = -1;
-        ctx.cs2Vm.inputDialogString = "";
+        ctx.cs2Vm.widgetKeyInputMode = 0;
     });
-
-    // Opcode 3139: SETKEYINPUTMODE_KEYBOARD - Enable keyboard input mode (type 1)
-    // Used to enable chatbox input for typing
-    handlers.set(Opcodes.SETKEYINPUTMODE_KEYBOARD, (ctx) => {
-        ctx.cs2Vm.inputDialogType = 1;
+    handlers.set(Opcodes.SETKEYINPUTMODE_NONE, (ctx) => {
+        ctx.cs2Vm.widgetKeyInputMode = 1;
     });
-
-    // Opcode 3140: GETKEYINPUTMODE - Get current key input mode
-    // Returns the current input dialog type
-    handlers.set(Opcodes.GETKEYINPUTMODE, (ctx) => {
-        ctx.pushInt(ctx.cs2Vm.inputDialogType);
+    handlers.set(Opcodes.SETKEYINPUTMODE_ACTIVECOMPONENT, (ctx, intOp) => {
+        const widget = intOp === 1 ? ctx.dotWidget : ctx.activeWidget;
+        ctx.cs2Vm.widgetKeyInputMode = 3;
+        ctx.cs2Vm.widgetKeyInputTarget = widget
+            ? (widget.fileId === -1 ? widget.parentUid ?? widget.uid : widget.uid) : -1;
     });
 
     handlers.set(Opcodes.SETHIDEUSERNAME, (ctx) => {
@@ -762,33 +759,32 @@ export function registerClientOps(handlers: HandlerMap): void {
 
     // === Mouse position ===
     // returns mouse position in widget-logical coordinates.
-    // InputManager coordinates are in canvas-buffer space; divide by the UI
-    // render scale so CS2 scripts see positions matching the widget layout.
-    handlers.set(Opcodes.MOUSE_GETX, (ctx) => {
-        const osrsClient = (ctx.widgetManager as any)?.osrsClient;
-        const mouseX = osrsClient?.inputManager?.mouseX;
-        if (typeof mouseX !== "number") {
-            ctx.pushInt(-1);
-            return;
+    // InputManager coordinates are in canvas-buffer space. CS2 scripts (the mouseover
+    // tooltip, drag previews) want widget-layout space. Fixed mode letterboxes the gameframe
+    // (a scale plus an offset, recorded on the root by fitWidgetToBounds), so the pointer goes
+    // back through that transform, as widget clicks and menus already do. Without one, the
+    // buffer-to-layout ratio.
+    const mouseLayoutPosition = (ctx: any, axis: "x" | "y"): number => {
+        const widgetManager = ctx.widgetManager as any;
+        const osrsClient = widgetManager?.osrsClient;
+        const mouse = axis === "x" ? osrsClient?.inputManager?.mouseX : osrsClient?.inputManager?.mouseY;
+        if (typeof mouse !== "number") return -1;
+        const root = widgetManager?.getAllGroupRoots?.(widgetManager.rootInterface)?.[0];
+        const recorded = Number(axis === "x" ? root?.__widgetRenderScaleX : root?.__widgetRenderScaleY);
+        if (Number.isFinite(recorded) && recorded > 0) {
+            const transform = getRootRenderTransform(root);
+            return axis === "x"
+                ? Math.floor((mouse - transform.offsetX) / transform.scaleX)
+                : Math.floor((mouse - transform.offsetY) / transform.scaleY);
         }
-        const layoutW = ctx.widgetManager?.canvasWidth ?? 0;
-        const bufW: number = osrsClient?.renderer?.canvas?.width ?? layoutW;
-        const scale = layoutW > 0 && bufW > 0 ? bufW / layoutW : 1;
-        ctx.pushInt(scale > 1 ? Math.round(mouseX / scale) : mouseX | 0);
-    });
-
-    handlers.set(Opcodes.MOUSE_GETY, (ctx) => {
-        const osrsClient = (ctx.widgetManager as any)?.osrsClient;
-        const mouseY = osrsClient?.inputManager?.mouseY;
-        if (typeof mouseY !== "number") {
-            ctx.pushInt(-1);
-            return;
-        }
-        const layoutH = ctx.widgetManager?.canvasHeight ?? 0;
-        const bufH: number = osrsClient?.renderer?.canvas?.height ?? layoutH;
-        const scale = layoutH > 0 && bufH > 0 ? bufH / layoutH : 1;
-        ctx.pushInt(scale > 1 ? Math.round(mouseY / scale) : mouseY | 0);
-    });
+        const layout = (axis === "x" ? widgetManager?.canvasWidth : widgetManager?.canvasHeight) ?? 0;
+        const canvas = osrsClient?.renderer?.canvas;
+        const buffer: number = (axis === "x" ? canvas?.width : canvas?.height) ?? layout;
+        const scale = layout > 0 && buffer > 0 ? buffer / layout : 1;
+        return scale > 1 ? Math.round(mouse / scale) : mouse | 0;
+    };
+    handlers.set(Opcodes.MOUSE_GETX, (ctx) => ctx.pushInt(mouseLayoutPosition(ctx, "x")));
+    handlers.set(Opcodes.MOUSE_GETY, (ctx) => ctx.pushInt(mouseLayoutPosition(ctx, "y")));
 
     const consumeHighlightSetup = (ctx: any) => {
         ctx.intStackSize -= 5;

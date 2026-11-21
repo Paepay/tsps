@@ -5,7 +5,7 @@
  * - ship_journey (Monks of Entrana 239/4283, Void Knight squires 237/4012): the player alone on
  *   the ship at sea (an instance of the 3064,3208 chunk), interface 299 with script 1131's route,
  *   song 147 and jingle 172, the side tabs closed; the deck N ticks later with a message box.
- *   PiratesTreasure.Quest.js's Karamja boats are the same voyage.
+ *   (PiratesTreasure.Quest.js's Karamja boats left it for the fade style in rev 227+ captures.)
  * - longship (Jarvald 229/2714, the Sailor 229/2703, Mord and Maria Gunnars 231/3027, 229/2722):
  *   the same ship at sea under misc_shipjourney (224), its model playing the route's animation;
  *   song 147 and jingle 171 on the Waterbirth and Miscellania ships only; no message box.
@@ -98,7 +98,7 @@ function setBusy(player, busy) {
 
 function fade(player, out) {
   const args = out ? [0, 255, 0, 0, FADE_CYCLES] : [0, 0, 0, 255, FADE_CYCLES];
-  sender(player).sendSubInterface(OVERLAY_ATMOSPHERE_UID, FADE_OVERLAY, 1, { postScripts: [{ scriptId: FADE_SCRIPT, args }] });
+  return sender(player).mountSubInterface(OVERLAY_ATMOSPHERE_UID, FADE_OVERLAY, 1, { postScripts: [{ scriptId: FADE_SCRIPT, args }] });
 }
 
 function hold(player, held) {
@@ -128,7 +128,7 @@ function closeShipTabs(player) {
   }
 }
 
-/** As PiratesTreasure.Quest.js gives them back: combat, prayer and the spellbook by tab index. */
+/** Combat, prayer and the spellbook come back by tab index. */
 function reopenShipTabs(player) {
   const out = sender(player);
   out.sendTabInterface(0, 593);
@@ -221,8 +221,11 @@ function fadeTrip(player, trip) {
   const out = sender(player);
   const [minimapOff, minimapOn] = trip.minimap ?? [];
   const [busyOn, busyOff] = trip.busy ?? [];
+  const pending = { land: () => { land(); finish(); } };
+  const isCurrent = () => Common.trips.get(player) === pending;
+  let fadeInMount = null;
   const land = () => {
-    if (!Common.travelling(player)) return;
+    if (!isCurrent()) return;
     player.moveTo(Common.toLocation(trip.to));
     if (trip.face) player.setPositionToFace(Common.toLocation([...trip.face, trip.to[2] ?? 0]));
     Common.arrived(player, trip.routeName);
@@ -237,9 +240,9 @@ function fadeTrip(player, trip) {
   if (trip.message?.at === 0) message(player, trip.message.text, trip.message.spam);
   fade(player, true);
   if (box) out.withChatboxOwner(box, () => Common.core.StatementDialogue.send(player, trip.messageBox, false));
-  Common.begin(player, { land: () => { land(); finish(); } });
+  Common.begin(player, pending);
   const finish = () => {
-    if (!Common.travelling(player)) return;
+    if (!isCurrent()) return;
     Common.end(player);
     hold(player, false);
     if (box) out.closeChatboxFor(box);
@@ -249,18 +252,24 @@ function fadeTrip(player, trip) {
   const steps = {
     [trip.teleport]: land,
     [trip.fadeIn]: () => {
+      if (!isCurrent()) return;
       if (minimapOn === trip.fadeIn) setMinimap(player, false);
-      fade(player, false);
+      fadeInMount = fade(player, false);
       finish();
     },
-    [trip.close]: () => out.closeSubInterface(OVERLAY_ATMOSPHERE_UID),
+    [trip.close]: () => {
+      // A back-to-back trip can mount its own fade before this delayed close fires. Only
+      // close the mount this trip created; closeSubInterfaceMount refuses another trip's.
+      if (fadeInMount) out.closeSubInterfaceMount(fadeInMount);
+      else out.closeSubInterface(OVERLAY_ATMOSPHERE_UID);
+    },
   };
   const messageAt = trip.message?.at;
   if (messageAt > 0 && messageAt !== trip.teleport) {
     const previous = steps[messageAt];
     steps[messageAt] = () => {
       previous?.();
-      if (Common.travelling(player)) message(player, trip.message.text, trip.message.spam);
+      if (isCurrent()) message(player, trip.message.text, trip.message.spam);
     };
   }
   if (minimapOff != null) {

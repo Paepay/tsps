@@ -32,6 +32,15 @@ one timeline each. Do not ship parallel live histories.
   `Paepay/PaeScape_Realms` to communicate cross-repo follow-ups; link sibling
   issues instead of leaving the other side chat-only.
 
+## Content progress
+
+Before selecting missing content, read [docs/progress/README.md](docs/progress/README.md)
+and the relevant item in [docs/progress/osrs-progress.json](docs/progress/osrs-progress.json).
+Reconcile recorded gaps with current source and merged PRs. Include the affected task
+statuses, delivered behavior, public evidence and remaining scope in the content PR;
+follow that guide rather than waiting for the external progress page to update.
+Run `node scripts/check-content-progress.mjs` after editing the inventory.
+
 ## Generated data
 
 Manual modifications to `npc-dialogues.json` or **any generated JSON dumped from

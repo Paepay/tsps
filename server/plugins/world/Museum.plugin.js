@@ -23,15 +23,25 @@
  *   - The natural history quiz (museum/NaturalHistoryQuiz.Museum.js): 2 Kudos per
  *     display case, through AWARD_KUDOS_EVENT.
  *
+ *   - The storage crate (museum/StorageCrate.Museum.js): common finds for a random reward,
+ *     including the 500 XP antique lamp.
+ *
  *   - The Sailing salvaging relics (museum/SalvagingRelics.Museum.js): Inspect, and handing each
  *     to Curator Haig Halen for 1 Kudos and an antique lamp, or 5,000 coins once claimed.
  *
- * Not implemented: fossil displays and ancient relics. They are separate Kudos routes and are
- * not needed for 100.
+ *   - The fossil displays (museum/FossilDisplays.Museum.js): Add to, one fossil piece a click,
+ *     2 Kudos and an antique lamp for each of the 36 completed displays.
+ *
+ *   - The wall maps (museum/Map.Museum.js): Look-at opens the museum map, its stairs buttons
+ *     switch floors, and exhibits not yet filled read "Empty display".
+ *
+ * Not implemented: ancient relics. They are a separate Kudos route and not needed for 100.
  */
 "use strict";
 
 const runtime = require("../quests/QuestRuntime");
+const FossilDisplays = require("./museum/FossilDisplays.Museum");
+const MuseumMap = require("./museum/Map.Museum");
 
 const KUDOS_ATTRIBUTE = "museum:kudos";
 const STATE_ATTRIBUTE = "museum:state";
@@ -76,6 +86,9 @@ const MUSEUM_BOUNDS = [
   { minX: 3253, maxX: 3267, minY: 3442, maxY: 3455, z: 2 },
   { minX: 3265, maxX: 3267, minY: 3456, maxY: 3459, z: 2 },
   { minX: 1735, maxX: 1785, minY: 4935, maxY: 4980, z: 0 },
+  // The fossil display hall's map square (displays at 1606-1654, 4950-4984): the HUD stays up
+  // there and comes back with each completed display (rsprox local 1000338 ticks 4117-4916).
+  { minX: 1600, maxX: 1663, minY: 4928, maxY: 4991, z: 0 },
 ];
 
 const NPC = Object.freeze({
@@ -291,6 +304,12 @@ const SALVAGE_LAMPS = new Map([
   [32872, { xp: 10000, minLevel: 40 }], // salvaging_rare_lamp_med
   [32873, { xp: 15000, minLevel: 50 }], // salvaging_rare_lamp_large
 ]);
+
+/** The storage crate's lamp (Wiki: Antique lamp (Varrock Museum), the uncleaned finds version). */
+const CRATE_LAMP = require("./data/museum-storage-crate.json").lamp;
+const CRATE_LAMPS = new Map([[CRATE_LAMP.item, { xp: CRATE_LAMP.xp, minLevel: CRATE_LAMP.minLevel }]]);
+/** The fossil displays' lamps (museum/FossilDisplays.Museum.js), read from the cache at the first Rub. */
+let fossilLamps = null;
 
 const TOOL_ITEMS = [
   [ITEM.TROWEL, "trowel"],
@@ -771,7 +790,9 @@ function showMinasMessage(message) {
 }
 
 function rubLamp(event) {
-  const lamp = LAMPS.get(event.itemId) ?? SALVAGE_LAMPS.get(event.itemId);
+  fossilLamps ??= FossilDisplays.lampRewards(api.core);
+  const lamp = LAMPS.get(event.itemId) ?? SALVAGE_LAMPS.get(event.itemId) ?? CRATE_LAMPS.get(event.itemId)
+    ?? fossilLamps.get(event.itemId);
   if (!lamp) return false;
   const { player, item, slot } = event;
   if (player.getInventory().get(slot) !== item) return true;
@@ -931,7 +952,7 @@ function handleBootstrap({ player }) {
 
 module.exports = {
   name: "Museum",
-  description: "Varrock Museum Kudos: the Dig Site cleaning activity, display cases, Historian Minas's quest timeline reports and Curator Haig Halen's salvaging relics.",
+  description: "Varrock Museum Kudos: the Dig Site cleaning activity, the finds storage crate, display cases, Historian Minas's quest timeline reports, Curator Haig Halen's salvaging relics, the fossil displays and the wall maps.",
   members: true,
   register(pluginApi) {
     api = pluginApi;
@@ -961,5 +982,8 @@ module.exports = {
     pluginApi.onCustomEvent("player:bootstrap-complete", handleBootstrap);
     require("./museum/NaturalHistoryQuiz.Museum")(pluginApi);
     require("./museum/SalvagingRelics.Museum")(pluginApi);
+    require("./museum/StorageCrate.Museum")(pluginApi);
+    FossilDisplays(pluginApi);
+    MuseumMap(pluginApi, (player) => { if (kudosHudShown.has(player)) showKudosHud(player); });
   },
 };

@@ -75,6 +75,16 @@ function boxTrapsUnlocked(player) {
   return questStage(player, "eagles_peak") >= EAGLES_PEAK_BOX_TRAP_STAGE;
 }
 
+function groundTileOccupied(player, kind, location) {
+  const area = player.getPrivateArea();
+  if (H.core.RegionManager.blocked(location, area)) return true;
+  if (kind === "box") {
+    return H.core.ObjectManager.objectsAt(location).some(object => object.getPrivateArea() === area
+      && !object.getOwner() && (object.getType() === 10 || object.getType() === 22));
+  }
+  return H.core.MapObjects.getType(location, 10, area) || H.core.MapObjects.getType(location, 22, area);
+}
+
 function canLay(player, kind, location, base, ground) {
   const def = H.data.traps[kind];
   const pit = kind === "pit" && base ? H.data.creatures.find(c => c.trap === "pit"

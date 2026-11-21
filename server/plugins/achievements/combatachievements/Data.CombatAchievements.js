@@ -76,6 +76,22 @@ function npcNamesFor(name, plural) {
   return names;
 }
 
+const SIZE_WORDS = Object.freeze({ two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8 });
+
+/**
+ * The team a task needs, in its own words (rev 242): "(Duo)" 2, "(Trio)" 3, "(N-Scale)" N, "in a
+ * group of N" or "of two or more" N; 1 for any other ("Nex Trio" is three or fewer, not three).
+ */
+function teamSizeOf(name, description) {
+  const scale = /\((\d)-scale\)/i.exec(name) ?? /\((\d)-scale\)/i.exec(description);
+  if (scale) return Number(scale[1]);
+  if (/\(trio\)/i.test(name)) return 3;
+  if (/\(duo\)/i.test(name)) return 2;
+  const group = /\bin a group of (\d+|two|three|four|five|six|seven|eight)\b/i.exec(description);
+  if (group) return Number(group[1]) || SIZE_WORDS[group[1].toLowerCase()];
+  return 1;
+}
+
 function load() {
   if (data) return data;
   const { CacheDefinitions } = core;
@@ -132,6 +148,7 @@ function load() {
         monsterKey: Number(params.get(PARAM.MONSTER)),
       };
       task.points = task.tier;
+      task.teamSize = teamSizeOf(task.name, task.description);
       task.monster = monsters.get(task.monsterKey) ?? null;
       task.killCount = killCountTarget(task);
       tasks.set(task.id, task);
@@ -182,6 +199,10 @@ function monsterNamed(name) {
   return byName.get(key) ?? byName.get(articleSwapped(key)) ?? null;
 }
 const monsterForNpc = (npcName) => load().monstersByNpcName.get(String(npcName).toLowerCase()) ?? null;
+/** The collection log page a monster's kills count for, when it differs from the monster's name. */
+const collectionLogPage = (monsterName) => MONSTERS_DATA.collectionLog[monsterName] ?? null;
+/** Every monster-name -> collection-log-page override, for the log's category counts. */
+const collectionLogPages = () => MONSTERS_DATA.collectionLog;
 const bossList = () => load().bossList;
 const totalPoints = () => load().tiers.at(-1).threshold;
 
@@ -191,5 +212,5 @@ module.exports = function attachData(api) {
 
 Object.assign(module.exports, {
   TYPE, TASK_VARPS, TIER_VARBITS, POINTS_VARBIT,
-  load, tasks, task, taskNamed, tiers, monsters, monsterNamed, monsterForNpc, bossList, totalPoints, killCountTarget,
+  load, tasks, task, taskNamed, tiers, monsters, monsterNamed, monsterForNpc, collectionLogPage, collectionLogPages, bossList, totalPoints, killCountTarget,
 });

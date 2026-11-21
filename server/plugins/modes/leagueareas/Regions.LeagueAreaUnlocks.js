@@ -4,8 +4,9 @@
  * (CacheMaps.getRegionIds). The rules (data `regionRules`): the lowest-numbered area that names a
  * square owns it; a league's overrides reassign whole squares and outrank tile assignments; an
  * unnamed underground square (map y >= 100) follows its surface square; and a square nobody names
- * is open to everyone. `tileOverrides` (world-tile rects) win over the area's squares for
- * `areaAt`; the 2026-11-18 editor export carries the exact plane-0 assignments of eight areas there.
+ * is open to everyone. Sourced tile outlines refine only mixed squares; explicit underground
+ * ownership wins over the legacy surface-offset approximation. `tileOverrides` (world-tile rects)
+ * are PaeScape's exact editor export for eight areas and win over both square and polygon maps.
  */
 const Common = require("./Common.LeagueAreaUnlocks");
 
@@ -17,6 +18,8 @@ const byLeague = new Map();
 const leagueOverrideSquares = new Map();
 /** map square id -> flattened tile overrides that can cover it, built once. */
 let tileOverridesBySquare = null;
+/** Sparse tile detail, only for mixed squares; league overrides still take precedence. */
+const tilesByLeague = new Map();
 
 function squareId(mapX, mapY) {
   return ((mapX & 0xff) << 8) | (mapY & 0xff);
@@ -86,6 +89,7 @@ function tileOverrideAt(x, y) {
 function build(type) {
   const cacheSquares = new Set(Common.core.CacheMaps.getRegionIds());
   const index = new Map();
+  const tiles = new Map();
   const ids = [...Common.areas.keys()].sort((a, b) => a - b);
   for (const id of ids) {
     const area = Common.area(id);
@@ -93,6 +97,14 @@ function build(type) {
     for (const [mapX, mapY] of area.squares) claim(own, mapX, mapY, id, cacheSquares);
     for (const rect of area.rects) claimRect(own, rect, id, cacheSquares);
     for (const [square, owner] of own) if (!index.has(square)) index.set(square, owner);
+    for (const polygon of area.tilePolygons) {
+      for (const [mapX, mapY] of polygon.squares) {
+        const square = squareId(mapX, mapY);
+        if (!cacheSquares.has(square)) continue;
+        if (!tiles.has(square)) tiles.set(square, []);
+        tiles.get(square).push({ area: id, outline: polygon.outline });
+      }
+    }
   }
   const overridden = new Set();
   for (const override of Common.league(type)?.overrides ?? []) {
@@ -101,6 +113,7 @@ function build(type) {
     for (const [square, owner] of own) {
       index.set(square, owner);
       overridden.add(square);
+      tiles.delete(square);
     }
   }
   leagueOverrideSquares.set(type, overridden);
@@ -114,11 +127,24 @@ function build(type) {
     }
   }
   byLeague.set(type, index);
+  tilesByLeague.set(type, tiles);
   return index;
 }
 
 function indexFor(type) {
   return byLeague.get(type) ?? build(type);
+}
+
+/** Wiki vertices are tile grid lines; classify each tile by its centre with the crossing rule. */
+function contains(outline, x, y) {
+  x += 0.5;
+  y += 0.5;
+  let inside = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const [ax, ay] = outline[j], [bx, by] = outline[i];
+    if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) inside = !inside;
+  }
+  return inside;
 }
 
 /** The area id owning the tile, or null when it is open to everyone. */
@@ -128,9 +154,23 @@ function areaAt(type, x, y) {
   // A league's explicit square override (including `null` for open) is a league rule and wins
   // over the shared exact-tile map.
   if (leagueOverrideSquares.get(type)?.has(square)) return index.get(square) ?? null;
+  // PaeScape's exact editor export wins where it names a tile.
   const tile = tileOverrideAt(x, y);
   if (tile !== undefined) return tile;
+  // Sourced outlines refine mixed squares the editor export does not cover.
+  for (const polygon of tilesByLeague.get(type).get(square) ?? []) {
+    if (contains(polygon.outline, x, y)) return polygon.area;
+  }
   return index.get(square) ?? null;
+}
+
+/** Whether a same-square move needs the tile-level check; no scan of unrelated players/areas. */
+function hasTileDetail(type, x, y) {
+  indexFor(type);
+  const square = squareOf(x, y);
+  if (tilesByLeague.get(type).has(square)) return true;
+  if (!tileOverridesBySquare) loadTileOverrides();
+  return tileOverridesBySquare.has(square);
 }
 
 /** Whether the character may stand on the tile: open ground, or an area it unlocked in a league that offers it. */
@@ -165,4 +205,4 @@ function isOpenAtForPlayer(type, player, location) {
   return isOpenForPlayer(type, player, location.getX(), location.getY());
 }
 
-module.exports = { areaAt, isOpen, isOpenAt, levelUpAreas, isOpenForPlayer, isOpenAtForPlayer, squareId, squareOf, indexFor };
+module.exports = { areaAt, isOpen, isOpenAt, levelUpAreas, isOpenForPlayer, isOpenAtForPlayer, squareId, squareOf, indexFor, hasTileDetail };

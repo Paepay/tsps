@@ -250,7 +250,9 @@ function bossChoices(player, master = null) {
 function meetsMaster(player, master) {
   const skills = player.getSkillManager();
   const combat = skills.getCombatLevel() >= master.combat || hasSlayerCape(player, false);
-  return combat && skills.getMaxLevel(core.Skill.SLAYER) >= master.slayer;
+  const request = { player, master, allowed: combat && skills.getMaxLevel(core.Skill.SLAYER) >= master.slayer };
+  api.emitCustomEvent("slayer:master-access", request);
+  return request.allowed;
 }
 
 // --- Assigning
@@ -504,6 +506,9 @@ function npcKilled({ killer, npc }) {
   // Superiors.Slayer.js may spawn a superior, or zero this for a superior's own XP.
   const kill = { player, npc, xp: hitpoints };
   api.emitCustomEvent("slayer:task-kill", kill);
+  // `slayer:on-task-kill` { player, npcName }: a kill that counts for the player's own task (not an always-on-task
+  // kill without one), the NPC's name flat for triggers ("Slay 250 creatures", "Kill an Abyssal Demon on task").
+  api.emitCustomEvent("slayer:on-task-kill", { player, npcName: npcName(npc) });
   // Mortimer's Slayer XP modifier counts superiors too (Wiki).
   // The Morytania Diary adds to a kill in the Slayer Tower (MorytaniaDiary.Slayer.js).
   const boost = modifierBoost(task, MODIFIER.XP) * MorytaniaDiary.boost(player, npc);
@@ -512,11 +517,22 @@ function npcKilled({ killer, npc }) {
   player.setAttribute(TASK_XP_ATTRIBUTE, (Number(player.getAttribute(TASK_XP_ATTRIBUTE)) || 0) + (kill.taskXp ?? kill.xp) * boost);
   if (task.modifier) killModifiers.set(npc, { player, modifier: task.modifier });
   if (SlaughterBracelet.preventsDecrement(player, npc)) return;
-  // An expeditious bracelet credits a second kill; a task cannot go below zero.
-  const remaining = Math.max(0, task.count - 1 - ExpeditiousBracelet.extraKills(player, npc));
+  // An unlock (Double Trouble) or an expeditious bracelet credits more kills; a task cannot go below zero.
+  const remaining = Math.max(0, task.count - unlockKills(player, npc) - ExpeditiousBracelet.extraKills(player, npc));
   State.setVarp(player, "slayer_count", remaining);
   if (remaining > 0) return;
   complete(player, task);
+}
+
+/** How many kills a counted kill of this NPC is worth: an unlock's (slayer-masters.json `unlockKills`), else 1. */
+function unlockKills(player, npc) {
+  const name = npcName(npc);
+  for (const rule of Data.config.unlockKills ?? []) {
+    if (!rule.names.includes(name)) continue;
+    const unlock = [...Data.get().unlocks.values()].find((entry) => entry.name === rule.unlock);
+    if (unlock && hasUnlockBit(player, unlock.bit)) return rule.kills;
+  }
+  return 1;
 }
 
 /** A kill counted as on task with no task covering it ("slayer:always-on-task"): its XP and superior, no count. */

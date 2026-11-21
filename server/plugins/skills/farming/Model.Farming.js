@@ -5,7 +5,8 @@ const MINUTE = 60_000;
 /** world.json's Farming:growthMultiplier: 1 is OSRS's speed, 10 grows crops ten times as fast. */
 let growthRate = 1;
 function setGrowthMultiplier(rate) {
-    growthRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    // Keep a growth minute at least one millisecond so timestamps can always advance.
+    growthRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, MINUTE) : 1;
 }
 /** The world's configured growth rate, before a player's own modifiers. */
 function worldGrowthRate() {

@@ -177,9 +177,9 @@ test('clearing wave 2 while its monsters are idle spawns wave 3 and continues pa
 
   for (const npc of wave2) {
     npc.getCombat().reset();
-    t.mock.method(npc.getCombat().getLastAttack(), 'hasElapsed', () => true);
     npc.setHitpoints(5);
-    npc.process();
+    // One hitpoint per 100-tick regen clock (NPC.process).
+    for (let i = 0; i < 100; i++) npc.process();
     assert.equal(npc.getHitpoints(), 6, 'living idle NPCs still regenerate');
     npc.setHitpoints(0);
     npc.process(); // NPCs process before the player's wave check in World.process.
@@ -297,4 +297,43 @@ test('an on-task Jad doubles the TzRek-Jad pet chance, any other kill leaves it'
   assert.equal(chance(jad, true), 2, 'Wiki: 1/100 on task');
   assert.equal(chance(jad, false), 1, '1/200 off task');
   assert.equal(chance({ getId: () => core.NpcIdentifiers.TZ_KEK_3 }, true), 1, 'only Jad');
+});
+
+test('::fightcavewave sets the wave the next run starts at', (t) => {
+  let cycle = 0;
+  t.mock.method(core.World, 'getProcessCycle', () => cycle);
+  const player = fakePlayer();
+  Plugin.setNextWave({ player, parts: ['fightcavewave', '62'] });
+  assert.equal(player.messages.at(-1), 'Your next Fight Cave run starts at wave 62.');
+  hooks.enter({ player });
+  assert.equal(player.attributes['tzhaar:fight-cave-wave'], 62);
+  Plugin.setNextWave({ player, parts: ['fightcavewave', '63'] });
+  assert.equal(player.messages.at(-1), 'The next wave is wave 63.');
+  assert.equal(player.attributes['tzhaar:fight-cave-wave'], 63);
+  Plugin.setNextWave({ player, parts: ['fightcavewave', '64'] });
+  assert.match(player.messages.at(-1), /^Usage/);
+  hooks.leave({ player });
+});
+
+test('a wave monster that lets the player go is sent after them again, and one fighting does not regenerate', (t) => {
+  let cycle = 0;
+  t.mock.method(core.World, 'getProcessCycle', () => cycle);
+  const npcs = [];
+  spawnNpc = ({ id, x, y }) => { const npc = core.NPC.create(id, loc(x, y)); npcs.push(npc); return npc; };
+  const player = fakePlayer();
+  Plugin.setNextWave({ player, parts: ['fightcavewave', '62'] });
+  hooks.enter({ player });
+  for (let i = 0; i < 6; i++) { cycle++; hooks.process({ player }); }
+  assert.equal(npcs.length, 2);
+  const [near] = npcs;
+  near.getCombat().reset();
+  near.moveTo(loc(2410, 5100));
+  cycle++;
+  hooks.process({ player });
+  assert.equal(near.getCombat().getTarget(), player, 'back after the player');
+  const reset = t.mock.method(near.getCombat().getLastAttack(), 'reset');
+  cycle++;
+  hooks.process({ player });
+  assert.ok(reset.mock.callCount() > 0, 'in combat while it has the player');
+  hooks.leave({ player });
 });

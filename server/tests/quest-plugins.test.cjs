@@ -6345,7 +6345,8 @@ test('Blood Moon stage 90 Veliaf dialogue takes precedence over completed Myrequ
   }
   assert.deepEqual(results, [false, false, true],
     'Sins and the inactive refinery defer, then Blood Moon claims Veliaf before completed In Aid');
-  assert.equal(registered.at(-1)(event), true, 'the completed In Aid handler would otherwise take the same talk');
+  // Completed In Aid of the Myreque no longer claims the Canifis hideout's Veliaf (5048): its post-quest
+  // talk is the Burgh hideout's Veliaf (9489), as live has him after the quest.
   assert.ok(started.length > 0);
 });
 
@@ -10149,8 +10150,9 @@ test('Desert Treasure II opens Lassar from Ramarno and Prescott, then gates the 
     assert.equal(transcripts.at(-1), 'the-whisperer-talking-to-ramarno');
     choiceHooks[0]({ player, option: 'Have you seen any archeologists around here?' });
     assert.equal(attrs.get('desert-treasure-ii:lassar').ramarno, true, 'the player’s actual dialogue choice advances the Lassar introduction');
-    assert.equal(varbits.get(15126), 2);
-    assert.deepEqual(spawnedNpcs[0], { id: core.NpcIdentifiers.PRESCOTT, x: 2975, y: 5794, z: 0, wanderRadius: 0, owner: player, ownerOnly: true });
+    assert.equal(varbits.get(15126), 2, 'value 2 shows the world Helena and Prescott multinpcs (3579/6149)');
+    assert.equal(spawnedNpcs.some((npc) => npc.id === core.NpcIdentifiers.PRESCOTT), false,
+      'Prescott is the world spawn, not a private copy');
     const sinkholeRoute = { player, object: { getLocation: () => ({ getX: () => 2922, getY: () => 5827, getZ: () => 0 }) }, objectId: 49477, definition: { id: 48196 }, clickType: 1, destination: null };
     objectRouteHooks.find(h=>h.name==='routeLassarSinkhole')(sinkholeRoute);
     assert.deepEqual(sinkholeRoute.destination, { x: 2922, y: 5826, z: 0 },
@@ -11317,6 +11319,7 @@ test('Dragon Slayer II rowboat build consumes the Wiki supplies and uses the rea
   const itemOnObjectHandlers = [];
   const playerProcesses = [];
   const custom = new Map();
+  const ferryRoutes = [];
   const { api: base } = mockApi();
   const objectManager = base.core.ObjectManager;
   const register = objectManager.register;
@@ -11332,6 +11335,9 @@ test('Dragon Slayer II rowboat build consumes the Wiki supplies and uses the rea
       if (prop === 'onItemOnObject') return (handler) => itemOnObjectHandlers.push(handler);
       if (prop === 'onPlayerProcess') return (handler) => playerProcesses.push(handler);
       if (prop === 'onCustomEvent') return (name, handler) => custom.set(name, [...(custom.get(name) ?? []), handler]);
+      if (prop === 'emitCustomEvent') return (name, payload) => {
+        if (name === 'ferries:travel') ferryRoutes.push(payload.route);
+      };
       return target[prop];
     },
   });
@@ -11421,6 +11427,62 @@ test('Dragon Slayer II rowboat build consumes the Wiki supplies and uses the rea
   assert.equal(amounts.get(I.DRAGON_KEY), 0);
   assert.equal(attributes.get('quest.dragon_slayer_ii.stage'), 11);
   assert.ok(messages.includes('You successfully build the boat.'));
+
+  // The built rowboat crosses while the quest is in progress, and stays usable afterwards.
+  const ferryData = require('../plugins/world/data/ferries.json').routes;
+  for (const route of ['lithkren', 'lithkren-back']) {
+    assert.deepEqual(
+      [ferryData[route].style, ferryData[route].teleport, ferryData[route].fadeIn, ferryData[route].close, ferryData[route].minimap],
+      ['fade', 3, 5, 7, [1, 5]], `${route} keeps the recorded fade/minimap transit`);
+  }
+  assert.deepEqual(ferryData.lithkren.to, [3583, 3973, 0]);
+  assert.deepEqual(ferryData['lithkren-back'].to, [3660, 3849, 0]);
+
+  attributes.set('quest.dragon_slayer_ii.stage', 6);
+  playerLocation = { x: 3660, y: 3849, z: 0 };
+  destination = undefined;
+  ferryRoutes.length = 0;
+  assert.equal(objectHandlers[0]({
+    player, objectId: 29916, clickType: 1,
+    definition: { id: O.ROWBOAT_14, getInteractions: () => ['Travel'] },
+    location: { x: 3658, y: 3848, z: 0 },
+  }), true);
+  assert.deepEqual(destination, [3559, 4004, 0], 'during the quest the boat lands at Dallas\' courtyard');
+  assert.deepEqual(ferryRoutes, [], 'the quest landing is not a ferry route');
+
+  attributes.set('quest.dragon_slayer_ii.stage', 14);
+  playerLocation = { x: 3660, y: 3849, z: 0 };
+  destination = undefined;
+  ferryRoutes.length = 0;
+  assert.equal(objectHandlers[0]({
+    player, objectId: 29916, clickType: 1,
+    definition: { id: O.ROWBOAT_14, getInteractions: () => ['Travel'] },
+    location: { x: 3658, y: 3848, z: 0 },
+  }), true, 'the completed quest rowboat still crosses');
+  assert.equal(destination, undefined, 'the ferry service owns the move');
+  assert.deepEqual(ferryRoutes, ['lithkren']);
+
+  playerLocation = { x: 3583, y: 3973, z: 0 };
+  destination = undefined;
+  ferryRoutes.length = 0;
+  assert.equal(objectHandlers[0]({
+    player, objectId: O.ROWBOAT_13, clickType: 1,
+    definition: { id: O.ROWBOAT_13, getInteractions: () => ['Travel'] },
+    location: { x: 3582, y: 3971, z: 0 },
+  }), true, 'the Lithkren rowboat returns to Fossil Island');
+  assert.equal(destination, undefined);
+  assert.deepEqual(ferryRoutes, ['lithkren-back']);
+
+  attributes.set('quest.dragon_slayer_ii.stage', 1);
+  destination = undefined;
+  ferryRoutes.length = 0;
+  assert.equal(objectHandlers[0]({
+    player, objectId: 29916, clickType: 1,
+    definition: { id: O.ROWBOAT_14, getInteractions: () => ['Travel'] },
+    location: { x: 3658, y: 3848, z: 0 },
+  }), false, 'a character who has not started the quest cannot use the rowboat');
+  assert.equal(destination, undefined);
+  assert.deepEqual(ferryRoutes, []);
 });
 
 test('Desert Treasure II shadow spells interrupt the private Leviathan encounter', () => {
@@ -16474,12 +16536,16 @@ test('Dragon Slayer II handles Veos direct cache travel options by their visible
 test('Port Piscarilius spawns the cache-active Veos with both onward boat options', async () => {
   const spawn = require('../data/definitions/npc-spawns.json')
     .find(({ x, y, name }) => name === 'Veos' && x === 1825 && y === 3691);
-  assert.equal(spawn?.id, 10724, '2147 is a null transform parent with no interaction options');
+  assert.equal(spawn?.id, 2147, 'the dock parent resolves separately for each player');
   const { CacheDefinitions } = require('../dist/game/cache/CacheDefinitions');
-  const actions = CacheDefinitions.getNpc(spawn.id).actions;
-  assert.equal(actions[0], 'Talk-to');
-  assert.equal(actions[2], 'Port Piscarilius');
-  assert.equal(actions[3], "Land's End");
+  for (const visibility of [1, 2]) {
+    const resolved = CacheDefinitions.resolveNpc(spawn.id, {
+      getVarbit: (id) => id === 12146 ? visibility : 0, getVarp: () => 0,
+    });
+    assert.equal(resolved.id, visibility === 1 ? 10727 : 10726);
+    assert.deepEqual(resolved.actions.filter(Boolean), ['Talk-to', 'Port Sarim', "Land's End"]);
+  }
+  assert.equal(CacheDefinitions.resolveNpc(spawn.id, { getVarbit: () => 0, getVarp: () => 0 }), undefined);
 });
 
 
@@ -18760,7 +18826,9 @@ test('boot and map exchanges happen together and cannot strand a cancelled dialo
   const I = api.core.ItemIdentifiers, { DUNSTAN, TENZING } = api.core.NpcIdentifiers;
   const act = (npcId, stepId) => handlers.custom.get('npc-dialogue:action').forEach(h => h({ player, npcId, kind: 'message', stepId }));
   quest.setStage(player,73);items.set(I.CLIMBING_BOOTS,1);items.set(I.IRON_BAR,1);
-  act(DUNSTAN,'V1M373');assert.equal(items.get(I.CLIMBING_BOOTS),1,'cancelling before reward retains materials');
+  // The swap happens on the "You give Dunstan..." box itself (rsprox local 1001800 tick 25101): cancelling after it
+  // keeps the spiked boots, and the later hand-out lines do not take or give again.
+  act(DUNSTAN,'V1M373');assert.equal(items.get(I.CLIMBING_BOOTS),0);assert.equal(items.get(I.SPIKED_BOOTS),1,'one step, nothing stranded');
   act(DUNSTAN,'1TFYaK');act(DUNSTAN,'WryBLk');
   assert.equal(items.get(I.CLIMBING_BOOTS),0);assert.equal(items.get(I.IRON_BAR),0);assert.equal(items.get(I.SPIKED_BOOTS),1);
   items.set(I.BREAD,10);items.set(I.TROUT,10);
@@ -19943,40 +20011,6 @@ test('RFD Amik shrine requires the Wise Old Man clue, enters the mapped lair and
 });
 
 
-test('RFD shows the Feldip spit-roast only while Skrach can be rescued', () => {
-  assert.equal(require('../data/definitions/object-spawns.json').some(spawn => [3375].includes(spawn.id)), false);
-  const { api: base, handlers } = mockApi();
-  const objects = [];
-  base.core = { ...base.core, ObjectManager: {
-    register: object => objects.push(object),
-    deregister: object => { const index = objects.indexOf(object); if (index >= 0) objects.splice(index, 1); },
-  } };
-  delete require.cache[require.resolve('../plugins/quests/quests/RecipeForDisaster.Quest')];
-  require('../plugins/quests/quests/RecipeForDisaster.Quest')(base);
-  const quest = require('../plugins/quests/QuestRuntime').getRegisteredQuests()
-    .findLast(({ key }) => key === 'recipe_for_disaster');
-  const attributes = new Map();
-  const packetSender = new Proxy({}, { get: (_target, key) => key.startsWith('send') ? () => packetSender : undefined });
-  const player = {
-    getAttribute: key => attributes.get(key),
-    setAttribute: (key, value) => attributes.set(key, value),
-    getPacketSender: () => packetSender,
-    getLocation: () => new base.core.Location(2632, 2985, 0),
-    getInventory: () => ({ getAmount: () => 0, getFreeSlots: () => 28 }),
-    sendMessage() {},
-  };
-  quest.setStage(player, 1);
-  assert.equal(objects.some(object => object.getId() === 3375), false);
-  quest.setStage(player, 4);
-  const roast = objects.find(object => object.getId() === 3375);
-  assert.ok(roast, 'the missing map spit-roast is supplied during the rescue');
-  assert.equal(roast.getOwner(), player);
-  assert.deepEqual([roast.getLocation().getX(), roast.getLocation().getY(), roast.getLocation().getZ()], [2632, 2985, 0]);
-  attributes.set('recipe-for-disaster:rescues', 32);
-  handlers.playerLogin.at(-1)({ player });
-  assert.equal(objects.some(object => object.getId() === 3375), false);
-});
-
 test('RFD council interactions read requirements through the SkillManager before starting a rescue', () => {
   const { api: base } = mockApi();
   const interactions = [];
@@ -20354,18 +20388,19 @@ test('RFD Awowogei enters the mapped hot-coal chamber and cooks only on the long
   const cook = itemObjectHandlers.findLast((handler) => handler.name === 'handleAwowogeiObjects');
   const rescue = itemNpcHandlers.findLast((handler) => handler.name === 'rescueByItem');
   const route = routes.findLast((handler) => handler.name === 'routeRedBananaTree');
-  assert.ok(dungeon && cook && rescue && route);
+  const exitRoute = routes.findLast((handler) => handler.name === 'routeAwowogeiDungeonExit');
+  assert.ok(dungeon && cook && rescue && route && exitRoute);
 
   const attributes = new Map([['recipe-for-disaster:awowogei-state', 63]]);
   const inventory = new Map([[core.ItemIdentifiers.RAW_STUFFED_SNAKE, 1]]);
-  let loc = [2808, 9200, 0];
+  let loc = [2808, 9200, 0], weapon = base.core.ItemIdentifiers.ZOMBIE_MONKEY_GREEGREE;
   const player = {
     getAttribute: (key) => attributes.get(key),
     setAttribute: (key, value) => attributes.set(key, value),
     getLocation: () => ({ getX: () => loc[0], getY: () => loc[1], getZ: () => loc[2] }),
     moveTo: (location) => { loc = [location.getX(), location.getY(), location.getZ()]; moves.push(loc); },
     getEquipment: () => ({ get: (slot) => slot === base.core.Equipment.WEAPON_SLOT
-      ? { getId: () => base.core.ItemIdentifiers.ZOMBIE_MONKEY_GREEGREE }
+      ? { getId: () => weapon }
       : slot === base.core.Equipment.AMULET_SLOT ? { getId: () => base.core.ItemIdentifiers.MSPEAK_AMULET } : null }),
     getSkillManager: () => ({ getCurrentLevel: () => 99, addExperiences() {} }),
     getInventory: () => ({
@@ -20420,10 +20455,204 @@ test('RFD Awowogei enters the mapped hot-coal chamber and cooks only on the long
   assert.equal(attributes.get('recipe-for-disaster:rescues') & 128, 128);
 
   const returnCrack = { player, objectId: 16100, clickType: 1,
+    object: new core.GameObject(16100, new core.Location(3069,5485,0),0,0),
     definition: { getActions: () => ['Enter'] }, handled: false };
+  const routeReturn = (extra = {}) => {
+    const request = { ...returnCrack, sourceLocation: { x: loc[0], y: loc[1], z: loc[2] }, ...extra };
+    exitRoute(request);
+    return request.destination;
+  };
+  assert.deepEqual(routeReturn(), { x:3062,y:5485,z:0 }, 'walk to the actual coal edge');
+  weapon = -1; // The form can change after the route was queued.
+  assert.equal(routeReturn(), undefined);
+  dungeon(returnCrack);
+  assert.deepEqual(loc, [3055,5484,0], 'operation rechecks the currently wielded zombie greegree');
+  weapon = base.core.ItemIdentifiers.ZOMBIE_MONKEY_GREEGREE;
+  const state = attributes.get('recipe-for-disaster:awowogei-state');
+  attributes.set('recipe-for-disaster:awowogei-state', state & ~1024);
+  assert.equal(routeReturn(), undefined);dungeon(returnCrack);assert.deepEqual(loc,[3055,5484,0]);
+  attributes.set('recipe-for-disaster:awowogei-state', state);
+  loc = [3222,3218,0];assert.equal(routeReturn(), undefined);dungeon(returnCrack);assert.deepEqual(loc,[3222,3218,0]);
+  loc = [3055,5484,0];
+  const wrongExit = { object: new core.GameObject(16100, new core.Location(3068,5485,0),0,0) };
+  assert.equal(routeReturn(wrongExit), undefined);dungeon({ ...returnCrack, ...wrongExit });assert.deepEqual(loc,[3055,5484,0]);
+  returnCrack.handled = false;
   dungeon(returnCrack);
   assert.equal(returnCrack.handled, true);
   assert.deepEqual(loc, [2808, 9200, 0]);
+});
+
+
+test('RFD Awowogei additional snake deaths preserve an owned partial filling', async t => {
+  const core = PluginManager.getCoreApi();
+  const { Player } = require('../dist/game/entity/impl/player/Player');
+  const { PlayerSession } = require('../dist/net/PlayerSession');
+  const { PlayerSave } = require('../dist/game/entity/impl/player/persistence/PlayerSave');
+  const { UseItemPacketListener } = require('../dist/net/packet/impl/UseItemPacketListener');
+  require('../plugins/quests/quests/RecipeForDisaster.Quest')(PluginManager.createApi('RfdStuffingRegression'));
+  const quest = require('../plugins/quests/QuestRuntime').getRegisteredQuests()
+    .find(({ key }) => key === 'recipe_for_disaster');
+  const I = core.ItemIdentifiers, key = 'recipe-for-disaster:awowogei-stuffing';
+  const actors = [];
+  function actor() {
+    const channel = { kind: 'test', remoteAddress: '127.0.0.1', isOpen: () => true,
+      send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
+    const p = new Player(new PlayerSession(channel));
+    p.setUsername(`rfdstuffqa${actors.length}`);
+    p.setIndex(18000 + actors.length);
+    p.setRegistered(true);
+    p.setLocation(new core.Location(2790, 3000, 0));
+    quest.setStage(p, 4);
+    p.setAttribute('recipe-for-disaster:awowogei-state', 63);
+    actors.push(p);
+    return p;
+  }
+  const amount = (p, id) => p.getInventory().getAmount(id);
+  const use = (p, first, second) => UseItemPacketListener.itemOnItem(p,
+    p.getInventory().getItems().findIndex(item => item?.getId() === first),
+    p.getInventory().getItems().findIndex(item => item?.getId() === second));
+  const kill = p => PluginManager.emitNpcDeath({
+    npc: new core.NPC(core.NpcIdentifiers.BIG_SNAKE, p.getLocation().clone()),
+    npcId: core.NpcIdentifiers.BIG_SNAKE, killer: p,
+  });
+  t.after(() => {
+    for (const p of actors) {
+      for (const item of [...core.World.getItems()]) {
+        if (item.getOwner() === p.getUsername()) core.ItemOnGroundManager.deregister(item);
+      }
+      core.TaskManager.cancelTasks(p);
+      core.TaskManager.cancelTasks(p.getIndex());
+      core.World.unregisterPlayerPosition(p);
+      p.setRegistered(false);
+    }
+    core.TaskManager.process();
+  });
+  for (const first of [I.SLICED_RED_BANANA, I.TCHIKI_NUT_PASTE]) {
+    const second = first === I.SLICED_RED_BANANA ? I.TCHIKI_NUT_PASTE : I.SLICED_RED_BANANA;
+    const bit = first === I.SLICED_RED_BANANA ? 1 : 2;
+    for (const retained of [true, false]) for (const full of [false, true]) {
+      await t.test(`first=${first} retained=${retained} full=${full}`, () => {
+        let p = actor();
+        for (const id of [I.SNAKE_CORPSE, first, second]) p.getInventory().adds(id, 1);
+        use(p, first, I.SNAKE_CORPSE);
+        assert.equal(p.getAttribute(key), bit, 'actual first filling is persisted');
+        assert.equal(amount(p, first), 0);
+        if (!retained) p.getInventory().deleteNumber(I.SNAKE_CORPSE, 1);
+        const saved = PlayerSave.fromPlayer(p);
+        p = actor();
+        saved.applyToPlayer(p);
+        assert.equal(p.getAttribute(key), bit, 'actual snapshot/apply retains partial preparation');
+        if (full) {
+          p.getInventory().adds(I.BRONZE_DAGGER, p.getInventory().getFreeSlots());
+          assert.equal(p.getInventory().getFreeSlots(), 0);
+        }
+        const before = new Set(core.World.getItems());
+        kill(p);
+        const drop = core.World.getItems().find(item => !before.has(item) && item.getItem().getId() === I.SNAKE_CORPSE);
+        assert.equal(Boolean(drop), full, 'full inventory awards the spare on the ground');
+        assert.equal(amount(p, I.SNAKE_CORPSE), retained ? (full ? 1 : 2) : (full ? 0 : 1));
+        assert.equal(p.getAttribute(key), retained ? bit : 0,
+          'an additional corpse preserves the filling; replacement of a lost corpse clears it');
+        if (drop) {
+          p.getInventory().deleteNumber(I.BRONZE_DAGGER, 1);
+          assert.equal(core.ItemOnGroundManager.transferToInventory(p, drop), 1);
+        }
+        use(p, I.SNAKE_CORPSE, second);
+        assert.equal(amount(p, second), 0);
+        assert.equal(amount(p, I.RAW_STUFFED_SNAKE), retained ? 1 : 0);
+        if (!retained) {
+          p.getInventory().adds(first, 1);
+          use(p, first, I.SNAKE_CORPSE);
+          assert.equal(amount(p, I.RAW_STUFFED_SNAKE), 1, 'replacement still needs both fillings');
+        }
+        assert.equal(p.getAttribute(key), 0);
+      });
+    }
+  }
+  await t.test('a real bank tab retains the prepared corpse; another player stays isolated', () => {
+    const p = actor(), other = actor();
+    p.getInventory().adds(I.SNAKE_CORPSE, 1);
+    p.getInventory().adds(I.SLICED_RED_BANANA, 1);
+    use(p, I.SLICED_RED_BANANA, I.SNAKE_CORPSE);
+    p.getInventory().deleteNumber(I.SNAKE_CORPSE, 1);
+    p.getBank(0).adds(I.SNAKE_CORPSE, 1);
+    kill(p);
+    assert.equal(p.getAttribute(key), 1, 'bank-owned prepared corpse is still owned');
+    assert.equal(other.getAttribute(key) ?? 0, 0);
+  });
+});
+
+test('RFD Awowogei stuffing the snake needs both the sliced red banana and tchiki nut paste', () => {
+  const { api: base } = mockApi();
+  const itemItemHandlers = [];
+  const api = new Proxy(base, {
+    get(target, prop) {
+      if (prop === 'onItemOnItem') return (handler) => itemItemHandlers.push(handler);
+      return target[prop];
+    },
+  });
+  require('../plugins/quests/Quests.plugin').register(api);
+  delete require.cache[require.resolve('../plugins/quests/quests/RecipeForDisaster.Quest')];
+  require('../plugins/quests/quests/RecipeForDisaster.Quest')(api);
+  const stuff = itemItemHandlers.findLast((handler) => handler.name === 'handleAwowogeiItems');
+  assert.ok(stuff);
+
+  const I = base.core.ItemIdentifiers;
+  const attributes = new Map([['recipe-for-disaster:awowogei-state', 63]]);
+  const inventory = new Map([[I.SNAKE_CORPSE, 1], [I.SLICED_RED_BANANA, 1], [I.TCHIKI_NUT_PASTE, 1]]);
+  const messages = [];
+  const player = {
+    getAttribute: (key) => attributes.get(key),
+    setAttribute: (key, value) => attributes.set(key, value),
+    getSkillManager: () => ({ getCurrentLevel: () => 99, addExperiences() {} }),
+    getInventory: () => ({
+      getAmount: (id) => inventory.get(id) ?? 0,
+      getFreeSlots: () => 27,
+      deleteNumber: (id, amount) => inventory.set(id, Math.max(0, (inventory.get(id) ?? 0) - amount)),
+      adds: (id, amount) => inventory.set(id, (inventory.get(id) ?? 0) + amount),
+    }),
+    getPacketSender: () => new Proxy({}, { get: () => () => {} }),
+    getLocation: () => ({ getX: () => 2790, getY: () => 3000, getZ: () => 0 }),
+    sendMessage: (message) => messages.push(message),
+  };
+  const quest = require('../plugins/quests/QuestRuntime').getRegisteredQuests()
+    .findLast(({ key }) => key === 'recipe_for_disaster');
+  quest.setStage(player, 4);
+
+  const banana = { player, usedItemId: I.SLICED_RED_BANANA, usedWithItemId: I.SNAKE_CORPSE, handled: false };
+  stuff(banana);
+  assert.equal(banana.handled, true);
+  assert.equal(inventory.get(I.SNAKE_CORPSE), 1, 'the corpse stays until both fillings are in');
+  assert.equal(inventory.get(I.SLICED_RED_BANANA), 0, 'the banana is used up');
+  assert.equal(inventory.get(I.RAW_STUFFED_SNAKE) ?? 0, 0, 'one filling is not enough');
+  assert.equal(attributes.get('recipe-for-disaster:awowogei-stuffing'), 1);
+  assert.match(messages.at(-1), /still needs tchiki nut paste/);
+
+  const bananaAgain = { player, usedItemId: I.SLICED_RED_BANANA, usedWithItemId: I.SNAKE_CORPSE, handled: false };
+  stuff(bananaAgain);
+  assert.equal(inventory.get(I.SLICED_RED_BANANA), 0);
+  assert.equal(inventory.get(I.RAW_STUFFED_SNAKE) ?? 0, 0);
+  assert.match(messages.at(-1), /already has sliced red banana/);
+
+  const paste = { player, usedItemId: I.TCHIKI_NUT_PASTE, usedWithItemId: I.SNAKE_CORPSE, handled: false };
+  stuff(paste);
+  assert.equal(paste.handled, true);
+  assert.equal(inventory.get(I.TCHIKI_NUT_PASTE), 0);
+  assert.equal(inventory.get(I.SNAKE_CORPSE), 0);
+  assert.equal(inventory.get(I.RAW_STUFFED_SNAKE), 1);
+  assert.equal(attributes.get('recipe-for-disaster:awowogei-stuffing'), 0);
+  assert.equal(attributes.get('recipe-for-disaster:awowogei-stage'), 30);
+
+  // The other order works the same way, including a pair whose ids arrive swapped.
+  inventory.set(I.SNAKE_CORPSE, 1);
+  inventory.set(I.SLICED_RED_BANANA, 1);
+  inventory.set(I.TCHIKI_NUT_PASTE, 1);
+  stuff({ player, usedItemId: I.TCHIKI_NUT_PASTE, usedWithItemId: I.SNAKE_CORPSE, handled: false });
+  assert.equal(inventory.get(I.SNAKE_CORPSE), 1);
+  assert.equal(inventory.get(I.TCHIKI_NUT_PASTE), 0);
+  stuff({ player, usedItemId: I.SNAKE_CORPSE, usedWithItemId: I.SLICED_RED_BANANA, handled: false });
+  assert.equal(inventory.get(I.SNAKE_CORPSE), 0);
+  assert.equal(inventory.get(I.RAW_STUFFED_SNAKE), 2);
 });
 
 

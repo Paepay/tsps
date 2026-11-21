@@ -209,6 +209,16 @@ test("the Ironman tutor's setup sets the mode on Proceed; off the island Adam on
   assert.ok(sent.messages.some((text) => text.includes("only switch your restrictions downwards")));
 });
 
+test("off the island a Group Ironman never becomes a solo Ironman at Adam's setup", () => {
+  const { player, sent } = tutorialPlayer(1000, 3222, 3218);
+  PluginManager.emitCustomEvent("ironman:set-mode", { player, mode: "group-hardcore", handled: false });
+  PluginManager.emitCustomEvent("ironman:open-setup", { player, upgrades: false, handled: false });
+  click(player, IRONMAN_SETUP_IRONMAN);
+  assert.equal(player.getEnteredAmountAction?.() ?? null, null, "no confirmation popup");
+  assert.equal(player.getAttribute("ironman:mode"), "group-hardcore");
+  assert.ok(sent.messages.includes("A Group Ironman can never become a solo Ironman."));
+});
+
 test("Adam hands out the mode's armour", () => {
   const { player } = tutorialPlayer(1000, 3229, 3228);
   player.setAttribute("ironman:mode", "hardcore");
@@ -250,6 +260,35 @@ test("new accounts answer the past-experience screen first; the answer picks the
   player.setAttribute("tutorial-island:experience", "new");
   assert.equal(ask(BRAND_NEW), true);
   assert.equal(ask(RETURNING), false);
+});
+
+test("the past-experience answer sets its option defaults, saved like a Settings click", () => {
+  const answer = (slot) => {
+    const { player, sent } = tutorialPlayer(undefined, 3094, 3104);
+    player.setAttribute(PROGRESS, undefined);
+    PluginManager.emitPlayerLogin({ player, username: "tutorial", isNewAccount: true });
+    sent.varbits.clear();
+    click(player, (929 << 16) | 4, slot);
+    return { player, varbits: sent.varbits, saved: player.getAttribute("settings:values") ?? {} };
+  };
+  // Brand new (rsprox local 1001414 / 1001416): the quest list starts filtered and sorted.
+  const fresh = answer(1);
+  for (const [varbit, value] of [[9619, 2], [13772, 11], [13778, 1], [13779, 1]]) {
+    assert.equal(fresh.varbits.get(varbit), value, `new: varbit ${varbit}`);
+    assert.equal(fresh.saved[`varbit:${varbit}`], value, `new: varbit ${varbit} saved`);
+  }
+  assert.equal(fresh.varbits.has(6091), false, "new players keep the alchemy warning");
+  // Experienced (a local Tutorial Island HCIM recording, tick 99): the new-player safeguards are turned off.
+  const veteran = answer(3);
+  for (const [varbit, value] of [[5411, 0], [10971, 0], [11519, 0], [6091, 150000], [624, 1], [2319, 1], [2320, 1], [3939, 1], [4180, 0]]) {
+    assert.equal(veteran.varbits.get(varbit), value, `experienced: varbit ${varbit}`);
+  }
+  assert.equal(veteran.saved["varbit:6091"], 150000);
+  assert.equal(veteran.player.getAttribute("accept-aid"), false);
+  assert.equal(veteran.varbits.has(13772), false, "experienced players keep the plain quest list");
+  // Returning isn't recorded: nothing changes.
+  const returning = answer(2);
+  assert.equal(returning.varbits.has(13772) || returning.varbits.has(6091) || returning.varbits.has(4180), false);
 });
 
 test("a new account skips the welcome screen, designs its character, then gets the experience screen", async () => {
@@ -438,6 +477,22 @@ test("arriving in Lumbridge clears the worn items completely: the weapon interfa
   assert.equal(progress(player), 1000);
   assert.equal(equipment.getValidItems().length, 0, "nothing worn");
   assert.equal(player.getWeapon(), WeaponInterfaces.UNARMED, "fights unarmed, not with the bow");
+});
+
+test("a Group Ironman's rowboat ends the tutorial at The Node, before the Magic Instructor; others stay", () => {
+  const { STEP } = require("../plugins/areas/tutorialisland/Common.TutorialIsland");
+  const { player } = tutorialPlayer(STEP.MAGIC_TALK, 3133, 3089); // past the Ironman tutor
+  PluginManager.emitCustomEvent("ironman:set-mode", { player, mode: "group", handled: false });
+  const leave = { player, handled: false };
+  PluginManager.emitCustomEvent("tutorial-island:leave", leave);
+  assert.equal(leave.handled, true);
+  assert.equal(progress(player), STEP.COMPLETED, "Learning the Ropes is done");
+  assert.deepEqual([player.getLocation().getX(), player.getLocation().getY()], [3095, 3039], "The Node, not Lumbridge");
+
+  const { player: done } = tutorialPlayer(STEP.COMPLETED, 3095, 3039);
+  const again = { player: done, handled: false };
+  PluginManager.emitCustomEvent("tutorial-island:leave", again);
+  assert.equal(again.handled, false, "off the tutorial already: the boat itself takes them");
 });
 
 test("skipping the island as an Ironman opens the setup with every mode, then ends it; declining does not", () => {

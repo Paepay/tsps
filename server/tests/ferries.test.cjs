@@ -144,7 +144,23 @@ function createPlayer({ at = new Location(3046, 3236, 0), items = [], worn = [],
     sendInterfaceAnimation: (uid, seq) => { sent.anims.push([uid, seq]); return sender; },
     sendInterfaceDisplayState: (uid, hide) => { if (!hide) sent.shown.push(uid); return sender; },
     sendSubInterface: (uid, id, type, options) => { sent.subs.push({ uid, id, options }); return sender; },
-    closeSubInterface: (uid) => { sent.closed.push(uid); return sender; },
+    mountSubInterface: (uid, id, type, options) => {
+      const mount = { uid, id, type };
+      if (uid === ((161 << 16) | 1)) sent.fadeMount = mount;
+      sent.subs.push({ uid, id, options });
+      return mount;
+    },
+    closeSubInterfaceMount: (mount) => {
+      if (sent.fadeMount !== mount) return false;
+      sent.fadeMount = null;
+      sent.closed.push(mount.uid);
+      return true;
+    },
+    closeSubInterface: (uid) => {
+      sent.closed.push(uid);
+      if (uid === ((161 << 16) | 1)) sent.fadeMount = null;
+      return sender;
+    },
     sendInterfaceRemoval: () => { sent.removals++; return sender; },
     sendTabInterface: () => sender,
     sendVarbit: (id, value) => { sent.varbits.set(id, value); return sender; },
@@ -237,6 +253,24 @@ test("Take-boat to Entrana: the captured search line, ship_journey route 1, the 
   assert.deepEqual(player.sent.scripts, [...journey, [2524, -1, -1]], "landing clears the background for the next modal");
   assert.equal(player.blocked, false);
   assert.equal(player.area, null);
+});
+
+test("a back-to-back trip keeps its own fade when the previous trip's delayed close fires", () => {
+  const player = createPlayer({ at: new Location(3661, 3849, 0) });
+  const overlay = (161 << 16) | 1;
+  assert.equal(Voyages.travel(player, "lithkren"), true);
+  tick(5);
+  assert.equal(player.blocked, false, "the first trip unlocked the controls");
+
+  assert.equal(Voyages.travel(player, "lithkren-back"), true, "the return trip starts immediately");
+  const closedBefore = player.sent.closed.filter((uid) => uid === overlay).length;
+  tick(2);
+  assert.equal(player.sent.closed.filter((uid) => uid === overlay).length, closedBefore,
+    "the first trip's delayed close must not remove the return trip's fade");
+
+  tick(5);
+  assert.equal(player.sent.closed.filter((uid) => uid === overlay).length, closedBefore + 1,
+    "the return trip closes its own fade at +7");
 });
 
 test("the monks turn back weapons or armour, worn or carried, with the transcript's own refusal", () => {
@@ -766,7 +800,7 @@ test('Veos native travel menus work without quests and throughout Client of Kour
     return { p, npc, choose, arrive, next, finish };
   }
   for (const [variant, option, route, tile, id] of [
-    ['standard-dialogue-at-port-piscarilius', 'Travel to Port Sarim.', 'kourend-sarim', [1825, 3691, 0], core.NpcIdentifiers.VEOS_5],
+    ['standard-dialogue-at-port-piscarilius', 'Travel to Port Sarim.', 'kourend-sarim', [1825, 3691, 0], core.NpcIdentifiers.VEOS_7],
     ['standard-dialogue-at-port-sarim-subsequent-dialogue', "I'd like to travel to Port Piscarilius, please.", 'kourend-piscarilius', [3054, 3245, 0], core.NpcIdentifiers.VEOS],
   ]) {
     const f = actor(id, tile), request = { player: f.p, npc: f.npc, npcId: id, variant: { page: 'Veos', variant }, exact: true };
@@ -786,7 +820,7 @@ test('Veos native travel menus work without quests and throughout Client of Kour
   const client = quests.find(q => q.key === 'client_of_kourend'), xmarks = quests.find(q => q.key === 'x_marks_the_spot');
   for (const stage of [0, 1, 2, 3, 4, 5]) {
     for (const [id, tile, option, route] of [
-      [core.NpcIdentifiers.VEOS_5, [1825, 3691, 0], 'Travel to Port Sarim.', 'kourend-sarim'],
+      [core.NpcIdentifiers.VEOS_7, [1825, 3691, 0], 'Travel to Port Sarim.', 'kourend-sarim'],
       [core.NpcIdentifiers.VEOS, [3054, 3245, 0], "I'd like to travel to Port Piscarilius, please.", 'kourend-piscarilius'],
     ]) {
       const f = actor(id, tile);
@@ -799,7 +833,7 @@ test('Veos native travel menus work without quests and throughout Client of Kour
     }
   }
   for (const option of ["Travel to Land's End.", 'Stay where you are.']) {
-    const f = actor(core.NpcIdentifiers.VEOS_5, [1825, 3691, 0]);
+    const f = actor(core.NpcIdentifiers.VEOS_7, [1825, 3691, 0]);
     xmarks.setStage(f.p, 6); client.setStage(f.p, 1);
     PM.emitNpcInteraction({ player: f.p, npc: f.npc, npcId: f.npc.getId(), action: 'Talk-to', clickType: 1, handled: false });
     await f.choose('Can you take me somewhere?'); await f.choose(option);

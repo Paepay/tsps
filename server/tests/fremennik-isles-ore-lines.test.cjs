@@ -121,19 +121,21 @@ test("the ore hand-in boxes fill from each player's own tier, and [man/woman] fr
   // Mining 1 first: before the fix its fill was written into the shared transcript step, so the next player saw it.
   const tin = handIn(t, { mining: 1, ore: core.ItemIdentifiers.TIN_ORE });
   assert.ok(tin.sent.includes("Thorkel Silkbeard takes eight lumps of tin."), JSON.stringify(tin.sent));
-  assert.ok(tin.sent.includes("Thorkel Silkbeard hands you 2000 coins."));
+  // Wiki (The Fremennik Isles): "The king's reward for the ores is 5,000 coins.", whatever the ore.
+  assert.ok(tin.sent.includes("Thorkel Silkbeard hands you 5000 coins."));
+  assert.equal(tin.p.getInventory().getAmount(core.ItemIdentifiers.COINS), 5000);
   assert.ok(tin.sent.includes("This man has gathered the remaining ore needed by Keldagrim's merchants."));
   assert.ok(tin.sent.includes("Please reward this man for his efforts."));
 
   const mithril = handIn(t, { mining: 55, ore: core.ItemIdentifiers.MITHRIL_ORE, female: true });
   assert.ok(mithril.sent.includes("Thorkel Silkbeard takes six lumps of mithril."), JSON.stringify(mithril.sent));
-  assert.ok(mithril.sent.includes("Thorkel Silkbeard hands you 6000 coins."));
-  assert.ok(!mithril.sent.some((text) => text.includes("eight lumps of tin") || text.includes("2000 coins")),
+  assert.ok(mithril.sent.includes("Thorkel Silkbeard hands you 5000 coins."));
+  assert.ok(!mithril.sent.some((text) => text.includes("eight lumps of tin")),
     "the first player's tier does not leak into the transcript");
   assert.ok(mithril.sent.includes("This woman has gathered the remaining ore needed by Keldagrim's merchants."));
   assert.ok(mithril.sent.includes("Please reward this woman for her efforts."));
   assert.equal(mithril.p.getInventory().getAmount(core.ItemIdentifiers.MITHRIL_ORE), 2, "six lumps taken");
-  assert.equal(mithril.p.getInventory().getAmount(core.ItemIdentifiers.COINS), 6000);
+  assert.equal(mithril.p.getInventory().getAmount(core.ItemIdentifiers.COINS), 5000);
   assert.ok(!mithril.sent.some((text) => /\[[^\]]*\/[^\]]*\]|\[amount\]/.test(text)), "no blank left unfilled");
 });
 
@@ -149,4 +151,55 @@ test("the Troll King bridge message fills its bare X with the trolls still to ki
   assert.equal(event.handled, true);
   assert.deepEqual(sent, ["You have 7 more trolls to kill before you can kill the Troll King."]);
   assert.equal(event.step.text, text, "the shared transcript step is left as it was");
+});
+
+test("Hrafn's translation requires a worn catspeak amulet or the Sphinx's catspeak grant", (t) => {
+  const raw = require("../data/definitions/npc-dialogues.json")["The Fremennik Isles"]
+    .variants["starting-off-talking-to-king-sorvott-iv"];
+  const catLine = raw.find(step => step.speaker_ids?.includes(core.NpcIdentifiers.HRH_HRAFN));
+  const original = catLine.text;
+  const [, sounds, translation] = original.match(/^(.*?)\s+\((.+)\)$/);
+  const amulets = [
+    core.ItemIdentifiers.CATSPEAK_AMULET,
+    core.ItemIdentifiers.CATSPEAK_AMULET_E_,
+    core.ItemIdentifiers.CATSPEAK_AMULET_2,
+    core.ItemIdentifiers.CATSPEAK_AMULET_E__2,
+  ];
+  const cases = [
+    { name: "no catspeak", expected: sounds },
+    { name: "carried amulet", carried: amulets[0], expected: sounds },
+    ...amulets.map(worn => ({ name: `worn ${worn}`, worn, expected: translation })),
+    { name: "before the Sphinx grants catspeak", ds2Stage: 7, dreamProgress: 1, expected: sounds },
+    { name: "immediately after the Sphinx grants catspeak", ds2Stage: 7, dreamProgress: 1, sphinxGrant: true, expected: translation },
+    ...[8, 9, 10, 11, 12, 13, 14].map(ds2Stage => ({ name: `Dragon Slayer II stage ${ds2Stage}`, ds2Stage, expected: translation })),
+  ];
+  for (const { name, carried, worn, ds2Stage, dreamProgress, sphinxGrant, expected } of cases) {
+    const p = actor(t, { stage: 1, mining: 1 });
+    if (carried) p.getInventory().adds(carried, 1);
+    if (worn) p.getEquipment().setItem(core.Equipment.AMULET_SLOT, new core.Item(worn, 1));
+    if (ds2Stage) {
+      const ds2 = QuestRuntime.questNamed("Dragon Slayer II");
+      ds2.setStage(p, ds2Stage);
+      if (dreamProgress) p.setAttribute("dragon-slayer-ii:dream-progress", dreamProgress);
+      if (sphinxGrant) {
+        const grant = { player: p, npcId: core.NpcIdentifiers.SPHINX,
+          stepId: "dragon-slayer-ii:sphinx-dream-complete", handled: false };
+        PM.emitCustomEvent("npc-dialogue:action", grant);
+        assert.equal(grant.handled, true);
+        assert.equal(ds2.getStage(p), 7);
+        assert.equal(p.getAttribute("dragon-slayer-ii:dream-progress"), 2);
+      }
+    }
+    const api = { core, emitCustomEvent: (eventName, event) => PM.emitCustomEvent(eventName, event) };
+    assert.equal(QuestRuntime.startTranscript(api, p, KING_SORVOTT, "The Fremennik Isles",
+      "starting-off-talking-to-king-sorvott-iv"), true);
+    p.getDialogueManager().advance();
+    const cat = p.getDialogueManager().getCurrent();
+    assert.equal(cat.getNpcId(), core.NpcIdentifiers.HRH_HRAFN, `${name}: cat chathead`);
+    assert.equal(cat.getText(), expected, name);
+    p.getDialogueManager().advance();
+    assert.equal(p.getDialogueManager().getCurrent().getNpcId(), core.NpcIdentifiers.GUARD_32,
+      `${name}: the quest guard retains its own chathead`);
+  }
+  assert.equal(catLine.text, original, "each player selects speech without modifying the shared transcript");
 });

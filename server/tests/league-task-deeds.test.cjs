@@ -14,6 +14,7 @@ const { GameConstants } = require("../dist/game/GameConstants");
 
 let core;
 let next = 1700;
+const BirdBath = require("../plugins/objects/BirdBath.plugin.js")._test;
 
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -392,6 +393,21 @@ test("pickpocket-loot: an item in the pocket's loot (Pickpocket a Diamond From a
   assert.ok(done(f, "pickpocket-a-diamond-from-a-tzhaar"));
 });
 
+test("pickpocket-loot counts the loot as given: the wealthy citizen's 40th dry pick is the house key (Steal a House Key)", async (t) => {
+  const f = pactsCharacter(t);
+  const skills = f.player.getSkillManager();
+  skills.setMaxLevel(core.Skill.THIEVING, 99);
+  skills.setCurrentLevel(core.Skill.THIEVING, 99);
+  f.player.setAttribute(require("../plugins/skills/thieving/WealthyCitizens.Thieving")._test.KEY_DRY_STREAK_ATTRIBUTE, 40);
+  const { npc, clickType } = npcBeside(t, f, "Wealthy citizen", "pickpocket");
+  // The success roll, then middling rolls (no clue): coins, which the dry streak swaps for the key.
+  const rolls = [0];
+  t.mock.method(Math, "random", () => (new Error().stack.includes("Pickpocket.Thieving") ? rolls.shift() ?? 0.5 : 0.5));
+  await send(f, { type: "npc_option", index: npc.getIndex(), clickType }, 6);
+  assert.equal(f.player.getInventory().getAmount(item("House keys")), 1, `the real Thieving gives the key: ${f.messages}`);
+  assert.ok(done(f, "steal-a-house-key"));
+});
+
 test("shortcut: an agility shortcut crossed, by its name (Take a Shortcut Across the Shilo Village River)", async (t) => {
   core.RegionManager.loadMapFiles(2863, 2971);
   const f = pactsCharacter(t);
@@ -430,6 +446,32 @@ test("deed: a plugin's own event of the deed (Worship the Ectofuntus; Fill a Lar
   await inventoryOption(rc, "Large pouch", "Fill");
   assert.ok(rc.player.getInventory().getAmount(item("Pure essence")) < 20 - 6, `the real pouches take the essence: ${rc.messages}`);
   assert.ok(done(rc, "fill-a-large-pouch"));
+});
+
+test("producing a toxic blowpipe awards its task once on the empty crafted result", async (t) => {
+  const f = pactsCharacter(t);
+  const inventory = f.player.getInventory();
+  f.player.getSkillManager().setMaxLevel(core.Skill.FLETCHING, 78);
+  f.player.getSkillManager().setCurrentLevel(core.Skill.FLETCHING, 78);
+  inventory.add(new core.Item(item("Chisel")), true);
+  inventory.add(new core.Item(item("Tanzanite fang")), true);
+  assert.ok(!done(f, "craft-a-toxic-blowpipe"));
+  const craft = () => send(f, {
+    type: "inventory_use_on", itemId: item("Chisel"), slot: inventory.getSlotForItemId(item("Chisel")),
+    target: { kind: "inventory", slot: inventory.getSlotForItemId(item("Tanzanite fang")) },
+  }, 2);
+  await craft();
+  assert.equal(inventory.getAmount(item("Tanzanite fang")), 0);
+  assert.equal(inventory.getAmount(item("Toxic blowpipe (empty)")), 1);
+  assert.ok(done(f, "craft-a-toxic-blowpipe"));
+  const points = { player: f.player, points: 0 };
+  PM.emitCustomEvent("league:points", points);
+  const firstPoints = points.points;
+  inventory.add(new core.Item(item("Tanzanite fang")), true);
+  await craft();
+  assert.equal(inventory.getAmount(item("Toxic blowpipe (empty)")), 2);
+  PM.emitCustomEvent("league:points", points);
+  assert.equal(points.points, firstPoints, "a second craft does not award duplicate points");
 });
 
 test("deed: the heart invigorated, darts loaded, the looting bag opened, a prayer scroll read", async (t) => {
@@ -1992,4 +2034,1132 @@ test("deed: a teleport with the Eternal teleport crystal (Use an Elven Teleport 
   await ticks(f, 6);
   assert.equal(f.player.getLocation().getY() > 6000, true, `the toggled left-click goes to Prifddinas: ${f.player.getLocation()}`);
   assert.ok(done(f, "use-an-elven-teleport-crystal"), "the arrival counts");
+});
+
+// ---- issue 6108: the Demonic Pacts tasks the generator left without a trigger ----------------------
+
+/** An NPC of the cache name at an offset from the player (its south-west tile there). */
+function npcAt(t, f, name, dx, dy) {
+  const id = [...Array(20000).keys()].find((each) => core.CacheDefinitions.getNpc(each)?.name === name);
+  const at = f.player.getLocation();
+  const npc = core.NPC.create(id, new core.Location(at.getX() + dx, at.getY() + dy, at.getZ()));
+  core.World.getNpcs().add(npc);
+  t.after(() => core.World.getNpcs().remove(npc));
+  return npc;
+}
+
+/** The emote tab's slot, clicked (Bow 2, Dance 12, Cry 16, Salute 21: the slots RSProx 237/1098 clicks). */
+async function emote(f, slot) {
+  await ticks(f, 1); // whatever the login opens next (the league's screens), then closed
+  f.player.getPacketSender().sendInterfaceRemoval();
+  await send(f, { type: "widget_action", widgetId: (216 << 16) | 2, groupId: 216, childId: 2, slot, itemId: -1, buttonNum: 1 }, 1);
+}
+
+test("near: an emote by a child, bard or quetzal counts within the recorded distance, a farther one not (RSProx 237/1098)", async (t) => {
+  core.RegionManager.loadMapFiles(1666, 3136);
+  const f = pactsCharacter(t);
+  const cases = [
+    // Cry: 2 tiles from a child (RSProx 237/1098: cried at tick 14398, the task at 14399).
+    { id: "cry-near-a-child", slot: 16, npc: "Child", near: 2, far: 3 },
+    // Dance: none 3 tiles from the bards (tick 25550), completed 1 tile away (25555).
+    { id: "dance-near-a-bard", slot: 12, npc: "Bard", near: 1, far: 3 },
+  ];
+  for (const each of cases) {
+    const npc = npcAt(t, f, each.npc, each.far, 0);
+    await emote(f, each.slot);
+    assert.equal(f.player.getAnimation()?.getId() > 0, true, `the real Emotes plays it: ${f.messages}`);
+    assert.ok(!done(f, each.id), `${each.id}: ${each.far} tiles is too far`);
+    const at = f.player.getLocation();
+    npc.moveTo(new core.Location(at.getX() + each.near, at.getY(), at.getZ()));
+    await emote(f, 0); // Yes: another emote is none
+    assert.ok(!done(f, each.id), `${each.id}: another emote`);
+    await emote(f, each.slot);
+    assert.ok(done(f, each.id), `${each.id}: ${each.near} tiles`);
+    core.World.getNpcs().remove(npc);
+  }
+});
+
+test("near, in Varlamore only: a cry beside a child in Yama's Lair is no Varlamore task", async (t) => {
+  const f = pactsCharacter(t, [1503, 5602, 0]);
+  npcAt(t, f, "Child", 1, 0);
+  await emote(f, 16);
+  assert.equal(f.player.getAnimation()?.getId() > 0, true, `cried: ${f.messages}`);
+  assert.ok(!done(f, "cry-near-a-child"), "area 21, as the task's region");
+});
+
+test("near a multinpc: Bow beside Civitas' quetzal, Renu's unnamed spawn 13355, 2 tiles from its footprint (RSProx 237/1098 tick 14440)", async (t) => {
+  core.RegionManager.loadMapFiles(1696, 3139);
+  const f = pactsCharacter(t, [1696, 3138, 0]);
+  const renu = core.NPC.create(13355, new core.Location(1696, 3141, 0));
+  core.World.getNpcs().add(renu);
+  t.after(() => core.World.getNpcs().remove(renu));
+  await emote(f, 2);
+  assert.ok(!done(f, "bow-near-a-quetzal"), "3 tiles off");
+  f.player.moveTo(new core.Location(1696, 3139, 0)); // the recorded tile
+  f.player.needsPlacement = false;
+  await emote(f, 2);
+  assert.ok(done(f, "bow-near-a-quetzal"), `bowed 2 tiles from it: ${f.messages}`);
+});
+
+test("near a loc: Salute next to Civitas' statue of Quoatlos, 3 tiles from its footprint as recorded (RSProx 237/1098 tick 15055)", async (t) => {
+  core.RegionManager.loadMapFiles(1719, 3155);
+  const f = pactsCharacter(t, [1718, 3161, 0]);
+  await emote(f, 21);
+  assert.ok(!done(f, "salute-next-to-a-statue-of-quoatlos"), "4 tiles off");
+  f.player.moveTo(new core.Location(1718, 3160, 0));
+  f.player.needsPlacement = false;
+  await emote(f, 21);
+  assert.ok(done(f, "salute-next-to-a-statue-of-quoatlos"), `the statue's 3x3 at 1719,3155: ${f.messages}`);
+});
+
+test("near a loc by option: a prayer switched on beside an altar (Activate a prayer near an altar), not away from one", (t) => {
+  const f = pactsCharacter(t);
+  const skills = f.player.getSkillManager();
+  skills.setMaxLevel(core.Skill.PRAYER, 99);
+  skills.setCurrentLevel(core.Skill.PRAYER, 99);
+  const pray = (offset) => {
+    const at = f.player.getLocation();
+    const altar = new core.GameObject(core.ObjectIdentifiers.ALTAR, new core.Location(at.getX() + offset, at.getY(), 0), 10, 0, null);
+    core.ObjectManager.register(altar, true);
+    core.PrayerHandler.deactivatePrayers?.(f.player);
+    core.PrayerHandler.activatePrayerPrayerId(f.player, core.PrayerHandler.THICK_SKIN);
+    assert.ok(core.PrayerHandler.isActivated(f.player, core.PrayerHandler.THICK_SKIN), `on: ${f.messages}`);
+    core.ObjectManager.deregister(altar, true);
+    return done(f, "activate-a-prayer-near-an-altar");
+  };
+  assert.equal(pray(3), false, "3 tiles from the altar");
+  assert.equal(pray(1), true, "beside it, as recorded (RSProx 237/1098 tick 9770)");
+});
+
+test("wearing: something cooked with an apron on (Cook something with an apron); a golden apron, or none, is not", async (t) => {
+  const f = pactsCharacter(t);
+  const cook = async (apron) => {
+    f.player.getEquipment().setItem(core.Equipment.BODY_SLOT, new core.Item(apron ? item(apron) : -1));
+    f.player.getInventory().resetItems();
+    assert.equal(await cookShark(t, f), 1, `the real Cooking cooks it: ${f.messages}`);
+    return done(f, "cook-something-with-an-apron");
+  };
+  assert.equal(await cook(null), false, "no apron");
+  assert.equal(await cook("Golden apron"), false, "the Wiki: a golden apron does not work");
+  assert.equal(await cook("Brown apron"), true, "a brown apron (RSProx 237/1098 tick 15774)");
+  const g = pactsCharacter(t);
+  g.player.getEquipment().setItem(core.Equipment.BODY_SLOT, new core.Item(item("White apron")));
+  assert.equal(await cookShark(t, g), 1);
+  assert.ok(done(g, "cook-something-with-an-apron"), "a white apron");
+});
+
+test("wearing: written as a list or as { items }, both read the same", async (t) => {
+  const Common = require("../plugins/modes/leaguetasks/Common.LeagueTasks");
+  const task = Common.catalog(6).tasks.find((each) => each.id === "cook-something-with-an-apron");
+  const list = task.trigger.wearing;
+  t.after(() => { task.trigger.wearing = list; });
+  task.trigger.wearing = { items: list };
+  const f = pactsCharacter(t);
+  f.player.getEquipment().setItem(core.Equipment.BODY_SLOT, new core.Item(item("White apron")));
+  assert.equal(await cookShark(t, f), 1);
+  assert.ok(done(f, "cook-something-with-an-apron"));
+});
+
+test("chop-logs: any logs chopped (Chop Some Logs)", async (t) => {
+  const f = pactsCharacter(t);
+  assert.ok(!done(f, "chop-some-logs"));
+  assert.ok(await chop(t, f, 1666, 3136) > 0, `the real Woodcutting: ${f.messages}`);
+  assert.ok(done(f, "chop-some-logs"));
+});
+
+test("deed: the League Home Teleport landing, either home (Cast Home Teleport; RSProx 237/1098 tick 4444)", async (t) => {
+  for (const [opId, landTicks] of [[3, 24], [2, 4]]) {
+    const f = pactsCharacter(t);
+    PM.emitSpellCast({ player: f.player, spellName: "League Home Teleport", spellWidget: (218 << 16) | 5, spellItemId: -1, opId, handled: false });
+    for (let i = 0; i < landTicks - 1; i++) core.TaskManager.process();
+    assert.ok(!done(f, "cast-home-teleport"), `op ${opId}: not before the landing`);
+    for (let i = 0; i < 2; i++) core.TaskManager.process();
+    assert.ok(done(f, "cast-home-teleport"), `op ${opId}: landed at ${f.player.getLocation()}`);
+  }
+});
+
+test("deed: an unlit torch lit with a tinderbox (Light a Torch; RSProx 237/1098 tick 16024)", async (t) => {
+  const f = pactsCharacter(t);
+  f.player.getInventory().add(new core.Item(item("Tinderbox")), true);
+  f.player.getInventory().add(new core.Item(item("Unlit torch")), true);
+  await send(f, { type: "inventory_use_on", itemId: item("Tinderbox"), slot: 0, target: { kind: "inventory", slot: 1 } }, 2);
+  assert.equal(f.player.getInventory().getAmount(item("Lit torch")), 1, `the real LightSources lights it: ${f.messages}`);
+  assert.ok(done(f, "light-a-torch"));
+});
+
+test("deed: planks made at a sawmill (Turn any Logs Into a Plank; RSProx 237/1103 tick 485)", (t) => {
+  const f = pactsCharacter(t);
+  const Sawmill = require("../plugins/npcs/Sawmill.plugin.js")._test;
+  const oak = Sawmill.data().planks.find((plank) => plank.plank === item("Oak plank"));
+  f.player.getInventory().add(new core.Item(Sawmill.data().coins, 1000), true);
+  assert.equal(Sawmill.convert(f.player, 3101, oak, 1), 0, "no logs, no plank");
+  assert.ok(!done(f, "turn-any-logs-into-a-plank"));
+  f.player.getInventory().add(new core.Item(item("Oak logs")), true);
+  assert.equal(Sawmill.convert(f.player, 3101, oak, 1), 1);
+  assert.ok(done(f, "turn-any-logs-into-a-plank"));
+});
+
+test("deed and npc-op: a sitting caique pecks on the fourth tick (Pet a Caique); Xolo petted in Varlamore (Pet Xolo in Civitas)", async (t) => {
+  core.RegionManager.loadMapFiles(1666, 3136);
+  const f = pactsCharacter(t);
+  const caique = npcBeside(t, f, "Caique", "pet");
+  await send(f, { type: "npc_option", index: caique.npc.getIndex(), clickType: caique.clickType }, 2);
+  assert.ok(!done(f, "pet-a-caique"), "not before the peck");
+  await ticks(f, 4);
+  assert.ok(done(f, "pet-a-caique"), `pecked (RSProx 237/1098 tick 27022): ${f.messages}`);
+  core.World.getNpcs().remove(caique.npc);
+  f.player.getPacketSender().sendInterfaceRemoval();
+  const xolo = npcBeside(t, f, "Xolo", "pet");
+  await send(f, { type: "npc_option", index: xolo.npc.getIndex(), clickType: xolo.clickType }, 3);
+  assert.ok(done(f, "pet-xolo-in-civitas"), `the real StrayDogs pets it: ${f.messages}`);
+});
+
+test("deeds: a buffalo milked, a bird bath drunk from, scenery admired, stew given to Oli, a full barrel handed in (the Varlamore tasks of issue 6108)", async (t) => {
+  const f = pactsCharacter(t);
+  const go = (x, y) => { f.player.moveTo(new core.Location(x, y, 0)); f.player.needsPlacement = false; core.RegionManager.loadMapFiles(x, y); };
+  const objectAt = (x, y, name) => core.MapObjects.getObjectsAt(new core.Location(x, y, 0), null).find((object) => object.getDefinition()?.getName() === name);
+
+  // Milk a Buffalo: a Dairy Buffalo, two ticks after the arrival (RSProx 237/1098: clicked 14560, arrived 14569, effects 14571).
+  go(1587, 3118);
+  const dairy = new core.GameObject(52576, new core.Location(1588, 3118, 0), 10, 0, null);
+  core.ObjectManager.register(dairy, true);
+  t.after(() => core.ObjectManager.deregister(dairy, true));
+  f.player.getInventory().add(new core.Item(item("Bucket")), true);
+  await send(f, { type: "object_option", id: 52576, x: 1588, y: 3118, action: "Milk" }, 1);
+  assert.ok(!done(f, "milk-a-buffalo"), "not before the milking");
+  await ticks(f, 6);
+  assert.equal(f.player.getInventory().getAmount(item("Bucket of milk")), 1, `milked: ${f.messages} ${f.player.getLocation()}`);
+  assert.ok(done(f, "milk-a-buffalo"));
+
+  // Drink from a bird bath: Yes, then the outcome two ticks on (1098 tick 14897).
+  go(1556, 3170);
+  const bath = objectAt(1555, 3170, "Bird bath");
+  assert.ok(bath, "the bird bath west of Civitas");
+  f.player.getPacketSender().sendInterfaceRemoval();
+  BirdBath.drinkFrom({ player: f.player, object: bath });
+  for (let i = 0; i < 2; i++) core.TaskManager.process(); // the question two ticks on (1098 tick 14893)
+  const menu = f.player.getDialogueManager().getCurrent();
+  assert.equal(menu?.constructor?.name, "OptionDialogue", "Drink from the bird bath? Yes. / No.");
+  menu.execute(1);
+  assert.ok(!done(f, "drink-from-a-bird-bath"), "not on the Yes");
+  t.mock.method(Math, "random", () => 0.99); // the poison outcome, as recorded
+  for (let i = 0; i < 3; i++) core.TaskManager.process();
+  t.mock.restoreAll();
+  assert.ok(done(f, "drink-from-a-bird-bath"), `drank: ${f.messages}`);
+  assert.ok(f.messages.includes("You have been poisoned!"), f.messages.join(" | "));
+  assert.equal(f.player.getDialogueManager().getCurrent()?.getText?.() ?? f.player.getDialogueManager().getCurrent()?.text, "Eugh! I don't feel too good...");
+
+  // Admire some beautiful scenery: the Auburn Valley's beautiful rock at 1438,3330 (1098 tick 16910).
+  f.player.getPacketSender().sendInterfaceRemoval();
+  f.player.getDialogueManager().reset();
+  go(1437, 3331);
+  const rock = objectAt(1438, 3330, "Beautiful rock");
+  assert.ok(rock, "the beautiful rock");
+  await send(f, { type: "object_option", id: rock.getId(), x: 1438, y: 3330, action: "Admire" }, 6);
+  assert.ok(done(f, "admire-some-beautiful-scenery"), `admired: ${f.messages}`);
+
+  // Give Oli some Stew: on the arrival, with the item box (1098 tick 15383).
+  go(1653, 3103);
+  const oli = core.NPC.create(13318, new core.Location(1654, 3103, 0));
+  core.World.getNpcs().add(oli);
+  t.after(() => core.World.getNpcs().remove(oli));
+  f.player.getInventory().resetItems();
+  f.player.getInventory().setItem(0, new core.Item(item("Stew"), 1));
+  await send(f, { type: "item_on_npc", targetIndex: oli.getIndex(), itemId: item("Stew"), slot: 0, widgetId: 149 << 16 }, 4);
+  assert.equal(f.player.getInventory().getAmount(item("Stew")), 0, `Oli eats it: ${f.messages}`);
+  assert.ok(done(f, "give-oli-some-stew"));
+
+  // Fill a Grape Barrel for the Foreman: on the payment (1098 tick 16598; the whole flow is in
+  // vineyard-foreman-barrel.test.cjs).
+  const Vineyard = require("../plugins/world/Vineyard.plugin.js")._test;
+  f.player.getInventory().add(new core.Item(item("Grape barrel")), true);
+  f.player.setAttribute(Vineyard.GRAPES_ATTRIBUTE, 3);
+  Vineyard.handIn(f.player);
+  assert.ok(!done(f, "fill-a-grape-barrel-for-the-foreman"), "a barrel short of full pays nothing");
+  f.player.setAttribute(Vineyard.GRAPES_ATTRIBUTE, 4);
+  Vineyard.handIn(f.player);
+  assert.ok(done(f, "fill-a-grape-barrel-for-the-foreman"));
+});
+
+// ---- the second batch of Demonic Pacts mappings (after issue 6108) ----------------------------------
+
+/** A cache NPC id by its name. */
+function npcId(name) {
+  const id = [...Array(20000).keys()].find((each) => core.CacheDefinitions.getNpc(each)?.name === name);
+  assert.ok(id !== undefined, `no NPC ${name}`);
+  return id;
+}
+
+test("batch 2: hunter catches, area produce, snelms, ammo, stall thefts and shooting stars count for their tasks", async (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const at = (x, y) => { player.moveTo(new core.Location(x, y, 0)); player.needsPlacement = false; };
+  const hunt = (name) => PM.emitCustomEvent("hunter:success", { player, npcId: npcId(name), method: "test" });
+  const made = (name, amount = 1) => PM.emitCustomEvent("skills:produced", { player, itemId: item(name), amount, kind: "make" });
+
+  hunt("Copper longtail");
+  assert.ok(done(f, "snare-a-bird"), "a snared bird");
+  for (let i = 0; i < 18; i++) hunt("Tropical wagtail");
+  assert.ok(!done(f, "snare-a-bird-20-times"), "19 birds");
+  hunt("Crimson swift"); // in Civitas: no Feldip Hills task
+  assert.ok(done(f, "snare-a-bird-20-times"), "20 birds");
+  assert.ok(!done(f, "catch-a-crimson-swift-in-the-feldip-hills"), "not in Kandarin");
+  hunt("Sunlight Moth");
+  assert.ok(!done(f, "catch-a-butterfly"), "a moth is no butterfly");
+  hunt("Ruby harvest");
+  assert.ok(done(f, "catch-a-butterfly"));
+  hunt("Tecu salamander");
+  assert.ok(done(f, "catch-a-swamp-lizard-or-salamander"));
+  hunt("Sabre-toothed kyatt");
+  assert.ok(done(f, "trap-a-sabre-toothed-kyatt"));
+
+  made("Broken bark snelm");
+  assert.ok(done(f, "craft-a-snelm"), "the broken bark snelm is a snelm too");
+  made("Broad bolts", 10);
+  assert.ok(done(f, "fletch-some-broad-arrows-or-bolts"));
+  made("Rune brutal", 150);
+  made("Rune brutal", 50);
+  assert.ok(done(f, "make-200-brutal-rune-arrows"));
+
+  PM.emitCustomEvent("thieving:success", { player, method: "stall", stall: "Spice stall", itemId: item("Spice"), objectId: 58105 });
+  assert.ok(!done(f, "steal-from-the-fortis-spice-stall"), "Port Roberts' spice stall, also in Varlamore");
+  PM.emitCustomEvent("thieving:success", { player, method: "stall", stall: "Spice stall", itemId: item("Spice"), objectId: 51936 });
+  assert.ok(done(f, "steal-from-the-fortis-spice-stall"), "the spice stall in Civitas");
+  PM.emitCustomEvent("thieving:success", { player, method: "stall", stall: "Fish stall", itemId: item("Raw salmon") });
+  assert.ok(done(f, "steal-a-fish"));
+
+  PM.emitCustomEvent("shooting-stars:mined", { player, size: 7 });
+  assert.ok(done(f, "mine-a-shooting-star"));
+  assert.ok(!done(f, "mine-a-size-8-shooting-star"), "size 7");
+  PM.emitCustomEvent("shooting-stars:mined", { player, size: 9 });
+  assert.ok(done(f, "mine-a-size-8-shooting-star"), "size 9");
+
+  // Tirannwn, Kandarin and Kourend unlocked, then the deeds there.
+  player.setAttribute("league:areas", [21, 7, 4, 20]);
+  at(2200, 3200); // Tirannwn (Lletya's woods)
+  // The real Cooking: raw rabbit on a fire is a Cooked rabbit (the server's only rabbit recipe).
+  const fire = new core.GameObject(core.ObjectIdentifiers.FIRE, new core.Location(2201, 3200, 0), 10, 0, null);
+  core.ObjectManager.register(fire, true);
+  t.after(() => core.ObjectManager.deregister(fire, true));
+  core.RegionManager.loadMapFiles(2200, 3200);
+  player.getInventory().resetItems();
+  player.getInventory().add(new core.Item(item("Raw rabbit")), true);
+  player.getSkillManager().setMaxLevel(core.Skill.COOKING, 99);
+  player.getSkillManager().setCurrentLevel(core.Skill.COOKING, 99); // past the rabbit's burn level
+  await send(f, { type: "item_on_object", itemId: item("Raw rabbit"), slot: 0, widgetId: 149 << 16, objectId: fire.getId(), x: 2201, y: 3200 }, 10);
+  assert.equal(player.getInventory().getAmount(item("Cooked rabbit")), 1, `cooked: ${f.messages}`);
+  assert.ok(done(f, "cook-a-rabbit-in-tirannwn"), `cooked in Tirannwn at ${player.getLocation()}`);
+  for (let i = 0; i < 25; i++) PM.emitCustomEvent("mining:success", { player, itemId: item("Gold ore") });
+  assert.ok(done(f, "mine-25-gold-rocks-in-tirannwn"));
+  at(2550, 2910); // the Feldip Hills
+  hunt("Spined larupia");
+  assert.ok(done(f, "trap-a-spined-larupia-in-the-feldip-hills"), `Kandarin at ${player.getLocation()}`);
+  at(1750, 3600); // Hosidius
+  PM.emitCustomEvent("thieving:success", { player, method: "stall", stall: "Fruit Stall", itemId: item("Cooking apple") });
+  assert.ok(!done(f, "steal-a-golovanova-fruit-top"), "an apple");
+  PM.emitCustomEvent("thieving:success", { player, method: "stall", stall: "Fruit Stall", itemId: item("Golovanova fruit top") });
+  assert.ok(done(f, "steal-a-golovanova-fruit-top"), `Kourend at ${player.getLocation()}`);
+});
+
+test("batch 2: Deadeye and Mystic Vigour, Eagle Eye's and Mystic Might's slots with their scrolls read (PrayerHandler)", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const P = core.PrayerHandler;
+  const skills = player.getSkillManager();
+  skills.setMaxLevel(core.Skill.PRAYER, 99);
+  skills.setCurrentLevel(core.Skill.PRAYER, 99);
+  P.activatePrayerPrayerId(player, P.EAGLE_EYE);
+  assert.ok(!done(f, "activate-deadeye"), "plain Eagle Eye");
+  P.deactivatePrayers(player);
+  player.setAttribute(P.DEADEYE_UNLOCKED_ATTRIBUTE, true);
+  player.setAttribute(P.MYSTIC_VIGOUR_UNLOCKED_ATTRIBUTE, true);
+  P.activatePrayerPrayerId(player, P.EAGLE_EYE);
+  assert.ok(done(f, "activate-deadeye"), `Deadeye: ${f.messages}`);
+  P.activatePrayerPrayerId(player, P.MYSTIC_MIGHT);
+  assert.ok(done(f, "activate-mystic-vigour"), `Mystic Vigour: ${f.messages}`);
+});
+
+// ---- named places from subjects' location lines (issue 6108 follow-ups) ---------------------------
+
+test("places from location lines: the Stonecutter Outpost's rocks, Tlati's trees, the Shayzien yews, the Forsaken Tower's magic trees, two sand pits, Land's End's bank chest and Puro-Puro", async (t) => {
+  const f = pactsCharacter(t, [1666, 3136, 0], [21, 20, 8, 1]);
+  const { player } = f;
+  const at = (x, y) => { player.moveTo(new core.Location(x, y, 0)); player.needsPlacement = false; };
+  const mined = (name) => PM.emitCustomEvent("mining:success", { player, itemId: item(name) });
+  const chopped = (name) => PM.emitCustomEvent("woodcutting:success", { player, logId: item(name), logAmount: 1 });
+
+  // Coal: Civitas is no Stonecutter Outpost; beside its coal rocks (1732,2948, Coal rocks' location line) it is.
+  mined("Coal");
+  assert.ok(!done(f, "mine-some-coal-from-stonecutter-outpost"), "coal mined in Civitas");
+  at(1733, 2948);
+  mined("Coal");
+  assert.ok(done(f, "mine-some-coal-from-stonecutter-outpost"), `the outpost at ${player.getLocation()}`);
+  for (let i = 0; i < 20; i++) mined("Mithril ore");
+  assert.ok(done(f, "mine-20-mithril-ore-in-the-stonecutter-outpost"));
+
+  at(1666, 3136);
+  chopped("Teak logs");
+  assert.ok(!done(f, "chop-a-tree-in-the-tlati-rainforest"), "a teak chopped in Civitas");
+  at(1256, 3005); // beside a Tlati Rainforest teak (Teak tree's location line)
+  chopped("Teak logs");
+  assert.ok(done(f, "chop-a-tree-in-the-tlati-rainforest"));
+
+  at(1486, 3598); // a Shayzien yew
+  for (let i = 0; i < 15; i++) chopped("Yew logs");
+  assert.ok(done(f, "chop-15-yew-logs-in-shayzien"));
+  at(1373, 3819); // a Forsaken Tower magic tree
+  chopped("Magic logs");
+  assert.ok(done(f, "chop-a-magic-log-at-the-forsaken-tower"));
+
+  at(1520, 3001); // the Sunset Coast's sand pit
+  PM.emitCustomEvent("sand-pit:filled", { player });
+  assert.ok(done(f, "fill-a-bucket-with-sand-at-the-sunset-coast"));
+  at(2667, 3708); // Rellekka's
+  for (let i = 0; i < 19; i++) PM.emitCustomEvent("sand-pit:filled", { player });
+  assert.ok(!done(f, "fill-up-20-buckets-of-sand-in-rellekka"), "19 buckets");
+  PM.emitCustomEvent("sand-pit:filled", { player });
+  assert.ok(done(f, "fill-up-20-buckets-of-sand-in-rellekka"));
+
+  // Puro-Puro: its map square, the server's own bounds too (Catching.Hunter's inPuroPuro). The hunt there is
+  // the same path as the others; the test can't stand a player inside, as Impetuous Impulses sends back
+  // anyone not let in through its entrance.
+  const Common = require("../plugins/modes/leaguetasks/Common.LeagueTasks");
+  assert.equal(Common.inPlace("puro-puro", 2590, 4320), true);
+  assert.equal(Common.inPlace("puro-puro", 2624, 4320), false);
+  assert.equal(Common.catalog(6).byId.get("catch-50-implings-in-puro-puro").trigger.place, "puro-puro");
+
+  // Land's End: a Bank chest (Use, as the cache's 19051 there) beside its location line's tile.
+  core.RegionManager.loadMapFiles(1513, 3421);
+  at(1512, 3421);
+  await objectOption(t, f, 19051, "Use", 3);
+  assert.ok(done(f, "bank-at-land-s-end"), `the Land's End bank chest: ${f.messages}`);
+
+});
+
+// ---- PR B: condition kinds -----------------------------------------------------------------------
+
+test("ca-boss with monsters: every one of a Wiki group's Combat Achievement monsters finished (all three Dagannoth Kings)", (t) => {
+  const f = pactsCharacter(t);
+  const Data = require("../plugins/achievements/combatachievements/Data.CombatAchievements");
+  const Progress = require("../plugins/achievements/combatachievements/Progress.CombatAchievements");
+  const finish = (name) => {
+    const monster = [...Data.monsters().values()].find((each) => each.name === name);
+    assert.ok(monster?.tasks.length > 0, `CA monster ${name}`);
+    for (const task of monster.tasks) Progress.complete(f.player, task.id, { silent: true });
+  };
+  finish("DK: Prime");
+  finish("DK: Rex");
+  assert.ok(!done(f, "dagannoth-kings-combat-achievements"), "two of the three kings");
+  finish("DK: Supreme");
+  assert.ok(done(f, "dagannoth-kings-combat-achievements"), "all three, on the real plugin's completion event");
+  finish("Kalphite Queen");
+  assert.ok(done(f, "kalphite-queen-combat-achievements"), "a single monster the generator could not word");
+});
+
+test("resetOn: five cooked in a row (Cook 5 pieces of food in a row without burning them); a burn starts the count again", async (t) => {
+  const f = pactsCharacter(t);
+  for (let i = 0; i < 3; i++) {
+    f.player.getInventory().resetItems();
+    assert.equal(await cookShark(t, f), 1, `the real Cooking: ${f.messages}`);
+  }
+  PM.emitCustomEvent("cooking:burnt", { player: f.player, itemId: item("Burnt shark") });
+  assert.equal((f.player.getAttribute("league:task-progress") ?? {})["successfully-cook-5-pieces-of-food"], undefined, "the burn reset it");
+  for (let i = 0; i < 4; i++) {
+    f.player.getInventory().resetItems();
+    await cookShark(t, f);
+  }
+  assert.ok(!done(f, "successfully-cook-5-pieces-of-food"), "four since the burn");
+  f.player.getInventory().resetItems();
+  await cookShark(t, f);
+  assert.ok(done(f, "successfully-cook-5-pieces-of-food"), "five in a row");
+
+  // A failed pick of a man-table target (Citizens share it) starts the citizen streak again.
+  for (let i = 0; i < 9; i++) PM.emitCustomEvent("thieving:success", { player: f.player, method: "pickpocket", target: "man" });
+  PM.emitCustomEvent("thieving:failure", { player: f.player, method: "pickpocket", target: "man" });
+  for (let i = 0; i < 9; i++) PM.emitCustomEvent("thieving:success", { player: f.player, method: "pickpocket", target: "man" });
+  assert.ok(!done(f, "successfully-pickpocket-a-citizen-10-times-in-a-row"), "nine since the failure");
+  PM.emitCustomEvent("thieving:success", { player: f.player, method: "pickpocket", target: "man" });
+  assert.ok(done(f, "successfully-pickpocket-a-citizen-10-times-in-a-row"));
+});
+
+test("prayer-bonus: worn items reaching a Prayer bonus of 15, then 30, as BonusManager sums them", (t) => {
+  const f = pactsCharacter(t);
+  const E = core.Equipment;
+  const wear = (slot, name) => { f.player.getEquipment().setItem(slot, new core.Item(item(name))); f.player.getEquipment().refreshItems(); };
+  wear(E.BODY_SLOT, "Monk's robe top"); // +6
+  assert.ok(!done(f, "reach-a-prayer-bonus-of-15"));
+  wear(E.LEG_SLOT, "Monk's robe"); // +5
+  wear(E.AMULET_SLOT, "Holy symbol"); // +8
+  assert.ok(done(f, "reach-a-prayer-bonus-of-15"), `bonus ${f.player.getBonusManager().getOtherBonus()[core.BonusManager.PRAYER]}`);
+  assert.ok(!done(f, "reach-a-prayer-bonus-of-30"));
+});
+
+test("hit: one hit of 66 with an elemental spell, 150 with the Keris Partisan, through the hit-resolved hook", (t) => {
+  const f = pactsCharacter(t);
+  const target = npcAt(t, f, "Goblin", 1, 0);
+  const land = (damage, spell = null) => PM.emitCombatHitResolved({ attacker: f.player, target, hit: { getTotalDamage: () => damage, getSpell: () => spell } });
+  target.setHitpoints(5);
+  land(66, core.CombatSpells.WATER_WAVE);
+  assert.ok(!done(f, "deal-66-damage-with-an-elemental-spell"), "a 66 roll on 5 hitpoints is a 5 hitsplat");
+  // 70 hitpoints with a 60 already queued this tick: a second 66 shows as 10.
+  target.setHitpoints(70);
+  const queue = target.getCombat().getHitQueue();
+  queue.addPendingDamage([new core.HitDamage(60, core.HitMask.RED), new core.HitDamage(66, core.HitMask.RED)]);
+  land(66, core.CombatSpells.WATER_WAVE);
+  assert.ok(!done(f, "deal-66-damage-with-an-elemental-spell"), "a 66 behind a queued 60 on 70 hitpoints is a 10 hitsplat");
+  queue.pendingDamage.length = 0; // the queued hits never land in this test (no tick runs)
+  target.setHitpoints(300);
+  land(65, core.CombatSpells.FIRE_SURGE);
+  assert.ok(!done(f, "deal-66-damage-with-an-elemental-spell"), "65");
+  land(70, core.CombatSpells.SARADOMIN_STRIKE);
+  assert.ok(!done(f, "deal-66-damage-with-an-elemental-spell"), "a god spell is no elemental one");
+  land(66, core.CombatSpells.WATER_WAVE);
+  assert.ok(done(f, "deal-66-damage-with-an-elemental-spell"));
+  land(160);
+  assert.ok(!done(f, "hit-150-with-the-keris-partisan"), "no Keris wielded");
+  f.player.getEquipment().setItem(core.Equipment.WEAPON_SLOT, new core.Item(25979));
+  land(150);
+  assert.ok(done(f, "hit-150-with-the-keris-partisan"));
+});
+
+// ---- spells and item teleports (issue 6108 follow-ups) -------------------------------------------
+
+test("spells and item teleports: their own events complete their tasks; Degrime through the real spell effect", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+
+  emit("spell:teleport-arrival", { name: "moonclan teleport" });
+  assert.ok(done(f, "cast-moonclan-teleport"));
+  emit("magic:lunar-cast", { name: "spellbook swap" });
+  assert.ok(done(f, "cast-spellbook-swap"));
+  emit("farming:spell-fertilized", { spell: "cure plant" });
+  assert.ok(!done(f, "cast-fertile-soil"), "another farming spell");
+  emit("farming:spell-fertilized", { spell: "fertile soil" });
+  assert.ok(done(f, "cast-fertile-soil"));
+
+  // Degrime: 25 herbs at once is not 26.
+  const { ArceuusUtilities } = require("../dist/game/content/combat/magic/ArceuusUtilities");
+  const skills = player.getSkillManager();
+  skills.setMaxLevel(core.Skill.HERBLORE, 99);
+  skills.setCurrentLevel(core.Skill.HERBLORE, 99);
+  const grimy = (n) => { player.getInventory().resetItems(); player.getInventory().add(new core.Item(item("Grimy guam leaf"), n), true); };
+  grimy(25);
+  for (let i = 0; i < 25; i++) player.getInventory().setItem(i, new core.Item(item("Grimy guam leaf"), 1));
+  ArceuusUtilities.degrime(player);
+  assert.ok(!done(f, "cast-degrime-spell-full-clean"), "25 herbs");
+  for (let i = 0; i < 26; i++) player.getInventory().setItem(i, new core.Item(item("Grimy guam leaf"), 1));
+  ArceuusUtilities.degrime(player);
+  assert.equal(player.getInventory().getAmount(item("Guam leaf")), 26, "the real Degrime cleaned them");
+  assert.ok(done(f, "cast-degrime-spell-full-clean"));
+
+  emit("xerics-talisman:teleported", { destination: "glade" });
+  assert.ok(!done(f, "teleport-to-xeric-s-honour"), "another destination");
+  emit("xerics-talisman:teleported", { destination: "honour" });
+  assert.ok(done(f, "teleport-to-xeric-s-honour"));
+  emit("cam-torum:arrived");
+  assert.ok(done(f, "teleport-to-cam-torum-using-a-calcified-moth"));
+  emit("giantsoul-amulet:teleported", { lair: "obor" });
+  assert.ok(!done(f, "teleport-with-a-giantsoul-amulet"), "Obor's lair");
+  emit("giantsoul-amulet:teleported", { lair: "branda and eldric" });
+  assert.ok(done(f, "teleport-with-a-giantsoul-amulet"));
+  emit("basalt:teleported", { itemId: item("Stony basalt") });
+  assert.ok(!done(f, "use-some-icy-basalt-to-teleport-to-weiss"), "stony basalt");
+  emit("basalt:teleported", { itemId: item("Icy basalt") });
+  assert.ok(done(f, "use-some-icy-basalt-to-teleport-to-weiss"));
+
+  for (const [rune, essence] of [["Air rune", 150], ["Mist rune", 50]]) emit("runecrafting:success", { runeId: item(rune), rolls: essence, amountPerEssence: 1 });
+  assert.ok(done(f, "craft-any-combination-rune"), "a mist rune");
+  assert.ok(done(f, "craft-200-essence-into-runes"), "200 essence, whatever the rune");
+  assert.ok(!done(f, "craft-2500-essence-into-runes"));
+
+  emit("skills:produced", { itemId: item("Pat of butter"), amount: 1, kind: "churn" });
+  assert.ok(done(f, "churn-some-butter"));
+  emit("crystal-singing:sung", { itemId: item("Crystal bow"), amount: 1 });
+  assert.ok(!done(f, "craft-a-piece-of-crystal-armour"), "a bow is no armour");
+  emit("crystal-singing:sung", { itemId: item("Crystal legs"), amount: 1 });
+  assert.ok(done(f, "craft-a-piece-of-crystal-armour"));
+
+  // Inside the Mage Arena (Spells.MageArena.js's box) a god spell is no task; outside it is.
+  const civitas = player.getLocation();
+  player.setAttribute("league:areas", [21, 11]); // the Wilderness unlocked, or the area rules send the player back
+  player.setLocation(new core.Location(3105, 3934, 0));
+  assert.equal(player.getLocation().getX(), 3105, "in the Mage Arena");
+  emit("magic:cast-committed", { spell: core.CombatSpells.CLAWS_OF_GUTHIX });
+  assert.ok(!done(f, "cast-claws-of-guthix"), "cast inside the arena");
+  player.setLocation(civitas);
+  for (const [spell, id] of [["CLAWS_OF_GUTHIX", "cast-claws-of-guthix"], ["FLAMES_OF_ZAMORAK", "cast-flames-of-zamorak"], ["SARADOMIN_STRIKE", "cast-saradomin-strike"]]) {
+    emit("magic:cast-committed", { spell: core.CombatSpells[spell] });
+    assert.ok(done(f, id), spell);
+  }
+});
+
+test("deed: the teleport anchoring scroll absorbed through its real Read and Yes, not on opening it (Use a teleport anchoring scroll)", async (t) => {
+  const f = pactsCharacter(t);
+  f.player.getInventory().add(new core.Item(item("Teleport anchoring scroll")), true);
+  await inventoryOption(f, "Teleport anchoring scroll", "Read", 1, 3);
+  assert.ok(!done(f, "use-a-teleport-anchoring-scroll"), "the question is open, nothing absorbed yet");
+  const manager = f.player.getDialogueManager();
+  for (let i = 0; i < 3 && manager.getCurrent()?.constructor?.name !== "OptionDialogue"; i++) manager.advance();
+  manager.getCurrent().execute(1);
+  assert.equal(f.player.getInventory().getAmount(item("Teleport anchoring scroll")), 0, "the scroll is used up");
+  assert.ok(done(f, "use-a-teleport-anchoring-scroll"), f.messages.join(" | "));
+});
+
+// ---- deeds reported by their content: Varlamore and Kourend (issue 6108 follow-ups) -------------
+
+test("Varlamore and Kourend deeds: Colosseum waves, Mixology buys, Stealing Valuables, the library, the Chambers of Xeric, deep delves", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+
+  emit("colosseum:wave-completed", { wave: 1 });
+  assert.ok(done(f, "complete-wave-1-of-fortis-colosseum"));
+  emit("colosseum:wave-completed", { wave: 11 });
+  assert.ok(!done(f, "complete-wave-12-of-fortis-colosseum"), "wave 11");
+  emit("colosseum:wave-completed", { wave: 12 });
+  assert.ok(done(f, "complete-wave-12-of-fortis-colosseum"));
+
+  emit("omnishop:purchase", { shop: "mixology_rewards", itemId: 29996 });
+  assert.ok(done(f, "purchase-the-reagents-pouch"));
+  assert.ok(!done(f, "purchase-the-chugging-barrel"));
+  emit("omnishop:purchase", { shop: "mixology_rewards", itemId: 30000 });
+  assert.ok(done(f, "purchase-the-chugging-barrel"));
+
+  emit("house-robbery:stole", { amount: 14 }); // a shiny object
+  emit("house-robbery:stole", { amount: 10 });
+  assert.ok(!done(f, "steal-25-valuables"), "24 valuables");
+  emit("house-robbery:stole", { amount: 1 });
+  assert.ok(done(f, "steal-25-valuables"), "25");
+  emit("thieving:looted", { method: "pickpocket", target: "wealthy citizen", loot: [{ id: 995, amount: 85 }] });
+  assert.ok(!done(f, "steal-a-house-key"), "coins");
+  emit("thieving:looted", { method: "pickpocket", target: "wealthy citizen", loot: [{ id: 29325, amount: 1 }] });
+  assert.ok(done(f, "steal-a-house-key"));
+  emit("house-robbery:informed", { npcId: 13318 });
+  assert.ok(done(f, "pay-an-urchin-for-information"));
+
+  for (let i = 0; i < 10; i++) emit("arceuus-library:book-handed-in");
+  assert.ok(done(f, "turn-in-1-library-book") && done(f, "turn-in-10-library-books") && !done(f, "turn-in-50-library-books"));
+
+  emit("combat-achievements:kill", { monster: "CM: Chambers of Xeric", count: 7 });
+  assert.ok(done(f, "1-chambers-of-xeric"), "a Challenge Mode completion counts once");
+  emit("doom:delve-defeated", { level: 7 });
+  assert.ok(!done(f, "complete-1-deep-delve"), "delve level 7");
+  emit("doom:delve-defeated", { level: 9 });
+  assert.ok(done(f, "complete-1-deep-delve"), "level 8 or above");
+});
+
+// ---- deeds reported by their content: Asgarnia, Kandarin and Fremennik (issue 6108 follow-ups) ---
+
+test("Asgarnia, Kandarin and Fremennik deeds through their plugins: lockbox, glory, dusty key, Blast Furnace, Trawler, Barbarian Assault, kegs, shot put, Gnomeball", async (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const inventory = player.getInventory();
+
+  // Camdozaal: the real Open on an Ornate lockbox (a Simple one is no task). Two items carry each name; the
+  // lockboxes are their gamevals.
+  const open = async (gameval) => {
+    const id = core.CacheDefinitions.getObjId(gameval);
+    inventory.add(new core.Item(id), true);
+    await send(f, { type: "inventory_action", slot: inventory.getSlotForItemId(id), itemId: id, widgetId: 149 << 16, option: "Open", optionIndex: 1 }, 4);
+    return inventory.getAmount(id);
+  };
+  assert.equal(await open("camdozaal_vault_chest_low"), 0, `the real simple lockbox opens: ${f.messages}`);
+  assert.ok(!done(f, "open-an-ornate-lockbox"), "a simple lockbox");
+  assert.equal(await open("camdozaal_vault_chest_high"), 0, `the real ornate lockbox opens: ${f.messages}`);
+  assert.ok(done(f, "open-an-ornate-lockbox"));
+  inventory.resetItems().refreshItems();
+
+  // The Heroes' Guild: an uncharged glory used on the Fountain of Heroes.
+  const fountain = core.ObjectIdentifiers.FOUNTAIN_OF_HEROES;
+  const heroes = require("../plugins/quests/QuestRuntime").questNamed("Heroes' Quest"); // the fountain's requirement
+  heroes.setStage(player, heroes.completionValue);
+  const at = player.getLocation();
+  const object = new core.GameObject(fountain, new core.Location(at.getX() + 1, at.getY(), at.getZ()), 10, 0, null);
+  core.ObjectManager.register(object, true);
+  t.after(() => { try { core.ObjectManager.deregister(object, true); } catch { /* gone */ } });
+  const { AMULET_OF_GLORY: glory, AMULET_OF_GLORY_4_: glory4 } = core.ItemIdentifiers;
+  inventory.add(new core.Item(glory), true);
+  await send(f, { type: "item_on_object", itemId: glory, slot: inventory.getSlotForItemId(glory), widgetId: 149 << 16, objectId: fountain, x: at.getX() + 1, y: at.getY() }, 6);
+  assert.equal(inventory.getAmount(glory4), 1, `the real fountain charges it: ${f.messages}`);
+  assert.ok(done(f, "charge-an-amulet-of-glory-in-the-heroes-guild"));
+  core.ObjectManager.deregister(object, true);
+  inventory.resetItems().refreshItems();
+
+  // The Blast Furnace dispenser: bars taken count by their metal, summed.
+  const Furnace = require("../plugins/minigames/blastfurnace/Furnace.BlastFurnace")._test;
+  const mithril = item("Mithril bar");
+  Furnace.stateOf(player).bars[mithril] = 100;
+  for (let i = 0; i < 4; i++) {
+    Furnace.take(player, mithril, 25);
+    assert.equal(inventory.getAmount(mithril), 25, `the real dispenser hands over 25: ${f.messages}`);
+    if (i < 3) assert.ok(!done(f, "blast-furnace-100-mithril-bars"), `${(i + 1) * 25} bars`);
+    inventory.resetItems().refreshItems();
+  }
+  assert.ok(done(f, "blast-furnace-100-mithril-bars") && !done(f, "blast-furnace-100-runite-bars"));
+
+  // The Fishing Trawler: a trip back in port.
+  require("../plugins/minigames/fishingtrawler/Sea.FishingTrawler").dock({ contribution: new Map() }, [player]);
+  assert.ok(done(f, "complete-a-fishing-trawler-game"));
+
+  // Barbarian Assault: the upgrade to level 5 in a role (4 is no task).
+  const Points = require("../plugins/minigames/barbarianassault/Points.BarbarianAssault");
+  Points.setLevel(player, "collector", 3);
+  Points.setPoints(player, "collector", 5000);
+  assert.ok(Points.upgradeRole(player, "collector"));
+  assert.ok(!done(f, "reach-level-5-in-any-barbarian-assault-role"), "level 4");
+  assert.ok(Points.upgradeRole(player, "collector"));
+  assert.ok(done(f, "reach-level-5-in-any-barbarian-assault-role"));
+
+  // The Warriors' Guild: kegs picked up one by one in Jimmy's room, the fifth completes.
+  const Kegs = require("../plugins/areas/warriors-guild/Kegs.WarriorsGuild")._test;
+  player.setAttribute("league:areas", [21, 3]); // Varlamore and Asgarnia
+  player.setLocation(new core.Location(2865, 3540, 1));
+  for (const [index, keg] of [15669, 15670, 15671, 15672, 15673].entries()) {
+    if (index === 4) assert.ok(!done(f, "balance-5-barrels-on-your-head"), "four kegs");
+    Kegs.pickUpKeg({ player, objectId: keg });
+    ticks(f, 3);
+  }
+  assert.ok(done(f, "balance-5-barrels-on-your-head"), `five kegs: ${f.messages}`);
+
+  // The shot put: a landed throw of 12 yards or more (11 is no task).
+  const ShotPut = require("../plugins/areas/warriors-guild/ShotPut.WarriorsGuild")._test;
+  const lane = ShotPut.lanes()[0];
+  ShotPut.landShot(player, lane, 11, 100, player.getLocation());
+  assert.ok(!done(f, "throw-a-shot-put-12-yards"), "11 yards");
+  ShotPut.landShot(player, lane, 12, 100, player.getLocation());
+  assert.ok(done(f, "throw-a-shot-put-12-yards"));
+
+  // Gnomeball: a goal.
+  require("../plugins/minigames/gnomeball/Pitch.GnomeBall").scoreGoal(player, { goals: 0 });
+  assert.ok(done(f, "score-a-goal-in-gnomeball"));
+});
+
+test("deed: the dusty key's gate opened through the real door (Unlock a gate in Taverley Dungeon using the Dusty Key)", async (t) => {
+  core.RegionManager.loadMapFiles(2923, 9803);
+  const f = pactsCharacter(t);
+  f.player.setAttribute("league:areas", [21, 3]); // Varlamore and Asgarnia
+  f.player.moveTo(new core.Location(2923, 9803, 0)); // beside the gate
+  f.player.needsPlacement = false;
+  await objectOption(t, f, core.ObjectIdentifiers.GATE_57, "Open", 4);
+  assert.ok(!done(f, "unlock-a-gate-in-taverley-dungeon"), `no key: ${f.messages}`);
+  f.player.getInventory().add(new core.Item(core.ItemIdentifiers.DUSTY_KEY), true);
+  await objectOption(t, f, core.ObjectIdentifiers.GATE_57, "Open", 4);
+  assert.ok(done(f, "unlock-a-gate-in-taverley-dungeon"), f.messages.join(" | "));
+});
+
+test("Asgarnia, Kandarin and Fremennik deeds through their events: minnows, Castle Wars, the dusty key, the pyre ship, barehanded sharks", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  for (let i = 0; i < 24; i++) emit("minnows:traded", { amount: 40 });
+  assert.ok(!done(f, "trade-in-1000-minnows"), "960 minnows");
+  emit("minnows:traded", { amount: 40 });
+  assert.ok(done(f, "trade-in-1000-minnows"));
+  emit("castlewars:player-result", { result: "loss" });
+  emit("castlewars:player-result", { result: "tie" });
+  assert.ok(!done(f, "win-a-game-of-castle-wars"));
+  emit("castlewars:player-result", { result: "win" });
+  assert.ok(done(f, "win-a-game-of-castle-wars"));
+  emit("taverley-dungeon:key-door", { key: "JAIL_KEY" });
+  assert.ok(!done(f, "unlock-a-gate-in-taverley-dungeon"), "the jail door");
+  emit("taverley-dungeon:key-door", { key: "DUSTY_KEY" });
+  assert.ok(done(f, "unlock-a-gate-in-taverley-dungeon"));
+  emit("barbarian-pyre:lit", { logsId: item("Logs") });
+  assert.ok(done(f, "light-a-pyre-ship"));
+  emit("fishing:success", { skill: core.Skill.FISHING, itemId: item("Raw shark"), barehand: false });
+  assert.ok(!done(f, "barehand-catch-a-shark"), "a harpooned shark");
+  emit("fishing:success", { skill: core.Skill.FISHING, itemId: item("Raw tuna"), barehand: true });
+  assert.ok(!done(f, "barehand-catch-a-shark"), "a barehanded tuna");
+  emit("fishing:success", { skill: core.Skill.FISHING, itemId: item("Raw shark"), barehand: true });
+  assert.ok(done(f, "barehand-catch-a-shark"));
+});
+
+// ---- deeds reported by their content: Morytania, the Desert and Tirannwn (issue 6108 follow-ups) --
+
+test("Desert and Morytania deeds through their plugins: sq'irks, Osman's juice, Simon's pyramid tops, the Necropolis obelisk", async (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const inventory = player.getInventory();
+  player.setAttribute("league:areas", [21, 6]); // Varlamore and the Desert
+  const skills = player.getSkillManager();
+  skills.setMaxLevel(core.Skill.THIEVING, 99);
+  skills.setCurrentLevel(core.Skill.THIEVING, 99);
+
+  // The Sorceress's Garden: the real Pick-Fruit on the winter tree counts for winter only (a pick sends the player
+  // into the central garden, so the other seasons go through the event).
+  const start = player.getLocation().clone();
+  await objectOption(t, f, 13407, "Pick-Fruit");
+  assert.equal(inventory.getAmount(item("Winter sq'irk")), 1, `the real tree gives the fruit: ${f.messages}`);
+  player.moveTo(start);
+  player.needsPlacement = false;
+  ticks(f, 2);
+  assert.ok(done(f, "pick-a-winter-sq-irk") && !done(f, "pick-a-spring-sq-irk"));
+  PM.emitCustomEvent("sorceress-garden:picked", { player, season: "spring" });
+  assert.ok(done(f, "pick-a-spring-sq-irk") && !done(f, "pick-a-autumn-sq-irk"));
+
+  // Osman: Talk-to with a winter sq'irkjuice hands it in.
+  inventory.resetItems().refreshItems();
+  inventory.add(new core.Item(item("Winter sq'irkjuice")), true);
+  const { npc, clickType } = npcBeside(t, f, "Osman", "talk-to");
+  await send(f, { type: "npc_option", index: npc.getIndex(), clickType }, 4);
+  assert.equal(inventory.getAmount(item("Winter sq'irkjuice")), 0, `the real Osman takes it: ${f.messages}`);
+  assert.ok(done(f, "turn-in-a-winter-sq-irkjuice-to-osman"));
+  core.World.getNpcs().remove(npc);
+  player.getDialogueManager().reset();
+
+  // Simon Templeton: the pyramid tops he buys (none carried is no sale).
+  const Simon = require("../plugins/minigames/pyramidplunder/Simon.PyramidPlunder")._test;
+  Simon.sellTops({ player });
+  assert.ok(!done(f, "turn-in-a-pyramid-top-to-simon-templeton"), "no tops");
+  const top = core.CacheDefinitions.getObjId("agility_pyramid_gold_pyramid");
+  inventory.add(new core.Item(top), true);
+  Simon.sellTops({ player });
+  assert.equal(inventory.getAmount(top), 0, "the real sale takes it");
+  assert.ok(done(f, "turn-in-a-pyramid-top-to-simon-templeton"));
+
+  // The Necropolis obelisk: Commune with a Pharaoh's sceptre in the pack (without one, nothing).
+  const obelisk = require("../plugins/items/pharaohssceptre/Common.PharaohsSceptre").ids.locs.obelisk;
+  await objectOption(t, f, obelisk, "Commune", 4);
+  assert.ok(!done(f, "commune-a-pharoah-s-sceptre-to-the-necropolis"), "no sceptre");
+  inventory.add(new core.Item(core.CacheDefinitions.getObjId("pharaohs_sceptre")), true); // two items share the name
+  await objectOption(t, f, obelisk, "Commune", 4);
+  assert.ok(done(f, "commune-a-pharoah-s-sceptre-to-the-necropolis"), f.messages.join(" | "));
+});
+
+test("Morytania deeds through their events: the Taxidermist, bark runescrolls, Shades pyres, sacred eels, Andras", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("taxidermist:stuffed", { itemId: 1 });
+  assert.ok(done(f, "have-the-taxidermist-stuff-something-for-you"));
+  emit("runecrafting:bark-learnt", { kind: "swampbark" });
+  assert.ok(done(f, "learn-how-to-make-swampbark") && !done(f, "learn-how-to-make-bloodbark"));
+  emit("runecrafting:bark-learnt", { kind: "bloodbark" });
+  assert.ok(done(f, "learn-how-to-make-bloodbark"));
+  for (let i = 0; i < 19; i++) emit("shades-of-mortton:cremated", { remains: 1, wood: 1, reward: null });
+  assert.ok(!done(f, "burn-20-pyre-logs"), "19 pyres");
+  emit("shades-of-mortton:cremated", { remains: 1, wood: 1, reward: null });
+  assert.ok(done(f, "burn-20-pyre-logs"));
+  for (let i = 0; i < 50; i++) emit("cooking:sacred-eel-dissected", { itemId: 1, scales: 3 });
+  assert.ok(done(f, "dissect-50-sacred-eels") && !done(f, "dissect-250-sacred-eels"));
+  emit("ferries:andras-permanent-access");
+  assert.ok(done(f, "unlock-permanent-boat-travel-with-andras"));
+  // Osman's 50 summer juices add up over hand-ins; winter glasses don't count toward them.
+  emit("sorceress-garden:juice-handed-in", { season: "winter", amount: 1 });
+  for (let i = 0; i < 49; i++) emit("sorceress-garden:juice-handed-in", { season: "summer", amount: 1 });
+  assert.ok(!done(f, "turn-in-50-summer-sq-irkjuices-to-osman"), "49 summer and a winter");
+  emit("sorceress-garden:juice-handed-in", { season: "summer", amount: 1 });
+  assert.ok(done(f, "turn-in-50-summer-sq-irkjuices-to-osman"));
+});
+
+// ---- deeds reported by their content: the player-owned house and the Chaos Temple (issue 6108 follow-ups) ----
+
+test("house deeds: furniture by its buildable through the real build, and the house's own events", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const House = require("../plugins/skills/construction/House.Construction");
+  const Data = require("../plugins/skills/construction/Data.Construction");
+  const build = (key) => House.completeFurniture(player, { setFurniture() {} }, { hotspotKey: "TEST" }, Data.BUILDABLE_BY_KEY.get(key), new Map());
+  build("OAK_ALTAR");
+  assert.ok(!done(f, "build-a-gilded-altar"), "an oak altar");
+  for (const [key, id] of [["OAK_LARDER", "build-an-oak-larder"], ["MAHOGANY_PORTAL_FRAME", "build-a-mahogany-portal"], ["GILDED_ALTAR", "build-a-gilded-altar"],
+    ["DEMONIC_THRONE", "build-a-demonic-throne"], ["LUMBRIDGE_LANDSCAPE", "hang-a-painting-of-a-watermill"]]) {
+    build(key);
+    assert.ok(done(f, id), key);
+  }
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  // Daddy's Home's free house, through House's real "construction:grant-house", counts as bought.
+  const grant = { player, granted: false };
+  PM.emitCustomEvent("construction:grant-house", grant);
+  assert.equal(grant.granted, true, "a first house");
+  assert.ok(done(f, "purchase-a-player-owned-house"));
+  emit("poh:entered", { location: player.getLocation() });
+  assert.ok(done(f, "enter-your-player-owned-house"));
+  emit("construction:room-built", { room: "PARLOUR" });
+  assert.ok(done(f, "build-a-room-in-your-player-owned-house"));
+  emit("construction:house-redecorated", { style: "Fancy stone" });
+  assert.ok(done(f, "redecorate-your-player-owned-house"));
+  emit("construction:house-moved", { location: "Yanille" });
+  assert.ok(done(f, "move-your-house-to-yanille") && !done(f, "move-your-house-to-prifddinas"));
+  emit("construction:house-moved", { location: "Prifddinas" });
+  assert.ok(done(f, "move-your-house-to-prifddinas"));
+  emit("construction:ranging-hit", { game: "darts", score: 5 });
+  assert.ok(!done(f, "land-a-hoop-on-a-stick"), "a dart");
+  emit("construction:ranging-hit", { game: "hoop", score: 5 });
+  assert.ok(done(f, "land-a-hoop-on-a-stick"));
+  const dagannoth = item("Dagannoth bones");
+  emit("bone-altars:offered", { itemId: dagannoth, site: "GILDED_ALTAR", burners: 1 });
+  emit("bone-altars:offered", { itemId: dagannoth, site: "MARBLE_ALTAR", burners: 2 });
+  emit("bone-altars:offered", { itemId: item("Bones"), site: "GILDED_ALTAR", burners: 2 });
+  assert.ok(!done(f, "sacrifice-a-dagannoth-bone-on-a-gilded-altar"), "one burner; a marble altar; plain bones");
+  emit("bone-altars:offered", { itemId: dagannoth, site: "GILDED_ALTAR", burners: 2 });
+  assert.ok(done(f, "sacrifice-a-dagannoth-bone-on-a-gilded-altar"));
+});
+
+test("deed: bones used on the real Chaos Temple altar (Sacrifice some Bones / Dragon Bones at the Western Chaos Temple)", async (t) => {
+  core.RegionManager.loadMapFiles(2947, 3820);
+  const f = pactsCharacter(t);
+  f.player.setAttribute("league:areas", [21, 11]); // Varlamore and the Wilderness
+  f.player.moveTo(new core.Location(2948, 3820, 0));
+  f.player.needsPlacement = false;
+  const altarId = core.CacheDefinitions.getLocId("chaosaltar");
+  const altar = new core.GameObject(altarId, new core.Location(2947, 3820, 0), 10, 0, null);
+  core.ObjectManager.register(altar, true);
+  t.after(() => { try { core.ObjectManager.deregister(altar, true); } catch { /* gone */ } });
+  const inventory = f.player.getInventory();
+  const use = async (name) => {
+    inventory.add(new core.Item(item(name)), true);
+    await send(f, { type: "item_on_object", itemId: item(name), slot: inventory.getSlotForItemId(item(name)), widgetId: 149 << 16, objectId: altarId, x: 2947, y: 3820 }, 4);
+  };
+  await use("Big bones");
+  assert.ok(!done(f, "sacrifice-some-bones-at-the-chaos-temple"), `big bones: ${f.messages}`);
+  await use("Bones");
+  assert.ok(done(f, "sacrifice-some-bones-at-the-chaos-temple"), f.messages.join(" | "));
+  assert.ok(!done(f, "sacrifice-some-dragon-bones-at-the-chaos-temple"));
+  await use("Dragon bones");
+  assert.ok(done(f, "sacrifice-some-dragon-bones-at-the-chaos-temple"));
+});
+
+// ---- deeds reported by their content: General (issue 6108 follow-ups) ----
+
+test("General deeds through their events: Slayer, random events, Jacky Jester, Death's Coffer, hides, the Font, potions, smithing, silver", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("slayer:on-task-kill", { npcName: "Greater abyssal demon" });
+  assert.ok(!done(f, "slay-an-abyssal-demon"), "a greater abyssal demon");
+  emit("slayer:on-task-kill", { npcName: "Abyssal demon" });
+  assert.ok(done(f, "slay-an-abyssal-demon"));
+  for (let i = 0; i < 247; i++) emit("slayer:on-task-kill", { npcName: "Cow" });
+  assert.ok(!done(f, "slay-250-creatures"), "249 on task");
+  emit("slayer:on-task-kill", { npcName: "Cow" });
+  assert.ok(done(f, "slay-250-creatures"));
+  for (const [event, id] of [["random-events:jekyll-traded", "trade-a-herb-with-jekyll"], ["random-events:sandwich-lady-cross", "upset-the-sandwich-lady"],
+    ["construction:jester-won", "beat-jacky-jester"], ["deaths-office:coffer-sacrificed", "sacrifice-something-to-death-s-coffer"],
+    ["scaly-dragonhide:scraped", "scrape-some-blue-dragonhide"], ["abyssal-sire:font-consumed", "offer-an-unsired-to-the-font-of-consumption"],
+    ["herblore:extra-dose", "make-a-4-dose-potion"], ["farming:protected", "protect-your-crops"]]) {
+    emit(event, {});
+    assert.ok(done(f, id), event);
+  }
+  emit("random-events:completed", { event: "maze" });
+  assert.ok(!done(f, "complete-the-postie-pete-random-event"), "the maze");
+  emit("random-events:completed", { event: "eviltwin" });
+  assert.ok(done(f, "complete-the-postie-pete-random-event"));
+  emit("smithing:success", { metal: "adamantite", itemId: 1 });
+  assert.ok(!done(f, "smith-a-rune-item"), "adamant");
+  // Demonic Pacts' row: rune dart tips, arrowtips, nails, bolts (unf) and javelin tips don't count.
+  for (const label of ["Dart tips", "Arrowtips", "Nails", "Bolts", "Javelin tips"]) emit("smithing:success", { metal: "runite", label, itemId: 1 });
+  assert.ok(!done(f, "smith-a-rune-item"), "rune ammunition and nails");
+  emit("smithing:success", { metal: "runite", label: "Platebody", itemId: 1 });
+  assert.ok(done(f, "smith-a-rune-item"));
+  // Raging Echoes' row: "Rune nails do not work" (and nothing else is excluded there).
+  const echoes = pactsCharacter(t);
+  echoes.player.setAttribute("league:type", 5);
+  const echo = (payload) => PM.emitCustomEvent("smithing:success", { player: echoes.player, ...payload });
+  echo({ metal: "runite", label: "Nails", itemId: 1 });
+  assert.ok(!done(echoes, "smith-a-rune-item"), "rune nails in Raging Echoes");
+  echo({ metal: "runite", label: "Dart tips", itemId: 1 });
+  assert.ok(done(echoes, "smith-a-rune-item"), "dart tips count there");
+  for (let i = 0; i < 19; i++) emit("crafting:made", { bar: "Silver bar", itemId: 1 });
+  emit("crafting:made", { bar: "Gold bar", itemId: 1 });
+  assert.ok(!done(f, "craft-20-silver-items"), "19 silver and a gold");
+  emit("crafting:made", { bar: "Silver bar", itemId: 1 });
+  assert.ok(done(f, "craft-20-silver-items"));
+  emit("firemaking:success", { skill: core.Skill.FIREMAKING, itemId: item("Logs") });
+  assert.ok(!done(f, "burn-some-coloured-logs"), "plain logs");
+  emit("firemaking:success", { skill: core.Skill.FIREMAKING, itemId: item("Purple logs") });
+  assert.ok(done(f, "burn-some-coloured-logs"));
+});
+
+// ---- deeds reported by their content: Forestry (issue 6108 follow-ups) ----
+
+test("Forestry deeds through their events: roots, entlings, the leprechaun, and each event completed by its kind", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("forestry:root-chopped", { kind: "roots" });
+  assert.ok(done(f, "chop-some-rising-roots"));
+  emit("forestry:entling-pruned");
+  assert.ok(done(f, "give-an-entling-a-haircut"));
+  emit("forestry:leprechaun-banked");
+  assert.ok(done(f, "have-a-leprechaun-send-something-to-the-bank"));
+  emit("forestry:event-completed", { event: "flowering" });
+  assert.ok(done(f, "complete-the-flowering-bush-event") && !done(f, "complete-the-ritual-forestry-event"));
+  for (const [kind, id] of [["pheasant", "complete-the-pheasant-forestry-event"], ["ritual", "complete-the-ritual-forestry-event"], ["sapling", "complete-the-struggling-sapling-event"]]) {
+    emit("forestry:event-completed", { event: kind });
+    assert.ok(done(f, id), kind);
+  }
+});
+
+// ---- deeds reported by their content: Varlamore (issue 6108 follow-ups) ----
+
+test("Varlamore deeds through their events: quetzals, deposits, the spool, the moth, Achilka, the crab, the Cam Torum beard", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("quetzals:flown", { site: "Civitas illa Fortis" });
+  assert.ok(done(f, "travel-using-the-quetzal-transport-system"));
+  emit("quetzals:site-built", { site: "Cam Torum", all: false });
+  assert.ok(done(f, "build-a-quetzal-landing-site") && !done(f, "build-all-quetzal-landing-sites"));
+  emit("quetzals:site-built", { site: "Salvager Overlook", all: true });
+  assert.ok(done(f, "build-all-quetzal-landing-sites"));
+  for (let i = 0; i < 9; i++) emit("smithing:calcified-crushed", { itemId: 1 });
+  assert.ok(!done(f, "break-down-10-calcified-deposits"), "nine");
+  emit("smithing:calcified-crushed", { itemId: 1 });
+  assert.ok(done(f, "break-down-10-calcified-deposits"));
+  emit("fletching:spool-filled", { added: 9999, stored: 9999 });
+  assert.ok(done(f, "store-some-bowstrings-inside-a-bowstring-spool") && !done(f, "store-10k-bowstrings-inside-a-bowstring-spool"));
+  emit("fletching:spool-filled", { added: 1, stored: 10000 });
+  assert.ok(done(f, "store-10k-bowstrings-inside-a-bowstring-spool"));
+  emit("hunter:barehand-caught", { name: "sunlight moth" });
+  assert.ok(!done(f, "catch-a-moonlight-moth-bare-handed"), "a sunlight moth");
+  emit("hunter:barehand-caught", { name: "moonlight moth" });
+  assert.ok(done(f, "catch-a-moonlight-moth-bare-handed"));
+  emit("ferries:arrived", { route: "slepe" });
+  assert.ok(!done(f, "travel-in-achilka-s-boat"), "Andras's boat");
+  emit("ferries:arrived", { route: "varla-tal-teklan" });
+  assert.ok(done(f, "travel-in-achilka-s-boat"));
+  emit("quetzals:whistle-crafted", { itemId: 1 });
+  assert.ok(done(f, "create-a-quetzal-whistle"));
+  emit("gemstone-crab:burrowed");
+  assert.ok(done(f, "witness-the-gemstone-crab-burrow-away"));
+  // The beard: a facial-hair makeover beside Sonalo (Cam Torum's barber); a haircut, or far from her, is no task.
+  emit("makeover:applied", { type: 1 });
+  assert.ok(!done(f, "trim-your-beard-in-cam-torum"), "nowhere near Sonalo");
+  const { npc } = npcBeside(t, f, "Sonalo", "talk-to");
+  emit("makeover:applied", { type: 0 });
+  assert.ok(!done(f, "trim-your-beard-in-cam-torum"), "a haircut");
+  emit("makeover:applied", { type: 1 });
+  assert.ok(done(f, "trim-your-beard-in-cam-torum"), String(npc.getLocation()));
+});
+
+// ---- deeds reported by their content: Kourend and Karamja (issue 6108 follow-ups) ----
+
+test("Kourend and Karamja deeds through their events: TzHaar-Ket-Rak, the Inferno cape, Saniboch, the crane, artefacts, Tithe Farm, the shrine, grapes, saltpetre, ToB kits", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("tzhaar-ket-rak:challenge-completed", { number: 2 });
+  assert.ok(done(f, "complete-tzhaar-ket-rak-s-second-challenge") && !done(f, "complete-tzhaar-ket-rak-s-first-challenge"));
+  emit("tzhaar-ket-rak:infinite-ended", { kills: 17 });
+  assert.ok(!done(f, "defeat-6-6-6-unbound-jal-tok-jad"), "17 Jads");
+  emit("tzhaar-ket-rak:infinite-ended", { kills: 18 });
+  assert.ok(done(f, "defeat-6-6-6-unbound-jal-tok-jad"));
+  for (const [event, id] of [["inferno:cape-sacrificed", "sacrifice-a-fire-cape-to-access-the-inferno"], ["brimhaven-dungeon:permanent-access", "pay-saniboch-for-permanent-access"],
+    ["piscarilius-crane:repaired", "repair-a-fishing-crane"], ["stealing-artefacts:handed-in", "steal-1-artefact"], ["woodcutting:shrine-offered", "offer-an-egg-to-a-shrine"]]) {
+    emit(event, {});
+    assert.ok(done(f, id), event);
+  }
+  for (let i = 0; i < 13; i++) emit("stealing-artefacts:handed-in", {});
+  assert.ok(!done(f, "steal-15-artefacts"), "14");
+  emit("stealing-artefacts:handed-in", {});
+  assert.ok(done(f, "steal-15-artefacts"));
+  for (let i = 0; i < 99; i++) emit("tithe-farm:planted", { crop: "Bologano" });
+  emit("tithe-farm:planted", { crop: "Golovanova" });
+  assert.ok(!done(f, "plant-100-bologano-seeds") && !done(f, "plant-100-golovanova-seeds"), "99 bologano and a golovanova");
+  emit("tithe-farm:planted", { crop: "Bologano" });
+  assert.ok(done(f, "plant-100-bologano-seeds"));
+  emit("omnishop:purchase", { itemId: item("Seed box") });
+  assert.ok(done(f, "purchase-a-seed-box"));
+  emit("farming:harvested", { itemId: item("Grapes"), amount: 30 });
+  emit("farming:harvested", { itemId: item("Zamorak's grapes"), amount: 24 });
+  assert.ok(!done(f, "harvest-25-zamorak-s-grapes"), "24 of them, and plain grapes");
+  emit("farming:harvested", { itemId: item("Zamorak's grapes"), amount: 1 });
+  assert.ok(done(f, "harvest-25-zamorak-s-grapes"));
+  emit("mining:saltpetre", { amount: 24 });
+  assert.ok(!done(f, "dig-25-saltpetre"));
+  emit("mining:saltpetre", { amount: 1 });
+  assert.ok(done(f, "dig-25-saltpetre"));
+  emit("ornament-kits:applied", { kit: "Rune defender ornament kit" });
+  assert.ok(!done(f, "attach-a-theatre-of-blood-ornament-kit"), "another kit");
+  emit("ornament-kits:applied", { kit: "Holy ornament kit" });
+  assert.ok(done(f, "attach-a-theatre-of-blood-ornament-kit"));
+});
+
+// ---- deeds reported by their content: the Wilderness and leftovers (issue 6108 follow-ups) ----
+
+test("Wilderness and leftover deeds through their events: the key, the bracelet, god capes, pickpockets, Drew, the cactus, the blowpipe", (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const emit = (name, payload = {}) => PM.emitCustomEvent(name, { player, ...payload });
+  emit("npc-drops:roll", { drops: [{ itemId: item("Ecumenical key"), amount: 1 }] });
+  assert.ok(done(f, "obtain-an-ecumenical-key"));
+  for (const [event, id] of [["revenants:bracelet-full", "fully-charge-a-bracelet-of-ethereum"], ["mage-arena:cape-imbued", "imbue-a-god-cape"],
+    ["waterskins:cactus-cut", "cut-a-cactus-in-the-kharidian-desert"], ["zulrah:unique-dismantled", "dismantle-a-zulrah-scale-unique"]]) {
+    emit(event, {});
+    assert.ok(done(f, id), event);
+  }
+  for (let i = 0; i < 49; i++) emit("thieving:success", { method: "pickpocket", target: "vyre" });
+  emit("thieving:success", { method: "stall", target: "vyre" });
+  assert.ok(!done(f, "pickpocket-a-vyre-50-times"), "49 and a stall");
+  emit("thieving:success", { method: "pickpocket", target: "vyre" });
+  assert.ok(done(f, "pickpocket-a-vyre-50-times") && !done(f, "pickpocket-an-elf-50-times"));
+  // The "bandit" target is the desert Bandit Camp's own (pickpocketing.json lists its npc ids only).
+  emit("thieving:success", { method: "pickpocket", target: "bandit" });
+  assert.ok(done(f, "pickpocket-a-bandit-in-the-bandit-camp"));
+  // Drew: 500 buckets claimed in one go; 499 and then 1 don't add up to it.
+  emit("desert-quarry:claimed", { amount: 499 });
+  emit("desert-quarry:claimed", { amount: 1 });
+  assert.ok(!done(f, "have-drew-create-500-buckets"), "499 and 1");
+  emit("desert-quarry:claimed", { amount: 500 });
+  assert.ok(done(f, "have-drew-create-500-buckets"));
+});
+
+// ---- small content built for its task: the Alpaca and Karamja's pineapples (issue 6108) ----
+
+test("Shear an Alpaca: the real Shear, without shears refused, the wool two ticks on, the sheared form back after 50 (rsprox 1105)", async (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const inventory = player.getInventory();
+  const { npc, clickType } = npcBeside(t, f, "Alpaca", "shear");
+  const woolly = npc.getId();
+  await send(f, { type: "npc_option", index: npc.getIndex(), clickType }, 4);
+  assert.ok(f.messages.includes("You need a set of shears to do this."), f.messages.join(" | "));
+  assert.ok(!done(f, "shear-an-alpaca"));
+  inventory.add(new core.Item(core.ItemIdentifiers.SHEARS), true);
+  await send(f, { type: "npc_option", index: npc.getIndex(), clickType }, 4);
+  assert.equal(inventory.getAmount(core.ItemIdentifiers.WOOL), 1, f.messages.join(" | "));
+  assert.ok(f.messages.includes("You shear the alpaca and get some wool."));
+  assert.ok(done(f, "shear-an-alpaca"));
+  assert.notEqual(npc.getNpcTransformationId?.() ?? -1, -1, "sheared");
+  // send ran 4 ticks: the shear landed 2 ticks in, so 2 of the 50 have passed.
+  ticks(f, 47);
+  assert.notEqual(npc.getNpcTransformationId?.() ?? -1, -1, "still sheared 49 ticks on");
+  ticks(f, 2);
+  assert.equal(npc.getNpcTransformationId?.() ?? -1, -1, "its wool back 50 ticks after it turned sheared (1105)");
+  assert.equal(npc.getId(), woolly);
+  // A full pack refuses, even one holding wool (wool doesn't stack).
+  while (!inventory.isFull()) inventory.add(new core.Item(core.ItemIdentifiers.WOOL), true);
+  const wool = inventory.getAmount(core.ItemIdentifiers.WOOL);
+  await send(f, { type: "npc_option", index: npc.getIndex(), clickType }, 4);
+  assert.equal(inventory.getAmount(core.ItemIdentifiers.WOOL), wool, "no wool lost or gained");
+  assert.ok(f.messages.includes("You don't have enough inventory space to hold the wool."));
+  assert.equal(npc.getNpcTransformationId?.() ?? -1, -1, "still woolly");
+});
+
+test("Pick a Pineapple on Karamja: the real Pick takes the plant a stage down, and it grows back a stage at a time", async (t) => {
+  const f = pactsCharacter(t);
+  const { player } = f;
+  const Pineapple = require("../plugins/objects/PineapplePlant.plugin")._test;
+  const plant = await objectOption(t, f, 1408, "Pick", 3);
+  assert.equal(player.getInventory().getAmount(core.ItemIdentifiers.PINEAPPLE), 1, f.messages.join(" | "));
+  assert.ok(done(f, "pick-a-pineapple-on-karamja"));
+  const entry = Pineapple.plants.get(`${plant.getLocation().getX()},${plant.getLocation().getY()},${plant.getLocation().getZ()}`);
+  assert.equal(entry.object.getId(), 1409, "four left (rsprox: pineapple_plant -> pineapple_plant_four)");
+  t.after(() => { entry.task?.stop(); Pineapple.plants.clear(); });
+  ticks(f, Pineapple.REGROW_TICKS + 1);
+  assert.equal(Pineapple.plants.size, 0, "back to the full plant");
+  // Picked bare: the recorded pineapple_plant_no_pineapples (1413), then straight back to the full plant.
+  let current = plant;
+  for (let i = 0; i < 5; i++) {
+    player.getInventory().resetItems();
+    current = Pineapple.plants.get(`${plant.getLocation().getX()},${plant.getLocation().getY()},${plant.getLocation().getZ()}`)?.object ?? plant;
+    Pineapple.pick({ player, object: current });
+    ticks(f, 1);
+  }
+  const bare = Pineapple.plants.get(`${plant.getLocation().getX()},${plant.getLocation().getY()},${plant.getLocation().getZ()}`);
+  assert.equal(bare.object.getId(), 1413, "bare");
+  ticks(f, Pineapple.REGROW_TICKS + 1);
+  assert.equal(Pineapple.plants.size, 0, "full again in one step");
 });
