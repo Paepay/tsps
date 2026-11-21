@@ -149,7 +149,7 @@ function harness(name) {
 }
 function player() {
   const attrs = new Map(), items = new Map(), configs = new Map(), varbits = new Map(), log = [], xp = [];
-  let location = new core.Location(3210, 3220, 0), area = null;
+  let location = new core.Location(3210, 3220, 0), area = null, skillAnimation = 0;
   const inv = { getAmount: id => items.get(id) ?? 0, isFull: () => Boolean(p.full), getFreeSlots: () => p.full ? 0 : 28, contains: id => (items.get(id)??0)>0,
     adds(id, amount) { items.set(id, (items.get(id) ?? 0) + amount); },
     deleteNumber(id, amount) { assert.ok((items.get(id) ?? 0) >= amount); items.set(id, items.get(id) - amount); },
@@ -169,12 +169,12 @@ function player() {
     getSkillManager: () => ({ addExperiences: (skill, amount) => xp.push([skill.getIndex(),amount]), getCombatLevel: () => p.combat ?? 3, getCurrentLevel: () => p.magic ?? 99, getMaxLevel: () => p.level ?? 99 }),
     getMovementQueue: () => ({ handleRegionChange: noop, reset() { return this; }, setBlockMovement(value) { p.blocked = value; return this; }, addSteps(to) { location = to; return this; }, isBlockMovement: () => Boolean(p.blocked) }),
     setUntargetable: value => { p.untargetable = value; }, setForceMovement: movement => {p.forceMovement=movement;}, getLocation: () => location, moveTo: to => { location = to; },
-    getArea: () => area, getPrivateArea: () => area, setArea: value => { area = value; }, getIndex: () => p.index,
+    getArea: () => area, getPrivateArea: () => area, getWalkClipArea: () => area, setArea: value => { area = value; }, getIndex: () => p.index,
     isPlayer: () => true, isNpc: () => false, getAsPlayer: () => p, isRegistered: () => true,
     getCombat: () => ({reset: noop, getHitQueue:()=>({addPendingDamage: damage=>{p.damage=damage;}})}),
     getUsername: () => 'Parity', getDisplayName: () => 'Parity', getAppearance: () => ({ isMale: () => true }), setPositionToFace: noop, forceChat: noop,
     getHitpoints: () => 99, setLocation: to => { location = to; }, setWalkingDirection: noop,
-    setSkillAnimation: noop, getForceMovement: () => p.forceMovement,
+    setSkillAnimation: value => { skillAnimation = value; }, getSkillAnimation: () => skillAnimation, getForceMovement: () => p.forceMovement,
     performAnimation: a => p.animations.push(a.getId()), sendMessage: text => p.messages.push(text),
   }; p.manager = new DialogueManager(p); return p;
 }
@@ -854,7 +854,8 @@ test('TP fountain: production movement only reaches the clipped fountain tile in
   const azali = {
     getId: () => 12913, isPlayer: () => false, isNpc: () => true, getAsNpc: () => azali,
     getLocation: () => location, setLocation: next => { location = next; },
-    getSize: () => 1, getPrivateArea: () => null,
+    getSize: () => 1, getPrivateArea: () => null, getWalkClipArea: () => null, getArea: () => null,
+    getTeleportSerial: () => 0, getFollowedTeleportSerial: () => -1, isRunningReturn: () => false,
     getTimers: () => ({ has: () => false }), isNeedsPlacement: () => false,
     getFollowing: () => null, getMovementSteps: () => 1,
     hasFlag: flag => flag === MovementQueue.IGNORE_CLIPPING_FLAG && bypass,

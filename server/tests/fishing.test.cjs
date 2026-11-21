@@ -1,7 +1,18 @@
 // Run after `yarn build`: node --test tests/fishing.test.cjs
 const assert = require("node:assert/strict");
+const os = require("node:os");
 const path = require("node:path");
-const { test } = require("node:test");
+const { after, test } = require("node:test");
+
+// These are ordinary-world fishing rules. A Level-Up platform snapshot would lock Fishing and
+// silently stop ordinary catches from awarding XP, so hide the snapshot before WorldDefinition
+// is imported for the first time.
+const previousPlatformConfig = process.env.PAESCAPE_WORLD_PLATFORM_CONFIG;
+process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = path.join(os.tmpdir(), `fishing-no-platform-${process.pid}.json`);
+after(() => {
+  if (previousPlatformConfig === undefined) delete process.env.PAESCAPE_WORLD_PLATFORM_CONFIG;
+  else process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = previousPlatformConfig;
+});
 
 const { Server } = require("../dist/Server");
 Server.installProductionPathResolver();
@@ -1785,15 +1796,20 @@ test("native ordinary trout catch can award an eligible beginner clue bottle", a
   player.setProfile("league");
   player.setAttribute("league:type", 4);
   const leagueTasks = require("../plugins/modes/data/league-tasks.json").leagues["4"].tasks;
-  const seedTasks = leagueTasks.filter((task) => task.area === 0 && task.points === 400).slice(0, 3);
-  assert.equal(seedTasks.length, 3);
+  // Treasure Seeker is tier 5 (index 4) and costs 4,000 points, so seed enough real,
+  // completable area-0 tasks for it: the eight 400-point tasks and four 200-point ones.
+  const seedTasks = [
+    ...leagueTasks.filter((task) => task.area === 0 && task.points === 400),
+    ...leagueTasks.filter((task) => task.area === 0 && task.points === 200).slice(0, 4),
+  ];
+  assert.equal(seedTasks.reduce((sum, task) => sum + task.points, 0), 4000);
   for (const task of seedTasks) {
     const request = {player, id: task.id};
     PM.emitCustomEvent("league:complete-task", request);
     assert.equal(request.completed, true, task.id);
   }
   const UnlockRelic = require("../plugins/modes/leaguerelics/Unlock.LeagueRelics");
-  assert.equal(UnlockRelic.unlock(player, 2, 3, {bankOpen: false}), true);
+  assert.equal(UnlockRelic.unlock(player, 4, 1, {bankOpen: false}), true);
   const leagueChance = {player, vessel: "bottle", tier: "beginner", multiplier: 1};
   PM.emitCustomEvent("treasure-trails:vessel-chance", leagueChance);
   assert.equal(leagueChance.multiplier, 10);

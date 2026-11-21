@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
-const { before, test } = require('node:test');
+const { after, before, test } = require('node:test');
+// This suite exercises an ordinary world. A Level-Up platform snapshot would lock regions and
+// teleport its Castle Wars fixtures home; WorldDefinition reads that layer once, at import,
+// before any test-scoped mock can apply, so it has to be pointed away before Server is required.
+const os = require('node:os');
+const path = require('node:path');
+const previousPlatformConfig = process.env.PAESCAPE_WORLD_PLATFORM_CONFIG;
+process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = path.join(os.tmpdir(), `cw-no-platform-${process.pid}.json`);
 const { Server } = require('../dist/Server');
 Server.installProductionPathResolver();
 const { CachePipeline } = require('../dist/game/cache/CachePipeline');
@@ -11,7 +18,11 @@ const Lobby = require('../plugins/minigames/castlewars/Lobby.CastleWars');
 const WaitingRoom = require('../plugins/minigames/castlewars/WaitingRoom.CastleWars');
 const { Player } = require('../dist/game/entity/impl/player/Player');
 const { ClientConnection } = require('../dist/net/NetworkBuilder');
-let game, hooks, areas, prompt, lobbyObject;
+let game, hooks, areas, prompt, lobbyObject, pluginConfig = {};
+after(() => {
+  if (previousPlatformConfig === undefined) delete process.env.PAESCAPE_WORLD_PLATFORM_CONFIG;
+  else process.env.PAESCAPE_WORLD_PLATFORM_CONFIG = previousPlatformConfig;
+});
 
 before(async () => {
   await CachePipeline.initialize(process.cwd());
@@ -26,7 +37,7 @@ before(async () => {
     getRegionManager: () => core.RegionManager,
     getTaskManager: () => ({ submit() {}, cancelTasks() {} }),
     getWorld: () => core.World,
-    getPluginConfig: (key, fallback) => fallback,
+    getPluginConfig: (key, fallback) => Object.hasOwn(pluginConfig, key) ? pluginConfig[key] : fallback,
     onPlayerLogout: (handler) => { hooks.logout = handler; },
     onCanEquip: (handler) => { (hooks.equip ??= []).push(handler); },
     onCanUnequip: (handler) => { (hooks.unequip ??= []).push(handler); },
@@ -108,6 +119,9 @@ test('same-god gear, neutral gear and god equipment only carried in inventory do
 });
 
 test('the Guthix portal retains its god through the empty-lobby bot prompt', (t) => {
+  // The legacy chooser is what this test covers; real portals only show it when the world opts in.
+  pluginConfig = { 'CastleWars:legacyBotPrompt': true };
+  t.after(() => { pluginConfig = {}; });
   const p = player(t, [core.ItemIdentifiers.SARADOMIN_FULL_HELM]);
   t.mock.method(p, 'smartMove', () => {});
   const id = core.ObjectIdentifiers.GUTHIX_PORTAL;
