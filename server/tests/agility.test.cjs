@@ -398,6 +398,33 @@ test("Karuulm Slayer Dungeon stepover rocks (34544) are shortcuts that cross two
   assert.equal(east.end, "You climb over the rocks.");
 });
 
+test("the Alchemical Hydra lair rocks (34548) climb north and south without an Agility requirement", () => {
+  const { RegionManager } = require("../dist/game/collision/RegionManager");
+  const { MapObjects } = require("../dist/game/entity/impl/object/MapObjects");
+  const rocks = SHORTCUTS.filter((shortcut) => shortcut.object === 34548);
+  assert.deepEqual(rocks.map((shortcut) => shortcut.at), [[1351, 10251, 0]]);
+  const rock = rocks[0];
+  assert.equal(rock.level, 1, "the Wiki gives these rocks no Agility requirement");
+  assert.equal(rock.end, "You climb over the rocks.");
+  const context = (pos) => ({ obj: { id: 34548, x: 1351, y: 10251, z: 0 }, pos });
+  const north = rock.steps(context({ x: 1351, y: 10250, z: 0 })).find((step) => step.move).move;
+  const south = rock.steps(context({ x: 1351, y: 10252, z: 0 })).find((step) => step.move).move;
+  assert.deepEqual([north, south], [[1351, 10252, 0], [1351, 10250, 0]]);
+
+  RegionManager.init();
+  RegionManager.loadMapFiles(1351, 10251);
+  assert.ok(MapObjects.get(34548, new Location(1351, 10251, 0), null), "the placed rock on the corridor's anchor");
+  for (const tile of [[1351, 10250, 0], [1351, 10252, 0]]) {
+    assert.equal(RegionManager.blocked(new Location(...tile), null), false, `${tile.join(",")} is a walkable landing`);
+  }
+  for (const from of [[1351, 10250, 0], [1351, 10252, 0]]) {
+    const player = createPlayer(...from, 1);
+    assert.notEqual(operate(player, 34548, [1351, 10251, 0]), false);
+    assert.deepEqual(tileOf(player), from[1] === 10250 ? [1351, 10252, 0] : [1351, 10250, 0]);
+    assert.equal(player.getAttribute("agility.obstacle") ?? null, null);
+  }
+});
+
 /** A real Player whose packet sender records every call as [method, ...args]. */
 function recordingPlayer(x, y, z, agility) {
   const { Player } = require("../dist/game/entity/impl/player/Player");

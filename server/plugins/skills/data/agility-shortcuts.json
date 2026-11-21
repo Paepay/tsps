@@ -2567,6 +2567,16 @@
       "between": {"ends":[{"object":[0,-1,0]},{"object":[0,1,0]}],"cross":[{"use":"climbOver","args":["to","CLIMB_OVER",2]},{"anim":-1}]}
     },
     {
+      "name": "Rocks (Karuulm Slayer Dungeon, Alchemical Hydra lair)",
+      "object": 34548,
+      "at": [1351,10251,0],
+      "level": 1,
+      "end": "You climb over the rocks.",
+      "note": "Wiki (Alchemical Hydra): no Agility requirement on the way to the lair; the rocks block the two-tile corridor. Same climb-over as 34544 (rsprox 3013, 3014).",
+      "unverified": "no capture of this placement; landings from the collision map.",
+      "between": {"ends":[{"object":[0,-1,0]},{"object":[0,1,0]}],"cross":[{"use":"climbOver","args":["to","CLIMB_OVER",2]},{"anim":-1}]}
+    },
+    {
       "name": "Tunnel (Stronghold Slayer Cave)",
       "object": [30174,30175],
       "level": 72,
