@@ -102,6 +102,7 @@ custom events (listed in `gravestones/Events.Gravestones.js`). Core gives them t
   - Taking leaves the slot empty.
   - Take-All with nothing stored: "There's nothing here to take." With only free items it takes what fits.
   - Take-All with paid items closes the office and asks "Death will charge N coins." (every paid item) with "Pay Death's fee." / "Cancel". Paying takes what fits, charges for the paid items taken, plays Death's payment sound (2115, 10 cycles) and reopens the office.
+  - A partly filled inventory keeps every item that did not fit in the office for another claim; only items the inventory actually accepted leave the office. A partial reclaim says the existing refusal, "You don't have enough inventory space." (ours; no capture of a partial reclaim line).
 - **Capacity:** the office holds 120 stacks; more is deleted.
 - **For other plugins:**
   - `deaths-office:enter` { player } puts a player in, arriving as a login inside does.

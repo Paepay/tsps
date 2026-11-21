@@ -15,6 +15,18 @@ const WHIP_NOTE = 4152;
 const RUNE_SCIMITAR = 1333;
 let core;
 
+function unstackableIds(count) {
+    const ids = [];
+    for (const id of new Set(Object.values(core.ItemIdentifiers))) {
+        if (!Number.isInteger(id) || id <= 0) continue;
+        const definition = core.ItemDefinition.forId(id);
+        if (!definition.getName() || definition.isNoted() || definition.isStackable()) continue;
+        ids.push(id);
+        if (ids.length === count) return ids;
+    }
+    throw new Error(`the cache has only ${ids.length} usable unstackable items`);
+}
+
 before(async () => {
     await CachePipeline.initialize(require('node:path').resolve(__dirname, '..'));
     core = PluginManager.getCoreApi();
@@ -66,6 +78,71 @@ test('Office transfer keeps overflow stored and a second withdrawal cannot erase
     assert.equal(f.held()[0].amount, 93);
     assert.equal(f.withdraw(0, 100), 0);
     assert.equal(f.held()[0].amount, 93);
+});
+
+test('Take-All with a full inventory keeps every overflow row and returns them in later claims', t => {
+    const f = fixture(t);
+    const ids = unstackableIds(35);
+    const filler = unstackableIds(28);
+    for (const id of filler) f.add(id, 1);
+    assert.equal(f.p.getInventory().getFreeSlots(), 0);
+    f.store(ids.map(id => ({ id, amount: 1, meta: null })));
+    f.p.setAttribute('gravestones:coffer', 1000000);
+
+    f.click('officeTakeEverything');
+    assert.deepEqual(f.p.getInventory().getValidItems().map(item => item.getId()).sort((a, b) => a - b),
+        filler.slice().sort((a, b) => a - b), 'the full bag receives nothing');
+    assert.deepEqual(f.held().filter(Boolean).map(row => row.id), ids, 'every row stays reclaimable');
+
+    for (const item of f.p.getInventory().getValidItems()) f.p.getInventory().delete(item.getId(), item.getAmount());
+    f.messages.length = 0;
+    f.click('officeTakeEverything');
+    const firstClaim = f.p.getInventory().getValidItems().map(item => item.getId()).sort((a, b) => a - b);
+    assert.equal(firstClaim.length, 28);
+    assert.deepEqual(firstClaim, ids.slice(0, 28).sort((a, b) => a - b));
+    assert.deepEqual(f.held().filter(Boolean).map(row => row.id), ids.slice(28), 'the seven-row overflow is intact');
+    assert.ok(f.messages.includes("You don't have enough inventory space."), 'the partial reclaim tells the player');
+
+    for (const item of f.p.getInventory().getValidItems()) f.p.getInventory().delete(item.getId(), item.getAmount());
+    f.click('officeTakeEverything');
+    assert.deepEqual(f.held().filter(Boolean), [], 'the next claim returns the overflow');
+    assert.deepEqual(f.p.getInventory().getValidItems().map(item => item.getId()).sort((a, b) => a - b), ids.slice(28).sort((a, b) => a - b));
+});
+
+test('Take-All reclaims stack headroom, keeps the rest, and returns it after space is freed', t => {
+    const f = fixture(t);
+    for (const id of unstackableIds(27)) f.add(id, 1);
+    f.add(COINS, MAX - 3);
+    f.store([{ id: COINS, amount: 10, meta: null }]);
+    assert.equal(f.p.getInventory().getFreeSlots(), 0);
+
+    f.click('officeTakeEverything');
+    assert.equal(f.p.getInventory().getAmount(COINS), MAX);
+    assert.equal(f.held()[0].amount, 7, 'coins past the stack limit stay stored');
+    assert.ok(f.messages.includes("You don't have enough inventory space."));
+
+    f.p.getInventory().deleteNumber(COINS, 1);
+    assert.equal(f.p.getInventory().getAmount(COINS), MAX - 1);
+    f.messages.length = 0;
+    f.click('officeTakeEverything');
+    assert.equal(f.held()[0].amount, 6, 'the next claim takes only the freed headroom');
+
+    f.p.getInventory().deleteNumber(COINS, MAX);
+    f.click('officeTakeEverything');
+    assert.equal(f.p.getInventory().getAmount(COINS), 6);
+    assert.deepEqual(f.held(), []);
+});
+
+test('an inventory that accepts only part of a planned transfer cannot consume the refused office rows', t => {
+    const f = fixture(t);
+    const inventory = f.p.getInventory();
+    const add = inventory.add.bind(inventory);
+    t.mock.method(inventory, 'add', (item, refresh) => add(item.clone().setAmount(Math.min(10, item.getAmount())), refresh));
+    f.store([{ id: RUNE_SCIMITAR, amount: 28, meta: null }]);
+
+    assert.equal(f.withdraw(0, 28), 10);
+    assert.equal(inventory.getAmount(RUNE_SCIMITAR), 10);
+    assert.equal(f.held()[0].amount, 18, 'only what the inventory accepted leaves Death\'s Office');
 });
 
 test('same ID with different metadata needs its own inventory slot', t => {
