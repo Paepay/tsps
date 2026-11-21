@@ -170,6 +170,8 @@ test("every herb and recipe names a cache item", () => {
       assert.ok(Number.isInteger(obj(name)), `${recipe.product}: ${name}`);
     }
   }
+  for (const name of [DATA.sunfireWine.splinters, DATA.sunfireWine.wine, DATA.sunfireWine.blessedWine,
+    DATA.sunfireWine.product, DATA.sunfireWine.tool]) assert.ok(Number.isInteger(obj(name)), name);
 });
 
 /** Herblore in table 213's skill column, which numbers skills as the skill guide does. */
@@ -890,4 +892,53 @@ test("Break shatters the amulet and the next one starts afresh from 5 charges", 
   assert.equal(who.getAttribute(CHARGES), 5);
   assert.match(who.sent.dialogue, new RegExp(`"itemId":${obj("amulet_of_chemistry")}\\b`), "the object box shows the amulet");
   assert.match(who.sent.dialogue, /The amulet shatters\. Your next amulet of chemistry will<br>start afresh from 5 charges\./);
+});
+
+// ------------------------------------------------------------------ sunfire wine
+
+test("two sunfire splinters on a jug of wine make sunfire wine, either way round, with no XP", () => {
+  for (const [first, second] of [["sunfiresplinter", "jug_wine"], ["jug_wine", "sunfiresplinter"]]) {
+    const who = player([["pestle_and_mortar"], ["sunfiresplinter", 2], ["jug_wine"]]);
+    assert.equal(use(who, first, second), true);
+    ticks(1);
+    assert.equal(who.inv.count("jug_sunfire_wine"), 1, `${first} on ${second}`);
+    assert.equal(who.inv.count("sunfiresplinter"), 0);
+    assert.equal(who.inv.count("jug_wine"), 0);
+    assert.equal(who.inv.count("pestle_and_mortar"), 1, "the pestle is a tool, not consumed");
+    assert.equal(who.sent.xp, 0, "no Herblore experience");
+  }
+});
+
+test("sunfire wine: the first jug a tick later, then one every 4 ticks", () => {
+  const who = player([["pestle_and_mortar"], ["sunfiresplinter", 4], ["jug_wine"], ["jug_wine"]]);
+  assert.equal(use(who, "sunfiresplinter", "jug_wine"), true);
+  assert.equal(who.sent.menu.title, "How many do you wish to make?");
+  choose(who, 2);
+  assert.equal(who.inv.count("jug_sunfire_wine"), 0);
+  ticks(1);
+  assert.equal(who.inv.count("jug_sunfire_wine"), 1, "crushing is 1 tick");
+  ticks(3);
+  assert.equal(who.inv.count("jug_sunfire_wine"), 1);
+  ticks(1);
+  assert.equal(who.inv.count("jug_sunfire_wine"), 2, "then 4 ticks");
+  assert.equal(who.sent.xp, 0);
+});
+
+test("sunfire wine refuses a missing pestle, too few splinters and blessed wine", () => {
+  const noPestle = player([["sunfiresplinter", 2], ["jug_wine"]]);
+  assert.equal(use(noPestle, "sunfiresplinter", "jug_wine"), true);
+  assert.deepEqual(noPestle.sent.messages, [DATA.sunfireWine.refusal]);
+  assert.equal(noPestle.inv.count("jug_sunfire_wine"), 0);
+  assert.equal(noPestle.inv.count("sunfiresplinter"), 2);
+
+  const oneSplinter = player([["pestle_and_mortar"], ["sunfiresplinter", 1], ["jug_wine"]]);
+  assert.equal(use(oneSplinter, "sunfiresplinter", "jug_wine"), true);
+  assert.deepEqual(oneSplinter.sent.messages, [DATA.sunfireWine.refusal]);
+  assert.equal(oneSplinter.inv.count("jug_sunfire_wine"), 0);
+
+  const blessed = player([["pestle_and_mortar"], ["sunfiresplinter", 2], ["jug_wine_blessed"]]);
+  assert.equal(use(blessed, "sunfiresplinter", "jug_wine_blessed"), true);
+  assert.deepEqual(blessed.sent.messages, [DATA.sunfireWine.refusal]);
+  assert.equal(blessed.inv.count("jug_sunfire_wine"), 0);
+  assert.equal(blessed.inv.count("jug_wine_blessed"), 1);
 });

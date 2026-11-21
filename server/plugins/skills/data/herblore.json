@@ -230,5 +230,18 @@
     {"item": "dragon_bones_superior", "product": "crushed_dragon_bones", "message": "You grind down the superior dragon bones."},
     {"item": "nihil_shard", "product": "nihil_dust", "message": "You grind the nihil shard into dust."},
     {"item": "prif_crystal_shard", "product": "prif_crystal_shard_crushed", "amount": [10, 10], "quantityPrompt": "How many shards would you like to crush? (0 - {count})", "partialMessage": "You crush some of your crystal shards down to a powdery form.", "message": "You crush your crystal shards down to a powdery form."}
-  ]
+  ],
+  "sunfireWine": {
+    "$comment": "Jug of sunfire wine (Wiki): 2 sunfire splinters + 1 jug of wine with a pestle and mortar carried; no level or XP, and the pestle is not consumed. The Wiki's creation row is 1 tick with 'Crushing sunfire splinters is 1, then 4 ticks'; recording 1141 has the refusal (docs/ralos-rise.md).",
+    "splinters": "sunfiresplinter",
+    "splintersPerJug": 2,
+    "wine": "jug_wine",
+    "blessedWine": "jug_wine_blessed",
+    "product": "jug_sunfire_wine",
+    "tool": "pestle_and_mortar",
+    "animation": "human_herbing_grind",
+    "firstTicks": 1,
+    "ticks": 4,
+    "refusal": "You need two sunfire splinters, a jug of wine, and a pestle and mortar to create sunfire wine."
+  }
 }

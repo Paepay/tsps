@@ -146,6 +146,17 @@ Otto might wish to talk to you more." Mixes are `manual`, one per use. The Wiki'
 optional Make-All setting (May 2024), which is not here. Caviar uses the same message, which has
 not been captured for caviar.
 
+### Sunfire wine
+
+Two sunfire splinters on a jug of wine, with a pestle and mortar carried, make a jug of sunfire
+wine (Wiki: [Jug of sunfire wine](https://oldschool.runescape.wiki/w/Jug_of_sunfire_wine)). It is
+not Herblore experience: no level and no XP, and the pestle is a tool, not an ingredient. Splinters
+cannot be added to a jug of blessed wine. Recording 1141 has the refusal for a missing component:
+"You need two sunfire splinters, a jug of wine, and a pestle and mortar to create sunfire wine."
+The Wiki's row is 1 tick with "Crushing sunfire splinters is 1, then 4 ticks", so the first jug is
+made a tick after the use and the next every 4 ticks. The success line, animation and sound are not
+captured; ours uses `human_herbing_grind` and synth 2608, silently (see docs/ralos-rise.md).
+
 ## Amulet of chemistry
 
 `server/plugins/items/AmuletOfChemistry.plugin.js`; recordings 4211 and 4213 (rev 238) and
