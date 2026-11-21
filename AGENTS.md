@@ -75,6 +75,13 @@ checkout.
 
 ## Working through issues
 
+Before fixing any issue, verify it still exists against current code:
+`git fetch --all --prune` and compare the report with `origin/local`,
+`origin/prod`, merged PRs and recent commits, the `upstream` remote
+(`RSPSApp/tsps`), and linked `Paepay/PaeScape_Realms` issues and PRs. If an
+upstream or already-merged change fixes it, comment with the evidence and
+re-scope instead of duplicating the fix; never work from a stale issue snapshot.
+
 To fix GitHub issues unattended (claim, fix, verify in game, PR, next), follow
 [the repo-owned bugfix skill](.agents/skills/tsps-bugfix-loop/SKILL.md).
 Its helpers are in `scripts/agents/`; [docs/bug-loop.md](docs/bug-loop.md) is the docs entry point.

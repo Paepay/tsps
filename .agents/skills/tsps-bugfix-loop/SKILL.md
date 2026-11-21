@@ -23,8 +23,12 @@ Follow root/server AGENTS.md. This skill owns bugfix work; PR review stays separ
 
 1. Prioritize the quickest **complete** fixes, nearly finished work and blockers.
    Recheck comments, assignees, linked PRs and manual ownership immediately before claiming.
-2. Verify the claim; fetch exact current main. For PaeScape / `Paepay/tsps`
-   production work, base on current `origin/prod` and follow
+2. Verify the claim and check the issue against current code before fixing:
+   `git fetch --all --prune`, compare with `origin/local`, `origin/prod`, merged
+   PRs and `upstream` (`RSPSApp/tsps`), and comment with evidence instead of
+   duplicating a fix that already exists. Then fetch the exact base for the
+   work. For PaeScape / `Paepay/tsps` production work, base on current
+   `origin/prod` and follow
    `paescape-linear-integration` so client and platform changes stack on one
    timeline instead of parallel live branches. When work also needs
    `Paepay/PaeScape_Realms`, open or link issues in both repos so the other
