@@ -593,6 +593,8 @@ function finishRun(player, wavesCleared, won) {
   player.getCombat().reset();
   player.getMovementQueue().setBlockMovement(false);
   player.moveTo(tile(EXIT));
+  // Leaving a run in any way clears a TzKal-Zuk Slayer task (Wiki: Slayer task/TzHaar).
+  api.emitCustomEvent("slayer:leave-task-area", { player, npcId: core.NpcIdentifiers.TZKAL_ZUK, message: "the Inferno" });
   const keh = TZHAAR_KET_KEH;
   if (won) {
     player.setAttribute(ATTR_COMPLETIONS, Number(player.getAttribute(ATTR_COMPLETIONS) ?? 0) + 1);

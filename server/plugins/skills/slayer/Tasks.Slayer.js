@@ -377,6 +377,19 @@ function setTask(player, master, entry, bossId, area, chosenModifier, random, ch
   return { task, amount };
 }
 
+/**
+ * A TzHaar task's boss version (Hot Stuff): TzTok-Jad or TzKal-Zuk. The count is one, plus the
+ * Master and Grandmaster Combat Achievement tiers (Wiki: Slayer task/TzHaar).
+ */
+function assignTzhaarBoss(player, master, taskId, random = Math.random) {
+  const task = Data.get().taskById.get(taskId);
+  if (!task) return null;
+  const tier = combatAchievementTier(player);
+  const amount = 1 + (tier >= 5 ? 1 : 0) + (tier >= 6 ? 1 : 0);
+  const set = setTask(player, master, { task, min: amount, max: amount }, 0, null, null, random, amount);
+  return { task: set.task, amount: set.amount, line: `Your new task is to kill ${set.amount} ${set.task.displayName}.` };
+}
+
 /** Mortimer's chosen task (Choice.Slayer.js): the row, its boss and its modifier. */
 function assignChosen(player, master, entry, bossId, chosenModifier, random = Math.random) {
   return setTask(player, master, entry, bossId, null, chosenModifier, random);
@@ -696,6 +709,7 @@ module.exports = {
   assign,
   assignChosen,
   assignPicked,
+  assignTzhaarBoss,
   bossChoices,
   eligible,
   blockedTaskIds,
