@@ -533,3 +533,133 @@ for (const [label, options, fee] of [
   assert.equal(s.messages[0], `<col=ef1020>${fee.toLocaleString('en-US')} coins is taken from your bank to rent a private instance.</col>`);
   assert.equal(s.p.getBank(0).getAmount(core.ItemIdentifiers.COINS), 0);
 });
+
+/** A player in the lair with a recording PacketSender; `moles` are [x, y, privateArea]. */
+function locatorScene(t, options = {}) {
+  const {
+    player = [1758, 5188], moles = [[1759, 5189, null]],
+    carried = ['falador_shield_easy'], worn = false, area = null,
+  } = options;
+  const calls = [], hooks = {};
+  const api = new Proxy({ core }, {
+    get: (obj, key) => obj[key] ?? ((...args) => { hooks[key] = args.at(-1); }),
+  });
+  Mole.register(api);
+  const p = new Player(null);
+  p.setUsername('mole-locator');
+  p.setLocation(new core.Location(player[0], player[1], 0));
+  p.isRegistered = () => true;
+  p.getPrivateArea = () => area;
+  const ids = carried.map((name) => core.CacheDefinitions.getObjId(name)).filter(Number.isInteger);
+  const carrying = { contains: (id) => ids.includes(id) };
+  const empty = { contains: () => false };
+  p.getInventory = () => (worn ? empty : carrying);
+  p.getEquipment = () => (worn ? carrying : empty);
+  const sender = {
+    clearHintArrow() { calls.push({ type: 'clear' }); return sender; },
+    sendEntityHint(npc) { calls.push({ type: 'npc', npc }); return sender; },
+    sendPositionalHint(location, position, height, plane) {
+      calls.push({ type: 'tile', location, position, height, plane });
+      return sender;
+    },
+  };
+  p.getPacketSender = () => sender;
+  const npcs = moles.map(([x, y, npcArea]) => {
+    const npc = core.NPC.create(core.NpcIdentifiers.GIANT_MOLE, new core.Location(x, y, 0));
+    npc.isRegistered = () => true;
+    npc.getPrivateArea = () => npcArea;
+    npc.setHitpoints(200);
+    return npc;
+  });
+  t.mock.method(core.World, 'getNpcs', () => npcs);
+  let cycle = 0;
+  t.mock.method(core.World, 'getProcessCycle', () => cycle);
+  return {
+    p, npcs, calls,
+    send() { hooks.onPlayerProcess({ player: p }); },
+    tick(steps = 1) { cycle += steps; hooks.onPlayerProcess({ player: p }); },
+  };
+}
+
+test('a carried Falador shield points at the near Giant Mole', t => {
+  const s = locatorScene(t);
+  s.send();
+  assert.deepEqual(s.calls.map((call) => call.type), ['clear', 'npc']);
+  assert.equal(s.calls.at(-1).npc, s.npcs[0]);
+});
+
+for (const tier of Mole.FALADOR_SHIELD_NAMES) test(`the ${tier.replace(/_/g, ' ')} locates her`, t => {
+  const s = locatorScene(t, { carried: [tier] });
+  s.send();
+  assert.equal(s.calls.at(-1).type, 'npc');
+});
+
+test('a worn Falador shield locates her as well as one in the inventory', t => {
+  const s = locatorScene(t, { worn: true });
+  s.send();
+  assert.equal(s.calls.at(-1).type, 'npc');
+});
+
+test('without a Falador shield no locator hint is sent', t => {
+  const s = locatorScene(t, { carried: [] });
+  s.send();
+  assert.deepEqual(s.calls, []);
+});
+
+test('a far Mole is pointed at by her tile instead of an unrendered NPC hint', t => {
+  const s = locatorScene(t, { moles: [[1788, 5218, null]] });
+  s.send();
+  const last = s.calls.at(-1);
+  assert.equal(last.type, 'tile');
+  assert.deepEqual([last.location.getX(), last.location.getY(), last.location.getZ()], [1788, 5218, 0]);
+  assert.equal(last.height, 128);
+});
+
+test('a buried Mole keeps her tile hint, where an entity hint has no visible NPC', t => {
+  const s = locatorScene(t);
+  s.npcs[0].setAttribute(Mole.BURIED_ATTRIBUTE, {});
+  s.send();
+  assert.equal(s.calls.at(-1).type, 'tile');
+});
+
+test('the private instance Mole is located, not the public one', t => {
+  const instance = {};
+  const s = locatorScene(t, {
+    area: instance,
+    moles: [[1759, 5189, null], [1764, 5200, instance]],
+  });
+  s.send();
+  assert.equal(s.calls.at(-1).npc, s.npcs[1]);
+});
+
+test('leaving the lair clears the locator arrow once and stops', t => {
+  const s = locatorScene(t);
+  s.send();
+  const shown = s.calls.length;
+  s.p.setLocation(new core.Location(2960, 3380, 0));
+  s.send();
+  s.send();
+  assert.equal(s.calls.length, shown + 1);
+  assert.equal(s.calls.at(-1).type, 'clear');
+});
+
+test('a dead Mole clears her arrow until her respawn', t => {
+  const s = locatorScene(t);
+  s.send();
+  s.npcs[0].setHitpoints(0);
+  s.send();
+  assert.equal(s.calls.at(-1).type, 'clear');
+  s.npcs[0].setHitpoints(200);
+  s.tick(2);
+  assert.equal(s.calls.at(-1).type, 'npc');
+});
+
+test('the locator re-sends every two ticks and leaves the tick between alone', t => {
+  const s = locatorScene(t);
+  s.send();
+  const shown = s.calls.length;
+  s.tick(1);
+  assert.equal(s.calls.length, shown);
+  s.tick(1);
+  assert.equal(s.calls.length, shown + 2, 'clear and re-send');
+});

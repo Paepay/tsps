@@ -79,9 +79,25 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 - Live check: a Cave kraken surfaced at `2280,10010` dropped a Fire rune at the player's `2283,10012` tile, and the item was picked up.
 - Regression coverage: `server/tests/kraken.test.cjs` (Cave kraken follows the killer, boss stays on the shore).
 
+## #75 - Falador shield does not locate the Giant Mole
+
+- `FaladorShield.DiaryRewards.js` only had recharge/check; `GiantMole.plugin.js` listed Falador shield tracking as skipped.
+- `updateMoleLocator` now runs on every player tick. Any Falador shield 1-4, worn or carried, points the client's hint arrow at the Giant Mole in the player's own part of the lair (public or rented instance): an NPC hint within 15 tiles while she is visible, her tile otherwise (far away or buried). It clears on leaving, losing the shield, or her death.
+- The client blinks hint arrows itself (200ms on/off), matching the Wiki's flashing indicator.
+- Live check: MoleProbe1 carried shield 4 at `1758,5188`; at `1760,5189` the blinking arrow sat above the Mole's head in `exports/issue75/videos/t0000381-locator.mp4` and `exports/issue75/frames/sheet.png`.
+- Regression coverage: `server/tests/giant-mole.test.cjs` (10 locator cases; 53 in the file).
+
+## #77 - Boosted drops on Level-Up worlds (league 4)
+
+- Already fixed by `3ba4c9896` (`fix(leagues): boost the restricted drop tables on the Level-Up world (Fixes #62)`), which is an ancestor of this batch.
+- `server/tests/league-boosted-drops.test.cjs` passes 3/3, including "every restricted source applies in Level-Up".
+- No further change; close with `#62` when this batch lands on `local`.
+
 ## Suggested Review Order
 
-1. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
-2. Verify `#28` with a free slot and again with a full inventory.
-3. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
-4. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.
+1. Verify `#75` with a shield 1-4 carried and worn beside the Mole, then without a shield.
+2. Verify `#76` by killing a small Cave kraken and taking its drop.
+3. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
+4. Verify `#28` with a free slot and again with a full inventory.
+5. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
+6. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.

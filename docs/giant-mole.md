@@ -98,16 +98,37 @@ The plugin remains members-only. Its transient buried attribute uses a namespace
 kebab-case key. Registration only attaches named handlers with the existing core
 API; no generated definitions or shared combat code are changed.
 
+## Falador shield locator
+
+Any Falador shield tier, worn or carried, points the player at her while they are in the Mole Hole
+(Wiki, Falador shield 4, Benefits: "An indicator will point to the location of the Giant Mole while
+inside its lair"; Giant Mole: "a Falador shield 3 or better ... with a flashing arrow indicator").
+The 9 March 2017 update made the hint-arrow automatic, so there is no item option.
+
+`updateMoleLocator` runs on every player tick. It looks for the Giant Mole in that player's own part
+of the lair (the public Mole Hole, or the clone inside their rented instance), then sends the
+client's normal hint arrow: an NPC hint within the client's 15-tile view distance while she is
+visible, and a tile hint at her own tile when she is far or buried (an entity hint has no visible NPC
+to hang on then). The arrow is re-sent every two ticks, as another hint can replace it, and is
+cleared when the player leaves the lair, loses the shield, or she is gone. The client blinks hint
+arrows itself, matching the Wiki's "flashing" arrow.
+
+Ten cases in `server/tests/giant-mole.test.cjs` cover all four tiers, worn and carried shields, the
+no-shield and out-of-lair clears, far and buried tiles, selecting the instance's Mole over the
+public one, death, and the refresh interval. Live, a player carrying shield 4 beside her at
+`1760,5189` saw the blinking arrow above her head in `exports/issue75/`'s clip frames.
+
 ## Verification
 
 The regression suite runs the real hit queue and combat hit execution with
 cache-backed NPC definitions. It covers damage preservation, projectile delay,
 health boundaries (including exactly 10), zeros and splashes, two-hit attacks,
 poison, failed rolls, resurfacing, loss of the combat target, the real thrall
-summoning/attack task, the combat animations and speed, and the spade dig-in and
-rope climb-out. Nine of its earlier 21 cases fail against the original plugin;
-all 24 cases pass now. The related hit-queue, hitsplat-source and thrall suites
-also pass (19 tests across the three suites). The server TypeScript build passed.
+summoning/attack task, the combat animations and speed, the spade dig-in and
+rope climb-out, and the Falador shield locator. Nine of its earlier 21 cases fail
+against the original plugin; all 53 cases pass now. The related hit-queue,
+hitsplat-source and thrall suites also pass (19 tests across the three suites).
+The server TypeScript build passed.
 
 A running-world combat check used a max-level player with an abyssal whip and
 explicit damage immunity, then lowered the Mole to 80 HP after establishing a
@@ -129,10 +150,8 @@ branch remains unimplemented: neither the checked pages nor an available combat
 capture establishes its odds or exact packet sequence. Implementing it would
 require more evidence rather than an invented probability.
 
-Falador shield tracking, dark-area damage, entrance counting, private-instance
-purchase and diary-dependent drops are separate mechanics outside this burrow
-fix. The existing plugin identifies tracking and entry features as omitted;
-this change does not certify them.
+Dark-area damage, entrance counting, private-instance purchase and diary-dependent
+drops live in their own sections and plugins; this change does not alter them.
 
 ## Private instance
 
