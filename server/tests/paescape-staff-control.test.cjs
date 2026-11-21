@@ -161,6 +161,19 @@ test("a signed lookup returns online players and the offline platform record id"
   assert.equal(offline.body.players[0].userId, "user_offline");
 });
 
+test("an empty signed lookup returns the sorted live player preview", async () => {
+  const preview = await _test.handleControl(controlRequest({
+    method: "GET",
+    path: `${CONTROL}/staff/lookup?q=`,
+    action: "world:staff-lookup",
+    authorization: token("world:staff-lookup"),
+  }));
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.preview, true);
+  assert.deepEqual(preview.body.players.map((player) => player.name), ["Alice", "Bob"]);
+  assert.equal(preview.body.players.every((player) => player.online === true), true);
+});
+
 test("mute, unmute, ban, unban and kick use the real punishment and logout paths", async () => {
   const bob = players[1];
   const bobKey = Accounts.key("Bob");
