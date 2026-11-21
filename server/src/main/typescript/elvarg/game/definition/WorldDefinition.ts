@@ -76,6 +76,10 @@ export function readWorldConfig(scopedSettings?: ScopedPluginSettings): JsonObje
 
 /** The platform persisted configuration layer, or null when absent/unreadable. */
 function readPlatformWorldConfig(): JsonObject | null {
+    // A test run must not inherit the live snapshot a developer's checkout happens to hold
+    // (a local Level-Up world changes region locks and skill caps). Suites that exercise the
+    // platform layer point PAESCAPE_WORLD_PLATFORM_CONFIG at their own file explicitly.
+    if (process.env.NODE_TEST_CONTEXT && !process.env.PAESCAPE_WORLD_PLATFORM_CONFIG) return null;
     const file = process.env.PAESCAPE_WORLD_PLATFORM_CONFIG
         ? path.resolve(process.env.PAESCAPE_WORLD_PLATFORM_CONFIG)
         : path.resolve("data/definitions/world.platform.json");
