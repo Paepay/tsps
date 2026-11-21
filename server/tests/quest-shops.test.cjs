@@ -16,7 +16,7 @@ const DATA = require("../plugins/quests/data/quest-shops.json");
 const shopsJson = require("../data/definitions/shops.json");
 
 /** Quests this fake server has, and which of them the player finished or started. */
-const KNOWN = new Set(["Dragon Slayer I", "The Fremennik Trials", "Cabin Fever", "Enter the Abyss", "Regicide", "Watchtower"]);
+const KNOWN = new Set(["Dragon Slayer I", "The Fremennik Trials", "Cabin Fever", "Enter the Abyss", "Regicide", "Watchtower", "A Porcine of Interest", "Rogue Trader", "Barbarian Training"]);
 const state = { complete: new Set(), started: new Set() };
 const dialogues = [];
 
@@ -113,6 +113,28 @@ test("gated stock is hidden until its quest is done", () => {
   Shops._test.stockVisible(event);
   assert.equal(event.visible, false);
   state.complete.add("Regicide");
+  const after = { ...event, visible: true };
+  Shops._test.stockVisible(after);
+  assert.equal(after.visible, true);
+});
+
+test("the Slayer masters sell reinforced goggles only after A Porcine of Interest", () => {
+  const event = { player: player(), shopName: "Slayer Equipment (shop)", itemId: ItemIdentifiers.REINFORCED_GOGGLES, visible: true };
+  Shops._test.stockVisible(event);
+  assert.equal(event.visible, false);
+  state.complete.add("A Porcine of Interest");
+  const after = { ...event, visible: true };
+  Shops._test.stockVisible(after);
+  assert.equal(after.visible, true);
+  const row = shopsJson.find((shop) => shop.name === "Slayer Equipment (shop)").originalStock.find((entry) => entry.id === ItemIdentifiers.REINFORCED_GOGGLES);
+  assert.deepEqual(row, { id: ItemIdentifiers.REINFORCED_GOGGLES, amount: 50, restockTicks: 1 });
+});
+
+test("stock can need only a quest started: Alry's pearl barbarian rod", () => {
+  const event = { player: player(), shopName: "Alry the Angler's Angling Accessories", itemId: ItemIdentifiers.PEARL_BARBARIAN_ROD, visible: true };
+  Shops._test.stockVisible(event);
+  assert.equal(event.visible, false);
+  state.started.add("Barbarian Training");
   const after = { ...event, visible: true };
   Shops._test.stockVisible(after);
   assert.equal(after.visible, true);

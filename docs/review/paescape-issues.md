@@ -17,6 +17,7 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 | [#30](https://github.com/Paepay/PaeScape_Issues/issues/30) | `ready to close` | Equipment / Ava's attractor | Working as intended. Ava's attractor is the sub-50 Ranged Animal Magnetism reward and has no Ranged equip requirement; Ava's accumulator is the 50 Ranged upgrade. The reported level-30 requirement belongs to neither item. | Close as not a bug and point the reporter to Ava's accumulator's level-50 requirement. |
 | [#31](https://github.com/Paepay/PaeScape_Issues/issues/31) | `ready to close` | Farming / Farmer's Fortune | Working as intended. Farmer's Fortune grows farming patches instantly and never lets them catch disease. A seedling in a plant pot is not a farming patch, so its sapling timer is unchanged by the relic. | Close as not a bug; no seedling-specific change without a different source for that behavior. |
 | [#76](https://github.com/Paepay/PaeScape_Issues/issues/76) | `fixed locally` | Kraken Cove / loot | Cave kraken kills used the NPC's default water tile for drops; only the Kraken boss had a location override. Cave kraken loot now follows the killer while the boss keeps its fixed reachable shore tile. | Verify a Cave kraken kill at the cove: loot appears under the player and can be picked up. |
+| [#78](https://github.com/Paepay/PaeScape_Issues/issues/78) | `fixed locally` | Slayer / A Porcine of Interest | Spria's Sourhogs task is correctly gated on the quest, and the public cave works after it. The real gap was the replacement reinforced goggles: the osrsreboxed shop dumper read only a page's first store table, so Slayer Equipment's quest-added goggles row never reached `shops.json`. | Verify on local: with A Porcine of Interest done, `Trade` at any Slayer Master shows reinforced goggles for 100 coins; before the quest the row is absent. |
 
 ## #24 - Drakan's medallion cannot reach Darkmeyer
 
@@ -93,11 +94,20 @@ Statuses: `confirmed bug`, `needs repro`, `needs reporter info`, `ready to close
 - `server/tests/league-boosted-drops.test.cjs` passes 3/3, including "every restricted source applies in Level-Up".
 - No further change; close with `#62` when this batch lands on `local`.
 
+## #78 - Spria assigns Sourhogs but the cave has no reinforced goggles in the shop
+
+- Task gating was already right: `server/plugins/skills/data/slayer-masters.json` gives task `121` `{"any": ["a_porcine_of_interest"]}`, so Spria cannot offer Sourhogs before the quest is complete.
+- The cave is reachable after the quest. Live check: MoleProbe1 climbed down at `3150,3347` to `3158,9713`, crossed the `40331` blockage to `3157,9703`, and the public Sourhogs loaded around `3159-3177,9673-9699`; the completed quest opens no private area.
+- The reported gap was the replacement goggles: `osrsreboxed-db`'s shop dumper read only a page's first `StoreTableHead`, so Slayer Equipment's "A Porcine of Interest" table (reinforced goggles, stock 50, restock 1) never reached `shops.json`. The dumper now merges tables whose section says a quest or miniquest completion adds stock, skipping duplicate-shop and league tables; `test/test_shops_database.py` covers both sides.
+- `server/plugins/quests/data/quest-shops.json` hides the goggles (and the other two newly imported gated rows: Ali's Menaphite gear, Alry's pearl barbarian rod) until their quest is met, so nobody buys them early.
+- Regression coverage: `server/tests/quest-shops.test.cjs` (hidden before the quest, visible after; stock/price row), `server/tests/slayer.test.cjs` (Sourhogs need the quest), and `server/tests/p2p-skilling-parity.test.cjs` (post-quest public cave).
+
 ## Suggested Review Order
 
-1. Verify `#75` with a shield 1-4 carried and worn beside the Mole, then without a shield.
-2. Verify `#76` by killing a small Cave kraken and taking its drop.
-3. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
-4. Verify `#28` with a free slot and again with a full inventory.
-5. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
-6. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.
+1. Verify `#78`: Trade at Spria with the quest done for 100-coin reinforced goggles, then climb down and cross the blockage to a Sourhog.
+2. Verify `#75` with a shield 1-4 carried and worn beside the Mole, then without a shield.
+3. Verify `#76` by killing a small Cave kraken and taking its drop.
+4. Verify `#27` on the local client by toggling Game chat to Filter and relogging.
+5. Verify `#28` with a free slot and again with a full inventory.
+6. Verify `#29` on the local server with Endless Harvest and Infernal Gathering, then close `#30` and `#31` as working as intended unless the reporters provide new reproduction details.
+7. Continue the earlier queue: fix and verify `#26`, reproduce `#25` on a league world, and gather reporter details for `#24`.

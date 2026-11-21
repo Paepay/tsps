@@ -257,6 +257,17 @@ test('Porcine rope with the sourhog dead and the foot uncut stays in the cave', 
   assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [3158, 9713]);
 });
 
+test('Porcine cave is the public Sourhog cave once the quest is complete', () => {
+  const q = register('PorcineOfInterest', 'a_porcine_of_interest'), p = player(); q.quest.setStage(p, 9);
+  p.equipment.set(core.Equipment.HEAD_SLOT, 24942);
+  q.call('onObjectInteraction', { player: p, objectId: 40341, clickType: 1, handled: false });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [3158, 9713]);
+  assert.equal(p.getPrivateArea(), null, 'the completed quest no longer opens a private instance');
+  assert.equal(q.spawned.length, 0, 'the public npc-spawns provide the Sourhogs');
+  q.call('onObjectInteraction', { player: p, objectId: 40331, clickType: 1, handled: false });
+  assert.deepEqual([p.getLocation().getX(), p.getLocation().getY()], [3157, 9703], 'the blockage leads to the public spawn chamber');
+});
+
 test('Porcine blockage Yes does not put the wiki stage direction in chat', () => {
   const q = register('PorcineOfInterest', 'a_porcine_of_interest'), p = player(); q.quest.setStage(p, 5);
   q.call('onObjectInteraction', { player: p, objectId: 40331, clickType: 1, handled: false });
