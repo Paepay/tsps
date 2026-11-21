@@ -73,6 +73,12 @@ export class NpcDefinition {
     private deathAnim: number = 836;
     private spawnAnim: number | null = null;
     private deathSound: number = -1;
+    /**
+     * The cache NPC this one becomes while it has a fight (npc-combat-defs.json `combatForm`),
+     * or -1. Wyrms crawl on their idle form and rear into the attacking form, whose model the
+     * attack and death sequences are rigged for; playing those on the crawling model explodes it.
+     */
+    private combatForm: number = -1;
     /** Ticks from the death animation to the death itself (drops, removal). */
     private deathTicks: number = 2;
     private combatLevel: number = 0;
@@ -268,6 +274,11 @@ export class NpcDefinition {
 
     public getDeathTicks(): number {
         return this.deathTicks;
+    }
+
+    /** The cache NPC this one becomes while fighting, or -1 when it has no separate form. */
+    public getCombatForm(): number {
+        return this.combatForm;
     }
 
     public getCombatLevel(): number {

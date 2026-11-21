@@ -306,6 +306,7 @@ export class NPC extends Mobile {
         if (this.getDefinition() != null) {
             // Queued impacts land before this NPC acts - see HitQueue.process.
             this.getCombat().getHitQueue().process(World.getProcessCycle());
+            this.updateCombatForm();
             this.getTimers().process();
             const movement = this.getMovementQueue();
             const combat = this.getCombat();
@@ -686,6 +687,27 @@ export class NPC extends Mobile {
 
     public getAttackAnim(): number {
         return this.getCurrentDefinition().getAttackAnim();
+    }
+
+    /**
+     * Enters a definition's combat form while this NPC has a fight and leaves it once the
+     * fight is over (npc-combat-defs.json `combatForm`). A wyrm crawls on its idle cache NPC,
+     * but its attack and death sequences are rigged for the attacking form, so playing them
+     * on the crawling model stretches it apart. The spawn definition names the form, so the
+     * transformation reverts to it when combat clears.
+     */
+    public updateCombatForm(engaged?: boolean): void {
+        const form = this.getDefinition().getCombatForm();
+        if (form < 0) return;
+        const inCombat = engaged ?? (this.getCombat().getTarget() != null || this.getCombat().getAttacker() != null);
+        const current = this.getNpcTransformationId();
+        if (inCombat) {
+            if (current !== form) this.setNpcTransformationId(form);
+        } else if (current === form && !this.isDying) {
+            // The death sequence is rigged for the form too: keep it until the NPC leaves the
+            // world, so the body is not rebuilt mid-animation (NPCDeathTask.remove resets it).
+            this.setNpcTransformationId(-1);
+        }
     }
 
     public getAttackSound(): Sound {
