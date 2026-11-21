@@ -7,7 +7,8 @@
  * `slayer:task-offer` { player, master, wilderness, choices: 0, amount: null, boss: false, bossAllowed: null }
  * (`wilderness`: Krystilia, whose kills count only in the Wilderness) is asked whenever a master (not Mortimer, who has his own choice: Choice.Slayer.js) would
  * assign. An answer sets `choices` (how many tasks), `amount` ({ min, max }: the kill count the
- * player types), and with `boss` one of the choices is a boss task where the master could assign
+ * player types for a regular task; a boss task uses the Boss task's 3-35 range instead), and with
+ * `boss` one of the choices is a boss task where the master could assign
  * one (its "Boss" row eligible, so Like a Boss bought), the boss even odds among those the
  * player has the levels for and `bossAllowed(task)` lets through (the relic: in an unlocked area).
  * The other choices are the master's eligible tasks by weight, none twice, never the Boss row.
@@ -104,6 +105,15 @@ function label(choice) {
 }
 
 /**
+ * The kill count a choice takes: a regular task uses the content's offer, while a boss task
+ * uses the Boss task range (3-35, 3-36 for Barrows, +5/+6 per claimed Combat Achievement
+ * tier). Wiki: Boss task.
+ */
+function amountRange(player, choice, offer) {
+  return choice.boss ? Tasks.bossAmountRange(player, choice.boss) : offer.amount;
+}
+
+/**
  * Offers the tasks instead of the master's assignment, when content makes an offer. Returns false
  * when there is none (the master assigns as usual); true once handled, the menu shown or the
  * master's refusal said.
@@ -127,7 +137,7 @@ function open(player, master, npcId = null, random = Math.random) {
 function pick(player, master, choice) {
   const offer = offerFor(player, master);
   if (!offer || Tasks.current(player) || !stored(player).includes(choice) || !entryFor(player, master, choice)) return;
-  const { min, max } = offer.amount;
+  const { min, max } = amountRange(player, choice, offer);
   // acceptsZero/acceptsNegative: 0 or less is out of range and says so, which the client's amount packet would otherwise drop.
   player.setEnteredAmountAction({ acceptsZero: true, acceptsNegative: true, execute: (count) => chosenAmount(player, master, choice, count) });
   player.getPacketSender().sendEnterAmountPrompt(`How many would you like to slay? (${min}-${max})`);
@@ -138,7 +148,7 @@ function chosenAmount(player, master, choice, count) {
   if (!offer || Tasks.current(player) || !stored(player).includes(choice)) return;
   const entry = entryFor(player, master, choice);
   if (!entry) return;
-  const { min, max } = offer.amount;
+  const { min, max } = amountRange(player, choice, offer);
   const amount = Math.floor(Number(count));
   if (!Number.isInteger(amount) || amount < min || amount > max) {
     player.sendMessage(`You must choose an amount between ${min} and ${max}.`);

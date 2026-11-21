@@ -1103,6 +1103,51 @@ test('it switches between Ranged and Magic every 4 attacks, starting with Ranged
   }
 });
 
+test('the switch warns with the incoming growl, then plays that style\'s animation and the change growl twice (rsprox 1158)', () => {
+  const { player, run, fight } = bossRun('Listener');
+  try {
+    player.sounds = [];
+    // Three counted attacks: the third warns four ticks before the switch, two before the fourth attack.
+    for (const tick of [10, 15, 20]) { fight.ticks = tick; fight.attack(player); }
+    assert.equal(fight.style, 'ranged');
+    assert.equal(fight.growlAt, 23);
+    assert.equal(fight.growlStyle, 'magic', 'the incoming style');
+    fight.ticks = 22;
+    assert.equal(fight.tick(), true);
+    assert.deepEqual(player.sounds, [6997], 'magic growl');
+
+    // The fourth attack switches the style; two ticks later comes the animation and change growl.
+    fight.ticks = 25;
+    fight.attack(player);
+    assert.equal(fight.style, 'magic');
+    assert.equal(fight.switchAt, 27);
+    fight.ticks = 26;
+    fight.tick();
+    assert.deepEqual(player.sounds, [6997, 6994, 6994]);
+    assert.equal(fight.npc.animations.at(-1), 8754, 'the magic switch animation');
+
+    // The next switch is back to ranged.
+    player.sounds = [];
+    fight.npc.animations = [];
+    for (const tick of [30, 35, 40]) { fight.ticks = tick; fight.attack(player); }
+    assert.equal(fight.growlAt, 43);
+    assert.equal(fight.growlStyle, 'ranged');
+    fight.ticks = 42;
+    fight.tick();
+    assert.deepEqual(player.sounds, [6996], 'ranged growl');
+    fight.ticks = 45;
+    fight.attack(player);
+    assert.equal(fight.style, 'ranged');
+    assert.equal(fight.switchAt, 47);
+    fight.ticks = 46;
+    fight.tick();
+    assert.deepEqual(player.sounds, [6996, 6994, 6994]);
+    assert.equal(fight.npc.animations.at(-1), 8755, 'the ranged switch animation');
+  } finally {
+    run.end('exit', { fade: false });
+  }
+});
+
 test('its max hit follows the armour tier and the protection prayer (Wiki)', () => {
   const { player, run, fight } = bossRun('Tank', { corrupted: false });
   try {

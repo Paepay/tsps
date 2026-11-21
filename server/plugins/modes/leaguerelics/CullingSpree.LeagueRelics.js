@@ -6,10 +6,11 @@
  * A slain superior has a 50% chance of another where it died (`slayer:superior-again`), and the
  * Slayer helmet (i)'s effects come without one (`slayer:helmet`): its on-task melee, Ranged and
  * Magic boosts and its protection from banshees, spectres, devils and wall beasts.
- * Slayer masters offer a choice of three tasks with a kill count of 5 to 200 the player types
- * (`slayer:task-offer`, Offer.Slayer.js): with Like a Boss one of them is a boss task, from the
- * bosses in the areas the character has unlocked (`bossAreas`: Wiki, Demonic_Pacts_League/Guide/Slayer;
- * `league:areas`, every boss when nobody answers).
+ * Slayer masters offer a choice of three tasks with a kill count the player types
+ * (`slayer:task-offer`, Offer.Slayer.js): 5 to 200 for a regular task, or the Boss task's 3-35
+ * (3-36 for Barrows, raised by Combat Achievement tiers) for a boss task. With Like a Boss one of
+ * them is a boss task, from the bosses in the areas the character has unlocked (`bossAreas`:
+ * Wiki, Demonic_Pacts_League/Guide/Slayer; `league:areas`, every boss when nobody answers).
  * Not here: the helmet's other uses that read the worn item's name (Nex's gas, the equipment
  * screen's on-task stats).
  */
