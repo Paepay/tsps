@@ -34,6 +34,7 @@ const COMMANDS = {
 };
 const PUNISH = new Set(["mute", "unmute", "ban", "unban"]);
 const MAX_RESULTS = 25;
+const MAX_PREVIEW_RESULTS = 500;
 
 function roleOf(value) {
   const role = String(value ?? "").toLowerCase();
@@ -133,12 +134,15 @@ class StaffController {
 
   lookup(query) {
     const term = String(query ?? "").trim().toLowerCase();
-    if (term.length < 2) return { status: 200, body: { ok: true, players: [] } };
+    const preview = term.length === 0;
+    if (!preview && term.length < 2) return { status: 200, body: { ok: true, players: [] } };
     const rows = [];
+    const limit = preview ? MAX_PREVIEW_RESULTS : MAX_RESULTS;
     const punishment = this.getPunishment();
     for (const player of onlinePlayers(this.api)) {
+      if (player?.isPlayerBot?.() === true) continue;
       const name = String(player?.getUsername?.() ?? "");
-      if (!name || !name.toLowerCase().includes(term)) continue;
+      if (!name || (!preview && !name.toLowerCase().includes(term))) continue;
       const skills = player.getSkillManager?.();
       rows.push({
         name,
@@ -151,9 +155,10 @@ class StaffController {
         banned: punishment?.banned?.(key(name)) ?? false,
         muted: punishment?.muted?.(key(name)) ?? false,
       });
-      if (rows.length >= MAX_RESULTS) break;
+      if (rows.length >= limit) break;
     }
-    if (!rows.length) {
+    rows.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+    if (!rows.length && !preview) {
       const persistence = this.getPersistence();
       try {
         if (persistence && persistence.exists?.(term, GameConstants.WORLD_PROFILE)) {
@@ -173,7 +178,7 @@ class StaffController {
         /* lookup is read-only: an unavailable platform returns online rows only */
       }
     }
-    return { status: 200, body: { ok: true, players: rows } };
+    return { status: 200, body: { ok: true, players: rows, preview } };
   }
 
   async command(body) {
