@@ -496,6 +496,8 @@ function rollMarkOfGrace(player, course) {
   for (const [itemId, amount] of spawn.items) {
     ItemOnGroundManager.registerLocation(player, new core.Item(itemId, amount), position,
       player.getPrivateArea(), { goesGlobal: false, despawnDelay: MARK_DESPAWN_TICKS });
+    // The collection log counts a drop when it is generated, not when it is picked up.
+    pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId, amount });
   }
   return spawn.items;
 }
@@ -527,7 +529,6 @@ function creditMarkTaken({ player, groundItem, source, itemId, amount }) {
   const position = groundItem.getPosition();
   const course = position ? courseOfMark({ x: position.getX(), y: position.getY(), z: position.getZ() }) : null;
   if (!course) return;
-  pluginApi.emitCustomEvent("collection-log:obtain", { player, itemId, amount });
   if (source !== "pickup") return;
   finishLapOnFind(player, course);
 }
@@ -985,3 +986,4 @@ module.exports = {
 };
 
 module.exports.giveCourseItem = giveCourseItem;
+module.exports.rollMarkOfGrace = rollMarkOfGrace;
