@@ -26,6 +26,9 @@ function open({ player }) {
   Common.api.emitCustomEvent("league:send-content", { player });
   Common.api.emitCustomEvent("league:modal-opening", { player, group });
   const sender = player.getPacketSender();
+  // The map is built from these varbits as the interface opens: resend them in case an
+  // interrupted unlock or a stale client left the selection behind the saved areas.
+  Unlock.sendState(player, type);
   sender.sendInterfaceScript(ui().modalSize[0], ui().modalSize[1]);
   sender.sendInterface(group);
   sender.sendInterfaceFlagsRange(Common.uid(group, menuFrame), menuFrameSlots[0], menuFrameSlots[1], FLAGS_OP1);

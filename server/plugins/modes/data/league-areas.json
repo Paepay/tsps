@@ -7,8 +7,8 @@
     "available": 11695
   },
   "varps": {
-    "_comment": "A plain varp carries the real area count to cache script 3658, which otherwise hardcodes a five-area total; the six selection varbits cannot represent Level-Up's nine areas.",
-    "unlockedCount": 7998
+    "_comment": "A plain varp carries the real area count to cache script 3658, which otherwise hardcodes a five-area total; the six selection varbits cannot represent Level-Up's nine areas. 7994 is unused (7990-7993 buff timers, 7995 gameframe, 7996-7997 poison, 7998-7999 freeze).",
+    "unlockedCount": 7994
   },
   "maxUnlocked": 5,
   "thresholds": {

@@ -21,9 +21,16 @@ const SIDE_PANEL = 656;
 const SELECTION = [10662, 10663, 10664, 10665, 10666, 10667];
 const LAST_VIEWED = 11693;
 const AVAILABLE = 11695;
+const COUNT_VARP = 7994;
 const THRESHOLD_STRUCTS = [5971, 5972, 5973, 5974, 5975];
 const MISTHALIN = 1, KARAMJA = 2, ASGARNIA = 3, KANDARIN = 4, MORYTANIA = 5, DESERT = 6, TIRANNWN = 7, FREMENNIK = 8, WILDERNESS = 11, KOUREND = 20, VARLAMORE = 21;
 const uid = (group, child) => (group << 16) | child;
+
+test("the area count varp stays clear of the freeze timer", () => {
+  const AreaData = require("../plugins/modes/data/league-areas.json");
+  assert.equal(AreaData.varps.unlockedCount, 7994);
+  assert.notEqual(AreaData.varps.unlockedCount, 7998, "7998 is the freeze timer's seconds");
+});
 
 let core;
 const hooks = {};
@@ -90,11 +97,12 @@ function character(name, profile = "league", { login = true, restore = null } = 
   player.setUsername(name);
   player.setProfile(profile);
   if (restore) restore.applyToPlayer(player);
-  const sent = { messages: [], varbits: new Map(), scripts: [], subs: [], flags: [], sounds: [], content: [], removals: 0 };
+  const sent = { messages: [], varbits: new Map(), configs: new Map(), scripts: [], subs: [], flags: [], sounds: [], content: [], removals: 0 };
   const sender = new Proxy({}, {
     get: (target, key) => {
       switch (key) {
         case "sendVarbit": return (id, value) => (sent.varbits.set(id, value), sender);
+        case "sendConfig": return (id, value) => (sent.configs.set(id, value), sender);
         case "sendInterfaceScript": return (id, args) => (sent.scripts.push([id, args]), sender);
         case "sendSubInterface": return (target, group) => (sent.subs.push([target, group]), sender);
         case "sendInterface": return (group) => (sent.subs.push(["main", group]), sender);
@@ -149,6 +157,7 @@ test("a new league character starts with Misthalin and Karamja; a main character
   const league = character("starter");
   assert.deepEqual(league.getAttribute("league:areas"), [MISTHALIN, KARAMJA]);
   assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0], "league_area_selection_0..5");
+  assert.equal(league.sent.configs.get(COUNT_VARP), 2, "the summary's real count, not the cache's zero");
   assert.equal(league.sent.varbits.get(LAST_VIEWED), 0);
   assert.equal(league.sent.varbits.get(AVAILABLE), 0, "no pick affordable yet");
   assert.deepEqual(thresholds(league), [0, 0, 60, 140, 300], "Wiki: Trailblazer Reloaded's unlocks at 60, 140 and 300 tasks");
@@ -405,6 +414,16 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   assert.equal(mainTeleport.allow, null);
 });
 
+test("reopening View Areas resends the saved area state and count", () => {
+  const league = character("staleareas");
+  assert.equal(openAreas(league), true);
+  league.sent.varbits.clear();
+  league.sent.configs.clear();
+  assert.equal(openAreas(league), true);
+  assert.deepEqual(SELECTION.map((varbit) => league.sent.varbits.get(varbit)), [1, 2, 0, 0, 0, 0], "the map is rebuilt from the saved areas");
+  assert.equal(league.sent.configs.get(COUNT_VARP), 2, "the count is resent too");
+});
+
 test("View Areas opens the interface as captured; an area's details show its state", () => {
   const league = character("viewer");
   assert.equal(openAreas(league), true);
@@ -587,6 +606,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   worldLeague = 4;
   assert.deepEqual(echoes.getAttribute("league:areas"), [MISTHALIN], "Wiki: 'All players will begin the league restricted to Misthalin'");
   assert.equal(echoes.sent.varbits.get(SELECTION[1]) ?? 0, 0, "league_area_selection_1 is still 0, so the tutorial's areas page waits");
+  assert.equal(echoes.sent.configs.get(COUNT_VARP), 1, "the summary counts the one starting area");
   const areas = query("league:areas", { player: echoes });
   assert.deepEqual([areas.next, areas.available], [{ slot: 1, tasks: 0 }, true], "the first pick needs no tasks");
   openAreas(echoes);
@@ -601,6 +621,7 @@ test("Raging Echoes: Misthalin to start, Karamja the free tutorial pick that end
   assert.deepEqual([event?.area, event?.slot], [KARAMJA, 1], "league:area-unlocked moves the tutorial on");
   for (let tick = 0; tick < 14; tick++) core.TaskManager.process();
   assert.equal(echoes.sent.varbits.get(SELECTION[1]), KARAMJA, "league_area_selection_1 0 -> 2, as recorded");
+  assert.equal(echoes.sent.configs.get(COUNT_VARP), 2, "Karamja's unlock updates the summary too");
   assert.deepEqual(query("league:areas", { player: echoes }).next, { slot: 2, tasks: 90 }, "then 90 tasks, as before");
 });
 

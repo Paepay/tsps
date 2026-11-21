@@ -1818,7 +1818,10 @@ Asgarnia, the Fremennik Province, Kandarin, the Kharidian Desert, Morytania, Tir
 Wilderness and Kourend; Raging Echoes 90, 200 and 400, Varlamore among them (Wiki). Only the next
 slot can be filled, a pick is permanent, and the unlocks live in `league:areas` (area ids in
 unlock order). An area the league does not offer (Varlamore on a Trailblazer Reloaded world) stays
-locked for good.
+locked for good. The areas page's map draws each unlocked area from the selection varbits
+(script 3659); `varps.unlockedCount` (7994, clear of the freeze timer's 7998) carries the real
+count the patched summary prints. View Areas resends both every time it opens, so a stale client
+whose delayed unlock packet was lost recovers on reopen.
 
 The 2026-11-18 region-editor export replaces the old 64-tile approximations for Misthalin,
 Karamja, Asgarnia, Kandarin, Morytania, the Kharidian Desert, Tirannwn and the Wilderness with
