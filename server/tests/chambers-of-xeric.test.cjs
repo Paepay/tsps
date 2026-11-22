@@ -653,6 +653,49 @@ test('puzzle rules from the Wiki: brazier, chest and grub rolls, stuns, tightrop
   assert.deepEqual(Tightrope.counts(10), { rangers: 4, mages: 4 });
 });
 
+test('a smashed Jewelled Crab drops its wander route and stays put for the stun', () => {
+  const { Item } = PluginManager.getCoreApi();
+  const player = fakePlayer('CrabSmasher', new Location(3286, 5354, 0));
+  player.getInventory().add(new Item(2347, 1), true);
+  player.getEquipment = () => ({ getItems: () => [] });
+
+  let route = 2;
+  let blocked = false;
+  let radius = 3;
+  const queue = {
+    reset() { route = 0; return queue; },
+    setBlockMovement(value) { blocked = value; return queue; },
+    size: () => route,
+    isMovings: () => route > 0,
+  };
+  const coordinator = { setRadius(value) { radius = value; return coordinator; } };
+  const crab = {
+    colour: null,
+    colourTicks: 0,
+    getLocation: () => new Location(3286, 5354, 0),
+    getCombat: () => ({ reset() {} }),
+    getMovementQueue: () => queue,
+    getMovementCoordinator: () => coordinator,
+    performGraphic() {},
+    setNpcTransformationId() {},
+  };
+  const room = {
+    raid: { scale: 1, ticks: 0 },
+    raiders: () => [player],
+    colour(target, colour, ticks) { target.colour = colour; target.colourTicks = ticks; },
+  };
+
+  Crabs.CrabsRoom.prototype.smash.call(room, player, crab);
+  assert.equal(route, 0, 'a queued wander step is discarded');
+  assert.equal(blocked, true, 'movement is blocked for the stun');
+  assert.equal(radius, 0, 'the coordinator cannot roll another wander while stunned');
+  assert.equal(crab.colour, 7577, 'smashing turns it red');
+  assert.ok(crab.colourTicks >= 7 && crab.colourTicks <= 9, 'red for the captured 7-9 ticks');
+
+  ticks(61);
+  assert.equal(blocked, false, 'movement clears after the longest stun');
+});
+
 test('a Challenge Mode raid loads every room without errors', () => {
   Parties.clear();
   spawned.length = 0;

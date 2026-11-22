@@ -108,7 +108,9 @@ class CrabsRoom extends Raid.Room {
   load() {
     const variant = this.record.variant;
     for (const spot of CRAB_TILES[variant]) {
-      const crab = this.spawnNpc(CRAB.WHITE, this.tile(spot.x, spot.y), { scale: false, wanderRadius: 3 });
+      // The crabs stand where the cache puts them. They fight from those tiles and are knocked
+      // home by their combat, but must never wander: a smashed crab has to stay stunned in place.
+      const crab = this.spawnNpc(CRAB.WHITE, this.tile(spot.x, spot.y), { scale: false, wanderRadius: 0 });
       if (crab) this.crabs.push(crab);
     }
     this.crystalTiles = SMALL_CRYSTAL_TILES[variant].map((spot) => this.tile(spot.x, spot.y));
@@ -326,6 +328,7 @@ class CrabsRoom extends Raid.Room {
     this.colour(crab, CRAB.RED, Shared.random(...SMASH_COLOUR_TICKS));
     crab.performGraphic(Shared.gfx(245, { delay: 30, height: 100 }));
     crab.getCombat().reset();
+    crab.getMovementCoordinator?.().setRadius(0);
     crab.getMovementQueue().reset();
     crab.getMovementQueue().setBlockMovement?.(true);
     Shared.later(this.raid, ticks, () => crab.getMovementQueue().setBlockMovement?.(false));
