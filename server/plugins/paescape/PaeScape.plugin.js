@@ -1777,28 +1777,7 @@ function publishPlatformAccess() {
     platformOrigin: () => platform.url,
     leaseToken: () => (lease ? lease.token : null),
     readConfig,
-    // Platform account ids are the stable identity for account-scoped content. The world's
-    // login ticket redemption records the same userId -> account mapping used by the website
-    // and staff tools; content plugins never need access to the raw account map.
-    platformUserId: (name) => {
-      const accountKey = Accounts.accountOf(name) ?? Accounts.key(name);
-      for (const [userId, boundAccount] of Object.entries(userAccounts)) {
-        if (Accounts.key(boundAccount) === accountKey) return String(userId);
-      }
-      return null;
-    },
     authorizeStaffCommand: authorizeInGameStaffCommand,
-    // A narrow world-authenticated request for content plugins (Global Events tokens). It
-    // reuses the same lease/session path as every other world call; callers never see a token.
-    worldRequest: async (path, options = {}) => {
-      const { token, path: route } = await worldEndpoint(path);
-      return platformFetch(route, {
-        method: options.method,
-        token,
-        body: options.body,
-        timeoutMs: options.timeoutMs,
-      });
-    },
   });
 }
 

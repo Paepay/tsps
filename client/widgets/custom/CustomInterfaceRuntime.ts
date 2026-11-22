@@ -29,13 +29,6 @@ export type CustomInterfaceDeclaration = {
      * moves so its right edge touches the side panel's left edge. The fixed frame keeps `rawX`.
      */
     dockBesideSidePanel?: boolean;
-    /**
-     * Hidden text component receiving JSON rows. Use this for a tabbed catalog when the
-     * interface has no search box; the search declaration's dataComponent still wins.
-     */
-    dataComponent?: number;
-    /** More hidden components whose rows follow dataComponent's, in order. */
-    extraDataComponents?: number[];
     search?: {
         /** Text component the typed query is rendered into. */
         inputComponent: number;
@@ -499,13 +492,9 @@ export class CustomInterfaceRuntime {
 
     private dataComponents(): number[] {
         const search = this.declaration?.search;
-        if (search?.dataComponent !== undefined) {
-            return [search.dataComponent, ...(search.extraDataComponents ?? [])];
-        }
-        const dataComponent = this.declaration?.dataComponent;
-        return dataComponent === undefined
+        return search?.dataComponent === undefined
             ? []
-            : [dataComponent, ...(this.declaration?.extraDataComponents ?? [])];
+            : [search.dataComponent, ...(search.extraDataComponents ?? [])];
     }
 
     /** Every data part's rows: the catalog the tabs draw from, or else the list itself. */
@@ -905,16 +894,14 @@ export class CustomInterfaceRuntime {
 
     private scheduleFetch(resetScroll = true): void {
         const search = this.declaration?.search;
-        const data = this.dataComponents().length > 0;
-        // A tabbed catalog with no search box still has to draw its rows.
-        if (!search && !data) {
+        if (!search) {
             return;
         }
         if (this.fetchTimer) {
             clearTimeout(this.fetchTimer);
         }
         const query = this.query;
-        if (data) {
+        if (search.dataComponent !== undefined) {
             this.rows = filterRows(this.sourceRows, query);
             const list = this.declaration?.list;
             if (list?.headerSpan) this.rows = spanHeaders(this.rows, Math.max(1, list.columns));
@@ -923,7 +910,6 @@ export class CustomInterfaceRuntime {
             this.renderRows(resetScroll);
             return;
         }
-        if (!search) return;
         if (query.trim().length === 0) {
             this.rows = [];
             this.total = 0;

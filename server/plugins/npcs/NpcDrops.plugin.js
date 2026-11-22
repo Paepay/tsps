@@ -787,7 +787,6 @@ function rulesMultiplier(entry, rules) {
   let floor = 0;
   const label = entry.name || entry.key || "";
   for (const rule of rules) {
-    if (rule.uniqueOnly === true && !isUniqueEntry(entry)) continue;
     if (!rule.pattern.test(label)) continue;
     if (Number.isFinite(rule.multiplier)) multiplier *= rule.multiplier;
     // At least 1 in `outOf`: the multiplier that brings this entry's weight/out_of up to it.

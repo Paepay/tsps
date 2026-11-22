@@ -345,9 +345,7 @@ function hasLockpick(player) {
 
 function outcomeFor(player, kind) {
   const level = player.getSkillManager().getCurrentLevel(core.Skill.THIEVING);
-  const success = { player, chance: successChance(kind, level, hasLockpick(player)), alwaysSucceeds: false };
-  api?.emitCustomEvent?.("thieving:lock-success", success);
-  if (success.alwaysSucceeds || random() < success.chance) return "unlock";
+  if (random() < successChance(kind, level, hasLockpick(player))) return "unlock";
   return random() < teleportChance(kind, level) ? "teleport" : "fail";
 }
 

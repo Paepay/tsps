@@ -175,16 +175,4 @@ for (const [width, dpr] of [[844, 1], [375, 2], [708, 2]]) {
     assert.ok(at.y >= (Number(mobileCombatTimerStyle(client, 0)!.top) + 28 * 1.25) * dpr,
         "even a single Boosts counter clears the timers above");
 }
-
-// The Global Events icon centers just under the special-attack orb.
-canvas = { w: 1000, h: 600 };
-layoutFor();
-Object.assign(client.widgetManager, { rootInterface: 161, canvasWidth: 1000, canvasHeight: 600 });
-client.renderer = { canvas: { width: 1000, height: 600, clientWidth: 1000, clientHeight: 600 } };
-widgets.set((160 << 16) | 34, widget(800, 520, 30, 30));
-const events: WidgetOverlay = { signature: () => "", draw: () => [],
-    movable: { name: "GlobalEvents", position: OverlayPosition.BELOW_SPECIAL_ATTACK } };
-const specAt = new OverlayRenderer(client, config).placeOverlay(events, 24, 24, canvas)!;
-assert.equal(specAt.x + 12, 815, "centered on the special-attack orb");
-assert.equal(specAt.y, 552, "two pixels below the orb");
 console.log("overlay renderer test passed");

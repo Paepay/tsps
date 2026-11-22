@@ -157,54 +157,5 @@
       "value": 1
     },
     "specialAttack": { "from": 23762 }
-  },
-  {
-    "id": 50006,
-    "baseItemId": 28767,
-    "objType": {
-      "name": "Banker's note (e)",
-      "examine": "A temporary Banker's note from a global event. Use an item on it to note or un-note it.",
-      "inventoryActions": [null, null, null, null, "Destroy"],
-      "isTradable": false,
-      "price": 1,
-      "weight": 0,
-      "note": -1,
-      "noteTemplate": -1,
-      "unnotedId": -1,
-      "notedId": -1,
-      "placeholder": -1,
-      "placeholderTemplate": -1
-    },
-    "itemDef": {
-      "tradeable": false,
-      "dropable": false,
-      "sellable": false,
-      "value": 1
-    }
-  },
-  {
-    "id": 50007,
-    "baseItemId": 28771,
-    "objType": {
-      "name": "Sage's greaves (e)",
-      "examine": "Temporary greaves from a global event. They give you blazing speed.",
-      "inventoryActions": ["Wear", null, null, null, "Destroy"],
-      "isTradable": false,
-      "price": 1,
-      "weight": 0,
-      "note": -1,
-      "noteTemplate": -1,
-      "unnotedId": -1,
-      "notedId": -1,
-      "placeholder": -1,
-      "placeholderTemplate": -1
-    },
-    "itemDef": {
-      "equipmentType": "BOOTS",
-      "tradeable": false,
-      "dropable": false,
-      "sellable": false,
-      "value": 1
-    }
   }
 ]

@@ -149,11 +149,7 @@ export class EquipPacketListener {
     }
 
     const item = itemInSlot.clone();
-    const requirement = { player, item, waived: false };
-    PluginManager.emitCustomEvent("equipment:requirement", requirement);
-    const unmetRequirement = requirement.waived
-      ? null
-      : EquipmentRequirements.getUnmet(player, item.getDefinition());
+    const unmetRequirement = EquipmentRequirements.getUnmet(player, item.getDefinition());
     if (unmetRequirement != null) {
       player.sendMessage(EquipmentRequirements.message(unmetRequirement));
       return;
