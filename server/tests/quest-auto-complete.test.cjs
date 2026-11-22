@@ -37,7 +37,7 @@ function recordingApi(core, { template = null } = {}) {
   const hooks = {
     login: [], logout: [], custom: new Map(), canShop: [], npcDialogueVariant: [], npcDialogueCondition: [],
     objectInteraction: new Map(), itemAction: [], npcInteraction: new Map(), itemOnNpc: [], itemOnObject: [], objectRoute: [],
-    mapSquareChange: [],
+    mapSquareChange: [], objectHandlers: [], zones: [],
   };
   const emitted = [];
   const api = {
@@ -60,7 +60,12 @@ function recordingApi(core, { template = null } = {}) {
     onObjectRoute: (handler) => hooks.objectRoute.push(handler),
     onPlayerMapSquareChange: (handler) => hooks.mapSquareChange.push(handler),
     onPlayerLogout: (handler) => hooks.logout.push(handler),
-    onObjectInteraction: (name, actions) => hooks.objectInteraction.set(name, actions),
+    onObjectInteraction: (name, actions) => {
+      if (typeof name === 'function') hooks.objectHandlers.push(name);
+      else hooks.objectInteraction.set(name, actions);
+    },
+    onZoneEnter: (box, handler) => hooks.zones.push({ box, handler, enter: true }),
+    onZoneExit: (box, handler) => hooks.zones.push({ box, handler, enter: false }),
     onItemAction: (handler) => hooks.itemAction.push(handler),
   };
   return { api, hooks, emitted };
@@ -76,6 +81,7 @@ function fakePlayer(bot = false) {
   const sender = {
     sendConfig: (id, value) => { varps.set(id, value); sent.push(['config', id, value]); return sender; },
     sendVarbit: (id, value) => { varbits.set(id, value); sent.push(['varbit', id, value]); return sender; },
+    sendSound: (id, volume, delay) => { sent.push(['sound', id, volume, delay]); return sender; },
     sendInterfaceFlagsRange: (...args) => { sent.push(['flags', ...args]); return sender; },
     getVarbit: (id) => varbits.get(id) ?? 0,
     getVarp: (id) => varps.get(id) ?? 0,
@@ -93,6 +99,9 @@ function fakePlayer(bot = false) {
     getBanks: () => [],
     getEquipment: () => ({ getItems: () => [] }),
     sendMessage: (message) => sent.push(['message', message]),
+    isRegistered: () => true,
+    getMovementQueue: () => ({ reset() {} }),
+    performGraphic: (graphic) => sent.push(['graphic', graphic]),
     moveTo: (next) => {
       position = { x: next.getX(), y: next.getY(), z: next.getZ() };
     },
@@ -119,6 +128,8 @@ function withInventory(player) {
     },
     getFreeSlots: () => freeSlots,
     isFull: () => freeSlots <= 0,
+    getItems: () => [...amounts].filter(([, amount]) => amount > 0)
+      .map(([id, amount]) => ({ getId: () => id, getAmount: () => amount })),
   };
   player.getInventory = () => inventory;
   return inventory;
@@ -428,6 +439,85 @@ test('a Quests-off world registers the royal seed pod teleport', () => {
     'the pod is answered without the Monkey Madness II plugin');
   assert.deepEqual(landed, [[2465, 3496, 0]]);
   assert.ok(player.sent.some(([, message]) => message === 'The Royal seed pod teleports you to the Grand Tree.'));
+});
+
+test('auto-completed quests hand over their reward item and skip XP lamps', () => {
+  const player = fakePlayer();
+  const inventory = withInventory(player);
+  player.getSkillManager = () => ({ addExperiences() {} });
+  QuestRuntime.applyAutoReward(player, {
+    key: 'demo_reward', rewardItemId: 995,
+    onReward: (who, quest, options) => {
+      assert.equal(options.experience, false, 'completion XP and honouring lamps are withheld');
+      who.getInventory().adds(995, 10);
+    },
+  });
+  assert.equal(inventory.getAmount(995), 11, 'the handler and the completion item are both given');
+  QuestRuntime.applyAutoReward(player, { key: 'demo_lamp', rewardItemId: 23516 });
+  assert.equal(inventory.getAmount(23516), 0, 'a lamp completion item is not handed out');
+  QuestRuntime.applyAutoReward(player, { key: 'a_night_at_the_theatre', rewardItemId: 995 });
+  assert.equal(inventory.getAmount(995), 11, 'the theatre lamp quest is skipped entirely');
+});
+
+test('a Quests-off Duke Horacio hands over the anti-dragon shield', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = api.core;
+  const player = fakePlayer();
+  const inventory = withInventory(player);
+  for (const handler of hooks.login) handler({ player });
+
+  const action = { player, npcId: N.DUKE_HORACIO, stepId: 'KoKING', handled: false };
+  for (const handler of hooks.custom.get('npc-dialogue:action') ?? []) handler(action);
+  assert.equal(action.handled, true);
+  assert.equal(inventory.getAmount(I.ANTI_DRAGON_SHIELD), 1, 'the shield is given once');
+
+  const again = { player, npcId: N.DUKE_HORACIO, stepId: 'KoKING', handled: false };
+  for (const handler of hooks.custom.get('npc-dialogue:action') ?? []) handler(again);
+  assert.equal(inventory.getAmount(I.ANTI_DRAGON_SHIELD), 1, 'talking again does not duplicate it');
+});
+
+test('a Quests-off world opens Cam Torum through both ends of its entrance', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  const interactions = ['Pass-through'];
+  const definition = { getInteractions: () => interactions };
+  const click = (x, y, z) => {
+    const event = {
+      player, objectId: api.core.ObjectIdentifiers.ENTRANCE_15, clickType: 1, definition, handled: false,
+      location: { getX: () => x, getY: () => y, getZ: () => z },
+    };
+    for (const handler of hooks.objectHandlers) handler(event);
+    return event;
+  };
+  assert.equal(click(1436, 3128, 0).handled, true);
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [1439, 9509, 1]);
+  assert.equal(click(1440, 9509, 1).handled, true);
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [1435, 3128, 0]);
+});
+
+test('a Quests-off world activates the Crypt of Tonali lift and its Strange Tiles', () => {
+  const submit = PluginManager.getCoreApi().TaskManager.submit;
+  PluginManager.getCoreApi().TaskManager.submit = (task) => task.execute();
+  try {
+    const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+    QuestAutoComplete.register(api);
+    const player = fakePlayer();
+    for (const handler of hooks.login) handler({ player });
+    const varbit = player.sent.find(([kind, id]) => kind === 'varbit' && id === 16694);
+    assert.deepEqual(varbit, ['varbit', 16694, 1], 'the lift shows its Use option');
+    assert.equal(player.getAttribute('the-final-dawn:lift-activated'), 1);
+
+    player.moveTo(new api.core.Location(1332, 9382, 0));
+    const zone = hooks.zones.find(({ box, enter }) => enter && box.minX === 1332 && box.minY === 9382);
+    assert.ok(zone, 'the crypt tile has its zone handler');
+    zone.handler({ player });
+    assert.deepEqual([player.position.x, player.position.y, player.position.z], [1328, 9379, 1]);
+    assert.ok(player.sent.some(([kind]) => kind === 'graphic'), 'the tile plays its teleport graphic');
+  } finally {
+    PluginManager.getCoreApi().TaskManager.submit = submit;
+  }
 });
 
 test('the completion hook skips player bots', () => {

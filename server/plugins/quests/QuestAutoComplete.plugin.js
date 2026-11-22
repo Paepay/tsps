@@ -46,6 +46,7 @@ function attach(api) {
   const definitions = QuestRuntime.registerQuestDefinitions(definitionApi(api), names);
   if (definitions.length === 0) return;
   QuestRuntime.registerQuestCompletion(api);
+  api.persistAttribute(QuestRuntime.AUTO_REWARD_ATTRIBUTE, 0);
   // Quest shops and Sir Tiffy's common dialogue only existed through Quests. Their gates read
   // "quest:is-complete", which the completion hooks now answer.
   require("./Shops.Quests")(api);
@@ -56,6 +57,9 @@ function attach(api) {
     require("./RoyalSeedPod.Quests").register(api);
     require("./Eblis.Quests")(api);
     require("./SirPrysin.Quests")(api);
+    require("./DragonSlayer.Quests")(api);
+    require("./CamTorum.Quests")(api);
+    require("./TheFinalDawn.Quests")(api);
     require("./WhileGuthixSleeps.Quests")(api);
   }
   api.log?.(`QuestAutoComplete: Quests is off; ${definitions.length} quests count as complete`);
