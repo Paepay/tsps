@@ -32,6 +32,13 @@ const JOURNAL_TAB_VARBIT = 8168;
 const RUNEDAY_VARBIT = 9535;
 const MAP_FLAGS_VARP = 3717;
 const LEAGUE_WORLD_FLAG = 1 << 30;
+/**
+ * A free varp for the Areas map's unlock bitmask (keyed by area id). The cache's
+ * six selection varbits are fields of varp 2801, so they cannot carry it; 7989 is
+ * unused by cache scripts and varbits, the GE varps stop at 7955, and the server's
+ * timers/area count/gameframe/poison/freeze occupy 7990-7999.
+ */
+const AREA_MASK_VARP = 7989;
 
 const TASK_TYPE = 7;
 
@@ -343,6 +350,16 @@ function areaCommon() {
   return AreaCommon;
 }
 
+/** A bitmask keyed by cache area id, for the map's unlocks past the six slots. */
+function areaMask(areaIds) {
+  let mask = 0;
+  for (const areaId of areaIds) {
+    if (!Number.isInteger(areaId) || areaId <= 0 || areaId >= 32) continue;
+    mask |= 1 << areaId;
+  }
+  return mask >>> 0;
+}
+
 function sendAreaState(player) {
   const state = progress(player);
   const unlocked = state.regions
@@ -350,6 +367,7 @@ function sendAreaState(player) {
     .filter(Number.isInteger);
   const sender = player.getPacketSender();
   AreaData.varbits.selection.forEach((varbit, slot) => sender.sendVarbit(varbit, unlocked[slot] ?? 0));
+  sender.sendConfig(AREA_MASK_VARP, areaMask(unlocked));
   if (Number.isInteger(AreaData.varps?.unlockedCount)) {
     sender.sendConfig(AreaData.varps.unlockedCount, state.regions.length);
   }
@@ -738,6 +756,8 @@ function login({ player }) {
   Unlock.sendProgress(player);
   api.emitCustomEvent("league:points-changed", { player });
   TemplateWorlds.sendLockState(player);
+  // The Areas map reads the bitmask when it next opens; set it on login too.
+  if (AreaData) sendAreaState(player);
 }
 
 function masteryPoint({ player }) {
@@ -806,5 +826,6 @@ module.exports = {
   _test: {
     STAT_INDEX, TASK_TYPE, CHALLENGE_ENUM, challengeEnumRow, challengeStructs, openJournal, openAreas,
     openRelics, relicCostOverrides, relicClaimedPoints, relicClose, relicConfirm, slotToRelic, RELIC_CLOSE,
+    AREA_MASK_VARP, areaMask,
   },
 };

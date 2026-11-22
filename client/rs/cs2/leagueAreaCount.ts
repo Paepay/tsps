@@ -1,4 +1,4 @@
-﻿import { Opcodes } from "./Opcodes";
+import { Opcodes } from "./Opcodes";
 import { assembleRs2asm } from "./rs2asm";
 import type { Script } from "./Script";
 
@@ -11,11 +11,163 @@ import type { Script } from "./Script";
  */
 export const LEAGUE_AREA_COUNT_VARP = 7994;
 
+/**
+ * The Areas map (script 3659) can only read the cache's six selection varbits, so
+ * later Level-Up unlocks have no sprite. Those varbits are all fields of varp 2801
+ * (`LEAGUE_AREAS`), so the mask needs a free varp of its own. 7989 is unused:
+ * no cache script or varbit uses 7000-7989, the Grand Exchange varps stop at 7955,
+ * and the server's timers take 7990-7993, its area count 7994, its gameframe 7995,
+ * and poison/freeze 7996-7999. Level-Up sends the bitmask here.
+ */
+export const LEAGUE_AREA_MASK_VARP = 7989;
+
 const AREA_SELECTION_VARBITS = [10662, 10663, 10664, 10665, 10666, 10667];
 const SCRIPT_AREA_COUNT = 3658;
+const SCRIPT_AREA_MAP = 3659;
 const SCRIPT_AREA_SLOT_SCRIPTS = new Set([3682, 7650]);
 const SCRIPT_AREA_SLOT = 9471;
 const SIXTH_AREA_VARBIT = AREA_SELECTION_VARBITS[5];
+
+/**
+ * Script 3659 draws the Areas map: for each selection varbit it takes the area id,
+ * resolves its map widget (7618) and sprite (7617), then sets the sprite. Those
+ * six slots stay exactly as the cache has them; the appended loop also reads the
+ * Level-Up area bitmask so every possible unlock (area ids 1-21) can draw.
+ */
+const AREA_MAP_SOURCE = `.id 3659
+.int_arg_count 0
+   get_varbit              10662
+   invoke                  7618
+   istore                  0
+   get_varbit              10663
+   invoke                  7618
+   istore                  1
+   get_varbit              10664
+   invoke                  7618
+   istore                  2
+   get_varbit              10665
+   invoke                  7618
+   istore                  3
+   get_varbit              10666
+   invoke                  7618
+   istore                  4
+   get_varbit              10667
+   invoke                  7618
+   istore                  5
+   get_varbit              10662
+   invoke                  7617
+   istore                  6
+   get_varbit              10663
+   invoke                  7617
+   istore                  7
+   get_varbit              10664
+   invoke                  7617
+   istore                  8
+   get_varbit              10665
+   invoke                  7617
+   istore                  9
+   get_varbit              10666
+   invoke                  7617
+   istore                  10
+   get_varbit              10667
+   invoke                  7617
+   istore                  11
+   iload                   0
+   iconst                  -1
+   if_icmpeq               SLOT_0_DONE
+   iload                   6
+   iconst                  -1
+   if_icmpeq               SLOT_0_DONE
+   iload                   6
+   iload                   0
+   if_setgraphic           0
+SLOT_0_DONE:
+   iload                   1
+   iconst                  -1
+   if_icmpeq               SLOT_1_DONE
+   iload                   7
+   iconst                  -1
+   if_icmpeq               SLOT_1_DONE
+   iload                   7
+   iload                   1
+   if_setgraphic           0
+SLOT_1_DONE:
+   iload                   2
+   iconst                  -1
+   if_icmpeq               SLOT_2_DONE
+   iload                   8
+   iconst                  -1
+   if_icmpeq               SLOT_2_DONE
+   iload                   8
+   iload                   2
+   if_setgraphic           0
+SLOT_2_DONE:
+   iload                   3
+   iconst                  -1
+   if_icmpeq               SLOT_3_DONE
+   iload                   9
+   iconst                  -1
+   if_icmpeq               SLOT_3_DONE
+   iload                   9
+   iload                   3
+   if_setgraphic           0
+SLOT_3_DONE:
+   iload                   4
+   iconst                  -1
+   if_icmpeq               SLOT_4_DONE
+   iload                   10
+   iconst                  -1
+   if_icmpeq               SLOT_4_DONE
+   iload                   10
+   iload                   4
+   if_setgraphic           0
+SLOT_4_DONE:
+   iload                   5
+   iconst                  -1
+   if_icmpeq               SLOT_5_DONE
+   iload                   11
+   iconst                  -1
+   if_icmpeq               SLOT_5_DONE
+   iload                   11
+   iload                   5
+   if_setgraphic           0
+SLOT_5_DONE:
+   get_varp                7989
+   istore                  12
+   iconst                  1
+   istore                  13
+MASK_LOOP:
+   iload                   13
+   iconst                  21
+   if_icmpgt               MASK_END
+   iload                   12
+   iload                   13
+   testbit
+   iconst                  1
+   if_icmpne               MASK_NEXT
+   iload                   13
+   invoke                  7618
+   istore                  14
+   iload                   13
+   invoke                  7617
+   istore                  15
+   iload                   14
+   iconst                  -1
+   if_icmpeq               MASK_NEXT
+   iload                   15
+   iconst                  -1
+   if_icmpeq               MASK_NEXT
+   iload                   15
+   iload                   14
+   if_setgraphic           0
+MASK_NEXT:
+   iload                   13
+   iconst                  1
+   add
+   istore                  13
+   jump                    MASK_LOOP
+MASK_END:
+   return`;
 
 /**
  * Cache script 9471 maps a selection slot's struct to the area that slot stands for.
@@ -69,9 +221,9 @@ VARLAMORE:
    iconst                  21
    return`;
 
-/** Replace 9471's type-6-only Karamja mapping with one that also serves types 4 and 5. */
-function fixAreaSlots(script: Script): void {
-    const rebuilt = assembleRs2asm(AREA_SLOT_SOURCE);
+/** Replace the script's instructions with its assembled source. */
+function replaceScript(script: Script, source: string): void {
+    const rebuilt = assembleRs2asm(source);
     script.instructions = rebuilt.instructions;
     script.intOperands = rebuilt.intOperands;
     script.stringOperands = rebuilt.stringOperands;
@@ -80,6 +232,16 @@ function fixAreaSlots(script: Script): void {
     script.localIntCount = rebuilt.localIntCount;
     script.localObjCount = rebuilt.localObjCount;
     script.localLongCount = rebuilt.localLongCount;
+}
+
+/** Replace 9471's type-6-only Karamja mapping with one that also serves types 4 and 5. */
+function fixAreaSlots(script: Script): void {
+    replaceScript(script, AREA_SLOT_SOURCE);
+}
+
+/** Draw every area in the Level-Up bitmask after the cache's six selection slots. */
+function fixAreaMap(script: Script): void {
+    replaceScript(script, AREA_MAP_SOURCE);
 }
 
 /** Add the cache's missing sixth selection slot to scripts 3682 and 7650. */
@@ -132,5 +294,6 @@ export function applyLeagueAreaCount(script: Script): Script {
     if (SCRIPT_AREA_SLOT_SCRIPTS.has(script.id)) addSixthAreaCase(script);
     else if (script.id === SCRIPT_AREA_COUNT) fixAreaSummary(script);
     else if (script.id === SCRIPT_AREA_SLOT) fixAreaSlots(script);
+    else if (script.id === SCRIPT_AREA_MAP) fixAreaMap(script);
     return script;
 }
