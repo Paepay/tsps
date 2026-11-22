@@ -36,6 +36,7 @@ class Fight {
     this.boulders = [];
     this.symbols = [];
     this.blasts = [];
+    this.shatters = [];
     this.rocks = [];
     this.glowing = -1;
     this.nextAttack = 0;
@@ -187,8 +188,10 @@ class Fight {
     for (const symbol of this.symbols) this.world.removeObject(symbol.object);
     this.golems = [];
     this.symbols = [];
+    for (const shatter of this.shatters) this.placeRock(shatter.index, Common.ids.locs.rock);
     this.boulders = [];
     this.blasts = [];
+    this.shatters = [];
   }
 
   // --- A tick
@@ -210,8 +213,11 @@ class Fight {
     const players = this.players();
     if (this.shockwaveAt != null && this.tickCount >= this.shockwaveAt) this.shockwave();
     if (this.phase === ARMOURED) {
-      if (this.tickCount >= this.nextRockMove) this.blastRock();
-      if (this.tickCount >= this.nextAttack) {
+      // Her spin and the rock's shatter are one attack: never let a same-tick melee/ranged
+      // animation overwrite the spin. The skipped attack stays due for the next tick.
+      const blastDue = this.tickCount >= this.nextRockMove;
+      if (blastDue) this.blastRock();
+      else if (this.tickCount >= this.nextAttack) {
         this.attack(players);
         this.nextAttack = this.tickCount + this.attackDelay();
       }
@@ -222,6 +228,7 @@ class Fight {
     }
     this.tickBoulders(players);
     this.tickBlasts(players);
+    this.tickShatters();
     this.tickSymbols(players);
   }
 
@@ -275,25 +282,62 @@ class Fight {
     const { ids, data } = Common;
     this.nextRockMove = this.tickCount + data.attacks.rockMoveTicks;
     if (this.glowing < 0) return;
+    const { rockBlast } = data.attacks;
+    const index = this.glowing;
+    const tile = Common.toLocation(data.prison.rocks[index]);
+    const centre = tile.transform(1, 1);
+    // The recorded magic attack: she spins, then the fire projectile crosses to the rock and
+    // lands with the blast. The glow stays on this corner until the projectile lands.
     this.npc.performAnimation(new Common.core.Animation(ids.seqs.rockAttack));
-    const tile = Common.toLocation(data.prison.rocks[this.glowing]);
-    this.blasts.push({ tile, lands: this.tickCount + 3 });
-    const others = data.prison.rocks.map((_, i) => i).filter((i) => i !== this.glowing);
-    this.glowing = others[Math.floor(this.random() * others.length)];
-    this.setRocks();
+    // Her spin is three ticks long; no melee/ranged animation may cut it off before the fire lands.
+    this.nextAttack = Math.max(this.nextAttack, this.tickCount + rockBlast.flightTicks);
+    Common.tileProjectile(this.players(), Common.core.Projectile.centreOf(this.npc), centre, ids.spotanims.fireAttack, {
+      speed: rockBlast.flightTicks * 30,
+      startHeight: rockBlast.projectileStartHeight,
+      endHeight: rockBlast.projectileEndHeight,
+      angle: rockBlast.projectileAngle,
+    });
+    this.blasts.push({ index, tile, lands: this.tickCount + rockBlast.flightTicks });
   }
 
-  /** Anyone within a tile of the blasted 3x3 rock is hit. */
+  /** The fire lands on the 3x3 rock: it shatters, another corner starts glowing, and anyone beside it is hit. */
   tickBlasts(players) {
-    const { max } = Common.data.attacks.rockBlast;
+    const { max, shatterTicks } = Common.data.attacks.rockBlast;
     for (const blast of this.blasts.filter((b) => b.lands <= this.tickCount)) {
       const centre = blast.tile.transform(1, 1);
       Common.tileGraphic(players, centre, Common.ids.spotanims.fireAttack);
+      // The glowing corner stops glowing at impact: it shatters as the depleted formation while
+      // the next corner lights up, then settles as an ordinary rock after shatterTicks.
+      const shattered = this.placeRock(blast.index, Common.ids.locs.rockDepleted);
+      shattered?.performAnimation?.(new Common.core.Animation(Common.ids.seqs.rockShatter));
       for (const player of players) {
         if (Common.chebyshev(player.getLocation(), centre) <= 2) Common.hurtPlayer(player, Common.randomInt(Math.floor(max * 0.75), max));
       }
+      this.shatters.push({ index: blast.index, at: this.tickCount + shatterTicks });
+      this.moveGlow(blast.index);
     }
     this.blasts = this.blasts.filter((b) => b.lands > this.tickCount);
+  }
+
+  /** Another corner starts glowing the moment the rock is hit. */
+  moveGlow(blasted) {
+    const { ids, data } = Common;
+    const others = data.prison.rocks.map((_, i) => i).filter((i) => i !== blasted);
+    this.glowing = others[Math.floor(this.random() * others.length)];
+    this.placeRock(this.glowing, ids.locs.rockGlowing);
+  }
+
+  /** Replace one corner, leaving the other three alone. */
+  placeRock(index, id) {
+    const { data } = Common;
+    if (this.rocks[index]) this.world.removeObject(this.rocks[index]);
+    return (this.rocks[index] = this.world.placeObject(id, data.prison.rocks[index]));
+  }
+
+  /** The shattered rock finishes its animation and becomes the ordinary formation. */
+  tickShatters() {
+    for (const shatter of this.shatters.filter((s) => s.at <= this.tickCount)) this.placeRock(shatter.index, Common.ids.locs.rock);
+    this.shatters = this.shatters.filter((s) => s.at > this.tickCount);
   }
 
   // --- Demonic symbols
