@@ -120,6 +120,7 @@ test("dismissing the real welcome screen restores the custom summary after its s
   let login, root;
   sender.sendRootInterface = id => { root = id; return sender; };
   sender.sendInterfaceFlags = () => sender;
+  sender.sendClientScript = () => sender;
   p.getUsername = () => "Test Player";
   p.getSession = () => ({
     sendClientPacket(packet) {

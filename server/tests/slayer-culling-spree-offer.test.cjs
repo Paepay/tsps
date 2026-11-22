@@ -395,7 +395,10 @@ test("Krystilia's ordinary boss task is one of her Wilderness bosses; other mast
   for (let roll = 0; roll < 20; roll++) {
     let call = 0;
     // The first roll lands on her Boss row; the next picks the boss.
-    Tasks.assign(player, krystilia, () => (call++ === 0 ? (before + 0.5) / total : (roll + 0.5) / 20));
+    const result = Tasks.assign(player, krystilia, () => (call++ === 0 ? (before + 0.5) / total : (roll + 0.5) / 20));
+    assert.ok(result.pending, "the Boss row waits for the player's kill count (Wiki, Boss task)");
+    const done = Tasks.completeBossAssignment(player, result.pending.min);
+    assert.ok(done?.task, "the chosen count assigns the boss");
     const task = Tasks.current(player);
     assert.equal(task.taskId, Data.BOSS_TASK_ID);
     seen.add(task.task.displayName);
