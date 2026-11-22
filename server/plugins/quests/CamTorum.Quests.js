@@ -6,8 +6,10 @@
  * Varlamore. Every quest counts complete there, so the post-quest route is always open.
  */
 const ENTRANCE = 51375;
-const SURFACE = [[1435, 3128, 0], [1436, 3128, 0]];
-const UNDER = [[1439, 9509, 1], [1440, 9509, 1]];
+// The placements come from PerilousMoons.Quest.js's ENTRANCES map (yarn dump:loc): the surface
+// 2x2 sits at 1435,3129 and the city-side exit at 1439,9507. They are not the landing tiles.
+const SURFACE = [[1435, 3129, 0]];
+const UNDER = [[1439, 9507, 1]];
 const LANDING = { x: 1439, y: 9509, z: 1 };
 const RETURN = { x: 1435, y: 3128, z: 0 };
 

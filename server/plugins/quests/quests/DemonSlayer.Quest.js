@@ -302,7 +302,9 @@ module.exports = function registerDemonSlayerQuest(api) {
 
   /** After Shadow of the Storm he re-issues the Darklight, which replaced the player's Silverlight. */
   function replacementSword(player) {
-    const shadow = QuestRuntime.getRegisteredQuests().find((entry) => entry.name === "ShadowOfTheStorm");
+    // Key first: a display name may differ from the module ("Shadow of the Storm").
+    const shadow = QuestRuntime.getRegisteredQuests()
+      .find((entry) => entry.key === "shadow_of_the_storm" || entry.name === "ShadowOfTheStorm");
     return shadow && shadow.isComplete(player) ? ItemIdentifiers.DARKLIGHT : SILVERLIGHT_ITEM_ID;
   }
 
@@ -1366,6 +1368,11 @@ module.exports = function registerDemonSlayerQuest(api) {
     questPoints: 3,
     scrollItemId: SILVERLIGHT_ITEM_ID,
     rewardItemLabel: "Silverlight",
+    onReward(player, quest, options) {
+      if (options?.auto !== true) return;
+      if (ownsSilverlight(player)) return;
+      QuestRuntime.giveReward(player, replacementSword(player), 1);
+    },
     completionJingleId: DEMON_SLAYER_JINGLE,
     buildJournal,
   });

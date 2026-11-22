@@ -28,7 +28,7 @@ module.exports = function registerIdesOfMilkQuest(api) {
     RegionManager,
     World,
   } = api.core;
-  const { registerQuest, refreshQuestList, startTranscript, openBook } = require("../QuestRuntime");
+  const { registerQuest, refreshQuestList, startTranscript, openBook, giveReward } = require("../QuestRuntime");
 
   const PAGE = "The Ides of Milk";
   const BRUTUS_MONSTER = "Brutus";
@@ -1066,6 +1066,11 @@ module.exports = function registerIdesOfMilkQuest(api) {
     scrollItemId: SECOND_SAMPLE_ITEM_ID,
     questPoints: 1,
     xpRewards: [],
+    onReward(player, quest, options) {
+      // Gillie's charged cowbell amulet is handed over when Brutus falls, before the completion.
+      if (options?.auto !== true) return;
+      if (!hasAmulet(player)) giveReward(player, COWBELL_AMULET_ITEM_ID, 1);
+    },
     otherRewards: [
       "Access to Brutus' Field",
       "Gillie's Cowbell Supply",

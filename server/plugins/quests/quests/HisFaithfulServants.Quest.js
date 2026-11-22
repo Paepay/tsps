@@ -19,7 +19,7 @@
  */
 module.exports = function registerHisFaithfulServantsQuest(api) {
   const { DialogueChainBuilder, NpcDialogue, StatementDialogue, ItemIdentifiers: Items, NpcIdentifiers: Npcs, Skill } = api.core;
-  const { registerQuest, startTranscript } = require("../QuestRuntime");
+  const { registerQuest, startTranscript, giveReward } = require("../QuestRuntime");
 
   const VARP_HFS = 3894;
   const VARBIT_HFS = 14973;
@@ -382,6 +382,11 @@ module.exports = function registerHisFaithfulServantsQuest(api) {
     completionValue: STAGE_COMPLETE,
     questPoints: 0,
     scrollItemId: DUSTY_LAMP,
+    onReward(player, quest, options) {
+      // The lamp is an XP lamp and is excluded; the map is the quest's other hand-out.
+      if (options?.auto !== true) return;
+      if (!ownsMap(player)) giveReward(player, CRYPT_MAP, 1);
+    },
     otherRewards: ["Dusty lamp (20,000 Prayer XP)", "Crypt map"],
     buildJournal,
   });

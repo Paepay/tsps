@@ -952,6 +952,8 @@ function completeAllQuests(player) {
   if (!player || player.isPlayerBot?.()) return false;
   let changed = false;
   const rewardsApplied = Number(player.getAttribute(AUTO_REWARD_ATTRIBUTE)) >= AUTO_REWARD_VERSION;
+  // Publish every final stage before any reward runs: a reward may read another quest's state
+  // (Demon Slayer's sword is Darklight once Shadow of the Storm counts complete).
   for (const quest of quests) {
     const completedAt = Number(quest.completionValue ?? 2);
     const current = quest.getStage(player);
@@ -959,9 +961,9 @@ function completeAllQuests(player) {
       player.setAttribute(stageAttribute(quest.key), completedAt);
       changed = true;
     }
-    if (!rewardsApplied) applyAutoReward(player, quest);
   }
   if (!rewardsApplied) {
+    for (const quest of quests) applyAutoReward(player, quest);
     player.setAttribute(AUTO_REWARD_ATTRIBUTE, AUTO_REWARD_VERSION);
     changed = true;
   }
@@ -988,13 +990,20 @@ function applyAutoReward(player, quest) {
   const options = { experience: false, scroll: false, announce: false, auto: true };
   try {
     if (typeof quest.onReward === "function") quest.onReward(player, quest, options);
-  } catch (error) { /* not every reward can run outside its quest's scene */ }
+  } catch (error) {
+    // not every reward can run outside its quest's scene
+    if (process.env.DEBUG_QUEST_REWARDS) console.error(`[quest-auto-complete] ${quest.key}:`, error);
+  }
   if (quest.rewardItemId === undefined) return;
   const id = typeof quest.rewardItemId === "function" ? quest.rewardItemId(player) : quest.rewardItemId;
   if (!Number.isInteger(id)) return;
   const name = coreApi?.ItemDefinition?.forId?.(id)?.getName?.() ?? "";
   if (/lamp/i.test(name)) return;
-  try { giveReward(player, id, 1); } catch (error) { /* a save without an inventory cannot receive it */ }
+  try {
+    giveReward(player, id, 1);
+  } catch (error) {
+    if (process.env.DEBUG_QUEST_REWARDS) console.error(`[quest-auto-complete] ${quest.key} item ${id}:`, error);
+  }
 }
 
 /** Completes the player and persists a migrated account now, before its next autosave. */

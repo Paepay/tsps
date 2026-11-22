@@ -1413,6 +1413,10 @@ module.exports = function registerBoneVoyageQuest(api) {
     // the note book comes from the Junior Navigator's "Here, take this journal..." (tick 722).
     scrollItemId: BONE_CHARM_ITEM_ID,
     otherRewards: ["Access to Fossil Island"],
+    onReward(player, quest, options) {
+      if (options?.auto !== true) return;
+      if (!held(player, FOSSIL_ISLAND_NOTE_BOOK_ITEM_ID)) giveReward(player, FOSSIL_ISLAND_NOTE_BOOK_ITEM_ID, 1);
+    },
     buildJournal,
   });
 

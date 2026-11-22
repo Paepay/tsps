@@ -42,7 +42,7 @@ module.exports = function registerValeTotemsQuest(api) {
     Skill,
     StatementDialogue,
   } = api.core;
-  const { registerQuest } = require("../QuestRuntime");
+  const { registerQuest, giveReward } = require("../QuestRuntime");
   const Scenes = require("../valetotems/Scenes.ValeTotems")(api);
 
   const STAGE_VARP = 4758; // the parent varp of ent_totems_intro and its three chat bits
@@ -569,6 +569,11 @@ module.exports = function registerValeTotemsQuest(api) {
     varpValue: stage => stage >= STAGE_COMPLETE ? COMPLETE_VARBIT_VALUE : stage,
     questPoints: 0,
     scrollItemId: SACRAMENTS_OF_ENT_FOLK,
+    onReward(player, quest, options) {
+      if (options?.auto !== true) return;
+      if (player.getInventory().getAmount(SACRAMENTS_OF_ENT_FOLK) > 0) return;
+      giveReward(player, SACRAMENTS_OF_ENT_FOLK, 1);
+    },
     otherRewards: ["Access to the Vale Totems minigame"],
     buildJournal,
   });

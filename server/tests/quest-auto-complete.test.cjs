@@ -459,6 +459,28 @@ test('auto-completed quests hand over their reward item and skip XP lamps', () =
   assert.equal(inventory.getAmount(995), 11, 'the theatre lamp quest is skipped entirely');
 });
 
+test('auto-completed quests also hand over the items their completion gave outside onReward', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const { ItemIdentifiers: I } = api.core;
+  const player = fakePlayer();
+  const inventory = withInventory(player);
+  player.getSkillManager = () => ({ addExperiences() {} });
+  for (const handler of hooks.login) handler({ player });
+
+  assert.equal(inventory.getAmount(I.SOUL_BEARER), 1, "Bear Your Soul's repaired soul bearer");
+  assert.equal(inventory.getAmount(I.FOSSIL_ISLAND_NOTE_BOOK), 1, "Bone Voyage's note book");
+  for (const robe of [I.GHOSTLY_ROBE, I.GHOSTLY_GLOVES, I.GHOSTLY_BOOTS, I.GHOSTLY_ROBE_2, I.GHOSTLY_HOOD, I.GHOSTLY_CLOAK]) {
+    assert.equal(inventory.getAmount(robe), 1, `Curse of the Empty Lord's robe ${robe}`);
+  }
+  assert.equal(inventory.getAmount(I.DARKLIGHT), 1, 'Demon Slayer is Darklight once Shadow of the Storm is complete');
+  assert.equal(inventory.getAmount(I.SILVERLIGHT), 0, 'the old sword is not handed out instead');
+  assert.equal(inventory.getAmount(I.RING_OF_SHADOWS_UNCHARGED_), 1, "Desert Treasure II's ring");
+  assert.equal(inventory.getAmount(I.CRYPT_MAP), 1, "His Faithful Servants' crypt map");
+  assert.equal(inventory.getAmount(I.COWBELL_AMULET), 1, "The Ides of Milk's cowbell amulet");
+  assert.equal(inventory.getAmount(I.SACRAMENTS_OF_ENT_FOLK), 1, "Vale Totems' notebook");
+});
+
 test('a Quests-off Duke Horacio hands over the anti-dragon shield', () => {
   const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
   QuestAutoComplete.register(api);
@@ -491,9 +513,9 @@ test('a Quests-off world opens Cam Torum through both ends of its entrance', () 
     for (const handler of hooks.objectHandlers) handler(event);
     return event;
   };
-  assert.equal(click(1436, 3128, 0).handled, true);
+  assert.equal(click(1435, 3129, 0).handled, true);
   assert.deepEqual([player.position.x, player.position.y, player.position.z], [1439, 9509, 1]);
-  assert.equal(click(1440, 9509, 1).handled, true);
+  assert.equal(click(1439, 9507, 1).handled, true);
   assert.deepEqual([player.position.x, player.position.y, player.position.z], [1435, 3128, 0]);
 });
 
