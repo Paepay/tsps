@@ -56,7 +56,20 @@ const KNIGHT_LOCATION = new Location(2656, 2592, 0);
 const GAME_SQUIRE_LOCATION = new Location(2655, 2607, 0);
 const MIN_PLAYERS = 5;
 const MAX_PLAYERS = 25;
-const LANDER_WAIT_TICKS = 500; // Five minutes at 600 ms per game tick.
+/**
+ * The departure delays a boat's outpost Squire offers, in game ticks (600 ms each). A lander
+ * leaves once MIN_PLAYERS have boarded and its countdown reaches zero; the first player to
+ * board starts the countdown from their own choice, and anyone who joins with a shorter delay
+ * can bring it forward.
+ */
+const DEPARTURE_DELAYS = [
+  { ticks: 0, label: "Instant", message: "immediately" },
+  { ticks: 17, label: "10 seconds", message: "10 seconds after the first player boards" },
+  { ticks: 50, label: "30 seconds", message: "30 seconds after the first player boards" },
+  { ticks: 100, label: "1 minute", message: "1 minute after the first player boards" },
+];
+/** Live-like default: the lander leaves ten seconds after someone boards. */
+const DEFAULT_DEPARTURE_TICKS = 17;
 const GAME_TICKS = 2000; // Twenty minutes.
 const FIRST_SHIELD_TICK = 25;
 const SHIELD_INTERVAL_TICKS = 50;
@@ -74,6 +87,7 @@ const NO_HAMMER_MESSAGE = "You'll need a hammer to make any repairs!";
 const NO_LOGS_MESSAGE = "You'll need some logs to make any repairs!";
 const DESTROYED_GATE_MESSAGE = "It's been totally destroyed!";
 const ATTR_WAITING_BOAT = "pest-control:waiting-boat";
+const ATTR_DEPARTURE_DELAY = "pest-control:departure-delay";
 /** This minigame's name to the Grouping plugin ("grouping:activity", "grouping:members"). */
 const GROUPING_ACTIVITY = "Pest Control";
 
@@ -89,6 +103,7 @@ const BOATS = [
     returnLocation: new Location(2657, 2639, 0),
     waitingBounds: new Boundary(2660, 2663, 2638, 2643, 0),
     squireId: NpcIdentifiers.SQUIRE_NOVICE_,
+    squireName: "Squire (Novice)",
     portalHp: 200,
     unshieldedIds: [
       NpcIdentifiers.PORTAL_9,
@@ -115,6 +130,7 @@ const BOATS = [
     returnLocation: new Location(2644, 2644, 0),
     waitingBounds: new Boundary(2638, 2641, 2642, 2647, 0),
     squireId: NpcIdentifiers.SQUIRE_INTERMEDIATE_,
+    squireName: "Squire (Intermediate)",
     portalHp: 250,
     unshieldedIds: [
       NpcIdentifiers.PORTAL,
@@ -141,6 +157,7 @@ const BOATS = [
     returnLocation: new Location(2638, 2653, 0),
     waitingBounds: new Boundary(2632, 2635, 2651, 2656, 0),
     squireId: NpcIdentifiers.SQUIRE_VETERAN_,
+    squireName: "Squire (Veteran)",
     portalHp: 250,
     unshieldedIds: [
       NpcIdentifiers.PORTAL,
@@ -355,6 +372,54 @@ function moveBetweenAreas(player, area, location) {
     if (player.getArea?.() !== area) player.setArea(area);
   }
   player.moveTo(location);
+}
+
+/** The departure choice a player has set, or the ten-second default. */
+function departureTicksFor(player) {
+  const stored = player?.getAttribute?.(ATTR_DEPARTURE_DELAY);
+  const ticks = typeof stored === "number" ? stored : Number(stored);
+  return DEPARTURE_DELAYS.some((choice) => choice.ticks === ticks) ? ticks : DEFAULT_DEPARTURE_TICKS;
+}
+
+function departureChoice(ticks) {
+  return DEPARTURE_DELAYS.find((choice) => choice.ticks === ticks) ?? DEPARTURE_DELAYS[1];
+}
+
+/** The shortest departure any waiting player asked for; the default with nobody waiting. */
+function shortestDeparture(players) {
+  if (!players?.length) return DEFAULT_DEPARTURE_TICKS;
+  return Math.min(...players.map(departureTicksFor));
+}
+
+/** Apply a menu choice for a boat and tell the player what changed. */
+function chooseDepartureDelay(player, boat, option) {
+  const choice = DEPARTURE_DELAYS[Number(option) - 1];
+  if (!choice) return false;
+  player.setAttribute(ATTR_DEPARTURE_DELAY, choice.ticks);
+  player.sendMessage(`The ${boat.name.toLowerCase()} lander will now depart ${choice.message}.`);
+  return true;
+}
+
+/**
+ * The Squire standing beside a boat's gangplank: his Talk-to sets how long that lander waits
+ * after the first player boards (issue #110).
+ */
+function talkToDepartureSquire({ player, npc }) {
+  const boat = BOATS.find((candidate) => candidate.squireId === npc?.getId?.());
+  if (!boat) return false;
+  const current = departureChoice(departureTicksFor(player));
+  const { DialogueChainBuilder, NpcDialogue, OptionDialogue } = pluginApi.core;
+  player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(
+    new NpcDialogue(0, npc.getId(),
+      `The ${boat.name.toLowerCase()} lander departs ${current.message}. How long should it wait after someone boards?`),
+    new OptionDialogue(1, {
+      executeOption(option) {
+        player.getPacketSender().sendInterfaceRemoval();
+        chooseDepartureDelay(player, boat, option);
+      },
+    }, ...DEPARTURE_DELAYS.map((choice) => choice.label), "Cancel")
+  ));
+  return true;
 }
 
 function closeOverlay(player) {
@@ -665,6 +730,13 @@ class PestControlMatch {
     player.getPacketSender().sendSubInterface(OVERLAY_HUD_UID, GAME_OVERLAY, 1);
     player.sendMessage("You must defend the Void Knight and destroy the four portals!");
     this.updatePlayerOverlay(player, true);
+    // Re-send the instance's own gates and barricades. A fresh copy at full health is identical
+    // to the cache map's, so a normal scene refresh leaves it to the map; but a player who has
+    // just left another match was sent its removals, and would see a new match's doors missing
+    // (issue #110).
+    for (const structure of this.structures.values()) {
+      player.getPacketSender().sendObject(structure.object);
+    }
   }
 
   onPlayerLeave(player, logout) {
@@ -1031,6 +1103,7 @@ class PestControlWaitingArea extends Area {
     if (!mobile.isPlayer?.()) return;
     const player = mobile.getAsPlayer();
     if (!this.state.queue.includes(player)) this.state.queue.push(player);
+    this.state.noteDeparture(player);
     if (player.isPlayerBot?.() === true && !this.state.queue.some((queued) => queued.isPlayerBot?.() !== true)) {
       logoutBot(player);
       return;
@@ -1047,7 +1120,7 @@ class PestControlWaitingArea extends Area {
     const index = this.state.queue.indexOf(player);
     if (index !== -1) this.state.queue.splice(index, 1);
     closeOverlay(player);
-    if (this.state.queue.length < MIN_PLAYERS) this.state.countdown = LANDER_WAIT_TICKS;
+    if (this.state.queue.length < MIN_PLAYERS) this.state.countdown = this.state.resetCountdown();
     if (player.isPlayerBot?.() !== true && !this.state.queue.some((queued) => queued.isPlayerBot?.() !== true)) {
       this.state.queue.filter((queued) => queued.isPlayerBot?.() === true).forEach(logoutBot);
     }
@@ -1110,8 +1183,16 @@ function createPestControl(api) {
     const state = {
       boat,
       queue: [],
-      countdown: LANDER_WAIT_TICKS,
+      countdown: DEFAULT_DEPARTURE_TICKS,
       lastCycle: -1,
+      /** The first player to board starts the countdown; a shorter choice can pull it forward. */
+      noteDeparture(player) {
+        const ticks = departureTicksFor(player);
+        this.countdown = this.queue.length <= 1 ? ticks : Math.min(this.countdown, ticks);
+      },
+      resetCountdown() {
+        return shortestDeparture(this.queue);
+      },
       processOnce() {
         const cycle = World.getProcessCycle();
         if (cycle === this.lastCycle) return;
@@ -1128,7 +1209,7 @@ function createPestControl(api) {
         const boarding = new Set(players);
         this.queue = this.queue.filter((player) => !boarding.has(player));
         for (const player of players) player.setAttribute(ATTR_WAITING_BOAT, null);
-        this.countdown = LANDER_WAIT_TICKS;
+        this.countdown = this.resetCountdown();
         const match = new PestControlMatch(boat, players, (finished) => matches.delete(finished));
         matches.add(match);
       },
@@ -1217,6 +1298,9 @@ function createPestControl(api) {
   api.onNpcInteraction("Void Knight", { Exchange: exchangeRewards });
   api.onInterfaceActionButton(Rewards.CONFIRM_UID, Rewards.confirmReward);
   api.onNpcInteraction("Squire", { "Talk-to": talkToMatchSquire, Leave: leaveMatch });
+  for (const boat of BOATS) {
+    api.onNpcInteraction(boat.squireName, { "Talk-to": talkToDepartureSquire });
+  }
   api.onCustomEvent("escape-crystal:escape", escapeCrystal);
   api.onCustomEvent("npc-dialogue:action", squireDialogueLeave);
 
@@ -1391,6 +1475,12 @@ module.exports = {
     talkToMatchSquire,
     leaveMatch,
     squireDialogueLeave,
+    talkToDepartureSquire,
+    chooseDepartureDelay,
+    departureTicksFor,
+    shortestDeparture,
+    DEPARTURE_DELAYS,
+    DEFAULT_DEPARTURE_TICKS,
     cleanupMatchNpcs,
     resetStructures,
     constants: {
@@ -1399,6 +1489,7 @@ module.exports = {
       ACTIVITY_VARBIT,
       MIN_PLAYERS,
       MAX_PLAYERS,
+      ATTR_DEPARTURE_DELAY,
     },
   },
 };

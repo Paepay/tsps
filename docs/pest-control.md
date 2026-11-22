@@ -33,6 +33,20 @@ boarding. Every way off a lander or the island ends there, not at one shared out
   the game bounds with no game to return to (a server restart) is put on the novice tile.
   Ours: the novice tile there, as the boat isn't known.
 
+## Departure delay
+
+Each boat's outpost Squire (`Squire (Novice)` 1771 at 2657,2637; `Squire (Intermediate)` 1772
+at 2644,2641; `Squire (Veteran)` 1773 at 2638,2656) has Talk-to options for how long that
+lander waits after the first player boards: Instant, 10 seconds, 30 seconds or 1 minute. The
+choice is stored per player; a lander's countdown starts at the first boarder's choice, and a
+later player who picks a shorter delay pulls it forward. The default is 10 seconds. Once five
+players are aboard the lander leaves when the countdown reaches zero.
+
+Re-boarding after leaving a game re-sends the instance's own gates and barricades. A fresh
+copy is identical to the cache map's, so a normal scene refresh leaves it to the map; without
+the explicit re-send a player who had just been sent the previous match's removals saw the new
+match's doors missing.
+
 ## Repairing barricades and gates
 
 Barricades (`pest_barricade_*`) and gates (`pest_wall_gate_*`) are repaired with op 3, Repair,

@@ -30,6 +30,7 @@ let objectHandler = null;
 const npcHandlers = {};
 const customHandlers = {};
 const emitted = [];
+const areaManager = { areas: [] };
 const api = {
   core: PluginManager.getCoreApi(),
   registerShopCurrency() {},
@@ -38,13 +39,14 @@ const api = {
   registerDefinitionSource() {},
   registerNpcCombatMethodProvider() {},
   onServerStartup() {},
-  getAreaManager: () => ({ areas: [] }),
+  getAreaManager: () => areaManager,
   getObjectManager: () => ObjectManager,
   getRegionManager: () => RegionManager,
   getWorld: () => World,
   onPlayerLogin() {},
   onObjectInteraction(handler) { if (typeof handler === "function") objectHandler = handler; },
   onNpcInteraction(name, options) { npcHandlers[name] = options; },
+  onNpcsInteraction(names, options) { for (const name of names) npcHandlers[name] = options; },
   onInterfaceActionButton() {},
   onCustomEvent(name, handler) { (customHandlers[name] ??= []).push(handler); },
   onCanAttack() {},
@@ -209,4 +211,73 @@ test("the lander ladder: \"You leave the lander.\" (filterable) and the boat's j
   assert.equal(climb.handled, true);
   assert.deepEqual(chatLines(sent), [["sendTypedMessage", ChatType.SPAM, "You leave the lander."]]);
   assert.deepEqual(at(player), JETTY[key]);
+});
+
+test("re-boarding after leaving a match re-sends every gate and barricade (issue #110)", () => {
+  const key = "novice";
+  const { player, sent } = realPlayer(boat(key).waitingLocation);
+  const first = new plugin._test.PestControlMatch(boat(key), [player], () => {});
+  first.area.leave(player, false);
+  player.moveTo(boat(key).returnLocation.clone());
+  endMatch(first);
+
+  sent.length = 0;
+  const second = new plugin._test.PestControlMatch(boat(key), [player], () => {});
+  try {
+    assert.equal(player.getAttribute("pest-control:match"), second);
+    const wanted = [...second.structures.values()].map((state) =>
+      `${state.object.getId()}@${state.object.getLocation().getX()},${state.object.getLocation().getY()},${state.object.getType()}`
+    );
+    const sentStructures = sent
+      .filter(([name, object]) => name === "sendObject" && object?.getPrivateArea?.() === second.area)
+      .map(([, object]) =>
+        `${object.getId()}@${object.getLocation().getX()},${object.getLocation().getY()},${object.getType()}`
+      );
+    assert.deepEqual([...new Set(sentStructures)].sort(), [...new Set(wanted)].sort());
+    assert.ok(sentStructures.length >= 6, "gates and barricades are both re-sent");
+  } finally {
+    endMatch(second);
+  }
+});
+
+test("the outpost Squire sets how long a boat waits before leaving (issue #110)", () => {
+  const { player, sent } = realPlayer(boat("novice").waitingLocation);
+  const novice = boat("novice");
+  assert.equal(plugin._test.departureTicksFor(player), plugin._test.DEFAULT_DEPARTURE_TICKS, "ten seconds by default");
+
+  const talk = npcHandlers["Squire (Novice)"]["Talk-to"];
+  assert.equal(talk({ player, npc: { getId: () => novice.squireId } }), true);
+  assert.equal(player.getDialogueManager().isActive(), true, "the Squire offers the delay choices");
+
+  assert.equal(plugin._test.chooseDepartureDelay(player, novice, 1), true);
+  assert.equal(player.getAttribute(plugin._test.constants.ATTR_DEPARTURE_DELAY), 0);
+  assert.equal(plugin._test.departureTicksFor(player), 0, "instant");
+  assert.ok(sent.some(([name, text]) => name === "sendMessage" && /depart immediately/.test(text)));
+  assert.equal(plugin._test.chooseDepartureDelay(player, novice, 9), false, "Cancel changes nothing");
+  assert.equal(plugin._test.departureTicksFor(player), 0);
+
+  for (const choice of plugin._test.DEPARTURE_DELAYS) {
+    player.setAttribute(plugin._test.constants.ATTR_DEPARTURE_DELAY, choice.ticks);
+    assert.equal(plugin._test.departureTicksFor(player), choice.ticks, choice.label);
+  }
+});
+
+test("a shorter departure choice pulls the lander's countdown forward", () => {
+  const state = areaManager.areas.find((waiting) => waiting.state?.boat === boat("novice")).state;
+  const players = Array.from({ length: 5 }, () => realPlayer(boat("novice").waitingLocation).player);
+  state.queue = [];
+  for (const player of players) {
+    state.queue.push(player);
+    state.noteDeparture(player);
+  }
+  assert.equal(state.countdown, plugin._test.DEFAULT_DEPARTURE_TICKS);
+
+  const instant = realPlayer(boat("novice").waitingLocation).player;
+  instant.setAttribute(plugin._test.constants.ATTR_DEPARTURE_DELAY, 0);
+  state.queue.push(instant);
+  state.noteDeparture(instant);
+  assert.equal(state.countdown, 0, "someone who asked for instant is not held by the others");
+
+  state.queue = [];
+  assert.equal(state.resetCountdown(), plugin._test.DEFAULT_DEPARTURE_TICKS);
 });
