@@ -81,6 +81,18 @@ function isTemporaryId(itemId) {
 }
 
 /**
+ * Copies made before the catalog split reuse a real or league-relic id (the old Banker's note
+ * grant handed out 28767 with a binding). The item itself is the player's real relic, so drop the
+ * stale binding and let it behave as the plain item rather than deleting a relic on login.
+ * Arsenal loans always use ids listed in `isTemporaryId`, so none of them are migrated away.
+ */
+function migrateLegacy(item) {
+  if (!isTemporary(item) || isTemporaryId(item.getId?.())) return false;
+  item.setMetaValue(BINDING_META, undefined);
+  return true;
+}
+
+/**
  * The contract's stable temporary-item id. It is always >= 1,000,000 and is recorded in the
  * binding; the 317 wire protocol still carries a 16-bit item id, so `itemId` stays a real or
  * cache-safe id (see docs/global-events.md).
@@ -284,6 +296,7 @@ function purge(player, keep, announce = true) {
   let removed = 0;
   for (const container of allContainers(player)) {
     for (const item of temporaryIn(container)) {
+      if (migrateLegacy(item)) continue;
       if (keep(player, item)) continue;
       if (removeFrom(container, item)) removed++;
     }
@@ -409,6 +422,7 @@ function noteOnItem(event) {
   if (!note) return false;
   // Only the bound event copy is ours. A real Banker's note (or any plain item using this id)
   // must fall through to the league relic handler.
+  if (migrateLegacy(note)) return false;
   const binding = bindingOf(note);
   if (!binding || binding.kind !== KIND.NOTE) return false;
   if (!usable(player, note)) {
@@ -529,6 +543,8 @@ function confirmDelete(player, item) {
 function itemAction(event) {
   const { player, item, option } = event;
   if (!isTemporary(item)) return false;
+  // A legacy copy of a real item becomes that item again; its own actions still run.
+  if (migrateLegacy(item)) return false;
   if (!valid(player, item)) {
     removeItem(player, item);
     player.sendMessage(Common.message("expired"));
@@ -574,6 +590,7 @@ function onCanUseItem(event) {
 function onCanEquip(event) {
   const { player, item } = event;
   if (!isTemporary(item)) return;
+  if (migrateLegacy(item)) return;
   if (!valid(player, item)) {
     event.allow = false;
     removeItem(player, item);
@@ -636,6 +653,9 @@ function geOffer(confirmation) {
 
 function blockTransform(event) {
   if (event.handled) return true;
+  const usedMigrated = migrateLegacy(event.usedItem);
+  const withMigrated = migrateLegacy(event.usedWithItem);
+  if (usedMigrated || withMigrated) return false;
   if (isTemporary(event.usedItem) || isTemporary(event.usedWithItem)) {
     event.handled = true;
     event.player.sendMessage("Temporary event items can't be transformed.");

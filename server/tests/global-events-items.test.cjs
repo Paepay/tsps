@@ -147,7 +147,7 @@ test("event items use dedicated custom ids and never shadow the league relics", 
   );
 });
 
-test("a bound copy left on an old event id is purged instead of lingering", () => {
+test("a bound copy left on a real item id is migrated back to that item, not deleted", () => {
   Common.testing.reset();
   activate("bankers-note");
   const p = player("legacy-note");
@@ -157,9 +157,31 @@ test("a bound copy left on an old event id is purged instead of lingering", () =
   legacy.setMetaValue(Items.BINDING_META, Items.bindingOf(live));
   p.getInventory().add(legacy, true);
   assert.equal(Items.valid(p, legacy), false, "the old id is no longer an event item");
-  assert.equal(Items.purgeInvalid(p), 1);
-  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.BANKERS_NOTE), 0);
+  assert.equal(Items.purgeInvalid(p), 0, "a real relic must not be deleted as an expired event item");
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.BANKERS_NOTE), 1);
+  const carried = held(p, core.ItemIdentifiers.BANKERS_NOTE);
+  assert.equal(Items.bindingOf(carried), null, "the stale event binding is stripped");
+  assert.equal(Items.isTemporary(carried), false);
   assert.equal(p.getInventory().getAmount(Items.noteId()), 1, "the live copy stays");
+});
+
+test("item-on-item on a legacy real note migrates it and leaves it to the league relic", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("legacy-note-use");
+  assert.equal(claim(p, Items.KIND.NOTE), true);
+  const live = held(p, Items.noteId());
+  const legacy = new core.Item(core.ItemIdentifiers.BANKERS_NOTE, 1);
+  legacy.setMetaValue(Items.BINDING_META, Items.bindingOf(live));
+  p.getInventory().add(legacy, true);
+  p.getInventory().adds(core.ItemIdentifiers.LOGS, 2);
+  const remains = held(p, core.ItemIdentifiers.LOGS);
+  const event = { player: p, usedItem: legacy, usedWithItem: remains, handled: false };
+  for (const handler of hooks.itemOnItems) handler(event);
+  assert.equal(event.handled, false, "the event does not swallow the real relic's use");
+  assert.equal(Items.bindingOf(legacy), null, "the stale binding is stripped, not expired");
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.BANKERS_NOTE), 1);
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.LOGS), 2);
 });
 
 test("load validation names a league-relic collision instead of shadowing it", () => {

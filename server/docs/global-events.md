@@ -86,6 +86,12 @@ relics, or the world fails startup with an error naming the item. Item handlers 
 on copies carrying a live `global-event` binding, so a real relic is never mistaken for an
 expired event item.
 
+Bound copies saved before that split still carry a real or league-relic id. They are migrated,
+not purged: login (and any item action that reaches the handlers) strips the stale
+`global-event` binding and leaves the item as the player's real relic. Deleting those copies
+would take a permanent Banker's note away from a league or Level-Up character and was the cause
+of the "temporary global item ... expired" message on level-up worlds.
+
 ### Custom item ids and the 16-bit transport
 
 The platform contract reserves item ids at **1,000,000 and above** for temporary event items. The
