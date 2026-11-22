@@ -67,7 +67,7 @@
     { "name": "Vyrewatch sentinel", "npcs": ["Vyrewatch Sentinel"], "items": ["Blood shard"] },
     { "name": "Vyre", "items": ["Blood shard"] },
     { "name": "Shades of Mort'ton", "items": ["/^Zealot's /", "Runescroll of swampbark", "Runescroll of bloodbark"] },
-    { "name": "Araxxor", "npcs": ["Araxxor"], "items": ["Amulet of rancour", "Noxious point", "Noxious blade", "Noxious pommel"], "leagues": [4, 5, 6] },
+    { "name": "Araxxor", "npcs": ["Araxxor"], "items": ["Araxyte fang", "Noxious point", "Noxious blade", "Noxious pommel"], "leagues": [4, 5, 6] },
     { "name": "Araxyte", "npcs": ["/^Araxyte/"], "items": ["Aranea boots"], "leagues": [4, 5, 6] },
     { "name": "Crystal impling", "items": ["Elven signet"] },
     { "name": "The Gauntlet", "items": ["Crystal armour seed", "Crystal weapon seed", "Enhanced crystal weapon seed"] },

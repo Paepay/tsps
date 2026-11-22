@@ -34,6 +34,7 @@ let realCheckReqs;
 let Unlock;
 let TrailRuntime;
 let MageArena;
+let spawned = [];
 
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
@@ -94,6 +95,28 @@ before(async () => {
     emitCustomEvent: (name, payload) => {
       for (const handler of custom[name] ?? []) handler(payload);
     },
+    spawnNpc: (definition) => {
+      const npc = {
+        definition,
+        movements: [],
+        animations: [],
+        following: null,
+        registered: true,
+        setPet() {},
+        setUntargetable() {},
+        setFollowing(target) { this.following = target; },
+        setMobileInteraction() {},
+        getFollowing() { return this.following; },
+        isRegistered() { return this.registered; },
+        getAttackAnim() { return 1; },
+        performAnimation(animation) { this.animations.push(animation); },
+        getMovementQueue() { return { reset() {} }; },
+        calculateDistance() { return 1; },
+      };
+      spawned.push(npc);
+      return npc;
+    },
+    removeNpc: (npc) => { npc.registered = false; },
   }, { get: (target, key) => (key in target ? target[key] : on(String(key))) });
   require("../plugins/modes/Base.LeagueMode").register(api);
   require("../plugins/modes/Points.LeagueMode").register(api);
@@ -128,6 +151,7 @@ beforeEach(() => {
   prompts = [];
   teleports = [];
   menuPlayer = null;
+  spawned = [];
 });
 
 afterEach(() => {
@@ -823,6 +847,37 @@ test("Grimoire (Demonic Pacts): choosing it re-sends the prayer book's unlock fl
   } finally {
     custom["prayer:sync-unlocks"] = custom["prayer:sync-unlocks"].filter((handler) => handler !== record);
   }
+});
+
+test("Guardian horn summons, dismisses, toggles modes and changes outfit", () => {
+  const Guardian = require("../plugins/modes/leaguerelics/Guardian.LeagueRelics");
+  const player = character("guardian", "league", { 7: 1 }, 5);
+  player.getInventory().add(new Item(I.GUARDIAN_HORN, 1), true);
+
+  click("Guardian horn", "Summon", player);
+  assert.equal(spawned.length, 1, "Summon spawns one thrall");
+  assert.equal(spawned[0].definition.id, Guardian.OUTFITS[0]);
+  assert.equal(spawned[0].definition.owner, player);
+  assert.equal(spawned[0].definition.ownerOnly, true);
+  assert.equal(spawned[0].following, player);
+  assert.equal(Guardian.stateOf(player)?.ticks, Guardian.DURATION_TICKS);
+
+  click("Guardian horn", "Summon", player);
+  assert.equal(spawned.length, 1, "a second Summon does not stack a second guardian");
+  assert.match(player.messages.at(-1), /already here/);
+
+  click("Guardian horn", "Toggle-modes", player);
+  assert.equal(Guardian.attacking(player), false);
+  click("Guardian horn", "Toggle-modes", player);
+  assert.equal(Guardian.attacking(player), true);
+
+  click("Guardian horn", "Change-outfit", player);
+  assert.equal(spawned.at(-1).definition.id, Guardian.OUTFITS[1]);
+  assert.equal(player.getAttribute(Guardian.OUTFIT_ATTRIBUTE), 1);
+
+  click("Guardian horn", "Dismiss", player);
+  assert.equal(Guardian.stateOf(player), null);
+  assert.equal(spawned[0].registered, false);
 });
 
 test("Reloaded: a second relic of tiers 1 to 3, a different one from the tier's own; its item; only one", () => {

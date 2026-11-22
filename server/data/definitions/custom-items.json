@@ -68,7 +68,7 @@
     "objType": {
       "name": "Guardian horn",
       "examine": "A horn to call your loyal guardian.",
-      "inventoryActions": [null, null, null, null, "Destroy"],
+      "inventoryActions": ["Summon", "Dismiss", "Toggle-modes", "Change-outfit", "Destroy"],
       "isTradable": false,
       "price": 1,
       "weight": 200,

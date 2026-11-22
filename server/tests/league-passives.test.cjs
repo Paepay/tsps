@@ -207,13 +207,16 @@ test("boosted drops: the rule names the source's items at the tier's rate, for t
   assert.equal(kree.pattern.test("Godsword shard 2"), true);
   assert.equal(kree.pattern.test("Armadyl hilt"), true);
   assert.equal(kree.pattern.test("Rune longsword"), false);
-  assert.equal(rule(character("re1b", "league", 1, ECHOES), "Araxxor").pattern.test("Amulet of rancour"), true, "a Raging Echoes source");
-  assert.equal(rule(character("tr1e", "league", 1), "Araxxor"), null, "not on Trailblazer Reloaded's page");
+  assert.equal(rule(character("re1b", "league", 1, ECHOES), "Araxxor").pattern.test("Araxyte fang"), true, "a Raging Echoes source");
+  assert.equal(rule(character("re1b", "league", 1, ECHOES), "Araxxor").pattern.test("Amulet of rancour"), false, "Araxxor does not drop the finished amulet");
+  const levelUpAraxxor = rule(character("tr1e", "league", 1), "Araxxor");
+  assert.equal(levelUpAraxxor.pattern.test("Araxyte fang"), true, "Level-Up plays later leagues' rows too");
+  assert.equal(levelUpAraxxor.pattern.test("Amulet of rancour"), false);
   assert.equal(rule(character("re1c", "league", 1, ECHOES), "Skotizo"), null, "the page marks Skotizo's onyx N/A");
   const zulrah = rule(character("re1d", "league", 1, ECHOES), "Zulrah");
   assert.equal(zulrah.pattern.test("Uncut onyx"), true, "Zulrah's onyx drops uncut");
   assert.equal(zulrah.pattern.test("Uncharged toxic trident"), true, "a Raging Echoes row");
-  assert.equal(rule(character("tr1f", "league", 1), "Zulrah").pattern.test("Uncharged toxic trident"), false, "not on Trailblazer Reloaded");
+  assert.equal(rule(character("tr1f", "league", 1), "Zulrah").pattern.test("Uncharged toxic trident"), true, "Level-Up plays later leagues' rows too");
   const dkRex = rule(character("tr1g", "league", 1), "Dagannoth Rex");
   assert.equal(dkRex.pattern.test("Berserker ring"), true);
   assert.equal(dkRex.pattern.test("Dragon axe"), true);
@@ -230,7 +233,7 @@ test("boosted drops: Demonic Pacts' page, its own rows and the earlier leagues' 
   assert.equal(whip.multiplier, 2, "Demonic Pacts tier 1: 2x");
   assert.equal(whip.pattern.test("Abyssal whip"), true, "a row every league lists");
   assert.equal(rule(character("dp4", "league", 4, PACTS), "Abyssal demon").multiplier, 5, "5x from tier 4");
-  assert.equal(rule(character("dp1b", "league", 1, PACTS), "Araxxor").pattern.test("Amulet of rancour"), true, "a Raging Echoes row the page keeps");
+  assert.equal(rule(character("dp1b", "league", 1, PACTS), "Araxxor").pattern.test("Araxyte fang"), true, "a Raging Echoes row the page keeps");
   assert.equal(rule(character("dp1c", "league", 1, PACTS), "Vardorvis").pattern.test("Leviathan's lure"), true, "every DT2 boss drops every axe piece");
   assert.equal(rule(character("dp1d", "league", 1, PACTS), "Yama").pattern.test("Oathplate chest"), true, "a Demonic Pacts row");
   assert.equal(rule(character("dp1e", "league", 1, PACTS), "Branda the Fire Queen").pattern.test("Giantsoul amulet"), true);
@@ -417,7 +420,7 @@ test("boosted drops: a revenant kill's uniques and Raging Echoes' ancient artefa
   const tr8 = Revenants.dropBoost(character("tr8", "league", 8), "Revenant imp");
   assert.equal(tr8(AVARICE), 5, "Trailblazer Reloaded tier 8: the uniques 5x");
   assert.equal(tr8(22547), 5, "Craw's bow (u)");
-  assert.equal(tr8(RELIC), 1, "the artefacts are Raging Echoes' row only");
+  assert.equal(tr8(RELIC), 5, "Level-Up plays Raging Echoes' artefact row too");
   assert.equal(tr8(ETHER), 1);
   assert.equal(Revenants.dropBoost(character("main", "main"), "Revenant imp")(AVARICE), 1, "a main character");
   // An imp's unique is 1 in 1100 x 26.667: a draw three times past it is a unique only boosted.
@@ -433,7 +436,7 @@ test("boosted drops: a revenant kill's uniques and Raging Echoes' ancient artefa
   const artefact = (boost) => Drops.rollDrops({ npcId: 7940, combat: 135, random: rolls([0.5, 0.999, 0.01, 0]), boost })[1].itemId;
   assert.ok(Drops.MAIN.some(([id]) => id === artefact(undefined)), "unboosted: the main table");
   assert.equal(artefact(re4), RELIC, "boosted: the artefact table");
-  assert.ok(Drops.MAIN.some(([id]) => id === artefact(tr8)), "Trailblazer Reloaded: the artefacts as they are");
+  assert.equal(artefact(tr8), RELIC, "Level-Up plays the Raging Echoes artefact row");
 });
 
 test("boosted drops: the Barrows chest's equipment roll", () => {
@@ -542,7 +545,7 @@ test("boosted drops: the minigames' own rare finds (minigame:chance), by their B
   assert.equal(chance(tr8, "fishing-trawler", "angler-outfit"), 5, "Fishing Trawler's angler pieces");
   assert.equal(chance(tr8, "tai-bwo-wannai-cleanup", "gout-tuber"), 5, "Tai Bwo Wannai's gout tuber");
   assert.equal(chance(tr8, "hallowed-sepulchre", "strange-lockpick"), 1, "the lockpick is not on the page");
-  assert.equal(chance(tr8, "aerial-fishing", "golden-tench"), 1, "the golden tench is not on Trailblazer Reloaded's page");
+  assert.equal(chance(tr8, "aerial-fishing", "golden-tench"), 5, "Level-Up plays later leagues' rows too");
   assert.equal(chance(character("mc4e", "league", 4, ECHOES), "aerial-fishing", "golden-tench"), 5, "a Raging Echoes row");
   assert.equal(chance(character("mc1", "league", 1), "pyramid-plunder", "pharaohs-sceptre", 1.5), 3, "multiplies what others gave");
   assert.equal(chance(character("mcmain", "main"), "pyramid-plunder", "pharaohs-sceptre"), 1, "a main character");

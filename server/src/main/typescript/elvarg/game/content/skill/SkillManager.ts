@@ -514,6 +514,11 @@ export class SkillManager {
         return this;
     }
 
+    /** Whether a ruleset currently suppresses this skill's experience. */
+    public isSkillLocked(skill: Skill): boolean {
+        return this.lockedSkills.has(skill.getIndex());
+    }
+
     /**
      * Gets the max level for said skill.
      *

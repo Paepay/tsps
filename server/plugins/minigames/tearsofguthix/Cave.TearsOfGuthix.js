@@ -166,9 +166,10 @@ function canTrain(player, name) {
 function lowestSkill(player, experienceOf = (skill) => player.getSkillManager().getExperience(skill)) {
   let lowest;
   let lowestXp = Infinity;
+  const manager = player.getSkillManager();
   for (const name of SKILL_ORDER) {
     const skill = core.Skill[name];
-    if (!skill || !canTrain(player, name)) continue;
+    if (!skill || !canTrain(player, name) || manager?.isSkillLocked?.(skill) === true) continue;
     const xp = experienceOf(skill);
     if (xp < lowestXp) {
       lowest = name;

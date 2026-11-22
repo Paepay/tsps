@@ -67,7 +67,7 @@ test("each tear is worth min(60, 10 + floor(xp / 27) / 10)", () => {
   assert.equal(xpPerTear(14000), 60);
 });
 
-function fakePlayer({ xp = {}, quests = {}, attributes = {}, equipment = {} } = {}) {
+function fakePlayer({ xp = {}, quests = {}, attributes = {}, equipment = {}, locked = [] } = {}) {
   const attrs = new Map(Object.entries(attributes));
   for (const [key, stage] of Object.entries(quests)) attrs.set(`quest.${key}.stage`, stage);
   const varbits = new Map([[451, 2]]);
@@ -79,6 +79,7 @@ function fakePlayer({ xp = {}, quests = {}, attributes = {}, equipment = {} } = 
     getSkillManager: () => ({
       getExperience: (skill) => xp[Object.keys(core.Skill).find((name) => core.Skill[name] === skill)] ?? 1000,
       getTotalExp: () => attrs.get("total-xp") ?? 0,
+      isSkillLocked: (skill) => locked.includes(Object.keys(core.Skill).find((name) => core.Skill[name] === skill)),
     }),
     getEquipment: () => ({ getSlot: (slot) => equipment[slot] ?? -1 }),
     getPacketSender: () => ({ getVarbit: (id) => varbits.get(id) ?? 0, sendVarbit: (id, value) => varbits.set(id, value) }),
@@ -100,6 +101,13 @@ test("skills the player can't train yet are skipped", () => {
   const sailing = { ...xp, SAILING: 0, HUNTER: 10, HERBLORE: 20, RUNECRAFTING: 20, CONSTRUCTION: 20 };
   for (const stage of [2, 30, 49]) assert.equal(lowestSkill(fakePlayer({ xp: sailing, quests: { pandemonium: stage } })).name, "HUNTER", `stage ${stage}`);
   assert.equal(lowestSkill(fakePlayer({ xp: sailing, quests: { pandemonium: 50 } })).name, "SAILING");
+});
+
+test("skills locked by the world are skipped instead of swallowing the tears' XP", () => {
+  const { lowestSkill } = Cave._test;
+  const xp = { ATTACK: 0, FISHING: 5, HUNTER: 10 };
+  assert.equal(lowestSkill(fakePlayer({ xp, locked: ["ATTACK"] })).name, "FISHING");
+  assert.equal(lowestSkill(fakePlayer({ xp, locked: ["ATTACK", "FISHING"] })).name, "HUNTER");
 });
 
 test("Juna lets a player in once a week, after new adventures", () => {
