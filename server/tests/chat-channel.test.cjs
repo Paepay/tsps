@@ -30,8 +30,10 @@ function player(name) {
   const index = nextIndex++;
   const attributes = new Map();
   const lines = [];
+  const packets = [];
   const self = {
     lines,
+    packets,
     texts: () => lines.join('\n'),
     getIndex: () => index,
     getUsername: () => name,
@@ -43,7 +45,7 @@ function player(name) {
     setAttribute: (key, value) => attributes.set(key, value),
     sendMessage: (text) => lines.push(`plain:${text}`),
     getPacketSender: () => new Proxy({}, { get: (_, __, sender) => () => sender }),
-    getSession: () => ({ sendClientPacket: (packet) => { const line = chatLine(packet); if (line) lines.push(line); return true; } }),
+    getSession: () => ({ sendClientPacket: (packet) => { packets.push(packet); const line = chatLine(packet); if (line) lines.push(line); return true; } }),
   };
   const relations = new PlayerRelations(self);
   self.getRelations = () => relations;
@@ -63,6 +65,7 @@ beforeEach(() => {
   Manager.pendingJoins.clear();
   Manager.pendingSetups.clear();
   Manager.systemProfiles.clear();
+  Manager.pendingRosterBroadcasts.clear();
   online.length = 0;
   World.getPlayers = () => ({
     search: (match) => online.find(match),
@@ -219,14 +222,15 @@ test('the rejoin at login shows the join messages', () => {
   assert.match(member.texts(), /Now talking in chat-channel Blur/);
 });
 
-test('login to a vanished channel shows only the missing-channel refusal', () => {
+test('login to a vanished channel shows only the missing-channel refusal, then falls back to Help', () => {
+  registerHelp();
   const member = player('Member');
   member.getRelations().setFriendsChatLastOwner('Missing');
   Manager.onLogin(member);
   assert.match(member.texts(), /The channel you tried to join does not exist\./);
   assert.doesNotMatch(member.texts(), /Attempting to join chat-channel/);
-  assert.equal(Manager.channelOf(member), null);
-  assert.equal(member.getRelations().getFriendsChatLastOwner(), 'Missing');
+  assert.equal(Manager.channelOf(member)?.key, 'help', 'a vanished saved channel falls back to Help');
+  assert.equal(member.getRelations().getFriendsChatLastOwner(), 'help');
 });
 
 test('a system channel is joined by its name, wins over an account of that name and has no owner', () => {
@@ -292,7 +296,7 @@ test('Help is an ownerless default channel every login joins and talks in with /
   assert.equal(profile.ownerName, 'Help');
   assert.equal(profile.channelName, 'Help');
   assert.equal(profile.default, true);
-  assert.equal(profile.broadcastMembers, false, 'a global roster is not resent to everyone on every join');
+  assert.equal(profile.broadcastMembers, false, 'a global roster is coalesced, not resent per join');
   assert.ok(profile.capacity > 500, 'Help is not capped at the normal chat-channel size');
 
   const newcomer = player('Newcomer');
@@ -308,6 +312,23 @@ test('Help is an ownerless default channel every login joins and talks in with /
   Manager.handleAction(typing, { action: 'join', name: 'HeLp' });
   runTicks(2);
   assert.equal(Manager.channelOf(typing)?.key, 'help', 'Help is joined by typing its name without an account');
+});
+
+test('Help tells the members already in it when someone joins', () => {
+  registerHelp();
+  const member = player('Member');
+  Manager.onLogin(member);
+  // ServerPacketId.FRIENDS_CHAT_UPDATE is 121; it is a const enum, erased from the build.
+  const snapshot = (packet) => packet[0] === 121;
+  member.packets.length = 0;
+
+  const newcomer = player('Newcomer');
+  Manager.onLogin(newcomer);
+  assert.equal(member.packets.filter(snapshot).length, 0, 'the roster is coalesced, not sent inline');
+
+  runTicks(1);
+  assert.ok(member.packets.some(snapshot), 'an existing member gets the new roster without re-joining');
+  assert.equal(Manager.channelOf(member).members.length, 2);
 });
 
 test('login keeps a saved Grouping channel instead of moving the player to Help', () => {

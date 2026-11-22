@@ -157,6 +157,8 @@ class FriendsChatManager {
      * and a typed name has an ordinary one.
      */
     static systemProfiles = new Map();
+    /** Channels whose coalesced roster update is waiting for the next tick. */
+    static pendingRosterBroadcasts = new Set();
     /**
      * Registers or updates a system channel: { ownerName, channelName, entryRank, talkRank, kickRank,
      * admits(player), rankOf(player), capacity, default, broadcastMembers }. rankOf, when given, is
@@ -207,8 +209,8 @@ class FriendsChatManager {
             channelName: HELP_CHANNEL_NAME,
             capacity: HELP_CHANNEL_CAPACITY,
             default: true,
-            // Help is global: a joining player still receives the roster, but membership changes
-            // do not resend every member's full snapshot to everyone else.
+            // Help is global: a joining player still receives the roster, and everyone already in
+            // it is told of the change once per tick instead of once per join.
             broadcastMembers: false,
         });
     }
@@ -240,7 +242,7 @@ class FriendsChatManager {
         if (!this.membershipByPlayer.has(player.getIndex())) {
             const defaultKey = Array.from(this.systemProfiles).find(([, profile]) => profile.default)?.[0];
             if (defaultKey)
-                this.join(player, defaultKey, true, { rejoin: true });
+                this.join(player, defaultKey, true, { rejoin: true, announce: false });
         }
     }
     static onLogout(player) {
@@ -527,7 +529,7 @@ class FriendsChatManager {
      * Puts a player in a chat-channel. `rejoin` marks the return to their last channel at login, which
      * `memberAdded` passes on so a listener can tell it from a join the player made.
      */
-    static join(player, rawOwnerName, notify, { rejoin = false } = {}) {
+    static join(player, rawOwnerName, notify, { rejoin = false, announce = true } = {}) {
         const ownerName = this.systemOwner(rawOwnerName) ?? accountName(rawOwnerName);
         if (!ownerName) {
             if (notify)
@@ -541,7 +543,7 @@ class FriendsChatManager {
                 this.notification(player, "The channel you tried to join does not exist.");
             return false;
         }
-        if (rejoin)
+        if (rejoin && announce)
             this.notification(player, "Attempting to join chat-channel...");
         const memberName = accountName(player.getUsername());
         const rank = this.memberRank(profile, player);
@@ -597,12 +599,11 @@ class FriendsChatManager {
             this.notification(player, `Now talking in chat-channel ${profile.channelName}`);
             this.notification(player, "To talk, start each line of chat with the / symbol.");
         }
-        // A global channel still shows the joining player its roster, but its membership changes do
-        // not resend every member's full snapshot to every other member.
+        // A global channel shows the joining player its roster at once. Everyone already in it
+        // gets the change on the next tick, coalesced with every other change in this tick.
         if (profile.broadcastMembers === false)
             this.sendSnapshot(player);
-        else
-            this.broadcastChannel(ownerName.key);
+        this.queueRosterBroadcast(ownerName.key);
         this.memberAdded?.(player, ownerName.key, { rejoin });
         return true;
     }
@@ -664,7 +665,7 @@ class FriendsChatManager {
             this.temporaryBans.delete(ownerKey);
         }
         else {
-            this.broadcastChannel(ownerKey);
+            this.queueRosterBroadcast(ownerKey);
         }
         if (member)
             this.memberRemoved?.(member, ownerKey);
@@ -918,6 +919,27 @@ class FriendsChatManager {
         const owned = accountName(player.getUsername())?.key;
         if (owned && owned !== ownerKey)
             this.broadcastChannel(owned);
+    }
+    /**
+     * Tells a channel's members its roster changed. Ordinary channels send at once; a global
+     * channel (Help) coalesces every change in a tick into one snapshot, so a burst of logins
+     * does not send a full world-sized roster once per player.
+     */
+    static queueRosterBroadcast(ownerKey) {
+        const channel = this.channels.get(ownerKey);
+        if (!channel)
+            return;
+        if (channel.profile.broadcastMembers !== false) {
+            this.broadcastChannel(ownerKey);
+            return;
+        }
+        if (this.pendingRosterBroadcasts.has(ownerKey))
+            return;
+        this.pendingRosterBroadcasts.add(ownerKey);
+        afterTicks(1, () => {
+            this.pendingRosterBroadcasts.delete(ownerKey);
+            this.broadcastChannel(ownerKey);
+        });
     }
     static broadcastChannel(ownerKey) {
         const channel = this.channels.get(ownerKey);
