@@ -3,8 +3,9 @@
  * which unlocks that catalog): grants the Crystal of Echoes (live's name for the Crystal of
  * memories). Teleport-back returns to where the last teleport began (`teleport:landed`), with a
  * cooldown of six minutes cut by one per 300 total levels (none at 1,800). Save-memory only says
- * the crystal keeps itself. Instances and `noRecall` places are skipped. Holding the item is the
- * token for clicking it; the passive itself is the unlocked tier.
+ * the crystal keeps itself. Instances and `noRecall` places are skipped, except the God Wars
+ * chambers: their real tile is remembered and a parked private copy is resumed. Holding the item is
+ * the token for clicking it; the passive itself is the unlocked tier.
  */
 const Common = require("./Common.LeagueRelics");
 
@@ -90,10 +91,35 @@ function grantCrystal(player) {
   return true;
 }
 
-function rememberTeleport({ player, from, fromInstance }) {
-  if (!unlocked(player) || !saving(player) || !carried(player) || fromInstance || !from
-      || (effect.noRecall ?? []).some((box) => inBox(from, box))) return;
-  player.setAttribute(RECALL_ATTRIBUTE, { x: from.getX(), y: from.getY(), z: from.getZ() });
+/**
+ * A God Wars private chamber is the one instance the crystal can remember. Its event carries the
+ * private area, and the chamber maps its copied tile back to the real chamber tile so the memory
+ * remains meaningful after the instance is parked or (safely) expires.
+ */
+function godWarsRecallTarget(player, from, fromArea) {
+  if (!from) return null;
+  const area = fromArea ?? player.getPrivateArea?.();
+  if (area?.isGodWarsInstance !== true || area.isDestroyed?.() || !area.faction?.key
+      || typeof area.sourceOf !== "function") return null;
+  const source = area.sourceOf(from);
+  if (!source || !inBox(source, area.faction.room)) return null;
+  return {
+    x: source.getX(), y: source.getY(), z: source.getZ(),
+    godwars: { faction: area.faction.key },
+  };
+}
+
+function rememberTeleport({ player, from, fromInstance, fromArea }) {
+  if (!unlocked(player) || !saving(player) || !carried(player) || !from) return;
+  const source = godWarsRecallTarget(player, from, fromArea);
+  const startsInInstance = fromInstance || (fromArea ?? player.getPrivateArea?.()) != null;
+  if (startsInInstance && !source) return;
+  const memory = source ?? { x: from.getX(), y: from.getY(), z: from.getZ() };
+  const rememberedAt = source
+    ? new (Common.core.Location)(source.x, source.y, source.z)
+    : from;
+  if ((effect.noRecall ?? []).some((box) => inBox(rememberedAt, box))) return;
+  player.setAttribute(RECALL_ATTRIBUTE, memory);
 }
 
 function recalled(player) {
@@ -116,10 +142,11 @@ function cooldownRemainingMs(player, now = Date.now()) {
   return Math.min(remaining, cooldownMinutes(player) * 60_000);
 }
 
-function teleport(player, location) {
+function teleport(player, location, onArrival) {
   const { TeleportHandler, TeleportType } = Common.core;
   if (!TeleportHandler.checkReqs(player, location, effect.wildernessLevel)) return false;
-  TeleportHandler.confirm(player, location, () => TeleportHandler.teleport(player, location, TeleportType.NORMAL, false), effect.wildernessLevel);
+  TeleportHandler.confirm(player, location,
+    () => TeleportHandler.teleport(player, location, TeleportType.NORMAL, false, onArrival), effect.wildernessLevel);
   return true;
 }
 
@@ -136,7 +163,13 @@ function teleportBack(event) {
     player.sendMessage(Common.message("recallNothing"));
     return true;
   }
-  if (teleport(player, new (Common.core.Location)(saved.x, saved.y, saved.z))) {
+  const location = new (Common.core.Location)(saved.x, saved.y, saved.z);
+  const onArrival = saved.godwars?.faction
+    ? () => Common.api.emitCustomEvent("godwars:chamber-recall", {
+      player, faction: saved.godwars.faction, location, handled: false,
+    })
+    : undefined;
+  if (teleport(player, location, onArrival)) {
     const minutes = cooldownMinutes(player);
     player.setAttribute(READY_AT_ATTRIBUTE, minutes > 0 ? Date.now() + minutes * 60_000 : 0);
   }

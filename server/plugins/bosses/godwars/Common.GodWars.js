@@ -222,6 +222,10 @@ function altarTeleport(player, destination, land = () => player.moveTo(destinati
   // A second click mid-cast changes nothing: one teleport at a time.
   if (altarTeleporting.has(player)) return;
   altarTeleporting.add(player);
+  // The altar moves the player itself, so it sends the same event as TeleportHandler: content that
+  // remembers a teleport's start (the Crystal of memories) sees an altar Teleport too.
+  const from = player.getLocation?.()?.clone?.() ?? null;
+  const fromArea = player.getPrivateArea?.() ?? null;
   const { Animation, Sound, Sounds } = core;
   const sender = player.getPacketSender();
   const movement = player.getMovementQueue();
@@ -246,6 +250,10 @@ function altarTeleport(player, destination, land = () => player.moveTo(destinati
     if (!alive()) return;
     land();
     landed = true;
+    api.emitCustomEvent("teleport:landed", {
+      player, from, fromInstance: fromArea != null, fromArea,
+      to: player.getLocation?.()?.clone?.() ?? destination,
+    });
     player.performAnimation(Animation.DEFAULT_RESET_ANIMATION);
   });
   later(ALTAR_TELEPORT_STEPS.done, () => {

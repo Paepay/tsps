@@ -76,12 +76,14 @@ function fakePlayer(bot = false) {
   const varbits = new Map();
   const varps = new Map();
   const sent = [];
+  let forceMovement = null;
   let position = { x: 2720, y: 2765, z: 0 };
   const location = { getX: () => position.x, getY: () => position.y, getZ: () => position.z };
   const sender = {
     sendConfig: (id, value) => { varps.set(id, value); sent.push(['config', id, value]); return sender; },
     sendVarbit: (id, value) => { varbits.set(id, value); sent.push(['varbit', id, value]); return sender; },
     sendSound: (id, volume, delay) => { sent.push(['sound', id, volume, delay]); return sender; },
+    sendSoundEffect: (id, loops, delay, volume) => { sent.push(['sound', id, loops, delay, volume]); return sender; },
     sendInterfaceFlagsRange: (...args) => { sent.push(['flags', ...args]); return sender; },
     getVarbit: (id) => varbits.get(id) ?? 0,
     getVarp: (id) => varps.get(id) ?? 0,
@@ -100,6 +102,9 @@ function fakePlayer(bot = false) {
     getEquipment: () => ({ getItems: () => [] }),
     sendMessage: (message) => sent.push(['message', message]),
     isRegistered: () => true,
+    getCombat: () => ({ reset() {} }),
+    getForceMovement: () => forceMovement,
+    setForceMovement: (movement) => { forceMovement = movement; },
     getMovementQueue: () => ({ reset() {} }),
     performGraphic: (graphic) => sent.push(['graphic', graphic]),
     moveTo: (next) => {
@@ -517,6 +522,28 @@ test('a Quests-off world opens Cam Torum through both ends of its entrance', () 
   assert.deepEqual([player.position.x, player.position.y, player.position.z], [1439, 9509, 1]);
   assert.equal(click(1439, 9507, 1).handled, true);
   assert.deepEqual([player.position.x, player.position.y, player.position.z], [1435, 3128, 0]);
+});
+
+test('a Quests-off world crosses the Necropolis rubble into the TOA camp', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  player.moveTo(new api.core.Location(3349, 2759, 0));
+  const submit = api.core.TaskManager.submit;
+  api.core.TaskManager.submit = (task) => task.execute();
+  try {
+    const event = { player, objectId: 44003, clickType: 1, definition: { getInteractions: () => ['Climb-over'] },
+      handled: false, location: new api.core.Location(3348, 2759, 0) };
+    for (const handler of hooks.objectHandlers) handler(event);
+    assert.equal(event.handled, true);
+    assert.deepEqual([player.position.x, player.position.y], [3347, 2759]);
+    assert.deepEqual(player.sent.filter(([kind, id]) => kind === 'varbit' && id === 12393),
+      [['varbit', 12393, 1], ['varbit', 12393, 0]], 'busy is set and cleared');
+    assert.ok(player.sent.some(([kind, id, loops, delay]) => kind === 'sound' && id === 2454 && loops === 3 && delay === 4),
+      'the captured crossing sound plays');
+  } finally {
+    api.core.TaskManager.submit = submit;
+  }
 });
 
 test('a Quests-off world activates the Crypt of Tonali lift and its Strange Tiles', () => {

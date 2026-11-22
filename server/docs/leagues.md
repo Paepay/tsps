@@ -202,7 +202,7 @@ relics are the first askers; nothing changes when nobody answers):
 | `treasure-trails:casket-opened` | Treasure Trails' caskets | `{ player, tier }` after a casket's rewards are handed over (not the Mimic's) |
 | `treasure-trails:clue-progress` | Treasure Trails (both trail runtimes) | `{ player, tier, event, completed, saved }`: `"start"` sets `saved` to the tier's carried step count; `"step"` stores `completed`; `"casket"` clears it |
 | `treasure-trails:requirement-waived` | Treasure Trails | `{ player, kind, waived }`: `kind` "emote" (what to wear), "falo" (the item to show) or "charlie" (the item to bring) |
-| `slayer:always-on-task` | Slayer, for a Slayer monster the task does not cover | `{ player, npc, npcId, name, onTask }`: counted as on task everywhere `slayer:on-task` is asked, and a kill gives its Slayer XP and superior chance without counting down the task (`offTask` on `slayer:task-kill`; no keys) |
+| `slayer:always-on-task` | Slayer, for a Slayer monster the task does not cover | `{ player, npc, npcId, name, onTask }`: counted as on task everywhere `slayer:on-task` is asked, and a kill gives its Slayer XP without counting down the task (`offTask` on `slayer:task-kill`; no keys and no superior roll) |
 | `slayer:superior-again` | Slayer's superiors, as one dies | `{ player, npc, chance }`: the chance (0 to 1, 0 unless answered) of another of the same superior where it died |
 | `slayer:helmet` | SlayerHelmet, Slayer's protective equipment, when no mask or helmet is worn | `{ player, worn }`: set `worn` to `imbued` or `plain` for that helmet's on-task boosts and protection |
 | `slayer:superior-spawned`, `slayer:superior-rewards` | Slayer's superiors | `{ player, npc, superior }`; `{ player, npc, normalId, drops, uniqueBoost, extraRolls }` as a superior drops: more rolls on the normal monster's table, a higher unique chance, drops of its own |
@@ -1217,8 +1217,8 @@ Animal Wrangler's Hunter and cooking ones) do not.
   the variants' stronger stats, names and icon (no NPCs of their own in this cache).
 - **Slayer Master** (Raging Echoes tier 5): every Slayer monster counts as on task
   (`slayer:always-on-task`; a monster some task counts, not one only a boss task gives): its Slayer
-  XP, its superior (with Bigger and Badder), the slayer helmet's bonus and every "on task" check,
-  without counting down the real task. So combat achievements done "without a Slayer task" cannot
+  XP, the slayer helmet's bonus and every "on task" check, without counting down the real task.
+  This off-task credit never rolls a superior; a genuine assignment kill does. So combat achievements done "without a Slayer task" cannot
   be done on those monsters with the relic (ours: the Wiki does not say); the reward
   shop's unlocks, extensions, cancels and blocks and its rune pouch, herb sack and looting bag cost
   no points (`slayer:reward-cost`; unlocks still take a click: ours); and the 100th kill of each

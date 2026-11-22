@@ -161,7 +161,7 @@ async function useDoor(f,clickType){
   for(let i=0;i<20;i++)core.World.process();
   return {faction,def};
 }
-async function enterBandos(f){
+async function enterBandos(f,chargeCoins=true){
   const faction=Common.factionByKey('bandos'),[x,y,z]=faction.door.tile,loc=new core.Location(x,y,z);
   core.RegionManager.loadMapFiles(x,y);const door=core.World.findCacheObject(f.player,faction.door.id,loc);assert.ok(door,'active placed door');
   const def=ObjectDefinition.forPlayer(door.getId(),f.player);assert.ok(def);const action=def.getInteractions().findIndex(s=>/private/i.test(String(s)));assert.equal(action,1,'registered private second action');
@@ -171,7 +171,7 @@ async function enterBandos(f){
   await f.connection.dispatch([{type:'object_option',id:def.id,x,y,clickType:action+1}]);
   for(let i=0;i<20&&!Chambers.instanceOf(f.player);i++)core.World.process();
   const area=Chambers.instanceOf(f.player);assert.ok(area?.isGodWarsInstance);assert.equal(f.player.getPrivateArea(),area);assert.ok(area.hasMember(f.player));
-  assert.equal(f.player.getInventory().getAmount(I.COINS),cash-Common.data.instanceCost);assert.equal(Common.getEssence(f.player,faction),essence-Common.data.essence.required);
+  assert.equal(f.player.getInventory().getAmount(I.COINS),chargeCoins?cash-Common.data.instanceCost:cash);assert.equal(Common.getEssence(f.player,faction),essence-Common.data.essence.required);
   for(let i=0;i<10;i++)core.World.process();
   const general=[...core.World.getNpcs()].find(n=>n?.isRegistered()&&n.getId()===faction.general&&n.getPrivateArea()===area);
   assert.ok(general,'actual chamber-spawned registered general');assert.equal(general.__godwarsChamber.area,area);f.owned.add(general);
@@ -246,4 +246,57 @@ test('re-entering a parked chamber keeps the same chamber and dead general',asyn
   assert.equal(Chambers.instanceOf(f.player),area,'the door re-enters the parked chamber instead of building a fresh one');assert.equal(f.player.getPrivateArea(),area);
   assert.equal(f.player.getInventory().getAmount(I.COINS),cash,'re-entering does not charge the instance fee again');
   assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area&&n.getId()===generalId),false,'re-entering does not reset the general\'s respawn');
+});
+
+test('Crystal of memories returns to the public and parked Bandos chambers (issue #127)',async t=>{
+  const Crystal=require('../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics');
+  const {AreaManager}=require('../dist/game/model/areas/AreaManager');
+  const f=actor(t),faction=Common.factionByKey('bandos'),source=new core.Location(2870,5360,2),landing=Common.toLocation(faction.door.landing);
+  f.player.setProfile('league');
+  f.player.setAttribute('league:type',4);
+  f.player.setAttribute('league:relics',{0:1,1:1,2:1});
+  // The Bandos chamber is the Asgarnia area's God Wars rectangle (id 3); without it lock
+  // enforcement sends the character home before the altar cast, which is not what this test is about.
+  f.player.setAttribute('league:areas',[1,2,3]);
+  const crystalId=core.ItemIdentifiers.CRYSTAL_OF_ECHOES;
+  f.player.getInventory().adds(crystalId,1);
+  assert.equal(Crystal.unlocked(f.player),true,'tier 3 crystal passive');
+
+  const clickBack=()=>{
+    f.player.setAttribute(Crystal.READY_AT_ATTRIBUTE,0);
+    const slot=f.player.getInventory().getSlotForItemId(crystalId);assert.ok(slot>=0);
+    const event={player:f.player,item:f.player.getInventory().getItems()[slot],itemId:crystalId,slot,option:'Teleport-back',clickType:1,handled:false};
+    assert.equal(PM.emitItemAction(event),true,'the crystal item action is handled');
+  };
+  const process=ticks=>{for(let i=0;i<ticks;i++)core.TaskManager.process();};
+
+  // Public Bandos chamber: the altar's own teleport must still publish its start.
+  core.RegionManager.loadMapFiles(source.getX(),source.getY());
+  f.player.setLocation(source.clone());f.player.setNeedsPlacement(false);
+  Common.altarTeleport(f.player,landing);
+  process(10);
+  assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[landing.getX(),landing.getY(),landing.getZ()]);
+  assert.deepEqual(f.player.getAttribute(Crystal.RECALL_ATTRIBUTE),{x:source.getX(),y:source.getY(),z:source.getZ()},'public chamber remembered');
+  f.player.moveTo(new core.Location(3200,3200,0));f.player.setNeedsPlacement(false);
+  clickBack();
+  process(6);
+  assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[source.getX(),source.getY(),source.getZ()],'public return');
+
+  // Private chamber: the saved real tile is mapped back into the same parked instance.
+  // A league character always gets a private chamber without the instance fee (issue #68).
+  const {area}=await enterBandos(f,false),copy=area.copyOf([source.getX(),source.getY(),source.getZ()]);
+  f.player.moveTo(copy.clone());f.player.setNeedsPlacement(false);
+  Common.altarTeleport(f.player,landing);
+  process(10);
+  AreaManager.process(f.player);
+  assert.equal(Chambers.instanceOf(f.player),area,'altar Teleport parks the private chamber');
+  assert.equal(f.player.getPrivateArea(),null);
+  assert.deepEqual(f.player.getAttribute(Crystal.RECALL_ATTRIBUTE),{x:source.getX(),y:source.getY(),z:source.getZ(),godwars:{faction:'bandos'}},'private chamber remembered as its real tile');
+  f.player.moveTo(new core.Location(3200,3200,0));f.player.setNeedsPlacement(false);
+  clickBack();
+  process(6);
+  assert.equal(Chambers.instanceOf(f.player),area,'the parked chamber is reused');
+  assert.equal(f.player.getPrivateArea(),area);
+  assert.ok(area.hasMember(f.player));
+  assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[copy.getX(),copy.getY(),copy.getZ()],'instance return');
 });

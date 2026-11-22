@@ -4,7 +4,7 @@
 // Wooden gates are two locs (hinge 12986 + extension 12987) that must swing together around
 // the hinge post; opening replaces both with 12988/12989 on the perpendicular tile line.
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 
 const { Server } = require('../dist/Server');
 Server.installProductionPathResolver();
@@ -30,6 +30,8 @@ async function initializeMapCollisionOnce() {
   RegionManager.init();
   mapCollisionInitialized = true;
 }
+
+before(initializeMapCollisionOnce);
 
 function buildHarness({ cacheObjects, objectManager: suppliedObjectManager, realMapObjects = false } = {}) {
   const world = new Map();
@@ -96,6 +98,10 @@ function buildHarness({ cacheObjects, objectManager: suppliedObjectManager, real
     onRegionLoaded: (handler) => { regionLoaded = handler; },
     onObjectRoute: (handler) => routes.push(handler),
     onServerStartup: (handler) => startup.push(handler),
+    persistAttribute: () => {},
+    onPlayerLogout: () => {},
+    onPlayerDeath: () => {},
+    onPlayerLogin: () => {},
     onPlayerProcess: () => {},
   };
   delete require.cache[require.resolve('../plugins/objects/Doors.plugin')];
@@ -109,6 +115,7 @@ function buildHarness({ cacheObjects, objectManager: suppliedObjectManager, real
   };
 
   const steps = [], forced = [], relocations = [];
+  const attributes = new Map();
   let canStepAside = true;
   const click = (id, x, y, face, action = 'Open', name = 'Gate', type = 0, privateArea = null, z = 0, from = null, approach = null) => {
     const object = new GameObject(id, new Location(x, y, z), type, face, privateArea);
@@ -118,8 +125,12 @@ function buildHarness({ cacheObjects, objectManager: suppliedObjectManager, real
       isPlayerBot: () => false,
       getPrivateArea: () => privateArea,
       getLocation: () => location,
-      getAttribute: () => 0,
-      setAttribute: () => {},
+      getAttribute: (name) => attributes.get(name),
+      setAttribute: (name, value) => attributes.set(name, value),
+      hasFlag: () => false,
+      setFlag: () => {},
+      removeFlag: () => {},
+      setPositionToFace: () => {},
       isNeedsPlacement: () => false,
       isAllowRegionChangePacket: () => false,
       getPacketSender: () => ({}),
@@ -1316,6 +1327,7 @@ function alKharidPlayer(coins, x, y) {
     }),
     getMovementQueue: () => ({ reset: () => {}, setBlockMovement: () => {}, handleRegionChange: () => {} }),
     getForceMovement: () => null,
+    getSkillAnimation: () => null,
     setSkillAnimation: () => {},
     performAnimation: () => {},
     getUpdateFlag: () => ({ flag: () => {} }),
@@ -1715,14 +1727,26 @@ test('the Blood Hunt Myrmel pub door swings from its cache Open-only definition'
 
 
 test('the catacomb outer jail gate uses its actionless open cache variant and auto-closes', () => {
- const h=buildHarness();try{
+  const h=buildHarness();try{
   assert.deepEqual(h.click(53441,4126,4788,2),[
    ['deregister',53441,4126,4788,2],['register',53442,4127,4788,3],
   ]);
   h.submitted.at(-1).execute();assert.deepEqual(h.ops.splice(0),[
    ['deregister',53442,4127,4788,3],['register',53441,4126,4788,2],
   ]);
- }finally{h.restore();}
+  }finally{h.restore();}
+});
+
+test('the Necropolis entrance gate opens into its actionless Sophanem leaf', () => {
+  const h = buildHarness();
+  try {
+    assert.deepEqual(h.click(44040, 3322, 2761, 2), [
+      ['deregister', 44040, 3322, 2761, 2],
+      ['register', 44041, 3323, 2761, 3],
+    ]);
+  } finally {
+    h.restore();
+  }
 });
 
 test('the Lassar cistern gate opens into its actionless cache variant', () => {
@@ -1812,16 +1836,50 @@ test('Dragon Slayer secret wall: real routing and clipping keep ordinary movemen
 test('the Shantay pass crosses the desert fence in the right direction', () => {
   assert.deepEqual(shantayCrossingFor({ x: 3303, y: 3117, z: 0 }), {
     desert: true,
+    face: [0, -1],
+    guard: 4648,
     path: [[3303, 3116], [3303, 3115]],
   });
   assert.deepEqual(shantayCrossingFor({ x: 3303, y: 3115, z: 0 }), {
     desert: false,
+    face: [0, 1],
+    guard: 4648,
     path: [[3303, 3116], [3303, 3117]],
   });
   assert.equal(shantayCrossingFor({ x: 3303, y: 3115, z: 1 }), null);
   // The gate is 4 tiles wide (3302-3305): live crossed from 3304 too.
   assert.deepEqual(shantayCrossingFor({ x: 3305, y: 3117, z: 0 }).path, [[3305, 3116], [3305, 3115]]);
   assert.equal(shantayCrossingFor({ x: 3306, y: 3117, z: 0 }), null);
+
+  // Ruins of Unkah east gate (41326 at 3194,2841, face 1): the 4x2 model turns to
+  // 2x4, so the passable line is east-west from 3194..3195 into the desert eastwards.
+  assert.deepEqual(shantayCrossingFor({ x: 3193, y: 2842, z: 0 }), {
+    desert: true,
+    face: [1, 0],
+    guard: 10634,
+    path: [[3194, 2842], [3195, 2842], [3196, 2842]],
+  });
+  assert.deepEqual(shantayCrossingFor({ x: 3196, y: 2842, z: 0 }), {
+    desert: false,
+    face: [-1, 0],
+    guard: 10634,
+    path: [[3195, 2842], [3194, 2842], [3193, 2842]],
+  });
+  assert.equal(shantayCrossingFor({ x: 3193, y: 2845, z: 0 }), null);
+
+  // Ruins of Unkah south gate (41326 at 3166,2817, face 2): 4x2, crossed north-south.
+  assert.deepEqual(shantayCrossingFor({ x: 3167, y: 2819, z: 0 }), {
+    desert: true,
+    face: [0, -1],
+    guard: 10634,
+    path: [[3167, 2818], [3167, 2817], [3167, 2816]],
+  });
+  assert.deepEqual(shantayCrossingFor({ x: 3167, y: 2816, z: 0 }), {
+    desert: false,
+    face: [0, 1],
+    guard: 10634,
+    path: [[3167, 2817], [3167, 2818], [3167, 2819]],
+  });
 });
 
 
@@ -2043,6 +2101,11 @@ test('Mort Myre gate swings through its captured leaves and closes after passage
       const player = {
         getPrivateArea: () => null,
         getLocation: () => new Location(x, fromNorth ? 3458 : 3457, 0),
+        getAttribute: () => null,
+        setAttribute: () => {},
+        hasFlag: () => false,
+        setFlag: () => {},
+        removeFlag: () => {},
         getMovementQueue: () => ({ reset() {}, addSteps: tile => steps.push([tile.getX(), tile.getY()]) }),
       };
       assert.equal(h.handlers.get('Gate').Open({ player, object, objectId: id,
@@ -2135,8 +2198,11 @@ test('the Priest in Peril mausoleum gates swing in the captured leaf, let the pl
     : [RegionManager.blockedEast(new Location(3431, 9897, 0), null), RegionManager.blockedWest(new Location(3432, 9897, 0), null)];
   const walker = (px, py, steps) => {
     const flags = new Set();
+    const attributes = new Map();
     let queued = 0;
     return { flags, getPrivateArea: () => null, getLocation: () => new Location(px, py, 0),
+      getAttribute: (name) => attributes.get(name), setAttribute: (name, value) => attributes.set(name, value),
+      isRegistered: () => true, getHitpoints: () => 10,
       hasFlag: (f) => flags.has(f), setFlag: (f, on = true) => { if (on) flags.add(f); else flags.delete(f); },
       removeFlag: (f) => flags.delete(f),
       getMovementQueue: () => ({ reset() { queued = 0; }, size: () => queued,

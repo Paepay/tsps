@@ -25,6 +25,8 @@ class TeleportTask extends Task {
     /** Where the teleport began, and whether in an instance, for "teleport:landed". */
     private readonly from: Location | null;
     private readonly fromInstance: boolean;
+    /** The private area it began in, for content that can resume that same area (God Wars). */
+    private readonly fromArea: any;
 
     constructor(
         private readonly player: Player,
@@ -37,6 +39,7 @@ class TeleportTask extends Task {
         // A bare test entity may have no position; the event then says nothing of a start.
         this.from = player.getLocation?.()?.clone?.() ?? null;
         this.fromInstance = player.getPrivateArea?.() != null;
+        this.fromArea = player.getPrivateArea?.() ?? null;
     }
 
     execute(): void {
@@ -60,7 +63,13 @@ class TeleportTask extends Task {
             // attacked and clicking work again at once.
             this.release();
             // Content that remembers where a teleport began (a league's recall item).
-            PluginManager.emitCustomEvent("teleport:landed", { player: this.player, from: this.from, fromInstance: this.fromInstance, to: this.targetLocation });
+            PluginManager.emitCustomEvent("teleport:landed", {
+                player: this.player,
+                from: this.from,
+                fromInstance: this.fromInstance,
+                fromArea: this.fromArea,
+                to: this.targetLocation,
+            });
             this.onArrival?.();
             if (!this.teleportType.getOptions().repeatEndAnimation) {
                 this.stop();

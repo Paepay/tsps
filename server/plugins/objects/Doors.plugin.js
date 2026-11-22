@@ -202,6 +202,9 @@ function defineDoorData({ ObjectIdentifiers: O }) {
     [O.DOOR_837, O.DOOR_838],
     // Catacomb outer jail gate: its open cache variant has no Close action.
     [O.GATE_301, O.GATE_302],
+    // The Necropolis entrance gate west of the TOA camp (sophanem_gate_small at 3322,2761):
+    // its same-model open leaf 44041 is nameless and actionless, so the normal scan cannot pair it.
+    [O.GATE_234, O.GATE_234 + 1],
     // The Lassar cistern gate opens into its actionless, same-model cache variant.
     [O.GATE_268, O.GATE_269],
     // The Grand Tree's doors (O.TREE_DOOR, O.TREE_DOOR_2) open in place: GrandTree.plugin.js.

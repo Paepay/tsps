@@ -59,6 +59,7 @@ function attach(api) {
     require("./SirPrysin.Quests")(api);
     require("./DragonSlayer.Quests")(api);
     require("./CamTorum.Quests")(api);
+    require("./BeneathCursedSands.Quests")(api);
     require("./TheFinalDawn.Quests")(api);
     require("./WhileGuthixSleeps.Quests")(api);
   }

@@ -716,6 +716,56 @@ test("Crystal of memories saves only while it is carried and Save-memory is on (
   assert.equal(Crystal.SAVE_ATTRIBUTE, "league:crystal-of-memories-save");
 });
 
+test("Crystal of memories remembers God Wars chambers and resumes their private copy (issue #127)", () => {
+  const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
+  const player = cases({ 0: 1, 1: 1, 2: 1 }, 4).relic;
+  const saved = () => player.getAttribute(Crystal.RECALL_ATTRIBUTE);
+  const land = (from, fromInstance, fromArea = null) => {
+    for (const handler of custom["teleport:landed"] ?? []) {
+      handler({ player, from, fromInstance, fromArea });
+    }
+  };
+
+  // Public Bandos chamber: an ordinary real tile used to be lost because the altar's own teleport
+  // did not publish "teleport:landed" at all (regression covered in the God Wars suite).
+  player.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
+  land(new Location(2870, 5360, 2), false);
+  assert.deepEqual(saved(), { x: 2870, y: 5360, z: 2 });
+  click("Crystal of Echoes", "Teleport-back", player);
+  assert.deepEqual(at(teleports.at(-1)), [2870, 5360, 2]);
+
+  // A private chamber's copied tile is mapped back to the real room tile, and Teleport-back asks
+  // God Wars to resume that player's parked chamber before falling back to the public tile.
+  const faction = { key: "bandos", room: { minX: 2864, maxX: 2877, minY: 5351, maxY: 5373, z: 2 } };
+  const area = {
+    isGodWarsInstance: true,
+    isDestroyed: () => false,
+    faction,
+    sourceOf: (location) => new Location(location.getX() + 352 * 8, location.getY() + 663 * 8, location.getZ()),
+  };
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  land(new Location(54, 56, 2), true, area);
+  assert.deepEqual(saved(), { x: 2870, y: 5360, z: 2, godwars: { faction: "bandos" } });
+
+  let recalled = null;
+  const previous = custom["godwars:chamber-recall"] ?? [];
+  custom["godwars:chamber-recall"] = [(event) => { recalled = event; event.handled = true; }];
+  try {
+    player.setAttribute(Crystal.READY_AT_ATTRIBUTE, 0);
+    click("Crystal of Echoes", "Teleport-back", player);
+    assert.deepEqual(at(teleports.at(-1)), [2870, 5360, 2]);
+    assert.equal(recalled.faction, "bandos");
+    assert.deepEqual([recalled.location.getX(), recalled.location.getY(), recalled.location.getZ()], [2870, 5360, 2]);
+  } finally {
+    custom["godwars:chamber-recall"] = previous;
+  }
+
+  // A destroyed chamber is not remembered again; the last good memory is left intact.
+  player.setAttribute(Crystal.RECALL_ATTRIBUTE, null);
+  land(new Location(54, 56, 2), true, { ...area, isDestroyed: () => true });
+  assert.equal(saved(), null, "a stale instance never becomes a return target");
+});
+
 test("Level-Up World: Trailblazer Reloaded tier 3 unlocks the Crystal of memories passive", () => {
   const Crystal = require("../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics");
   const player = character("levelupcrystal", "main");

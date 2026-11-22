@@ -545,7 +545,8 @@ function countsForTarget(task, { id, name, location, npc = null, player = null }
 /**
  * "slayer:always-on-task" { player, npc?, npcId, name, onTask }: asked for a Slayer monster the
  * player's task does not cover; content may count every one as on task (a league relic). Task
- * credit then gives the monster's Slayer XP and its superior, without counting down the task.
+ * credit then gives the monster's Slayer XP without counting down the task; an off-task kill
+ * never brings a superior (Wiki, Superior slayer monster: it must be on a Slayer task).
  */
 function alwaysOnTask(player, npc, npcId, name) {
   if (!player || !Data.isTaskMonster(npcId, name)) return false;
@@ -589,7 +590,7 @@ function npcKilled({ killer, npc, npcId }) {
   const hitpoints = killed.definition.getHitpoints();
   // Superiors.Slayer.js may spawn a superior, or zero this for a superior's own XP. A boss with its own
   // Slayer XP sets it here; `npcId` is the id it died as (`npc` may have turned into its corpse since).
-  const kill = { player, npc, npcId: killed.id, xp: hitpoints };
+  const kill = { player, npc, npcId: killed.id, xp: hitpoints, offTask: false };
   api.emitCustomEvent("slayer:task-kill", kill);
   // `slayer:on-task-kill` { player, npcName }: a kill that counts for the player's own task (not an always-on-task
   // kill without one), the NPC's name flat for triggers ("Slay 250 creatures", "Kill an Abyssal Demon on task").
@@ -620,7 +621,7 @@ function unlockKills(player, npc) {
   return 1;
 }
 
-/** A kill counted as on task with no task covering it ("slayer:always-on-task"): its XP and superior, no count. */
+/** A kill counted as on task with no task covering it ("slayer:always-on-task"): its XP, no count and no superior. */
 function offTaskKill(player, npc, killed = killedAs(npc)) {
   if (!alwaysOnTask(player, npc, killed.id, killed.name)) return;
   const hitpoints = killed.definition.getHitpoints();

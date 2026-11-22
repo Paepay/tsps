@@ -96,6 +96,18 @@ function instanceClass() {
       return this.tile(x - chunkX * CHUNK, y - chunkY * CHUNK, z ?? 0);
     }
 
+    /** The real chamber tile an instance tile was copied from. */
+    sourceOf(location) {
+      const { chunkX, chunkY } = this.faction.instance;
+      // The chunk grid sits at this instance allocation, not at the source chunk: undo the base
+      // before adding the copied chunk back.
+      return Common.toLocation([
+        location.getX() - this.getBaseX() + chunkX * CHUNK,
+        location.getY() - this.getBaseY() + chunkY * CHUNK,
+        location.getZ(),
+      ]);
+    }
+
     spawnChamber() {
       (chamberSpawns.get(this.faction.key) ?? []).forEach((row, slot) => this.spawn(row, slot));
     }
@@ -286,6 +298,23 @@ function reenter(player, area) {
 }
 
 /**
+ * A crystal of memories' teleport back into a parked private chamber: the saved location is a real
+ * chamber tile, mapped back into this player's own copy. A chamber that has been ended or belongs
+ * to another god is not revived; the caller's public landing is then left in place.
+ */
+function recallPrivate(event) {
+  const { player, faction, location } = event;
+  const area = instanceOf(player);
+  if (!area || area.isDestroyed() || area.faction.key !== faction || !location
+      || !Common.inBox(area.faction.room, location.getX(), location.getY(), location.getZ())) return false;
+  player.getMovementQueue().reset();
+  area.enter(player);
+  player.moveTo(area.copyOf([location.getX(), location.getY(), location.getZ()]));
+  event.handled = true;
+  return true;
+}
+
+/**
  * The private chamber, as captured: the fade, then a tick later the rebuilt chamber. A chamber
  * this player already has is re-entered (the essence is paid again, the coins are not).
  */
@@ -349,7 +378,7 @@ function pray({ player, objectId }) {
 }
 
 /**
- * Teleport: out past the chamber's door, a private chamber ended behind them, on the recorded ticks. The landing is
+ * Teleport: out past the chamber's door, a private chamber left parked behind them, on the recorded ticks. The landing is
  * one tile beyond the door's outer tile: Bandos (2861, 5354, 2) in local 1000402 t26539 and Saradomin
  * (2910, 5265, 0) in local 1000361 t11609. Ours: Armadyl and Zamorak are unrecorded and use the same step out.
  */
@@ -357,11 +386,7 @@ function teleportOut({ player, objectId }) {
   const faction = Common.factionForAltar(objectId);
   if (!faction) return false;
   const landing = Common.toLocation(faction.door.landing);
-  Common.altarTeleport(player, landing, () => {
-    const inside = chamberOf(player);
-    player.moveTo(landing);
-    if (inside?.[1]) end(player);
-  });
+  Common.altarTeleport(player, landing, () => player.moveTo(landing));
   return true;
 }
 
@@ -393,7 +418,8 @@ function attachChambers(api) {
   api.onObjectThirdClick(doors, peek);
   api.onObjectFirstClick(altars, pray);
   api.onObjectSecondClick(altars, teleportOut);
+  api.onCustomEvent("godwars:chamber-recall", recallPrivate);
   api.onNpcDeath(respawnInChamber);
 }
 
-module.exports = { attachChambers, instanceOf, _test: { end, park, isolatedAccount, isLeagueCharacter, startPrivate } };
+module.exports = { attachChambers, instanceOf, _test: { end, park, recallPrivate, isolatedAccount, isLeagueCharacter, startPrivate } };

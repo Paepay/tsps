@@ -1,8 +1,9 @@
 /**
  * Slayer Master (https://oldschool.runescape.wiki/w/Slayer_Master_(Raging_Echoes_League)), Raging
  * Echoes' tier 5 relic:
- * - Every Slayer monster counts as on task (its Slayer XP, its superior, the slayer helmet's
- *   bonus and every "on task" check), without counting down the real task.
+ * - Every Slayer monster counts as on task (its Slayer XP, the slayer helmet's bonus and every
+ *   "on task" check), without counting down the real task. This off-task credit does not bring
+ *   a superior, which needs a genuine assignment kill.
  * - The Slayer reward shop's unlocks and extensions, cancelling and blocking, and its rune pouch,
  *   herb sack and looting bag cost no points (the unlocks still take a click: ours).
  * - The 100th kill of each Slayer monster gives 1,000 to 15,000 bonus Slayer XP by its Slayer

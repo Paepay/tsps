@@ -150,7 +150,9 @@ table is equally likely; here each table is rolled on its own. Before the roll t
 matches one of a table's items multiplies that table's chance (a league's boosted drops,
 [server/docs/leagues.md](https://github.com/RSPSApp/tsps/blob/main/server/docs/leagues.md)). Whether a task kill brings a superior at all
 is asked first on `slayer:superior-spawn` { player, npc, unlocked, chance }: Bigger and Badder's
-bit and 1 in 200, which a listener may unlock or shorten; the toggle-off always holds.
+bit and 1 in 200, which a listener may unlock or shorten; the toggle-off always holds. Only a
+genuine assignment kill rolls it: a kill counted as on task by `slayer:always-on-task` is sent
+with `offTask` and never brings a superior.
 
 ### Kills
 

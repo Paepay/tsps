@@ -147,6 +147,41 @@ test("going north is free, and the elite Desert Diary needs no pass", () => {
   answers.diaries.delete("elite");
 });
 
+test("the Ruins of Unkah gates cross their real east-west and north-south footprints", () => {
+  const east = createPlayer({ at: [3196, 2842] });
+  hooks.gate["Go-through"]({ player: east });
+  runTasks();
+  assert.deepEqual([east.getLocation().getX(), east.getLocation().getY()], [3193, 2842]);
+
+  const south = createPlayer({ at: [3167, 2816] });
+  hooks.gate["Go-through"]({ player: south });
+  runTasks();
+  assert.deepEqual([south.getLocation().getX(), south.getLocation().getY()], [3167, 2819]);
+
+  const paid = createPlayer({ at: [3167, 2819], items: { [SHANTAY_PASS]: 2 } });
+  paid.setAttribute("warning-screens:warning-10", 7);
+  hooks.gate["Go-through"]({ player: paid });
+  runTasks();
+  assert.deepEqual([paid.getLocation().getX(), paid.getLocation().getY()], [3167, 2816]);
+  assert.equal(paid.amount(SHANTAY_PASS), 1);
+  assert.ok(paid.log.includes("message The guard takes your Shantay Pass as you go through the gate."));
+
+  const refused = createPlayer({ at: [3193, 2842] });
+  refused.setAttribute("warning-screens:warning-10", 7);
+  hooks.gate["Go-through"]({ player: refused });
+  runTasks();
+  assert.ok(refused.log.includes("dialogue"));
+  assert.deepEqual([refused.getLocation().getX(), refused.getLocation().getY()], [3193, 2842]);
+
+  answers.diaries.add("elite");
+  const elite = createPlayer({ at: [3193, 2842] });
+  elite.setAttribute("warning-screens:warning-10", 7);
+  hooks.gate["Go-through"]({ player: elite });
+  runTasks();
+  assert.deepEqual([elite.getLocation().getX(), elite.getLocation().getY()], [3196, 2842]);
+  answers.diaries.delete("elite");
+});
+
 test("Shantay's conditions follow the player's coins, bank, visits and escapes", () => {
   const player = createPlayer({ items: { [COINS]: 3 }, bank: 100 });
   let answered = Shantay.conditions(player);

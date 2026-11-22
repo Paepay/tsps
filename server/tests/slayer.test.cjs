@@ -1227,6 +1227,31 @@ test("superiors: Bigger and Badder spawns one 1 time in 200, worth ten times its
   assert.equal(player.xp.at(-1)[1], superior.getDefinition().getHitpoints() * 10);
 });
 
+test("superiors: only a genuine on-task kill rolls one; always-on-task credit does not (#126)", (t) => {
+  const player = createPlayer();
+  Rewards.setUnlockBit(player, 35, true);
+  t.mock.method(Math, "random", () => 0);
+  const alwaysOnTask = (request) => { request.onTask = true; };
+  const previous = handlers.events.get("slayer:always-on-task") ?? [];
+  handlers.events.set("slayer:always-on-task", [...previous, alwaysOnTask]);
+  t.after(() => handlers.events.set("slayer:always-on-task", previous));
+  const bloodveld = npcNamed("Bloodveld");
+  const before = spawned.length;
+
+  kill(player, bloodveld);
+  assert.equal(spawned.length, before, "no task: an always-on-task kill leaves no superior");
+  giveTask(player, 3, "Goblins", 10);
+  kill(player, bloodveld);
+  assert.equal(spawned.length, before, "the wrong task: even always-on-task credit leaves no superior");
+  assert.equal(varp(player, "slayer_count"), 10, "and the off-task kill does not count down the task");
+  giveTask(player, 3, "Bloodveld", 5);
+  kill(player, bloodveld);
+  assert.equal(spawned.length, before + 1, "a genuine task kill still brings one");
+  assert.equal(CacheDefinitions.getNpc(spawned.at(-1).id).name, "Insatiable Bloodveld");
+  assert.equal(Superiors.taskKill({ player, npc: bloodveld, offTask: true }, () => 0), null,
+    "an event explicitly marked off-task is refused before the roll");
+});
+
 // Wiki (Superior slayer monster): a guaranteed Larran's key only "on-task in the Wilderness Slayer Cave".
 test("a Krystilia superior is a guaranteed Larran's key only in the Wilderness Slayer Cave", () => {
   const larran = { denominator: Keys.larranDenominator, caveBoost: true };

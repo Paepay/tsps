@@ -2,10 +2,11 @@
 
 /**
  * Superior Slayer monsters (data/slayer-superiors.json): with Bigger and Badder unlocked and
- * not toggled off (slayer_toggleoff_superiormobs), an on-task kill ("slayer:task-kill" from
- * Tasks.Slayer.js) spawns the monster's superior where it died, 1 time in 200, attacking the
- * player. A superior gives ten times its hitpoints in Slayer XP, on task or not (on task through
- * the task's kill, so Mortimer's XP modifier counts it), and rolls the superior unique tables
+ * not toggled off (slayer_toggleoff_superiormobs), a genuine on-task kill ("slayer:task-kill"
+ * without `offTask` from Tasks.Slayer.js) spawns the monster's superior where it died, 1 time
+ * in 200, attacking the player. Always-on-task credit is an off-task kill and never brings one.
+ * A superior gives ten times its hitpoints in Slayer XP, on task or not (on task through the
+ * task's kill, so Mortimer's XP modifier counts it), and rolls the superior unique tables
  * (Mortimer's superior unique modifier raises their chance). A slain superior brings another
  * only when content gives it a chance ("slayer:superior-again").
  */
@@ -133,11 +134,12 @@ function taskKillEvent(event) {
     onTaskKills.add(event.npc);
     return;
   }
+  if (event.offTask) return;
   taskKill(event);
 }
 
-function taskKill({ player, npc }, random = Math.random) {
-  if (isSuperior(npc)) return null;
+function taskKill({ player, npc, offTask = false }, random = Math.random) {
+  if (offTask || isSuperior(npc)) return null;
   const rule = spawnRule(player, npc);
   if (!rule.unlocked) return null;
   const id = resolve().get(npcName(npc).toLowerCase());

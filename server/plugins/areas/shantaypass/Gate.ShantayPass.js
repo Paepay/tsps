@@ -1,9 +1,14 @@
 /**
- * The Shantay Pass gate (loc 4031, 4x1 at 3302-3305, 3116), as rsprox captures show it:
+ * The Shantay Pass gates, as rsprox captures show them:
  *
- * - Going south into the desert takes a Shantay pass ("The guard takes your Shantay Pass as
+ * - The main gate (loc 4031, 4x1 at 3302-3305, 3116) runs north-south. Going south into the
+ *   desert takes a Shantay pass ("The guard takes your Shantay Pass as
  *   you go through the gate."). Without one, the gate guard says so. The elite Desert Diary
  *   lets a player through without a pass (Wiki).
+ * - The Ruins of Unkah have two more gates (loc 41326 at 3194,2841 and 3166,2817; Wiki
+ *   object table). Their map rotations make the east gate 2x4, crossed east-west, and the
+ *   south gate 4x2, crossed north-south. Both lead out of the ruins into the desert and use
+ *   the same pass and Desert Diary rules.
  * - Until it is turned off, the desert warning (565, cws_warning_10) opens first, a tick after
  *   arriving. Each showing counts up varbit 3860 to 6; from then on it offers "Don't ask me
  *   this again", which sets 7: no more warnings. The WarningScreens plugin shows it, and the
@@ -19,11 +24,48 @@ const GATE_X = 3302;
 const GATE_WIDTH = 4;
 const GATE_Y = 3116;
 const GATE_GUARD = 4648;
+const UNKAH_GUARD = 10634;
+
+/**
+ * The usable gate footprints. `desert` is the travel direction (x, y) that leaves the
+ * non-desert side; the map face turns loc 41326's 4x2 model into a 2x4 footprint at the
+ * eastern Unkah gate.
+ */
+const GATES = Object.freeze([
+  Object.freeze({
+    minX: GATE_X,
+    maxX: GATE_X + GATE_WIDTH - 1,
+    minY: GATE_Y,
+    maxY: GATE_Y,
+    axis: "y",
+    desert: [0, -1],
+    guard: GATE_GUARD,
+  }),
+  Object.freeze({
+    minX: 3194,
+    maxX: 3195,
+    minY: 2841,
+    maxY: 2844,
+    axis: "x",
+    desert: [1, 0],
+    guard: UNKAH_GUARD,
+  }),
+  Object.freeze({
+    minX: 3166,
+    maxX: 3169,
+    minY: 2817,
+    maxY: 2818,
+    axis: "y",
+    desert: [0, -1],
+    guard: UNKAH_GUARD,
+  }),
+]);
 
 /** cws_warning_10: the desert warning (565). */
 const DESERT_WARNING = 10;
 const PASS_TAKEN_MESSAGE = "The guard takes your Shantay Pass as you go through the gate.";
 const NO_PASS_LINE = "You need a Shantay pass to get through this gate. See Shantay, he will sell you one for a very reasonable price.";
+const UNKAH_NO_PASS_LINE = "You'll need a Shantay pass to go through the gate into the desert. See Shantay, he'll sell you one for a very reasonable price.";
 
 const BILLBOARD = [
   "You look at the huge stone gate.<br>Near the gate is a large billboard poster, it reads:",
@@ -32,19 +74,38 @@ const BILLBOARD = [
 ];
 
 const DESERT_ROBES_TASK = "enter-the-desert-with-a-set-of-desert-robes-equi";
-const FACE_SOUTH = [0, -1];
-const FACE_NORTH = [0, 1];
-
 /**
- * The two steps through the gate from `source`, the tile north or south of it the player
- * stands on: `desert` when they head south into the desert.
+ * Every step through the gate starting with the footprint tile next to `source`, and the
+ * tile beyond the far side. `desert` says whether those steps leave the non-desert side.
  */
 function crossingFor(source) {
   if (!source || !Number.isInteger(source.x) || !Number.isInteger(source.y) || source.z !== 0) return null;
-  if (source.x < GATE_X || source.x >= GATE_X + GATE_WIDTH) return null;
-  if (source.y === GATE_Y + 1) return { desert: true, path: [[source.x, GATE_Y], [source.x, GATE_Y - 1]] };
-  if (source.y === GATE_Y - 1) return { desert: false, path: [[source.x, GATE_Y], [source.x, GATE_Y + 1]] };
+  for (const gate of GATES) {
+    if (gate.axis === "y") {
+      if (source.x < gate.minX || source.x > gate.maxX) continue;
+      if (source.y === gate.maxY + 1) return crossing(gate, source.x, gate.maxY, 0, -1);
+      if (source.y === gate.minY - 1) return crossing(gate, source.x, gate.minY, 0, 1);
+    } else {
+      if (source.y < gate.minY || source.y > gate.maxY) continue;
+      if (source.x === gate.maxX + 1) return crossing(gate, gate.maxX, source.y, -1, 0);
+      if (source.x === gate.minX - 1) return crossing(gate, gate.minX, source.y, 1, 0);
+    }
+  }
   return null;
+}
+
+function crossing(gate, x, y, dx, dy) {
+  const path = [];
+  if (dx > 0) for (let at = x; at <= gate.maxX + 1; at++) path.push([at, y]);
+  else if (dx < 0) for (let at = x; at >= gate.minX - 1; at--) path.push([at, y]);
+  else if (dy > 0) for (let at = y; at <= gate.maxY + 1; at++) path.push([x, at]);
+  else for (let at = y; at >= gate.minY - 1; at--) path.push([x, at]);
+  return {
+    desert: dx === gate.desert[0] && dy === gate.desert[1],
+    face: [dx, dy],
+    guard: gate.guard,
+    path,
+  };
 }
 
 function sourceOf(player) {
@@ -79,15 +140,23 @@ function walkThrough(player, crossing) {
     player.sendMessage(PASS_TAKEN_MESSAGE);
   }
   Common.step(player, crossing.path[0]);
+  stepThrough(player, crossing, 1, queue);
+}
+
+function stepThrough(player, crossing, index, queue) {
   Common.later(player, 1, () => {
-    Common.step(player, crossing.path[1]);
+    Common.step(player, crossing.path[index]);
+    if (index + 1 < crossing.path.length) {
+      stepThrough(player, crossing, index + 1, queue);
+      return;
+    }
     if (crossing.desert && wearsDesertRobes(player)) {
       Common.getApi().emitCustomEvent("diary:task", { player, diary: "desert", task: DESERT_ROBES_TASK });
     }
     Common.later(player, 1, () => {
       queue.setBlockMovement(false);
       const at = player.getLocation();
-      const [dx, dy] = crossing.desert ? FACE_SOUTH : FACE_NORTH;
+      const [dx, dy] = crossing.face;
       player.setPositionToFace(Common.tile(at.getX() + dx, at.getY() + dy, at.getZ()));
     });
   });
@@ -103,7 +172,7 @@ function enterDesert(player, crossing) {
 /** A tick after arriving: the guard, the warning or straight through. */
 function cross(player, crossing) {
   if (crossing.desert && !mayEnterDesert(player)) {
-    Common.npcLine(player, GATE_GUARD, NO_PASS_LINE);
+    Common.npcLine(player, crossing.guard, crossing.guard === GATE_GUARD ? NO_PASS_LINE : UNKAH_NO_PASS_LINE);
     return;
   }
   if (!crossing.desert) {
