@@ -94,8 +94,13 @@ function fakeWorld() {
       return npc;
     },
     removeNpc(npc) { if (npc) npc.removed = true; },
-    placeObject(id, tile) { const o = { id, tile }; world.objects.push(o); return o; },
-    removeObject(o) { world.objects = world.objects.filter((x) => x !== o); },
+    placeObject(id, tile) {
+      const object = { id, tile, anims: [], removed: false };
+      object.performAnimation = (animation) => object.anims.push(animation.getId?.() ?? animation);
+      world.objects.push(object);
+      return object;
+    },
+    removeObject(o) { if (o) o.removed = true; world.objects = world.objects.filter((x) => x !== o); },
   };
   return world;
 }
@@ -105,6 +110,7 @@ function fakePlayer(x = 3028, y = 6050) {
   const items = new Map();
   const player = {
     damage: [], messages: [], chat: [], attributes: {}, varps: {}, run: 100, blocked: false,
+    graphics: [], projectiles: [], objectAnims: [],
     getLocation: () => tile,
     moveTo: (to) => { tile = to; },
     isRegistered: () => true,
@@ -116,7 +122,13 @@ function fakePlayer(x = 3028, y = 6050) {
     setRunEnergy: (v) => { player.run = v; },
     getAttribute: (k) => player.attributes[k],
     setAttribute: (k, v) => { player.attributes[k] = v; },
-    getPacketSender: () => ({ sendGraphic() {}, sendConfig: (id, v) => { player.varps[id] = v; }, sendTypedMessage: (type, m) => player.messages.push(m) }),
+    getPacketSender: () => ({
+      sendGraphic: (graphic, location) => player.graphics.push({ id: graphic.getId?.() ?? graphic, x: location.getX(), y: location.getY() }),
+      sendProjectile: (...args) => player.projectiles.push(args),
+      sendObjectAnimation: (object, animation) => player.objectAnims.push({ object, id: animation.getId?.() ?? animation }),
+      sendConfig: (id, v) => { player.varps[id] = v; },
+      sendTypedMessage: (type, m) => player.messages.push(m),
+    }),
     getDialogueManager: () => ({ startDialogues: (chain) => { player.boxes = [...(player.boxes ?? []), chain]; player.messages.push(chain.getDialogues().get(0)?.getText?.()); } }),
     performAnimation: (a) => { player.anim = a?.getId?.(); },
     performGraphic: (g) => { player.graphic = g?.getId?.(); },
@@ -187,10 +199,52 @@ test('blasting the glowing rock hurts whoever is beside it and lights another co
   fight.glowing = 0;
   fight.setRocks();
   fight.blastRock();
+  assert.equal(fight.glowing, 0, 'the glow stays put while the projectile is in flight');
+  for (let i = 0; i < Common.data.attacks.rockBlast.flightTicks - 1; i++) fight.tick();
+  assert.equal(player.damage.length, 0, 'not before the magic attack lands');
+  fight.tick();
   assert.notEqual(fight.glowing, 0);
-  for (let i = 0; i < 3; i++) fight.tick();
   assert.equal(player.damage.length, 1);
   assert.ok(player.damage[0] >= 21 && player.damage[0] <= Common.data.attacks.rockBlast.max);
+});
+
+test('the glowing rock blast spins Zalcano, fires the fire projectile, and shatters the rock on impact', () => {
+  const [nx, ny] = Common.data.prison.rocks[0];
+  const player = fakePlayer(nx + 1, ny - 1);
+  const { fight } = newFight([player]);
+  const glowingCount = () => fight.rocks.filter((r) => r && !r.removed && r.id === Common.ids.locs.rockGlowing).length;
+  fight.glowing = 0;
+  fight.setRocks();
+  const rock = fight.rocks[0];
+  assert.equal(glowingCount(), 1, 'one corner glows to begin with');
+  fight.nextAttack = fight.tickCount;
+  fight.blastRock();
+  const { flightTicks, shatterTicks } = Common.data.attacks.rockBlast;
+  assert.equal(fight.npc.anims.at(-1), Common.ids.seqs.rockAttack, 'the spin starts with the cast');
+  assert.equal(fight.nextAttack, fight.tickCount + flightTicks, 'and no normal attack cuts it off before the fire lands');
+  assert.equal(player.projectiles.length, 1, 'one magic projectile');
+  const [from, to, , speed, id] = player.projectiles[0];
+  assert.equal(id, Common.ids.spotanims.fireAttack);
+  assert.equal(speed, flightTicks * 30, 'and lands when the blast does');
+  assert.deepEqual([from.getX(), from.getY()], [3033, 6050], 'from her centre');
+  assert.deepEqual([to.getX(), to.getY()], [nx + 1, ny + 1], 'to the glowing rock centre');
+  assert.equal(fight.glowing, 0, 'the glow does not move before the impact');
+  assert.equal(rock.id, Common.ids.locs.rockGlowing);
+  assert.equal(glowingCount(), 1, 'and no other corner glows in flight');
+  for (let i = 0; i < flightTicks - 1; i++) fight.tick();
+  assert.equal(fight.npc.anims.at(-1), Common.ids.seqs.rockAttack, 'no later attack animation replaces the spin');
+  fight.tick();
+  assert.ok(player.graphics.some((g) => g.id === Common.ids.spotanims.fireAttack && g.x === nx + 1 && g.y === ny + 1), 'the impact graphic is on the rock centre');
+  assert.equal(rock.removed, true, 'the old glowing object is replaced at impact');
+  assert.equal(fight.rocks[0].id, Common.ids.locs.rockDepleted, 'the blasted corner stops glowing and shatters');
+  assert.deepEqual(fight.rocks[0].anims, [Common.ids.seqs.rockShatter], 'the shattered rock plays its shatter animation');
+  assert.equal(glowingCount(), 1, 'exactly one corner glows while the old one shatters');
+  assert.equal(player.damage.length, 1, 'adjacent damage still lands');
+  assert.notEqual(fight.glowing, 0, 'the next corner glows on the impact');
+  assert.equal(fight.rocks[fight.glowing].id, Common.ids.locs.rockGlowing);
+  for (let i = 0; i < shatterTicks; i++) fight.tick();
+  assert.equal(fight.rocks[0].id, Common.ids.locs.rock, 'and settles as the ordinary formation after the shatter');
+  assert.equal(glowingCount(), 1, 'still only one corner glowing');
 });
 
 test('only imbued tephra hurts her armour; at 0 she falls, and only mining hurts her then', () => {
@@ -304,11 +358,17 @@ test('symbols never cover her and fade after their time', () => {
   assert.equal(fight.symbols.length, 0);
 });
 
-test('a boulder lands where the player stood when it fell', () => {
+test('a boulder warns with the falling-rock graphic where the player stood, then lands', () => {
   const player = fakePlayer(3040, 6045);
   const { fight } = newFight([player]);
   fight.dropBoulders([player]);
-  for (let i = 0; i < Common.data.attacks.boulders.warnTicks; i++) fight.tick();
+  const { warnTicks } = Common.data.attacks.boulders;
+  const warning = player.graphics.find((g) => g.id === Common.ids.spotanims.rockFall && g.x === 3040 && g.y === 6045);
+  assert.ok(warning, 'the falling rock is drawn on the tile it will hit');
+  assert.equal(fight.npc.anims.at(-1), Common.ids.seqs.rockFall, 'and she stomps to drop it');
+  for (let i = 0; i < warnTicks - 1; i++) fight.tick();
+  assert.equal(player.damage.length, 0, 'not before the boulder lands');
+  fight.tick();
   assert.equal(player.damage.length, 1);
   assert.ok(player.damage[0] >= 30 && player.damage[0] <= 40);
 });

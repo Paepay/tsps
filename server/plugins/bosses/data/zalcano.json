@@ -43,6 +43,7 @@
       "rockFall": "zalcano_attack_rock_fall",
       "golemAttack": "zalcano_attack_golem",
       "rockAttack": "zalcano_attack_magic",
+      "rockShatter": "zalcano_rock_shatter",
       "pentagram": "zalcano_pentagram",
       "barrage": "zalcano_attack_ranged",
       "refine": "zalcano_furnace",
@@ -109,7 +110,14 @@
     "every": [8, 12],
     "rockMoveTicks": 45,
     "boulders": { "max": 40, "warnTicks": 3, "extra": 3 },
-    "rockBlast": { "max": 28 },
+    "rockBlast": {
+      "max": 28,
+      "flightTicks": 3,
+      "shatterTicks": 2,
+      "projectileStartHeight": 43,
+      "projectileEndHeight": 31,
+      "projectileAngle": 16
+    },
     "_symbolsRecorded": "rsprox 4057: a blue symbol's line and spotanim on stepping on, then every 5 ticks while stood on (empowerPulse); each burn has the line, the hit, \"Agh!\" and spotanim zalcano_pentagram_burning on its tick.",
     "symbols": { "count": [6, 8], "blue": [2, 5], "ticks": 25, "graceTicks": 3, "max": 26, "step": 4, "runDrain": 5, "empowerPulse": 5 },
     "barrage": { "min": 1, "max": 5 },
