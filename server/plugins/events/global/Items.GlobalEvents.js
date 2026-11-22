@@ -9,7 +9,8 @@
  *
  * Arsenal loans use the real weapon/tool id with that binding, so every weapon keeps its
  * normal PvM mechanics (scythe sweeps, twisted bow scaling, shadow multiplier). The two
- * purpose-made items (Banker's note, Sage's greaves) use the custom ids in the catalog.
+ * purpose-made items (Banker's note (e), Sage's greaves (e)) use dedicated custom ids in the
+ * catalog, separate from the league relics they resemble.
  *
  * Every movement path is vetoed here: trade offers, bank deposits, shop sales, alchemy,
  * GE listings, drops, deaths and item-on-item transformations. `valid()` gates use on
@@ -30,6 +31,12 @@ const EVENT_FOR_KIND = Object.freeze({
   [KIND.ARSENAL]: "masters-arsenal",
 });
 const ACTIONS_BLOCKED_WHEN_DISABLED = new Set(["Wear", "Wield", "Use", "Activate", "Check", "Toggle", "Revert"]);
+const CUSTOM_ITEM_ID_MIN = 50000;
+const CUSTOM_ITEM_ID_MAX = 65022;
+const EVENT_ITEMS = Object.freeze([
+  { key: "bankersNoteId", label: "Banker's note", relic: "BANKERS_NOTE" },
+  { key: "sagesGreavesId", label: "Sage's greaves", relic: "SAGES_GREAVES" },
+]);
 
 let api;
 let core;
@@ -108,6 +115,36 @@ function validateEventItemIds() {
   return ids;
 }
 
+/**
+ * The event's two purpose-made items must be their own custom items. Reusing a league relic id
+ * makes this plugin intercept the relic's item-on-item use and report the event copy as expired.
+ */
+function validateItemIds(items = itemsConfig()) {
+  const ids = [];
+  for (const { key, label, relic } of EVENT_ITEMS) {
+    const id = items[key];
+    if (id === core.ItemIdentifiers[relic]) {
+      throw new Error(`GlobalEvents: ${label} must not reuse the league relic id ${id}; use a dedicated custom item`);
+    }
+    if (!Number.isInteger(id) || id < CUSTOM_ITEM_ID_MIN || id > CUSTOM_ITEM_ID_MAX) {
+      throw new Error(`GlobalEvents: ${label} must use a dedicated custom item id in ${CUSTOM_ITEM_ID_MIN}..${CUSTOM_ITEM_ID_MAX}, not ${String(id)}`);
+    }
+    ids.push([label, id]);
+  }
+  if (ids[0][1] === ids[1][1]) {
+    throw new Error("GlobalEvents: Banker's note and Sage's greaves need distinct item ids");
+  }
+  const arsenalIds = new Set((Array.isArray(items.arsenal) ? items.arsenal : [])
+    .map((row) => row?.itemId)
+    .filter(Number.isInteger));
+  for (const [label, id] of ids) {
+    if (arsenalIds.has(id)) {
+      throw new Error(`GlobalEvents: ${label} must not reuse a Master's Arsenal loan id ${id}`);
+    }
+  }
+  return ids.map(([, id]) => id);
+}
+
 function bind(item, player, eventId, kind, extra = {}) {
   const eventItemId = eventItemIdOf(kind, extra.catalog ?? null);
   item.setMetaValue(BINDING_META, {
@@ -131,6 +168,9 @@ function bind(item, player, eventId, kind, extra = {}) {
 function valid(player, item) {
   const binding = bindingOf(item);
   if (!binding) return false;
+  // A bound copy always carries one of the configured item ids. An old copy left behind by a
+  // catalog change (such as the Banker's note id migration) is stale and is purged on login.
+  if (!isTemporaryId(item.getId?.())) return false;
   if (binding.account !== Common.accountOf(player)) return false;
   if (binding.worldId !== Common.worldId()) return false;
   return Common.liveInstance(binding.eventId, binding.instanceId) !== null;
@@ -367,8 +407,12 @@ function noteOnItem(event) {
   const { player, usedItem, usedWithItem } = event;
   const note = usedItem?.getId?.() === noteId() ? usedItem : usedWithItem?.getId?.() === noteId() ? usedWithItem : null;
   if (!note) return false;
+  // Only the bound event copy is ours. A real Banker's note (or any plain item using this id)
+  // must fall through to the league relic handler.
+  const binding = bindingOf(note);
+  if (!binding || binding.kind !== KIND.NOTE) return false;
   if (!usable(player, note)) {
-    player.sendMessage(isTemporary(note) ? Common.message("disabled") : Common.message("expired"));
+    player.sendMessage(Common.message("disabled"));
     event.handled = true;
     return true;
   }
@@ -648,10 +692,10 @@ function heldArsenalKeys(player) {
 function claimables(player) {
   const rows = [];
   if (Common.activeByEventId("bankers-note")) {
-    rows.push({ key: "note", kind: KIND.NOTE, name: "Banker's note", eventId: "bankers-note", iconItemId: noteId(), held: holdsKind(player, KIND.NOTE) });
+    rows.push({ key: "note", kind: KIND.NOTE, name: "Banker's note (e)", eventId: "bankers-note", iconItemId: noteId(), held: holdsKind(player, KIND.NOTE) });
   }
   if (Common.activeByEventId("trickster")) {
-    rows.push({ key: "greaves", kind: KIND.GREAVES, name: "Sage's greaves", eventId: "trickster", iconItemId: greavesId(), held: holdsKind(player, KIND.GREAVES) });
+    rows.push({ key: "greaves", kind: KIND.GREAVES, name: "Sage's greaves (e)", eventId: "trickster", iconItemId: greavesId(), held: holdsKind(player, KIND.GREAVES) });
   }
   if (Common.activeByEventId("masters-arsenal")) {
     const held = heldArsenalKeys(player);
@@ -674,6 +718,7 @@ function attach(pluginApi) {
   api = pluginApi;
   core = api.core;
   validateEventItemIds();
+  validateItemIds();
   Common.setClaimablesProvider(claimables);
   api.persistAttribute(LAST_COMBAT_ATTRIBUTE, 0);
   api.onPlayerProcess(greavesTick);
@@ -713,6 +758,7 @@ module.exports = {
   arsenalRow,
   eventItemIdOf,
   catalogEventItemIds,
+  validateItemIds,
   bindingOf,
   isTemporary,
   isTemporaryId,
@@ -731,5 +777,5 @@ module.exports = {
   removeItem,
   purgeInvalid,
   purgeEvent,
-  testing: { bindingOf, isTemporary, valid, usable, claim, convert, removeItem },
+  testing: { bindingOf, isTemporary, valid, usable, claim, convert, removeItem, validateItemIds },
 };

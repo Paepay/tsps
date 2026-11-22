@@ -34,11 +34,11 @@ The names, summaries and effect parameters are the frozen contract from
 | Skilling | Abundance | `double-resources`, XP for the extra resources |
 | Skilling | Infernal Gathering | burn logs, smelt ore, cook fish |
 | Skilling | Production Master | `instant-production` |
-| Skilling | Trickster | guaranteed Thieving/Hunter success, temporary Sage's greaves |
+| Skilling | Trickster | guaranteed Thieving/Hunter success, temporary Sage's greaves (e) |
 | Utility | Rags to Riches | `unique-drop-chance` x1.1 |
 | Utility | Accelerate | `xp-multiplier` x2, all sources |
 | Utility | Prodigy | `visible-level-boost` +12 each tick |
-| Utility | Banker's Note | temporary Banker's note |
+| Utility | Banker's Note | temporary Banker's note (e) |
 | Utility | Master's Arsenal | temporary Best-in-Slot loadout |
 
 Every row carries `"pvp": false`. Effect multipliers are read from the platform's `effect`
@@ -76,6 +76,15 @@ end and expiry. Claiming and deleting are blocked while in combat or for 10 seco
 (`combatLock.postCombatSeconds`). Master's Arsenal loans never spend charges, ammunition or runes;
 their equipment level and combat gates are waived (quest, resource and activity checks still
 apply), and only one loan may be held at a time.
+
+The event's two purpose-made items are their own custom items: `Banker's note (e)` (50006, based
+on the real 28767) and `Sage's greaves (e)` (50007, based on the greaves at 28771). They
+deliberately do not reuse the league relic ids (`BANKERS_NOTE` 28767 and the league `Sage's
+greaves` custom item 50001). `Items.GlobalEvents` validates both ids when it registers: each
+must be a dedicated custom item in `50000..65022`, distinct from the other and from the league
+relics, or the world fails startup with an error naming the item. Item handlers also act only
+on copies carrying a live `global-event` binding, so a real relic is never mistaken for an
+expired event item.
 
 ### Custom item ids and the 16-bit transport
 
