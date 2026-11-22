@@ -547,3 +547,23 @@ test("a Climbing rope on the lower floor takes a player who fell through a plank
   assert.equal(plugin._test.climbRope({ player: away, object: rope(2805, 9591, 0), objectId: 3576 }), false);
   assert.deepEqual([away.x, away.y, away.z], [3200, 3200, 0]);
 });
+
+test("the ticket streak counts the awarded tickets, after a league's minigame multiplier", () => {
+  init({
+    core: PluginManager.getCoreApi(),
+    emitCustomEvent(event, award) {
+      if (event === "minigame:points") award.points *= 5;
+    },
+  });
+  try {
+    advanceCycle();
+    const p = player({ agility: 50 });
+    setActive(tileOfId(3608));
+    tagActive(p);
+    assert.equal(stateOf(p).ticketStreak, 5, "the streak follows the returned points, not the base count");
+    assert.equal(p.getInventory().getAmount(TICKET), 5);
+    assert.equal(p.getInventory().getAmount(VOUCHER), 5);
+  } finally {
+    init({ core: PluginManager.getCoreApi(), emitCustomEvent() {} });
+  }
+});

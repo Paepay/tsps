@@ -36,6 +36,7 @@ function emit(name, event) {
 before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, ".."));
   core = PluginManager.getCoreApi();
+  require("../plugins/items/ItemDefinitionLoader.plugin").register({ log() {}, onPlayerLogin() {}, registerContentEndpoint() {} });
   store = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "global-events-")), "state.json");
   Common.testing.setStoreFile(store);
   Common.testing.reset();
@@ -45,7 +46,13 @@ before(async () => {
     getCombatFactory: () => ({ inCombat: () => false }),
     onPlayerProcess: (handler) => { hooks.process = handler; },
     onPlayerLogin: (handler) => { (hooks.logins ??= []).push(handler); },
-    onItemOnItem: (handler) => { hooks.itemOnItem = handler; },
+    onItemOnItem: (handler) => {
+      (hooks.itemOnItems ??= []).push(handler);
+      hooks.itemOnItem = (event) => {
+        for (const hook of hooks.itemOnItems) hook(event);
+        return event.handled === true;
+      };
+    },
     onItemAction: (handler) => { hooks.itemAction = handler; },
     onItemDropPolicy: (handler) => { hooks.dropPolicy = handler; },
     onCanUseItem: (handler) => { hooks.canUse = handler; },
@@ -92,6 +99,87 @@ function held(p, itemId) {
 function claim(p, kind, catalog = null) {
   return Items.claim(p, kind, catalog);
 }
+
+test("event item-on-item handlers leave a real Banker's note to the league relic", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("real-note");
+  p.getInventory().adds(core.ItemIdentifiers.BANKERS_NOTE, 1);
+  p.getInventory().adds(core.ItemIdentifiers.LOGS, 3);
+  const note = held(p, core.ItemIdentifiers.BANKERS_NOTE);
+  const logs = held(p, core.ItemIdentifiers.LOGS);
+  const event = { player: p, usedItem: note, usedWithItem: logs, handled: false };
+  for (const handler of hooks.itemOnItems) {
+    const result = handler(event);
+    assert.notEqual(result, true, `${handler.name} swallowed the real note`);
+    assert.equal(event.handled, false, `${handler.name} marked the real note handled`);
+  }
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.BANKERS_NOTE), 1);
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.LOGS), 3);
+});
+
+test("event items use dedicated custom ids and never shadow the league relics", () => {
+  assert.equal(Items.noteId(), 50006);
+  assert.equal(Items.greavesId(), 50007);
+  assert.notEqual(Items.noteId(), core.ItemIdentifiers.BANKERS_NOTE);
+  assert.notEqual(Items.greavesId(), core.ItemIdentifiers.SAGES_GREAVES);
+  assert.equal(Items.isTemporaryId(core.ItemIdentifiers.BANKERS_NOTE), false);
+  assert.equal(Items.isTemporaryId(core.ItemIdentifiers.SAGES_GREAVES), false);
+
+  const note = core.ItemDefinition.forId(Items.noteId());
+  assert.equal(note.getName(), "Banker's note (e)");
+  assert.equal(note.isNoted(), false);
+  assert.equal(note.getNoteId(), -1);
+  const greaves = core.ItemDefinition.forId(Items.greavesId());
+  assert.equal(greaves.getName(), "Sage's greaves (e)");
+  assert.equal(greaves.getEquipmentType().getSlot(), core.Equipment.FEET_SLOT);
+  assert.equal(core.ItemDefinition.forId(core.ItemIdentifiers.BANKERS_NOTE).getName(), "Banker's note");
+  assert.equal(core.ItemDefinition.forId(core.ItemIdentifiers.SAGES_GREAVES).getName(), "Sage's greaves");
+
+  assert.deepEqual(
+    Items.testing.validateItemIds({ bankersNoteId: Items.noteId(), sagesGreavesId: Items.greavesId(), arsenal: Items.arsenalRows() }),
+    [50006, 50007],
+  );
+  assert.deepEqual(
+    [Common.definition("bankers-note").iconItemId, Common.definition("trickster").iconItemId],
+    [Items.noteId(), Items.greavesId()],
+    "the catalog icons are the dedicated event items",
+  );
+});
+
+test("a bound copy left on an old event id is purged instead of lingering", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("legacy-note");
+  assert.equal(claim(p, Items.KIND.NOTE), true);
+  const live = held(p, Items.noteId());
+  const legacy = new core.Item(core.ItemIdentifiers.BANKERS_NOTE, 1);
+  legacy.setMetaValue(Items.BINDING_META, Items.bindingOf(live));
+  p.getInventory().add(legacy, true);
+  assert.equal(Items.valid(p, legacy), false, "the old id is no longer an event item");
+  assert.equal(Items.purgeInvalid(p), 1);
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.BANKERS_NOTE), 0);
+  assert.equal(p.getInventory().getAmount(Items.noteId()), 1, "the live copy stays");
+});
+
+test("load validation names a league-relic collision instead of shadowing it", () => {
+  assert.throws(
+    () => Items.testing.validateItemIds({ bankersNoteId: core.ItemIdentifiers.BANKERS_NOTE, sagesGreavesId: 50007, arsenal: [] }),
+    /Banker's note must not reuse the league relic id 28767/,
+  );
+  assert.throws(
+    () => Items.testing.validateItemIds({ bankersNoteId: 50006, sagesGreavesId: core.ItemIdentifiers.SAGES_GREAVES, arsenal: [] }),
+    /Sage's greaves must not reuse the league relic id 50001/,
+  );
+  assert.throws(
+    () => Items.testing.validateItemIds({ bankersNoteId: 50006, sagesGreavesId: 50006, arsenal: [] }),
+    /need distinct item ids/,
+  );
+  assert.throws(
+    () => Items.testing.validateItemIds({ bankersNoteId: 28768, sagesGreavesId: 50007, arsenal: [] }),
+    /dedicated custom item id in 50000..65022/,
+  );
+});
 
 test("a claimed Banker's note is bound to the account, world and event instance", () => {
   Common.testing.reset();
@@ -196,6 +284,28 @@ test("the Banker's note notes and un-notes carried items", () => {
   assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.LOGS), 3);
   assert.equal(Items.convert(p, Items.noteId()), 0, "a temporary item cannot be noted");
   assert.ok(note);
+});
+
+test("the event Banker's note notes and un-notes through item-on-item", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("event-noter");
+  assert.equal(claim(p, Items.KIND.NOTE), true);
+  const note = held(p, Items.noteId());
+  p.getInventory().adds(core.ItemIdentifiers.LOGS, 3);
+  const logs = held(p, core.ItemIdentifiers.LOGS);
+  const notedLogs = core.ItemDefinition.forId(core.ItemIdentifiers.LOGS).getNoteId();
+
+  const noteEvent = { player: p, usedItem: note, usedWithItem: logs, handled: false };
+  assert.equal(hooks.itemOnItem(noteEvent), true, "the event copy notes the logs");
+  assert.equal(noteEvent.handled, true);
+  assert.equal(p.getInventory().getAmount(notedLogs), 3);
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.LOGS), 0);
+
+  const unnoteEvent = { player: p, usedItem: note, usedWithItem: held(p, notedLogs), handled: false };
+  assert.equal(hooks.itemOnItem(unnoteEvent), true, "and un-notes them again");
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.LOGS), 3);
+  assert.equal(p.getInventory().getAmount(notedLogs), 0);
 });
 
 test("expiry removes every bound copy from the inventory, equipment and bank, even mid-combat", () => {
@@ -352,4 +462,34 @@ test("Sage's greaves are temporary and pay run XP while worn", () => {
     hooks.process({ player: p });
   }
   assert.ok(p.getSkillManager().getExperience(core.Skill.AGILITY) > before, "ten run ticks pay Agility XP");
+});
+
+test("the event leaves a real Sage's greaves alone", () => {
+  Common.testing.reset();
+  activate("trickster");
+  const p = player("real-greaves");
+  p.getInventory().adds(core.ItemIdentifiers.SAGES_GREAVES, 1);
+  const greaves = held(p, core.ItemIdentifiers.SAGES_GREAVES);
+  const event = { player: p, usedItem: greaves, usedWithItem: new core.Item(core.ItemIdentifiers.LOGS, 1), handled: false };
+  for (const handler of hooks.itemOnItems) {
+    handler(event);
+    assert.equal(event.handled, false, `${handler.name} swallowed the real greaves`);
+  }
+  assert.equal(Items.isTemporary(greaves), false);
+  assert.equal(Items.isTemporaryId(greaves.getId()), false);
+
+  Common.testing.setState({ version: 1, revision: 1, slots: { combat: null, skilling: null, utility: null } });
+  assert.equal(Items.purgeInvalid(p), 0, "expiry only purges bound event copies");
+  assert.equal(p.getInventory().getAmount(core.ItemIdentifiers.SAGES_GREAVES), 1);
+});
+
+test("the Events UI lists the dedicated event item names and icons", () => {
+  const now = Date.now();
+  const slot = (eventId) => ({ eventId, instanceId: `${eventId}-ui-test`, activatedBy: "tester", startedAt: now, endsAt: now + 60_000 });
+  Common.testing.setState({ version: 1, revision: 2, slots: { combat: null, skilling: slot("trickster"), utility: slot("bankers-note") } });
+  const rows = Items.claimables(player("rows"));
+  const note = rows.find((row) => row.kind === Items.KIND.NOTE);
+  const greaves = rows.find((row) => row.kind === Items.KIND.GREAVES);
+  assert.deepEqual([note.name, note.iconItemId], ["Banker's note (e)", 50006]);
+  assert.deepEqual([greaves.name, greaves.iconItemId], ["Sage's greaves (e)", 50007]);
 });

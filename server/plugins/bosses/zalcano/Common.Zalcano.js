@@ -90,6 +90,18 @@ function tileGraphic(players, location, id, delay = 0) {
   for (const player of players) player.getPacketSender().sendGraphic(Graphic.delayed(id, delay), location);
 }
 
+/**
+ * A spotanim fired from one tile to another: Zalcano's magic attack is a projectile from her to
+ * the glowing rock (RuneLite's Zalcano plugin tracks `ZALCANO_FIRE_ATTACK` in ProjectileMoved),
+ * not a tile graphic at the rock. `speed` is the client-cycle offset it lands on; one tick is 30.
+ */
+function tileProjectile(players, from, to, id, { delay = 0, speed = 90, startHeight = 43, endHeight = 31, angle = 16, progress = 64 } = {}) {
+  if (id == null || !from || !to) return;
+  for (const player of players) {
+    player.getPacketSender().sendProjectile?.(from, to, 0, speed, id, startHeight, endHeight, 0, delay, angle, progress);
+  }
+}
+
 function hurtPlayer(player, amount) {
   const { HitDamage, HitMask } = core;
   const damage = Math.max(0, Math.floor(amount));
@@ -130,7 +142,7 @@ function removeAll(player, itemId) {
 
 module.exports = {
   init, later, toLocation, randomInt, pick, chebyshev, distanceToNpc, inBox, inPrison, onFloor,
-  tileGraphic, hurtPlayer, message, spam, box, questComplete, removeAll,
+  tileGraphic, tileProjectile, hurtPlayer, message, spam, box, questComplete, removeAll,
   KILLS_ATTRIBUTE, XP_FOCUS_ATTRIBUTE,
   get api() { return api; },
   get core() { return core; },

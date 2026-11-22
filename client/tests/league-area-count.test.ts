@@ -4,7 +4,7 @@ import { CacheSystem } from "../rs/cache/CacheSystem";
 import { IndexType } from "../rs/cache/IndexType";
 import { parseScriptFromBytes } from "../rs/cs2/Script";
 import { Opcodes } from "../rs/cs2/Opcodes";
-import { applyLeagueAreaCount, LEAGUE_AREA_COUNT_VARP } from "../rs/cs2/leagueAreaCount";
+import { applyLeagueAreaCount, LEAGUE_AREA_COUNT_VARP, LEAGUE_AREA_MASK_VARP } from "../rs/cs2/leagueAreaCount";
 import { loadCache, loadCacheInfos, loadCacheList } from "../scripts/cache/load-util";
 import { createCacheVm } from "../scripts/cache/cs2-sweep";
 
@@ -71,16 +71,35 @@ assert.equal(areaSlot(2, 5971), 1, "other league types keep the cache's Misthali
 assert.equal(areaSlot(2, 5972), -1, "other league types keep the cache's unknown Karamja");
 
 // The areas page's map is script 3659: it draws each unlocked area's map sprite on
-// the region_data row's map component (512:22..32). Karamja's are row 2's: 512:23 / 8061.
+// the region_data row's map component (512:22..32). The first six slots come from
+// the cache's selection varbits; the patched script also reads the Level-Up area
+// bitmask so the seventh and later unlocks draw too.
 const MAP_SCRIPT = 3659;
 const mapVm = createCacheVm();
 const mapWidgets: any = mapVm.vm.context.widgetManager.getGroup(512);
-mapVm.vm.context.varManager.setVarbit(10662, 1);
-mapVm.vm.context.varManager.setVarbit(10663, 2);
-for (let slot = 2; slot < 6; slot++) mapVm.vm.context.varManager.setVarbit(10662 + slot, 0);
+const cacheInt = (scriptId: number, arg: number) => {
+    mapVm.vm.intStackSize = 0;
+    mapVm.vm.stringStackSize = 0;
+    mapVm.vm.run(mapVm.vm.context.loadScript(scriptId), [arg], []);
+    return mapVm.vm.intStack[0];
+};
+// 7618 resolves an area id to its map widget; 7617 resolves its map sprite.
+const mapWidgetUid = (area: number) => cacheInt(7618, area);
+const mapSprite = (area: number) => cacheInt(7617, area);
+const slots = [1, 2, 3, 4, 5, 6];
+slots.forEach((area, slot) => mapVm.vm.context.varManager.setVarbit(10662 + slot, area));
+const laterAreas = [7, 8, 11, 20, 21];
+assert.equal(LEAGUE_AREA_MASK_VARP, 7989, "the map mask has a free varp");
+mapVm.vm.context.varManager.setVarp(
+    LEAGUE_AREA_MASK_VARP,
+    laterAreas.reduce((mask, area) => mask | (1 << area), 0),
+);
 mapVm.vm.intStackSize = 0;
-mapVm.vm.run(mapVm.vm.context.loadScript(MAP_SCRIPT), [], []);
-assert.equal(mapWidgets.widgetsByUid.get((512 << 16) | 22).spriteId, 8060, "Misthalin's map is drawn");
-assert.equal(mapWidgets.widgetsByUid.get((512 << 16) | 23).spriteId, 8061, "Karamja's map is drawn when its selection varbit is set");
+mapVm.vm.run(script(MAP_SCRIPT), [], []);
+for (const area of [...slots, ...laterAreas]) {
+    const widget = mapWidgets.widgetsByUid.get(mapWidgetUid(area));
+    assert.ok(widget, `area ${area}'s map widget exists`);
+    assert.equal(widget.spriteId, mapSprite(area), `area ${area}'s map is drawn`);
+}
 
 console.log("league-area-count.test.ts: all tests passed");
