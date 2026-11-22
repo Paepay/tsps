@@ -1,6 +1,7 @@
 import type { SeqTypeLoader } from "../../rs/config/seqtype/SeqTypeLoader";
 import { decodeInteractionIndex } from "../../rs/interaction/InteractionIndex";
 import { faceAngleRs } from "../../rs/utils/rotation";
+import { nearestNpcInteractionPoint } from "../interactions/InteractionTarget";
 import {
     MovementDirection,
     deltaToDirection,
@@ -627,6 +628,7 @@ export class PlayerMovementSync {
             if (!selfPos) return undefined;
             let targetX: number | undefined;
             let targetY: number | undefined;
+            let targetSize = 1;
             if (decoded.type === "player") {
                 const targetIdx = this.playerEcs.getIndexForServerId(decoded.id | 0);
                 if (targetIdx !== undefined) {
@@ -646,9 +648,15 @@ export class PlayerMovementSync {
                     const localY = this.npcEcs.getY(npcIdx) | 0;
                     targetX = (mapX << 13) + localX;
                     targetY = (mapY << 13) + localY;
+                    targetSize = this.npcEcs.getSize(npcIdx) | 0;
                 }
             }
             if (targetX === undefined || targetY === undefined) return undefined;
+            if (decoded.type === "npc") {
+                const point = nearestNpcInteractionPoint(selfPos.x | 0, selfPos.y | 0, targetX | 0, targetY | 0, targetSize);
+                targetX = point.x;
+                targetY = point.y;
+            }
             const across = this.acrossDeckOrientation(ecsIndex, decoded, selfPos, targetX, targetY);
             if (across !== null) return across;
             if ((selfPos.x | 0) === (targetX | 0) && (selfPos.y | 0) === (targetY | 0))

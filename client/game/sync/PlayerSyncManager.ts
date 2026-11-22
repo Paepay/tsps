@@ -9,6 +9,7 @@ import { ClientState } from "../ClientState";
 import { PlayerAnimController } from "../PlayerAnimController";
 import type { NpcEcs } from "../ecs/NpcEcs";
 import { PlayerEcs } from "../ecs/PlayerEcs";
+import { nearestNpcInteractionPoint } from "../interactions/InteractionTarget";
 import type { MovementUpdate } from "../movement/MovementSyncTypes";
 import { PlayerMovementSync } from "../movement/PlayerMovementSync";
 import type { ResolveTilePlaneFn } from "../scene/PlaneResolver";
@@ -807,6 +808,7 @@ export class PlayerSyncManager {
 
         let targetX: number | undefined;
         let targetY: number | undefined;
+        let targetSize = 1;
 
         if (decoded.type === "npc") {
             if (!this.npcEcs) return;
@@ -819,6 +821,7 @@ export class PlayerSyncManager {
             const localY = this.npcEcs.getY(npcIndex) | 0;
             targetX = (mapX << 13) + localX;
             targetY = (mapY << 13) + localY;
+            targetSize = this.npcEcs.getSize(npcIndex) | 0;
         } else {
             const targetEcs = this.playerEcs.getIndexForServerId(decoded.id | 0);
             if (targetEcs === undefined) return;
@@ -827,6 +830,11 @@ export class PlayerSyncManager {
         }
 
         if (targetX === undefined || targetY === undefined) return;
+        if (decoded.type === "npc") {
+            const point = nearestNpcInteractionPoint(selfX, selfY, targetX, targetY, targetSize);
+            targetX = point.x;
+            targetY = point.y;
+        }
 
         const orientation = this.computeOrientation(selfX, selfY, targetX, targetY);
         if (orientation === undefined) return;
