@@ -1,6 +1,7 @@
 // Run after `yarn build`: node --test tests/quests-off-dialogue.test.cjs
-// The three Quests-off shims driven through the REAL dialogue engine: Eblis's post-quest
-// ancient staff, Sir Prysin's Darklight repurchase and the WGS light creature's Attract.
+// The Quests-off shims driven through the REAL dialogue engine: Eblis's post-quest ancient
+// staff, Sir Prysin's Darklight repurchase, Malignius's magic secateurs and the WGS light
+// creature's Attract.
 // The hook-level checks live in quest-auto-complete.test.cjs; these prove the real
 // variants, conditions and actions reach the hand-outs.
 const assert = require("node:assert/strict");
@@ -131,6 +132,19 @@ test("Quests off: Sir Prysin's reissued sword is Darklight and costs 500 coins",
   assert.equal(a.count(I.COINS), coins - 500, "the price is taken");
   assert.equal(a.count(I.DARKLIGHT), 1, "Shadow of the Storm's Darklight replaces Silverlight");
   assert.equal(a.count(I.SILVERLIGHT), 0, "the old sword is not handed out instead");
+});
+
+test("Quests off: Malignius sells magic secateurs for 40,000 coins through the real transcript", async () => {
+  const { ItemIdentifiers: I } = core;
+  const a = actor(core.NpcIdentifiers.MALIGNIUS_MORTIFER, [[I.COINS, 40_000]]);
+  const coins = a.count(I.COINS);
+  a.talkTo();
+  await a.choose("About those enchanted secateurs again...");
+  await a.choose("Can I get another set of enchanted secateurs?");
+  await a.choose("Ok, great.");
+  await a.playToEnd();
+  assert.equal(a.count(I.COINS), coins - 40_000, "the 40,000-coin price is taken");
+  assert.equal(a.count(I.MAGIC_SECATEURS), 1, "the magic secateurs are handed over");
 });
 
 test("Quests off: Attract on a light creature opens the crossing into the chasm", async () => {

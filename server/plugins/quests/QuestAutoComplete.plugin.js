@@ -56,6 +56,7 @@ function attach(api) {
     require("./RoyalSeedPod.Quests").register(api);
     require("./Eblis.Quests")(api);
     require("./SirPrysin.Quests")(api);
+    require("./Malignius.Quests")(api);
     require("./DragonSlayer.Quests")(api);
     require("./CamTorum.Quests")(api);
     require("./BeneathCursedSands.Quests")(api);
