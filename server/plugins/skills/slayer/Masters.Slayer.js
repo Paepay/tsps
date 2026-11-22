@@ -66,6 +66,8 @@ const TZHAAR_TASK_ID = 96;
 const TZTOK_JAD_TASK_ID = 97;
 const TZKAL_ZUK_TASK_ID = 105;
 const TZHAAR_OFFER_ACTION = "slayer_tzhaar_offer";
+/** The Boss task's count prompt (Like a Boss), opened after the master's line. */
+const BOSS_AMOUNT_ACTION = "slayer_boss_amount";
 
 let api = null;
 let core = null;
@@ -92,7 +94,37 @@ function assignmentLine(player, master) {
   if (waitingElsewhere(player, master)) return CHOICE_WAITING;
   if (!Tasks.meetsMaster(player, master)) return tooWeak(master);
   const result = Tasks.assign(player, master);
+  if (result.pending) {
+    return result.pending.text;
+  }
   return result.line ?? result.refused;
+}
+
+/**
+ * Opens the amount prompt for the waiting boss task. The count is the Boss task's range, raised
+ * by claimed Combat Achievement tiers; an out-of-range count asks again (Wiki, Boss task).
+ */
+function promptBossAmount(player, npcId) {
+  const pending = Tasks.pendingBossAssignment(player);
+  if (!pending) return false;
+  player.setEnteredAmountAction({
+    acceptsZero: true,
+    acceptsNegative: true,
+    execute: (count) => {
+      const result = Tasks.completeBossAssignment(player, count);
+      if (!result) return;
+      if (result.error) {
+        player.sendMessage(result.error);
+        promptBossAmount(player, npcId);
+        return;
+      }
+      const definition = npcId != null ? core.NpcDefinition.forId(npcId) : null;
+      if (definition) say(player, definition, result.line);
+      else player.sendMessage(result.line);
+    },
+  });
+  player.getPacketSender().sendEnterAmountPrompt(pending.text);
+  return true;
 }
 
 /** Ours: the Wiki has no line for a player below a master's requirements. */
@@ -133,9 +165,11 @@ function offerChoice(player, master, definition, npcId) {
   }
 }
 
-function say(player, definition, text) {
-  const { DialogueChainBuilder, NpcDialogue, EndDialogue } = core;
-  const chain = new DialogueChainBuilder().add(new NpcDialogue(0, definition.getId(), text), new EndDialogue(1));
+function say(player, definition, text, after = null) {
+  const { DialogueChainBuilder, NpcDialogue, EndDialogue, ActionDialogue } = core;
+  const chain = new DialogueChainBuilder().add(new NpcDialogue(0, definition.getId(), text));
+  if (after) chain.add(new ActionDialogue(1, { execute: after }));
+  chain.add(new EndDialogue(after ? 2 : 1));
   player.getDialogueManager().startDialogues(chain);
 }
 
@@ -161,7 +195,10 @@ function assignmentClick(event) {
   }
   if (assignmentTalk(event.player, master) && playAssignmentBranch(event)) return;
   if (!Tasks.current(event.player) && playSteps(event.player, master, event.npc, event.definition.getId(), () => assignmentSteps(event.player, master, false))) return;
-  say(event.player, event.definition, assignmentLine(event.player, master));
+  const line = assignmentLine(event.player, master);
+  say(event.player, event.definition, line, Tasks.pendingBossAssignment(event.player)
+    ? () => promptBossAmount(event.player, event.definition.getId())
+    : null);
 }
 
 /**
@@ -175,6 +212,9 @@ function assignmentSteps(player, master, praise) {
   if (!Tasks.meetsMaster(player, master)) return [{ npc: tooWeak(master) }, end];
   if (offersChoice(player, master)) return null;
   const result = Tasks.assign(player, master);
+  if (result.pending) {
+    return [{ npc: result.pending.text }, { type: "action", action: BOSS_AMOUNT_ACTION, target: master.names[0] }, end];
+  }
   if (!result.line) return [{ npc: result.refused }, end];
   const line = praise ? `${PRAISE} ${result.line}` : result.line;
   return tzhaarOfferAvailable(player)
@@ -327,7 +367,18 @@ function assignmentEvent(request) {
     offerLater(request.player, master, request.npcId ?? request.definitionId ?? null);
     return;
   }
+  const pending = Tasks.pendingBossAssignment(request.player);
+  if (pending) {
+    request.line = pending.text;
+    request.after = () => promptBossAmount(request.player, request.npcId ?? request.definitionId ?? null);
+    return;
+  }
   const result = Tasks.assign(request.player, master);
+  if (result.pending) {
+    request.line = result.pending.text;
+    request.after = () => promptBossAmount(request.player, request.npcId ?? request.definitionId ?? null);
+    return;
+  }
   request.line = result.line ?? result.refused;
   if (result.line && tzhaarOfferAvailable(request.player)) {
     request.after = () => openTzhaarOffer(request.player, master, request.npcId ?? request.definitionId ?? null);
@@ -479,6 +530,12 @@ function action(request) {
     }
     return;
   }
+  if (request.action === BOSS_AMOUNT_ACTION) {
+    request.handled = true;
+    request.end = true;
+    promptBossAmount(player, request.npcId ?? request.definition.getId());
+    return;
+  }
   if (request.action === CANCEL_ACTION) {
     const cancel = { player, quiet: true, cancelled: false };
     api.emitCustomEvent("slayer:cancel-task", cancel);
@@ -510,7 +567,9 @@ function action(request) {
         ? tzhaarOfferAvailable(player)
           ? [{ npc: line }, { type: "action", action: TZHAAR_OFFER_ACTION, target: master.names[0] }, afterTaskMenu(player, master)]
           : [{ npc: line }, afterTaskMenu(player, master)]
-        : [{ npc: line }];
+        : Tasks.pendingBossAssignment(player)
+          ? [{ npc: line }, { type: "action", action: BOSS_AMOUNT_ACTION, target: master.names[0] }, { type: "end" }]
+          : [{ npc: line }];
     }
     else {
       request.end = true;
@@ -607,6 +666,7 @@ function replaceTask(player, master) {
   // Null when content offers a choice instead (the caller shows it).
   if (offersChoice(player, master)) return null;
   const result = Tasks.assign(player, master);
+  if (result.pending) return result.pending.text;
   return result.line ?? result.refused;
 }
 

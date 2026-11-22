@@ -315,6 +315,34 @@ test("Hot Stuff offers TzTok-Jad after a TzHaar assignment", async () => {
   }
 });
 
+test("Hot Stuff's offer also follows a TzHaar task from Talk-to's transcript branch", async () => {
+  const h = harness(DURADEL);
+  const assign = Tasks.assign;
+  try {
+    const master = [...require("../plugins/skills/slayer/Data.Slayer").get().masters.values()].find((row) => row.names.includes("Duradel"));
+    const tzhaar = master.tasks.find((row) => row.task.id === 96);
+    assert.ok(tzhaar, "Duradel can assign TzHaar with Hot Stuff");
+    State.setVarp(h.player, "slayer_rewards_unlocks", 1 << 18);
+    Tasks.assign = (player, owner) => ({ line: Tasks.assignPicked(player, owner, tzhaar, 0, 25, () => 0.5) });
+
+    await h.talkToAssignment();
+
+    for (let i = 0; i < 10 && !h.player.getDialogueManager().getCurrent()?.getOptions; i++) {
+      const group = h.player.getPacketSender().getChatboxGroupId();
+      await h.continueDialogue((group << 16) | 5);
+    }
+    assert.equal(Tasks.current(h.player).taskId, 96, "the transcript assigned the TzHaar task");
+    const menu = h.player.getDialogueManager().getCurrent();
+    assert.deepEqual(menu?.getOptions?.(), ["Yes, slay TzTok-Jad", "No, keep the Tzhaar task"]);
+    await h.chooseOption("Yes, slay TzTok-Jad");
+    assert.equal(Tasks.current(h.player).taskId, 97, "the TzTok-Jad task is set");
+    assert.equal(h.player.getDialogueManager().getCurrent()?.getText?.(), "Your new task is to kill 1 TzTok-Jad.");
+  } finally {
+    Tasks.assign = assign;
+    h.close();
+  }
+});
+
 test("the equipment shop's title has no ' (shop)'", async () => {
   const h = harness(DURADEL);
   try {

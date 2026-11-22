@@ -2311,6 +2311,34 @@ test("Combat Achievement tiers raise the boss task cap by 5 a tier (Barrows 36 +
   lapsed();
 });
 
+test("a boss assignment waits for the player to choose its count (Wiki, Boss task)", () => {
+  useTestEvents();
+  const player = createPlayer();
+  const duradel = Data.get().masters.get(5);
+  const bossRow = duradel.tasks.find((entry) => entry.task.id === Data.BOSS_TASK_ID);
+  assert.ok(bossRow, "Duradel has the Boss task row");
+  const unlock = Data.get().unlocks.get(bossRow.unlockRow);
+  const varpName = ["slayer_rewards_unlocks", "slayer_rewards_unlocks1", "slayer_rewards_unlocks2"][unlock.bit >> 5];
+  setVarp(player, varpName, 1 << (unlock.bit & 31));
+
+  // Only the Boss row, so the assignment cannot roll anything else.
+  const result = Tasks.assign(player, { ...duradel, tasks: [bossRow] }, () => 0.9999);
+  assert.equal(result.line, undefined, "no task line yet");
+  assert.equal(result.pending.text, "How many would you like to slay? (3-35)");
+  assert.equal(Tasks.current(player), null, "the count is chosen before the task is set");
+
+  assert.equal(Tasks.completeBossAssignment(player, 2).error, "You must choose an amount between 3 and 35.");
+  assert.equal(Tasks.current(player), null, "an out-of-range count assigns nothing");
+  assert.equal(Tasks.completeBossAssignment(player, 36).error, "You must choose an amount between 3 and 35.");
+
+  const chosen = Tasks.completeBossAssignment(player, 17);
+  assert.match(chosen.line, /^Your new task is to kill 17 /);
+  const task = Tasks.current(player);
+  assert.equal(task.taskId, Data.BOSS_TASK_ID);
+  assert.equal(task.count, 17, "the player's count, not a roll");
+  assert.equal(Tasks.pendingBossAssignment(player), null);
+});
+
 test("the Elite Combat Achievement tier makes superior Slayer monsters 1 in 150 (from 1 in 200)", () => {
   useTestEvents();
   Superiors.init({ core, emitCustomEvent: (name, payload) => { for (const fn of handlers.events.get(name) ?? []) fn(payload); } });

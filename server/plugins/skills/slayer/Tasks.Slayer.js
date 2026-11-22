@@ -269,9 +269,43 @@ function weightedPick(entries, random) {
 
 const between = (min, max, random) => min + Math.floor(random() * (max - min + 1));
 
+/** A boss task whose kill count waits for the player to choose (Wiki, Boss task: 3-35). */
+const PENDING_BOSS_ATTRIBUTE = "slayer:pending-boss";
+
+/** The prompt for a boss task's count: the Boss task's range at the player's claimed tiers. */
+function bossAmountPrompt(player, bossId) {
+  const { min, max } = bossAmountRange(player, bossId);
+  return { min, max, text: `How many would you like to slay? (${min}-${max})` };
+}
+
+/** Rolls nothing yet: saves the boss task until the player types how many they want. */
+function beginBossAssignment(player, master, entry, bossId) {
+  player.setAttribute(PENDING_BOSS_ATTRIBUTE, {
+    masterId: master.id,
+    taskId: entry.task.id,
+    bossId,
+  });
+  return bossAmountPrompt(player, bossId);
+}
+
+/** The boss assignment waiting for a kill count, or null. */
+function pendingBossAssignment(player) {
+  const pending = player.getAttribute(PENDING_BOSS_ATTRIBUTE);
+  if (!pending) return null;
+  const master = Data.get().masters.get(pending.masterId);
+  const entry = master?.tasks.find((row) => row.task.id === pending.taskId);
+  if (!entry) {
+    player.setAttribute(PENDING_BOSS_ATTRIBUTE, null);
+    return null;
+  }
+  return { ...pending, master, entry, ...bossAmountPrompt(player, pending.bossId) };
+}
+
 /**
  * Gives the player a task from this master. Returns { line } with the master's line, or
- * { refused: line } when the master has nothing for them. The caller checks the existing task.
+ * { refused: line } when the master has nothing for them. A boss task waits for the player's
+ * count instead ({ pending }: the prompt), as the Boss task's count is chosen (Wiki). The
+ * caller checks the existing task.
  */
 function assign(player, master, random = Math.random) {
   const blocked = blockedTaskIds(player, master);
@@ -281,7 +315,25 @@ function assign(player, master, random = Math.random) {
   const repeat = previous && hasSlayerCape(player, true) && random() < CAPE_REPEAT_CHANCE;
   const entry = repeat ? previous : weightedPick(choices, random);
   const bossId = entry.task.id === Data.BOSS_TASK_ID ? rollBoss(player, random, null, master) : 0;
+  if (bossId) return { pending: beginBossAssignment(player, master, entry, bossId) };
   return { line: assignLine(player, master, entry, bossId, null, random) };
+}
+
+/**
+ * Sets the waiting boss task with the player's count. Returns { line } for the master, or
+ * { error } when the count is outside the task's range (the assignment stays waiting).
+ */
+function completeBossAssignment(player, count, random = Math.random) {
+  const pending = pendingBossAssignment(player);
+  if (!pending) return null;
+  const amount = Math.floor(Number(count));
+  if (!Number.isInteger(amount) || amount < pending.min || amount > pending.max) {
+    return { error: `You must choose an amount between ${pending.min} and ${pending.max}.`, pending };
+  }
+  player.setAttribute(PENDING_BOSS_ATTRIBUTE, null);
+  const set = setTask(player, pending.master, pending.entry, pending.bossId, null, null, random, amount);
+  const name = set.task.displayName;
+  return { line: `Your new task is to kill ${set.amount} ${name}.`, amount, task: set.task };
 }
 
 /**
@@ -352,6 +404,7 @@ function rollAmount(player, entry, bossId, random) {
  * the base roll).
  */
 function setTask(player, master, entry, bossId, area, chosenModifier, random, chosenAmount = null) {
+  player.setAttribute(PENDING_BOSS_ATTRIBUTE, null);
   player.setAttribute(PREVIOUS_TASK_ATTRIBUTE, entry.task.id);
   const task = bossId ? Data.get().bosses.get(bossId) ?? entry.task : entry.task;
   const base = Number.isInteger(chosenAmount) && chosenAmount > 0 ? chosenAmount : rollAmount(player, entry, bossId, random);
@@ -422,6 +475,7 @@ function stillHunting(player, task) {
 
 /** Ends the current task without a reward (cancelling, Turael's replacement). */
 function clear(player) {
+  player.setAttribute(PENDING_BOSS_ATTRIBUTE, null);
   player.setAttribute(TASK_XP_ATTRIBUTE, null);
   State.update(player,
     { slayer_target_bossid: 0, slayer_modifier_id: 0, slayer_modifier_value: 0, slayer_modifier_negative: 0 },
@@ -741,6 +795,9 @@ module.exports = {
   modifierBoost,
   killBoost,
   assign,
+  pendingBossAssignment,
+  completeBossAssignment,
+  bossAmountPrompt,
   assignChosen,
   assignPicked,
   assignTzhaarBoss,

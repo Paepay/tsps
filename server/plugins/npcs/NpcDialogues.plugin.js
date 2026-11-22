@@ -1148,7 +1148,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
         const speech = typeof step.player === "string" ? step.player : typedLine ? step.text : step.npc;
         // Let a plugin skip a line through the mutable payload (as slayer:assignment),
         // e.g. a hand-over line for an item the player is no longer carrying.
-        const request = { player, npc: event.npc, npcId, definition, step, text: speech, pages: context.pages, playing: context.playing, skip: false };
+        const request = { player, npc: event.npc, npcId, definition, step, text: speech, pages: context.pages, playing: context.playing, skip: false, after: step.after };
         api.emitCustomEvent("npc-dialogue:line", request);
         if (request.skip) {
           if (step.steps?.length) {
@@ -1476,7 +1476,7 @@ function startDialogue(api, event, steps, branches = {}, context = {}) {
         if (step.type === "action" && step.action === "slayer_assignment") {
           const request = { player, master: step.target, npcId, definitionId: definition?.getId?.(), npcName: definition?.getName?.(), line: null };
           api.emitCustomEvent("slayer:assignment", request);
-          if (request.line) return run([{ npc: request.line }, ...rest], currentRecord);
+          if (request.line) return run([{ npc: request.line, after: request.after }, ...rest], currentRecord);
         }
         if (step.type === "action" && step.action === "slayer_task_tip") {
           const request = { player, master: step.target, line: null };
