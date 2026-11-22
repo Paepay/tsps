@@ -705,3 +705,21 @@ test("runner trap repairs accept carried and equipped Imcando hammers", async (t
     }
   }
 });
+
+test("a wave's chat reports the honour points after a league's minigame multiplier", (t) => {
+  const { match, players: [player] } = createMatch([data.ROLE.ATTACKER]);
+  t.after(() => core.TaskManager.cancelTasks(match.intermissionKey));
+  match.wave = 3;
+  match.waveAwarded = false;
+  match.ended = false;
+  match.scoreWave = () => new Map([[player, 10]]);
+  const previous = api.emitCustomEvent;
+  api.emitCustomEvent = (name, event) => {
+    if (name === "minigame:points") event.points *= 5;
+    return previous(name, event);
+  };
+  t.after(() => { api.emitCustomEvent = previous; });
+  match.completeWave(true);
+  assert.ok(player.messages.some((message) => message.includes("You receive 50 Honour Points")), player.messages.join("\n"));
+  assert.equal(Points.points(player, data.ROLE.ATTACKER), 50);
+});

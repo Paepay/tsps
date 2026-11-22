@@ -318,7 +318,7 @@ function rewardTag(player) {
   api.emitCustomEvent("minigame:points", award);
   // "brimhaven-agility-arena:streak" { player, tickets }: the run of clean tags so far, for a
   // league's "Receive 30 Agility Arena Tickets without missing any pillars".
-  state.ticketStreak += count;
+  state.ticketStreak += award.points;
   api.emitCustomEvent("brimhaven-agility-arena:streak", { player, tickets: state.ticketStreak });
   const laps = (Number(player.getAttribute(LAPS_ATTRIBUTE)) || 0) + 1;
   player.setAttribute(LAPS_ATTRIBUTE, laps);
