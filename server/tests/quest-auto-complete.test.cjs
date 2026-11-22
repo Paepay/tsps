@@ -446,25 +446,7 @@ test('a Quests-off world registers the royal seed pod teleport', () => {
   assert.ok(player.sent.some(([, message]) => message === 'The Royal seed pod teleports you to the Grand Tree.'));
 });
 
-test('auto-completed quests hand over their reward item and skip XP lamps', () => {
-  const player = fakePlayer();
-  const inventory = withInventory(player);
-  player.getSkillManager = () => ({ addExperiences() {} });
-  QuestRuntime.applyAutoReward(player, {
-    key: 'demo_reward', rewardItemId: 995,
-    onReward: (who, quest, options) => {
-      assert.equal(options.experience, false, 'completion XP and honouring lamps are withheld');
-      who.getInventory().adds(995, 10);
-    },
-  });
-  assert.equal(inventory.getAmount(995), 11, 'the handler and the completion item are both given');
-  QuestRuntime.applyAutoReward(player, { key: 'demo_lamp', rewardItemId: 23516 });
-  assert.equal(inventory.getAmount(23516), 0, 'a lamp completion item is not handed out');
-  QuestRuntime.applyAutoReward(player, { key: 'a_night_at_the_theatre', rewardItemId: 995 });
-  assert.equal(inventory.getAmount(995), 11, 'the theatre lamp quest is skipped entirely');
-});
-
-test('auto-completed quests also hand over the items their completion gave outside onReward', () => {
+test('auto-completed quests leave their rewards for the player to reclaim instead of handing them over', () => {
   const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
   QuestAutoComplete.register(api);
   const { ItemIdentifiers: I } = api.core;
@@ -473,17 +455,11 @@ test('auto-completed quests also hand over the items their completion gave outsi
   player.getSkillManager = () => ({ addExperiences() {} });
   for (const handler of hooks.login) handler({ player });
 
-  assert.equal(inventory.getAmount(I.SOUL_BEARER), 1, "Bear Your Soul's repaired soul bearer");
-  assert.equal(inventory.getAmount(I.FOSSIL_ISLAND_NOTE_BOOK), 1, "Bone Voyage's note book");
-  for (const robe of [I.GHOSTLY_ROBE, I.GHOSTLY_GLOVES, I.GHOSTLY_BOOTS, I.GHOSTLY_ROBE_2, I.GHOSTLY_HOOD, I.GHOSTLY_CLOAK]) {
-    assert.equal(inventory.getAmount(robe), 1, `Curse of the Empty Lord's robe ${robe}`);
+  assert.deepEqual(inventory.getItems(), [], 'logging in does not fill the inventory or drop rewards on the floor');
+  for (const id of [I.SOUL_BEARER, I.FOSSIL_ISLAND_NOTE_BOOK, I.GHOSTLY_ROBE, I.DARKLIGHT,
+    I.RING_OF_SHADOWS_UNCHARGED_, I.CRYPT_MAP, I.COWBELL_AMULET, I.SACRAMENTS_OF_ENT_FOLK]) {
+    assert.equal(inventory.getAmount(id), 0, `quest reward ${id} is not granted at login`);
   }
-  assert.equal(inventory.getAmount(I.DARKLIGHT), 1, 'Demon Slayer is Darklight once Shadow of the Storm is complete');
-  assert.equal(inventory.getAmount(I.SILVERLIGHT), 0, 'the old sword is not handed out instead');
-  assert.equal(inventory.getAmount(I.RING_OF_SHADOWS_UNCHARGED_), 1, "Desert Treasure II's ring");
-  assert.equal(inventory.getAmount(I.CRYPT_MAP), 1, "His Faithful Servants' crypt map");
-  assert.equal(inventory.getAmount(I.COWBELL_AMULET), 1, "The Ides of Milk's cowbell amulet");
-  assert.equal(inventory.getAmount(I.SACRAMENTS_OF_ENT_FOLK), 1, "Vale Totems' notebook");
 });
 
 test('a Quests-off Duke Horacio hands over the anti-dragon shield', () => {

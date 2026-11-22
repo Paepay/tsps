@@ -25,6 +25,10 @@ const shopsJson = require("../data/definitions/shops.json");
 const COINS = 995;
 const SHOP_ID = 9218;
 const STOCK = [Items.ECTOPHIAL_2, Items.KARAMJA_GLOVES, Items.LUNAR_RING, Items.LUNAR_HELM, Items.COLOSSAL_BLADE];
+const RECLAIMABLE_QUEST_REWARDS = new Set([Items.CRYPT_MAP, Items.COWBELL_AMULET,
+  Items.SACRAMENTS_OF_ENT_FOLK]);
+const ALCHABLE_QUEST_REWARDS = new Map([[Items.SOUL_BEARER, 4], [Items.FOSSIL_ISLAND_NOTE_BOOK, 6],
+  [Items.RING_OF_SHADOWS_UNCHARGED_, 45000]]);
 
 ItemDefinition.forId = (id) => ({
   getId: () => id,
@@ -35,7 +39,8 @@ ItemDefinition.forId = (id) => ({
   unNote: () => id,
   getNoteId: () => -1,
   getValue: () => (id === COINS ? 1 : 0),
-  isTradeable: () => true,
+  isTradeable: () => !RECLAIMABLE_QUEST_REWARDS.has(id) && !ALCHABLE_QUEST_REWARDS.has(id),
+  getHighAlchValue: () => ALCHABLE_QUEST_REWARDS.get(id) ?? 0,
   isSellable: () => true,
 });
 
@@ -163,4 +168,21 @@ test("every shops.json Lost Property row has data, a Wiki price, and resolvable 
       assert.equal(typeof Items[name], "number", `${name} is an item`);
     }
   }
+});
+
+test("a Quests-off world adds only untradeable, non-alchable quest rewards to Perdu", () => {
+  const stock = [];
+  LostProperty._test.addQuestRewardStock({ shopName: "Lost Property shop", stock }, true);
+  const ids = stock.map((entry) => entry.id);
+  for (const id of RECLAIMABLE_QUEST_REWARDS) assert.ok(ids.includes(id), `quest reward ${id} is reclaimable`);
+  for (const id of ALCHABLE_QUEST_REWARDS.keys()) {
+    assert.ok(!ids.includes(id), `alchable quest reward ${id} is not added to the reclaim stock`);
+    assert.equal(LostProperty._test.reclaimableQuestReward(id), false);
+  }
+  assert.equal(LostProperty._test.reclaimableQuestReward(Items.ANCIENT_STAFF), false,
+    "a tradeable quest reward is not added to the reclaim stock");
+
+  const offOnly = [];
+  LostProperty._test.addQuestRewardStock({ shopName: "Lost Property shop", stock: offOnly }, false);
+  assert.deepEqual(offOnly, [], "a Quests-on world keeps the Wiki stock unchanged");
 });

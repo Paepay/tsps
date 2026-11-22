@@ -9,6 +9,8 @@
  *   rows take no slot, so they can't be bought.
  * - Only one of a row without multiples goes per purchase.
  * - The diary rows are display items; each sells the highest claimed tier of its diary's reward.
+ * - Quests-off worlds add the audited quest items that have no other reclaim path. Only
+ *   untradeable items with no high-alch value are added.
  * - Perdu buys nothing back.
  *
  * Not done: the Wiki's payment from the bank when the inventory holds too few coins, and items
@@ -18,6 +20,7 @@ const DATA = require("./data/lost-property.json");
 
 const SHOP_NAME = "Lost Property shop";
 const DIARY_TIERS = ["elite", "hard", "medium", "easy"];
+const INFINITE_STOCK = 2_000_000_000;
 
 let pluginApi;
 let core;
@@ -68,6 +71,7 @@ function claimedTier(player, row) {
 }
 
 function unlocked(player, row) {
+  if (row.questsOff === true && !questsOffWorld()) return false;
   if (row.quest && !questState(player, row.quest, "quest:is-complete", "complete")) return false;
   if (row.questStarted && !questState(player, row.questStarted, "quest:is-started", "started")) return false;
   if (row.diary && claimedTier(player, row) === null) return false;
@@ -84,6 +88,39 @@ function unlocked(player, row) {
   if (row.level && player.getSkillManager().getMaxLevel(core.Skill[row.level.skill]) < row.level.level) return false;
   if (row.carrying !== null && !player.getInventory().contains(row.carrying)) return false;
   return true;
+}
+
+function questsOffWorld() {
+  return core?.PluginManager?.getPluginSwitch?.("Quests") === false;
+}
+
+/** Reclaim-only stock is for quest items a player cannot trade away or turn into coins at an altar. */
+function reclaimableQuestReward(itemId) {
+  const definition = core?.ItemDefinition?.forId?.(itemId);
+  if (!definition) return false;
+  return definition.isTradeable?.() === false && !(Number(definition.getHighAlchValue?.()) > 0);
+}
+
+/**
+ * Adds the Quests-off reclaim rows to the shop's loaded stock. shops.json stays the Wiki's Lost
+ * Property list; these audited quest items exist only on worlds that auto-complete quests.
+ */
+function addQuestRewardStock(event, enabled = questsOffWorld()) {
+  if (!enabled || event?.shopName !== SHOP_NAME || !Array.isArray(event.stock)) return;
+  const present = new Set(event.stock.map((entry) => entry.id));
+  for (const row of DATA.items) {
+    if (row.questsOff !== true) continue;
+    const id = itemId(row.item);
+    if (present.has(id) || !reclaimableQuestReward(id)) continue;
+    const value = Number(core.ItemDefinition.forId(id).getValue?.()) || 1;
+    event.stock.push({
+      id,
+      amount: INFINITE_STOCK,
+      restockTicks: null,
+      price: row.price ?? Math.max(1, value),
+    });
+    present.add(id);
+  }
 }
 
 function available(player, itemId) {
@@ -124,9 +161,13 @@ module.exports = {
     pluginApi = api;
     core = api.core;
     api.onCustomEvent("shop:stock-visible", stockVisible);
+    api.onCustomEvent("shop:load-stock", addQuestRewardStock);
     api.onCustomEvent("shop:delivery", delivery);
     api.onCustomEvent("shop:buy-limit", buyLimit);
     api.onCustomEvent("shop:can-sell", canSell);
   },
-  _test: { available, rowsByItem, claimedTier, setApi(value) { pluginApi = value; core = value.core; rows = null; } },
+  _test: {
+    available, rowsByItem, claimedTier, addQuestRewardStock, reclaimableQuestReward,
+    setApi(value) { pluginApi = value; core = value.core; rows = null; },
+  },
 };

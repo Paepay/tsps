@@ -1368,11 +1368,6 @@ module.exports = function registerDemonSlayerQuest(api) {
     questPoints: 3,
     scrollItemId: SILVERLIGHT_ITEM_ID,
     rewardItemLabel: "Silverlight",
-    onReward(player, quest, options) {
-      if (options?.auto !== true) return;
-      if (ownsSilverlight(player)) return;
-      QuestRuntime.giveReward(player, replacementSword(player), 1);
-    },
     completionJingleId: DEMON_SLAYER_JINGLE,
     buildJournal,
   });

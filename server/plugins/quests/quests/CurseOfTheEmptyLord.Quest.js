@@ -39,7 +39,7 @@
  */
 module.exports = function registerCurseOfTheEmptyLordQuest(api) {
   const { ItemIdentifiers: I, Equipment, Skill } = api.core;
-  const { registerQuest, startTranscript, giveReward } = require("../QuestRuntime");
+  const { registerQuest, startTranscript } = require("../QuestRuntime");
 
   const QUEST_KEY = "curse_of_the_empty_lord";
   const VARP = 520;
@@ -300,14 +300,6 @@ module.exports = function registerCurseOfTheEmptyLordQuest(api) {
     completionValue: STAGE_COMPLETE,
     questPoints: 0,
     otherRewards: ["A set of ghostly robes"],
-    onReward(player, quest, options) {
-      if (options?.auto !== true) return;
-      const inventory = player.getInventory();
-      for (const robe of ROBES) {
-        if (inventory.getAmount(robe) > 0) continue;
-        giveReward(player, robe, 1);
-      }
-    },
     buildJournal,
   });
 

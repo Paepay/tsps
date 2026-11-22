@@ -84,12 +84,6 @@ const QUEST_COMPLETE_JINGLE = 238;
 const QUEST_POINTS_ATTRIBUTE = "quest.points";
 /** Keys of the quests completed with `experience: false`, whose later XP claims pay nothing. */
 const EXPERIENCE_WITHHELD_ATTRIBUTE = "quest.experience-withheld";
-/** One-time marker for the item and unlock rewards every auto-completed quest hands over. */
-const AUTO_REWARD_ATTRIBUTE = "quest.auto-complete-rewards";
-const AUTO_REWARD_VERSION = 1;
-/** Lamps these rewards hand out on purpose when no quest was played, which #120 excludes. */
-const AUTO_REWARD_SKIP = new Set(["a_night_at_the_theatre", "the_path_of_glouphrie"]);
-
 // Client quest list statuses.
 const { metadata, questMetadata, nativeQuestIndex, questRowById } = require("./QuestList.QuestRuntime");
 const quests = [];
@@ -951,9 +945,6 @@ function registerQuestDefinitions(api, names) {
 function completeAllQuests(player) {
   if (!player || player.isPlayerBot?.()) return false;
   let changed = false;
-  const rewardsApplied = Number(player.getAttribute(AUTO_REWARD_ATTRIBUTE)) >= AUTO_REWARD_VERSION;
-  // Publish every final stage before any reward runs: a reward may read another quest's state
-  // (Demon Slayer's sword is Darklight once Shadow of the Storm counts complete).
   for (const quest of quests) {
     const completedAt = Number(quest.completionValue ?? 2);
     const current = quest.getStage(player);
@@ -961,11 +952,6 @@ function completeAllQuests(player) {
       player.setAttribute(stageAttribute(quest.key), completedAt);
       changed = true;
     }
-  }
-  if (!rewardsApplied) {
-    for (const quest of quests) applyAutoReward(player, quest);
-    player.setAttribute(AUTO_REWARD_ATTRIBUTE, AUTO_REWARD_VERSION);
-    changed = true;
   }
   sendQuestVarps({ player });
   const totalPoints = quests.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
@@ -976,34 +962,6 @@ function completeAllQuests(player) {
   }
   sendQuestHeaderStats(player);
   return changed;
-}
-
-/**
- * A quest's normal reward handler and completion item, for a completion that skipped its
- * dialogue. `experience: false` withholds the completion XP and the post-quest lamps that honour
- * it; the two lamp-only handlers that do not are skipped above. Items a quest hands out are
- * forced onto the floor when the inventory cannot take them, as `giveReward` does.
- */
-function applyAutoReward(player, quest) {
-  if (AUTO_REWARD_SKIP.has(quest.key)) return;
-  if (typeof player?.getInventory !== "function" || typeof player?.getSkillManager !== "function") return;
-  const options = { experience: false, scroll: false, announce: false, auto: true };
-  try {
-    if (typeof quest.onReward === "function") quest.onReward(player, quest, options);
-  } catch (error) {
-    // not every reward can run outside its quest's scene
-    if (process.env.DEBUG_QUEST_REWARDS) console.error(`[quest-auto-complete] ${quest.key}:`, error);
-  }
-  if (quest.rewardItemId === undefined) return;
-  const id = typeof quest.rewardItemId === "function" ? quest.rewardItemId(player) : quest.rewardItemId;
-  if (!Number.isInteger(id)) return;
-  const name = coreApi?.ItemDefinition?.forId?.(id)?.getName?.() ?? "";
-  if (/lamp/i.test(name)) return;
-  try {
-    giveReward(player, id, 1);
-  } catch (error) {
-    if (process.env.DEBUG_QUEST_REWARDS) console.error(`[quest-auto-complete] ${quest.key} item ${id}:`, error);
-  }
 }
 
 /** Completes the player and persists a migrated account now, before its next autosave. */
@@ -1186,7 +1144,6 @@ function questStartMessage(player, name, kind = "quest") {
 }
 
 module.exports = {
-  applyAutoReward, AUTO_REWARD_ATTRIBUTE, AUTO_REWARD_VERSION,
   questLink,
   questStartMessage,
   rewardLines,

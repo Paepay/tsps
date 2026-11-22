@@ -29,7 +29,7 @@ module.exports = function registerBearYourSoulQuest(api) {
     Animation, DialogueChainBuilder, EndDialogue, ItemIdentifiers: Items, ItemStatementDialogue,
     NpcDialogue, NpcIdentifiers: Npcs, PlayerDialogue,
   } = api.core;
-const { openBook, registerQuest, startTranscript, giveReward } = require("../QuestRuntime");
+  const { openBook, registerQuest, startTranscript } = require("../QuestRuntime");
 
   const VARP_SOULBEARER_STORY = 695;
   const VARBIT_SOULBEARER_STORY = 5078;
@@ -316,11 +316,6 @@ const { openBook, registerQuest, startTranscript, giveReward } = require("../Que
     questPoints: 0,
     scrollItemId: SOUL_BEARER,
     rewardItemLabel: "Soul bearer",
-    onReward(player, quest, options) {
-      if (options?.auto !== true) return;
-      if (has(player, SOUL_BEARER) || has(player, DAMAGED_SOUL_BEARER)) return;
-      giveReward(player, SOUL_BEARER, 1);
-    },
     buildJournal,
   });
 

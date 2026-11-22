@@ -1,6 +1,6 @@
 {
   "_source": "OSRS Wiki: Lost Property shop and Perdu (stock, the ownership rule and its exceptions), and each item's own page for what unlocks it. Names are ItemIdentifiers constants; 'item' is the shop's stock row.",
-  "_rules": "A row shows only to a player who meets its unlock and, unless 'multiples' (the Wiki's exceptions list), owns none of 'owned' (the stock item when absent) in the inventory, worn or in the bank. 'quest' must be complete and 'questStarted' started; a quest or miniquest this server doesn't have hides the row. 'mageArenaCape': a god cape was received at the Mage Arena statues. 'logged': the item is in the collection log. 'diary': a tier of that diary was claimed, and the row sells the highest claimed tier's item from 'tiers'. 'level' and 'carrying' are further conditions.",
+  "_rules": "A row shows only to a player who meets its unlock and, unless 'multiples' (the Wiki's exceptions list), owns none of 'owned' (the stock item when absent) in the inventory, worn or in the bank. 'quest' must be complete and 'questStarted' started; a quest or miniquest this server doesn't have hides the row. 'mageArenaCape': a god cape was received at the Mage Arena statues. 'logged': the item is in the collection log. 'diary': a tier of that diary was claimed, and the row sells the highest claimed tier's item from 'tiers'. 'level' and 'carrying' are further conditions. 'questsOff' rows are added to the shop only on worlds that auto-complete quests, and only when the item is untradeable with no high-alch value.",
   "items": [
     { "item": "ECTOPHIAL_2", "owned": ["ECTOPHIAL", "ECTOPHIAL_2"], "quest": "Ghosts Ahoy" },
     { "item": "GUTHIX_CAPE", "mageArenaCape": true, "multiples": true },
@@ -59,6 +59,9 @@
     { "item": "IMBUED_SARADOMIN_CAPE", "quest": "Mage Arena II", "multiples": true },
     { "item": "DRAKANS_MEDALLION", "quest": "A Taste of Hope", "multiples": true },
     { "item": "THREAD_OF_ELIDINIS", "logged": true },
-    { "item": "ARKAN_BLADE", "quest": "The Final Dawn" }
+    { "item": "ARKAN_BLADE", "quest": "The Final Dawn" },
+    { "item": "CRYPT_MAP", "quest": "His Faithful Servants", "questsOff": true, "price": 1 },
+    { "item": "COWBELL_AMULET", "owned": ["COWBELL_AMULET", "COWBELL_AMULET_2"], "quest": "The Ides of Milk", "questsOff": true, "price": 350 },
+    { "item": "SACRAMENTS_OF_ENT_FOLK", "quest": "Vale Totems", "questsOff": true, "price": 100 }
   ]
 }

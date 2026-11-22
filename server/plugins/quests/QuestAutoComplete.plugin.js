@@ -46,7 +46,6 @@ function attach(api) {
   const definitions = QuestRuntime.registerQuestDefinitions(definitionApi(api), names);
   if (definitions.length === 0) return;
   QuestRuntime.registerQuestCompletion(api);
-  api.persistAttribute(QuestRuntime.AUTO_REWARD_ATTRIBUTE, 0);
   // Quest shops and Sir Tiffy's common dialogue only existed through Quests. Their gates read
   // "quest:is-complete", which the completion hooks now answer.
   require("./Shops.Quests")(api);

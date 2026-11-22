@@ -7,7 +7,7 @@ module.exports = function registerDesertTreasureII(api) {
     if (typeof inventory.getAddableAmount === "function") return inventory.getAddableAmount(new Item(itemId, 1)) >= 1;
     return (inventory.getFreeSlots?.() ?? 1) > 0;
   }
-  const { registerQuest, startTranscript, questStartMessage, giveReward } = require("../QuestRuntime");
+  const { registerQuest, startTranscript, questStartMessage } = require("../QuestRuntime");
   const PAGE = "Desert Treasure II - The Fallen Empire";
   const { findBestPickaxe } = require("../../skills/Mining.plugin");
   const WAR_ROOM_GOLEM_LOC = 49511; // Cache multiloc bases are the actual map objects.
@@ -8980,13 +8980,6 @@ module.exports = function registerDesertTreasureII(api) {
   quest = registerQuest(api, {
     key: "desert_treasure_ii", name: "Desert Treasure II - The Fallen Empire", varpId: 3786, varbitId: 14862,
     startedValue: S.STARTED, completionValue: S.COMPLETE, questPoints: 5, varbitValue: nativeProgress,
-    onReward(player, quest, options) {
-      if (options?.auto !== true) return;
-      const held = [I.RING_OF_SHADOWS, I.RING_OF_SHADOWS_UNCHARGED_]
-        .some((id) => player.getInventory().getAmount(id) > 0
-          || (player.getEquipment?.().getItems?.() ?? []).some((item) => item?.getId?.() === id));
-      if (!held) giveReward(player, I.RING_OF_SHADOWS_UNCHARGED_, 1);
-    },
     otherRewards: ["Ring of shadows", "Three ancient lamps", "Access to Vardorvis, the Leviathan, Duke Sucellus and the Whisperer"], buildJournal,
   });
   ["desert-treasure-ii:statues", CELLS_INSERTED, CELL_POSITIONS,
