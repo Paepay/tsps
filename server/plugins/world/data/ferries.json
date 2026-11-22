@@ -6,6 +6,8 @@
     "barnaby-ardougne": { "style": "fade", "teleport": 3, "fadeIn": 4, "close": 7, "sea": true, "message": { "at": 3, "text": "You board the ship and sail to Ardougne." }, "to": [2680, 3274, 0] },
     "barnaby-brimhaven": { "style": "fade", "teleport": 3, "fadeIn": 4, "close": 7, "sea": true, "message": { "at": 3, "text": "You board the ship and sail to Brimhaven." }, "to": [2775, 3233, 1] },
     "barnaby-rimmington": { "style": "fade", "teleport": 3, "fadeIn": 4, "close": 7, "sea": true, "message": { "at": 3, "text": "You board the ship and sail to Rimmington." }, "to": [2916, 3225, 0] },
+    "antonia-aldarin": { "style": "fade", "teleport": 3, "fadeIn": 4, "close": 7, "sea": true, "message": { "at": 3, "text": "You board the boat and sail to Aldarin." }, "to": [1443, 2977, 0] },
+    "antonia-sunset-coast": { "style": "fade", "teleport": 3, "fadeIn": 4, "close": 7, "sea": true, "message": { "at": 3, "text": "You board the boat and sail to the Sunset Coast." }, "to": [1494, 2985, 0] },
     "entrana": { "style": "ship_journey", "route": 1, "ticks": 14, "board": "After a quick search, the monk smiles at you and allows you to board.", "arrive": "The ship arrives at Entrana.", "to": [2834, 3331, 1] },
     "entrana-back": { "style": "ship_journey", "route": 2, "ticks": 14, "arrive": "The ship arrives at Port Sarim.", "to": [3048, 3231, 1] },
     "outpost": { "style": "ship_journey", "route": 10, "ticks": 11, "arrive": "The ship arrives at the Void Knight outpost.", "to": [2663, 2676, 1] },
@@ -101,7 +103,9 @@
     { "npc": "Maria Gunnars", "option": "Rellekka", "route": "neitiznot-back", "gate": "fremennikIsles" },
     { "npc": "Achilka", "option": "Kastori", "from": ["tlati_riverboat_owner_west", "tlati_riverboat_owner_north"], "route": "varla-kastori" },
     { "npc": "Achilka", "option": "Tal Teklan", "from": ["tlati_riverboat_owner_south", "tlati_riverboat_owner_north"], "route": "varla-tal-teklan" },
-    { "npc": "Achilka", "option": "Gloomthorn Trail", "from": ["tlati_riverboat_owner_south", "tlati_riverboat_owner_west"], "route": "varla-gloomthorn" }
+    { "npc": "Achilka", "option": "Gloomthorn Trail", "from": ["tlati_riverboat_owner_south", "tlati_riverboat_owner_west"], "route": "varla-gloomthorn" },
+    { "npc": "Antonia", "option": "Travel", "from": ["sunset_coast_to_aldarin_sailor"], "route": "antonia-aldarin", "fare": 20, "refusal": "Come back when you've got 20 coins for me." },
+    { "npc": "Antonia", "option": "Travel", "from": ["aldarin_to_sunset_coast_sailor"], "route": "antonia-sunset-coast", "fare": 20, "refusal": "Come back when you've got 20 coins for me." }
   ],
   "locs": [
     { "loc": "Fremennik Boat", "option": "Travel", "from": ["fremennik_boat_ungael"], "route": "ungael" },
@@ -149,6 +153,10 @@
     "JHL4rr": "varla-tal-teklan",
     "Fj-emV": "varla-kastori",
     "WjyUrt": "varla-gloomthorn",
+    "OeCJGu": { "route": "antonia-aldarin", "fare": 20 },
+    "225rCR": "antonia-aldarin",
+    "XhDB6R": { "route": "antonia-sunset-coast", "fare": 20 },
+    "XvYnfE": "antonia-sunset-coast",
     "OoijAs": "lithkren",
     "0P4s9G": "lithkren-back",
     "95ddFK": "fossil-barge-board",
@@ -162,6 +170,10 @@
     "vZONeo": "fossil-barge-digsite"
   },
   "talk": {
+    "Antonia": [
+      { "from": "sunset_coast_to_aldarin_sailor", "variant": "standard-dialogue-sunset-coast" },
+      { "from": "aldarin_to_sunset_coast_sailor", "variant": "standard-dialogue-aldarin" }
+    ],
     "Jardric": [
       { "from": "jardric_boat", "gate": "dragonSlayerII", "variant": "standard-dialogue-after-dragon-slayer-ii-fossil-island" },
       { "from": "jardric_lithkren", "gate": "dragonSlayerII", "variant": "standard-dialogue-after-dragon-slayer-ii-lithkren" }

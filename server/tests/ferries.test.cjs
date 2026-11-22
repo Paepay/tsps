@@ -431,6 +431,46 @@ test("the Rellekka boat's Travel sails to Ungael as Torfinn's boat does; without
   assert.deepEqual(at(before.player), [2639, 3697, 0]);
 });
 
+test("Antonia's boat sails Sunset Coast <-> Aldarin for 20 coins, with her dock variants and charm", () => {
+  const poor = createPlayer({ at: new Location(1494, 2985, 0), coins: 19 });
+  assert.equal(click(poor, "Antonia", "Travel", { gameval: "sunset_coast_to_aldarin_sailor" }).handled, true);
+  assert.deepEqual(poor.sent.messages, ["Come back when you've got 20 coins for me."]);
+  assert.deepEqual(at(poor), [1494, 2985, 0]);
+  assert.equal(poor.getInventory().getAmount(ItemIdentifiers.COINS), 19);
+
+  const out = createPlayer({ at: new Location(1494, 2985, 0), coins: 20 });
+  assert.equal(click(out, "Antonia", "Travel", { gameval: "sunset_coast_to_aldarin_sailor" }).handled, true);
+  assert.equal(out.getInventory().getAmount(ItemIdentifiers.COINS), 0);
+  tick(3);
+  assert.deepEqual(at(out), [1443, 2977, 0], "the Sunset Coast boat lands on Aldarin's dock");
+
+  const back = createPlayer({ at: new Location(1443, 2977, 0), coins: 20 });
+  assert.equal(click(back, "Antonia", "Travel", { gameval: "aldarin_to_sunset_coast_sailor" }).handled, true);
+  assert.equal(back.getInventory().getAmount(ItemIdentifiers.COINS), 0);
+  tick(3);
+  assert.deepEqual(at(back), [1494, 2985, 0], "the Aldarin boat lands back on the Sunset Coast");
+
+  const answer = (player, text) => hooks.conditions
+    .map((handler) => handler({ player, definition: { getName: () => "Antonia" }, text }))
+    .find((value) => value != null);
+  assert.equal(answer(createPlayer({ coins: 20 }), "If the player has at least 20 coins:"), true);
+  assert.equal(answer(createPlayer({ coins: 19 }), "If the player has at least 20 coins:"), false);
+  assert.equal(answer(createPlayer({ coins: 19 }), "If the player does not have at least 20 coins:"), true);
+
+  const variant = (npcValue) => hooks.variants
+    .map((handler) => handler({ player: out, npc: { getId: () => npcValue }, npcId: npcValue, definition: { getName: () => "Antonia" } }))
+    .find((value) => value != null);
+  assert.equal(variant(13984), "standard-dialogue-sunset-coast");
+  assert.equal(variant(13985), "standard-dialogue-aldarin");
+
+  const charm = createPlayer({ at: new Location(1494, 2985, 0), worn: [ItemIdentifiers.RING_OF_CHAROS_A_] });
+  const charmEvent = { player: charm, stepId: "225rCR", handled: false, end: false };
+  for (const handler of hooks.events.get("npc-dialogue:action")) handler(charmEvent);
+  assert.equal(charmEvent.handled, true);
+  tick(3);
+  assert.deepEqual(at(charm), [1443, 2977, 0], "the Ring of Charos charm sails without a fare");
+});
+
 /** Travel on an island amenity rowboat (a multiloc), as the client sends it. */
 function clickRowboat(player, gameval, location) {
   const id = CacheDefinitions.getLocId(gameval);
