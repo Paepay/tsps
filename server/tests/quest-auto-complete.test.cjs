@@ -34,7 +34,11 @@ function coreWithQuestSwitch(enabled, saves, { members = true } = {}) {
 }
 
 function recordingApi(core, { template = null } = {}) {
-  const hooks = { login: [], custom: new Map(), canShop: [], npcDialogueVariant: [], objectInteraction: new Map(), itemAction: [] };
+  const hooks = {
+    login: [], logout: [], custom: new Map(), canShop: [], npcDialogueVariant: [], npcDialogueCondition: [],
+    objectInteraction: new Map(), itemAction: [], npcInteraction: new Map(), itemOnNpc: [], itemOnObject: [], objectRoute: [],
+    mapSquareChange: [],
+  };
   const emitted = [];
   const api = {
     core,
@@ -49,6 +53,13 @@ function recordingApi(core, { template = null } = {}) {
     },
     onCanShop: (handler) => hooks.canShop.push(handler),
     onNpcDialogueVariant: (handler) => hooks.npcDialogueVariant.push(handler),
+    onNpcDialogueCondition: (handler) => hooks.npcDialogueCondition.push(handler),
+    onNpcInteraction: (name, actions) => hooks.npcInteraction.set(name, actions),
+    onItemOnNpc: (handler) => hooks.itemOnNpc.push(handler),
+    onItemOnObject: (handler) => hooks.itemOnObject.push(handler),
+    onObjectRoute: (handler) => hooks.objectRoute.push(handler),
+    onPlayerMapSquareChange: (handler) => hooks.mapSquareChange.push(handler),
+    onPlayerLogout: (handler) => hooks.logout.push(handler),
     onObjectInteraction: (name, actions) => hooks.objectInteraction.set(name, actions),
     onItemAction: (handler) => hooks.itemAction.push(handler),
   };
@@ -78,11 +89,39 @@ function fakePlayer(bot = false) {
     getAttribute: (key) => attributes.get(key),
     setAttribute: (key, value) => attributes.set(key, value),
     getLocation: () => location,
+    getArea: () => null,
+    getBanks: () => [],
+    getEquipment: () => ({ getItems: () => [] }),
     sendMessage: (message) => sent.push(['message', message]),
     moveTo: (next) => {
       position = { x: next.getX(), y: next.getY(), z: next.getZ() };
     },
   };
+}
+
+function withInventory(player) {
+  const amounts = new Map();
+  let freeSlots = 28;
+  const inventory = {
+    getAmount: (itemId) => amounts.get(itemId) ?? 0,
+    contains: (itemId) => (amounts.get(itemId) ?? 0) > 0,
+    adds: (itemId, amount = 1) => {
+      if (!amounts.has(itemId)) freeSlots--;
+      amounts.set(itemId, (amounts.get(itemId) ?? 0) + amount);
+      return true;
+    },
+    deleteNumber: (itemId, amount = 1) => {
+      const held = amounts.get(itemId) ?? 0;
+      const taken = Math.min(held, amount);
+      if (held > 0 && held === taken) freeSlots++;
+      amounts.set(itemId, held - taken);
+      return taken;
+    },
+    getFreeSlots: () => freeSlots,
+    isFull: () => freeSlots <= 0,
+  };
+  player.getInventory = () => inventory;
+  return inventory;
 }
 
 test('only an explicit Quests off switch activates the completion hooks', () => {
@@ -115,7 +154,7 @@ test('a Quests-off world registers every definition and completes it at login', 
     'every quest declares its completion stage');
   assert.equal(registered.filter((quest) => quest.varbitId === undefined && !Number.isInteger(quest.varpId)).length, 0,
     'every quest has a varp or varbit the client can read');
-  assert.equal(hooks.login.length, 1, 'one login hook completes the quests');
+  assert.ok(hooks.login.length >= 1, 'login hooks complete the quests and restore Quests-off state');
   assert.ok(hooks.custom.has('player:bootstrap-complete'), 'the bootstrap resends the completed varps');
   assert.ok(hooks.custom.has('quest:is-complete'), 'quest queries answer from the completed stages');
   assert.ok(hooks.custom.has('quest:get-stage'), 'stage queries answer from the completed stages');
@@ -178,9 +217,10 @@ test('an older saved character is migrated and stays complete after a save and r
   const reloaded = makePlayer('quest-autocomplete-old');
   migrated.applyToPlayer(reloaded);
   const registered = QuestRuntime.getRegisteredQuests();
+  const expectedPoints = registered.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
   assert.equal(registered.filter((quest) => quest.isComplete(reloaded)).length, registered.length,
     'the migrated save reloads with every quest complete');
-  assert.equal(reloaded.getAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE), 337,
+  assert.equal(reloaded.getAttribute(QuestRuntime.QUEST_POINTS_ATTRIBUTE), expectedPoints,
     'the migrated save keeps the full quest point total');
 });
 
@@ -220,6 +260,136 @@ test('a Level-Up Quests-off world restores the quest-owned shops and Ape gate, a
   assert.equal(chivalry.bypass, true);
   assert.equal(piety.bypass, true);
   assert.equal(other.bypass, false, 'only the Knight Waves prayers are handed out');
+});
+
+test('a Quests-off world offers and sells Eblis his ancient staff after Desert Treasure I', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = api.core;
+  const npcId = N.EBLIS;
+
+  const funded = fakePlayer();
+  const inventory = withInventory(funded);
+  inventory.adds(I.COINS, 80000);
+  for (const handler of hooks.login) handler({ player: funded });
+
+  const offer = hooks.npcDialogueVariant
+    .map((handler) => handler({ player: funded, npcId }))
+    .find(Boolean);
+  assert.deepEqual(offer, { page: 'Desert Treasure I', variant: 'post-quest-eblis' },
+    'Eblis keeps his post-quest transcript instead of falling back to generic dialogue');
+
+  const purchase = {
+    player: funded,
+    npcId,
+    stepId: 'nLCVju',
+    text: 'If the player has enough gold to purchase it:',
+  };
+  const answer = hooks.npcDialogueCondition
+    .map((handler) => handler(purchase))
+    .find((result) => typeof result === 'boolean');
+  assert.equal(answer, true, 'the 80,000-coin branch is selected');
+  for (const handler of hooks.custom.get('npc-dialogue:condition') ?? []) handler(purchase);
+  assert.equal(inventory.getAmount(I.COINS), 0, 'the price is taken');
+  assert.equal(inventory.getAmount(I.ANCIENT_STAFF), 1, 'the staff is handed over');
+  assert.ok(funded.sent.some(([, message]) => message === 'Eblis hands you an ancient staff.'));
+
+  const short = fakePlayer();
+  const shortInventory = withInventory(short);
+  shortInventory.adds(I.COINS, 79999);
+  for (const handler of hooks.login) handler({ player: short });
+  const refused = {
+    player: short,
+    npcId,
+    stepId: 'nLCVju',
+    text: 'If the player has enough gold to purchase it:',
+  };
+  assert.equal(hooks.npcDialogueCondition
+    .map((handler) => handler(refused))
+    .find((result) => typeof result === 'boolean'), false);
+  for (const handler of hooks.custom.get('npc-dialogue:condition') ?? []) handler(refused);
+  assert.equal(shortInventory.getAmount(I.COINS), 79999, 'a short balance is not taken');
+  assert.equal(shortInventory.getAmount(I.ANCIENT_STAFF), 0, 'a short balance gets no staff');
+});
+
+test('a Quests-off world lets Sir Prysin sell back Darklight after Shadow of the Storm', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const { ItemIdentifiers: I, NpcIdentifiers: N } = api.core;
+  const player = fakePlayer();
+  const inventory = withInventory(player);
+  inventory.adds(I.COINS, 500);
+  for (const handler of hooks.login) handler({ player });
+
+  const purchase = {
+    player,
+    npcId: N.SIR_PRYSIN,
+    stepId: 'kKVgcF',
+    text: 'If the player has at least 500 coins.',
+  };
+  assert.equal(hooks.npcDialogueCondition
+    .map((handler) => handler(purchase))
+    .find((result) => typeof result === 'boolean'), true, 'the 500-coin branch is selected');
+
+  const action = { player, npcId: N.SIR_PRYSIN, stepId: 'p5BVZ5', handled: false };
+  for (const handler of hooks.custom.get('npc-dialogue:action') ?? []) handler(action);
+  assert.equal(action.handled, true);
+  assert.equal(inventory.getAmount(I.COINS), 0, 'the price is taken');
+  assert.equal(inventory.getAmount(I.DARKLIGHT), 1, 'Shadow of the Storm means the reissued sword is Darklight');
+  assert.equal(inventory.getAmount(I.SILVERLIGHT), 0, 'the old Silverlight is not handed out instead');
+
+  const short = fakePlayer();
+  const shortInventory = withInventory(short);
+  shortInventory.adds(I.COINS, 499);
+  for (const handler of hooks.login) handler({ player: short });
+  assert.equal(hooks.npcDialogueCondition
+    .map((handler) => handler({ ...purchase, player: short }))
+    .find((result) => typeof result === 'boolean'), false);
+  const refused = { player: short, npcId: N.SIR_PRYSIN, stepId: 'p5BVZ5', handled: false };
+  for (const handler of hooks.custom.get('npc-dialogue:action') ?? []) handler(refused);
+  assert.equal(shortInventory.getAmount(I.COINS), 499, 'a short balance is not taken');
+  assert.equal(shortInventory.getAmount(I.DARKLIGHT), 0, 'a short balance gets no sword');
+});
+
+test('a Quests-off world lets Attract and the lantern reach the WGS chasm', (t) => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  const played = [];
+  const startTranscript = QuestRuntime.startTranscript;
+  QuestRuntime.startTranscript = (owner, player, npcId, page, variant) => {
+    played.push([npcId, page, variant]);
+    return true;
+  };
+  t.after(() => { QuestRuntime.startTranscript = startTranscript; });
+
+  QuestAutoComplete.register(api);
+  const { ItemIdentifiers: I, NpcIdentifiers: N, Location } = api.core;
+  const player = fakePlayer();
+  withInventory(player).adds(I.SAPPHIRE_LANTERN_3, 1);
+  for (const handler of hooks.login) handler({ player });
+
+  const creature = {
+    getId: () => N.LIGHT_CREATURE_4,
+    getLocation: () => new Location(3228, 9525, 2),
+  };
+  player.moveTo(new Location(3229, 9527, 2));
+  const attract = hooks.npcInteraction.get('Light creature')?.Attract;
+  assert.ok(attract, 'the light creature keeps its Attract option');
+  const click = { player, npcId: N.LIGHT_CREATURE_4, npc: creature, handled: false };
+  assert.equal(attract(click), true, 'the option handler claims the click');
+  assert.deepEqual(played.at(-1), [N.LIGHT_CREATURE_4, 'While Guthix Sleeps', 'into-the-chasm-attracting-a-light-creature'],
+    'Attract opens the across/into-the-chasm menu');
+
+  const use = {
+    player, itemId: I.SAPPHIRE_LANTERN_3, npcId: N.LIGHT_CREATURE_4, target: creature, handled: false,
+  };
+  for (const handler of hooks.itemOnNpc) handler(use);
+  assert.equal(use.handled, true, 'the lit sapphire lantern is accepted');
+  assert.deepEqual(played.at(-1), [N.LIGHT_CREATURE_4, 'While Guthix Sleeps', 'into-the-chasm-attracting-a-light-creature'],
+    'the lantern opens the same crossing menu');
+
+  for (const handler of hooks.custom.get('wgs:enter-temple') ?? []) handler({ player });
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [4061, 4466, 0],
+    'the chasm opening reaches the post-quest temple');
 });
 
 test('every Quests-off world leaves Chivalry and Piety unlocked with the auto-completed quests', () => {

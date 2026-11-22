@@ -54,6 +54,9 @@ function attach(api) {
     require("./SirTiffy.Quests")(api);
     require("./ApeAtollGate.Quests").register(api);
     require("./RoyalSeedPod.Quests").register(api);
+    require("./Eblis.Quests")(api);
+    require("./SirPrysin.Quests")(api);
+    require("./WhileGuthixSleeps.Quests")(api);
   }
   api.log?.(`QuestAutoComplete: Quests is off; ${definitions.length} quests count as complete`);
 }
