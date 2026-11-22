@@ -183,6 +183,29 @@ test("the journal's Leagues tab mounts the league side panel and fills its point
   assert.deepEqual(league.scripts.at(-1), [3226, [(656 << 16) | 23, 10]], "not refilled once the quest list replaced the panel");
 });
 
+test("a league character's journal restores onto the Leagues tab by default", () => {
+  const league = character("default-tab", "league");
+  login(league, true);
+  const request = { player: league, tabIndex: 0 };
+  for (const handler of custom["side-journal:default-tab"] ?? []) handler(request);
+  assert.equal(request.tabIndex, 4, "the summary default becomes the Leagues tab");
+  const restore = { player: league, tabIndex: request.tabIndex, restored: false };
+  for (const handler of custom["side-journal:restore-tab"] ?? []) handler(restore);
+  assert.equal(restore.restored, true);
+  assert.deepEqual(league.subs.at(-1), [(629 << 16) | 43, 656], "the league panel is the restored content");
+  assert.equal(league.varbits.get(8168), 4);
+
+  const main = character("default-tab-main");
+  login(main, true);
+  const mainRequest = { player: main, tabIndex: 0 };
+  for (const handler of custom["side-journal:default-tab"] ?? []) handler(mainRequest);
+  assert.equal(mainRequest.tabIndex, 0, "a main character keeps the summary default");
+  const mainRestore = { player: main, tabIndex: mainRequest.tabIndex, restored: false };
+  for (const handler of custom["side-journal:restore-tab"] ?? []) handler(mainRestore);
+  assert.equal(mainRestore.restored, false);
+  assert.equal(main.subs.length, 0);
+});
+
 
 
 test("::league reports a character's league and points", () => {

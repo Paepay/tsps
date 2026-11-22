@@ -12,6 +12,8 @@ type Rect = { x: number; y: number; w: number; h: number };
 type Rgba = [number, number, number, number];
 
 const CHANNEL = "global-events";
+/** Blue partyhat: the Events HUD icon, whatever the active event's own item is. */
+export const HUD_ITEM_ID = 1042;
 const SIZE = 24;
 const ICON = 20;
 const FLASH_MS = 400;
@@ -52,7 +54,7 @@ export class GlobalEventsPlugin extends Plugin {
         super();
         this.osrsClient = osrsClient ?? inject<OsrsClient>(CLIENT_TOKEN);
         this.widgetOverlay = {
-            movable: { name: "GlobalEvents", position: OverlayPosition.BELOW_MINIMAP },
+            movable: { name: "GlobalEvents", position: OverlayPosition.BELOW_SPECIAL_ATTACK },
             signature: () => this.signature(),
             draw: (context) => this.draw(context),
             menuEntries: () => this.menuEntries(),
@@ -117,13 +119,12 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     private signature(): string {
-        if (this.iconItemId < 0 || this.activeCount <= 0) return "";
         const phase = this.flashing ? Math.floor(Date.now() / FLASH_MS) % 2 : 0;
         return `${this.activeKey}:${this.seenKey}:${this.iconItemId}:${this.activeCount}:${phase}`;
     }
 
     private menuEntries(): OverlayMenuEntry[] {
-        if (!this.isLoggedIn() || this.iconItemId < 0) return [];
+        if (!this.isLoggedIn()) return [];
         return [{ option: "Open", target: "Global Events", onClick: () => this.open() }];
     }
 
@@ -132,7 +133,9 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     private draw(context: WidgetOverlayDrawContext): Rect[] {
-        if (!this.isLoggedIn() || this.iconItemId < 0 || this.activeCount <= 0) {
+        // The button stays on the HUD after login even while no event is running, so the
+        // Events interface is always one click away.
+        if (!this.isLoggedIn()) {
             this.iconBounds = undefined;
             return [];
         }
@@ -153,7 +156,7 @@ export class GlobalEventsPlugin extends Plugin {
         glr.drawRect(rect.x, rect.y + sy, sx, rect.h - 2 * sy, outline);
         glr.drawRect(rect.x + rect.w - sx, rect.y + sy, sx, rect.h - 2 * sy, outline);
 
-        const icon = this.iconTexture(context, this.iconItemId);
+        const icon = this.iconTexture(context, HUD_ITEM_ID);
         if (icon) {
             const fit = Math.min(ICON / icon.w, ICON / icon.h);
             const w = icon.w * fit * at.scaleX;

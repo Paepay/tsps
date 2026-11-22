@@ -11,6 +11,8 @@ const Common = require("./Common.LeagueMode");
 
 /** Players whose journal currently shows the league panel. */
 const panelOpen = new WeakSet();
+const SIDE_JOURNAL_CHARACTER_SUMMARY_TAB = 0;
+const SIDE_JOURNAL_LEAGUES_TAB = 4;
 
 function uid(group, child) {
   return (group << 16) | child;
@@ -46,6 +48,21 @@ function openLeagueTab({ player }) {
   return true;
 }
 
+/** A league character's journal opens on this tab; the cache's summary default does not apply. */
+function defaultTab(event) {
+  if (event.tabIndex !== SIDE_JOURNAL_CHARACTER_SUMMARY_TAB) return;
+  if (Common.isLeagueProfile(event.player)) event.tabIndex = SIDE_JOURNAL_LEAGUES_TAB;
+}
+
+/**
+ * A login or a rebuilt gameframe restored the journal onto the Leagues tab: mount the panel
+ * it shows, instead of leaving the Character Summary the bootstrap mounted underneath it.
+ */
+function restoreTab(event) {
+  if (event.tabIndex !== SIDE_JOURNAL_LEAGUES_TAB) return;
+  event.restored = openLeagueTab({ player: event.player }) === true;
+}
+
 /** Another journal tab (SideJournalDefaults' `journal:tab-mounted`) replaces the panel; later fills would address a missing component. */
 function tabMounted({ player, groupId }) {
   if (groupId !== Common.data.journal.sidePanel) panelOpen.delete(player);
@@ -66,6 +83,8 @@ function panelMounted({ player, groupId }) {
 module.exports = function attach(api) {
   const { journal } = Common.data;
   api.onInterfaceActionButton(uid(journal.group, journal.leagueTab), openLeagueTab);
+  api.onCustomEvent("side-journal:default-tab", defaultTab);
+  api.onCustomEvent("side-journal:restore-tab", restoreTab);
   api.onCustomEvent("journal:tab-mounted", tabMounted);
   api.onCustomEvent("interface:opened", panelMounted);
   api.onCustomEvent("league:points-changed", pointsChanged);

@@ -23,10 +23,11 @@ const COMPONENT = {
 };
 const TAB_COUNT = TAB_ORDER.length;
 const TAB_WIDTH = 110;
-const TAB_STEP = 114;
+const TAB_HEIGHT = 20;
+const TAB_STEP = 22;
 const ROW_SLOTS = 10;
 const ROW_HEIGHT = 26;
-const LIST = { x: 18, y: 100, width: 274, height: 210 };
+const LIST = { x: 18, y: 122, width: 274, height: 188 };
 const PANEL = { x: 306, y: 56, width: 176, height: 254 };
 const ROW_ACTIONS = ["Select"];
 const uid = (component) => (GROUP_ID << 16) | component;
@@ -45,18 +46,18 @@ const box = (x, y, width, height, overrides = {}) => ({
 
 function addTabs(add, root) {
   for (let index = 0; index < TAB_COUNT; index++) {
-    const x = 18 + index * TAB_STEP;
-    add(COMPONENT.TAB_START + index, root, box(x, 32, TAB_WIDTH, 20, {
+    const y = 32 + index * TAB_STEP;
+    add(COMPONENT.TAB_START + index, root, box(18, y, TAB_WIDTH, TAB_HEIGHT, {
       color: 0x2b241b, mouseOverColor: 0x3a3125, actions: ["Open"], flags: FLAG_OP1,
     }));
-    add(COMPONENT.TAB_LABEL_START + index, root, text(x, 32, TAB_WIDTH, 20, {
+    add(COMPONENT.TAB_LABEL_START + index, root, text(18, y, TAB_WIDTH, TAB_HEIGHT, {
       textColor: 0xffd27f, xTextAlignment: 1, yTextAlignment: 1,
     }));
   }
 }
 
 function addList(add, root) {
-  add(COMPONENT.STATUS, root, text(18, 78, 274, 16, { textColor: 0xffd27f, yTextAlignment: 1 }));
+  add(COMPONENT.STATUS, root, text(18, 102, 274, 16, { textColor: 0xffd27f, yTextAlignment: 1 }));
   add(COMPONENT.DATA, root, { type: TYPE_TEXT, hidden: true, isHidden: true });
   add(COMPONENT.LAYOUT, root, { type: TYPE_TEXT, hidden: true, isHidden: true });
   const list = add(COMPONENT.LIST_VIEW, root, {
@@ -118,6 +119,9 @@ function buildInterface() {
   return {
     groupId: GROUP_ID,
     widgets,
+    // Tabbed lists keep every row in one catalog even without a search box; the runtime
+    // needs the component named so it can parse the rows and draw the tabs.
+    dataComponent: COMPONENT.DATA,
     list: {
       viewComponent: COMPONENT.LIST_VIEW,
       scrollbarComponent: COMPONENT.LIST_SCROLLBAR,

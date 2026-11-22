@@ -204,6 +204,25 @@ test("Level-Up lists and awards only the combat mastery challenges this cache su
   );
 });
 
+test("the journal opens on the Level-Up Leagues panel after login", () => {
+  const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  const fake = createRuntime();
+  fake.player.isPlayer = () => true;
+  Common.init(fake.api);
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    Interface._test.restoreJournal({ player: fake.player });
+    assert.ok(
+      fake.packets.varbits.some(({ id, value }) => id === 8168 && value === 4),
+      "the journal's selected tab is Leagues, so its panel matches what the client shows",
+    );
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
 test("Level-Up lists only working mastery challenges and never caps the point balance", () => {
   const Common = require("../plugins/modes/leaguemasteries/Common.LeagueCombatMasteries");
   const Points = require("../plugins/modes/leaguemasteries/Points.LeagueCombatMasteries");
