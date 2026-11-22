@@ -1271,6 +1271,7 @@ class BarbarianAssaultMatch {
     const rewards = this.scoreWave();
     for (const [player, state] of this.players) {
       const reward = rewards.get(player) ?? 0;
+      let paid = Math.max(0, reward);
       if (this.wave >= 10) {
         const gains = Points.awardQueen(player, state.role);
         const others = data.ROLES.filter((role) => role !== state.role).map((role) => `${data.ROLE_LABEL[role]} +${gains[role] ?? 0}`).join(", ");
@@ -1279,9 +1280,10 @@ class BarbarianAssaultMatch {
         const award = { player, minigame: "barbarian-assault", points: reward };
         this.api.emitCustomEvent("minigame:points", award);
         Points.award(player, state.role, award.points);
+        paid = award.points;
       }
       this.api.emitCustomEvent("barbarian-assault:wave-complete", { player, wave: this.wave, queen: this.wave >= 10 });
-      player.sendMessage(`Wave ${this.wave} complete. You receive ${Math.max(0, reward)} Honour Points in the ${data.ROLE_LABEL[state.role]} role.`);
+      player.sendMessage(`Wave ${this.wave} complete. You receive ${paid} Honour Points in the ${data.ROLE_LABEL[state.role]} role.`);
       state.bag = { red: 0, green: 0, blue: 0 };
       state.medic = false;
       Items.clear(player);
