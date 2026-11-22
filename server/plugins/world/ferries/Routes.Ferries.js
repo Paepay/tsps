@@ -79,6 +79,21 @@ function sail(player, routeName) {
   return started;
 }
 
+/** A paid right-click or transcript crossing: checks the destination first, then takes its fare. */
+function takeFare(player, entry) {
+  if (!entry.fare) return true;
+  if (!Voyages.canGo(player, entry.route)) return false;
+  const coins = Common.core.ItemIdentifiers.COINS;
+  const inventory = player.getInventory();
+  if (inventory.getAmount(coins) < entry.fare) {
+    if (entry.refusal) player.sendMessage(entry.refusal);
+    return false;
+  }
+  inventory.deleteNumber(coins, entry.fare);
+  inventory.refreshItems?.();
+  return true;
+}
+
 /** Take-boat at Port Sarim: the monk's search, then the boat or his refusal. */
 function takeEntranaBoat(player, event) {
   if (!refused(contraband(player))) return sail(player, ENTRANA_ROUTE);
@@ -119,6 +134,7 @@ function npcOption(event) {
     takeEntranaBoat(player, event);
     return;
   }
+  if (!takeFare(player, entry)) return;
   sail(player, entry.route);
 }
 
@@ -171,15 +187,18 @@ function transcriptStep(event) {
   event.end = true;
   if (Common.travelling(player)) return;
   // A destination the passenger may not go to refuses before the fare is taken.
-  if (!Voyages.canGo(player, route)) return;
-  if (fare) {
-    const inventory = player.getInventory();
-    const coins = Common.core.ItemIdentifiers.COINS;
-    if (inventory.getAmount(coins) < fare) return;
-    inventory.deleteNumber(coins, fare);
-    inventory.refreshItems?.();
-  }
+  if (!takeFare(player, { route, fare })) return;
   sail(player, route);
+}
+
+/** Antonia's transcript: her 20-coin fare conditions (the Ring of Charos charm skips the action's fare). */
+function answerAntoniaFare({ player, definition, text }) {
+  if (definition?.getName?.() !== "Antonia") return null;
+  const match = /^If the player (does not have|has) at least ([\d,]+) coins:$/.exec(String(text ?? ""));
+  if (!match) return null;
+  const amount = Number(match[2].replace(/,/g, ""));
+  const enough = player.getInventory().getAmount(Common.core.ItemIdentifiers.COINS) >= amount;
+  return match[1] === "has" ? enough : !enough;
 }
 
 /**
@@ -252,6 +271,7 @@ function attach(api) {
   api.onNpcInteraction(npcOption);
   api.onObjectInteraction(locOption);
   api.onNpcDialogueCondition(answerEntrana);
+  api.onNpcDialogueCondition(answerAntoniaFare);
   api.onNpcDialogueCondition(answerHere);
   api.onNpcDialogueCondition(answerVeosMembership);
   api.onNpcDialogueVariant(talkVariant);
