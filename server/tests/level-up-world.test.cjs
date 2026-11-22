@@ -1052,3 +1052,34 @@ test("unlocking Herblore starts it at level 3 while other skills still start at 
 
   plugin._test.configure("", null);
 });
+
+test("the Level-Up area mask covers every area past the six selection slots", () => {
+  const Interface = require("../plugins/modes/levelup/Interface.LevelUpWorld");
+  const AreaData = require("../plugins/modes/data/league-areas.json");
+  const { AREA_MASK_VARP, areaMask } = Interface._test;
+  const areas = Rules.REGIONS.map(({ area }) => area);
+
+  assert.equal(AREA_MASK_VARP, 7989, "the map mask has a free varp");
+  const mask = areaMask(areas);
+  for (const area of areas) {
+    assert.ok((mask & (1 << area)) !== 0, `area ${area} is in the mask`);
+  }
+  assert.equal(mask & (1 << 0), 0, "bit zero is unused");
+  assert.equal(mask & (1 << 21), 1 << 21, "Varlamore, the highest area id, is included");
+
+  // A full Level-Up run unlocks Misthalin plus eight picks. Every one of them sets a bit;
+  // the seventh to ninth unlocks (areas 7, 8 and 11) fall outside the cache's six slots.
+  const unlocked = [
+    "misthalin", "karamja", "asgarnia", "kandarin", "morytania", "kharidian-desert",
+    "tirannwn", "fremennik", "wilderness",
+  ].map((id) => Rules.region(id).area);
+  const unlockedMask = areaMask(unlocked);
+  assert.equal(unlockedMask.toString(2).replace(/0/g, "").length, 9, "nine areas set nine bits");
+  for (const area of [7, 8, 11]) {
+    const slot = unlocked.indexOf(area);
+    assert.ok(slot >= 6, `area ${area} is unlock ${slot + 1}, past the six selection slots`);
+    assert.ok((unlockedMask & (1 << area)) !== 0, `area ${area} is in the mask`);
+  }
+  assert.notEqual(AREA_MASK_VARP, AreaData.varps.unlockedCount, "the mask leaves the count varp alone");
+  assert.equal(AreaData.varbits.selection.length, 6, "the cache still has six selection slots");
+});
