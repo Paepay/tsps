@@ -598,6 +598,7 @@ This table lists bundled plugins that have a description. The world config page 
 | `AntiDragDelay` | AntiDragDelay | interface | yes | Settings option for the Anti Drag delay, asked as a number of milliseconds. |
 | `BankPin` | BankPin | interface | yes | The Bank PIN: the Banker settings, the keypad, the bank lock, and the guard on other PIN-protected actions. |
 | `BankSpace` | BankSpace | interface | yes | Bank capacity: 900 slots for members, bonuses from a PIN, and extra slots bought from a Banker with coins. |
+| `BankTutorial` | BankTutorial | interface | yes | The bank's tutorial button: the 16-step screen highlight walkthrough of the bank. |
 | `BossHud` | BossHud | interface | yes | The boss health bar overlay, driven by custom events from boss plugins for health, colours, fade and hide, and the normal health overlay for any other NPC a player attacks. |
 | `BossKillCount` | BossKillCount | interface | yes | Sends boss kill-count lines as filterable spam when the player's All Settings row asks for it. |
 | `BuffBarStart` | Buff Bar Start | interface | yes | Starts the buff bar's freeze, Staff of the dead, poison and Abyssal Sire stun timers. |
@@ -978,7 +979,7 @@ This table lists bundled plugins that have a description. The world config page 
 | `PineapplePlant` | PineapplePlant | objects | yes | Lets players pick Karamja's wild pineapple plants, a stage at a time, as captured; picked plants grow back a stage at a time. (members only) |
 | `RejuvenationPool` | RejuvenationPool | objects | yes | The player-owned house restoration, revitalisation, rejuvenation, fancy and ornate pools (and their frozen and fiery variants), which restore stats when drunk from. |
 | `RottenTomatoCrate` | RottenTomatoCrate | objects | yes | Opens Pelters' Veg Stall, the rotten tomato shop, from the crates by the pillories in Varrock, Seers' Village, Yanille and Hosidius. (members only) |
-| `ScenerySearch` | ScenerySearch | objects | yes | Searching haystacks and hay bales, which can hide a needle or prick you, plain crates, boxes, sacks, bookcases and book shelves, which hold nothing, and the Icyene Graveyard's mud mound, dug with a spade. |
+| `ScenerySearch` | ScenerySearch | objects | yes | Searching haystacks and hay bales, which can hide a needle or prick you, plain crates, boxes, sacks, bookcases and book shelves, which hold nothing, Wydin's potato and cabbage crates in Port Sarim, which give one at a time, and the Icyene Graveyard's mud mound, dug with a spade. |
 | `Signposts` | Signposts | objects | yes | Reading the guide signposts near Lumbridge, Draynor and Falador, opening the compass interface and moving the camera as the client expects. |
 | `StreakInfo` | StreakInfo | objects | yes | Reading Edgeville's Streak info noticeboard opens the Target World streaks board, with no hunter or rogue streak as there are no Target Worlds. |
 | `SwampBubbles` | SwampBubbles | objects | yes | Lets players Suck on swamp bubbles to fill their ogre bellows with swamp gas, as in Big Chompy Bird Hunting. (members only) |
