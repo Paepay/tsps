@@ -141,6 +141,9 @@ function takeNewUnlocks(player, statChild) {
 
 function openGuide(player, guideSkill, statChild) {
   const sender = player.getPacketSender();
+  // Opening a stat's guide means the player has looked at the Skills tab; stop its level-up
+  // flash even though they clicked the stat rather than the tab button (issue #111).
+  if (statChild !== undefined) skillsTabClicked(player);
   if (!sender.getVarbit(NEW_STYLE_VARBIT)) {
     sender.sendSubInterface(FLOATER_UID, OLD_GUIDE, OVERLAY);
     sender.sendInterfaceScript(SKILL_GUIDE_CONTENT_INIT, [guideSkill, 0, 0, 0]);

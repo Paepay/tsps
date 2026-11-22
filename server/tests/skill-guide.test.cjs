@@ -279,15 +279,18 @@ test("View guide with a level-up waiting clears it and highlights from that leve
   // and ran skill_guide_v2_init [21, 31, 2, 9].
   const account = levelledPlayer({ Farming: 9 });
   levelUp(account, "Farming", 1, 9);
+  assert.equal(account.values.get(FLASHSIDE), 2, "the Skills tab is flashing");
   account.sent.length = 0;
   assert.equal(click(account, 320, 23).handled, true);
   assert.deepEqual(account.sent, [
+    ["sendVarbit", FLASHSIDE, 0],
     ["sendVarbit", 20179, 0],
     ["sendSubInterface", FLOATER_UID, GUIDE, 1],
     ["sendInterfaceFlagsRange", (GUIDE << 16) | 21, -1, -1, 0],
     ["sendInterfaceFlagsRange", (GUIDE << 16) | 7, 0, 200, 1 << 1],
     ["sendInterfaceScript", SKILL_GUIDE_V2_INIT, [21, 31, 2, 9]],
   ]);
+  assert.equal(account.values.get(FLASHSIDE), 0, "opening the guide stops the flash (issue #111)");
   // Viewed: the next look highlights nothing.
   account.sent.length = 0;
   click(account, 320, 23);
