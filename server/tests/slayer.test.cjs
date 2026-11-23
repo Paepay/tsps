@@ -2349,7 +2349,9 @@ test("a boss assignment waits for the player to choose its count (Wiki, Boss tas
   // Only the Boss row, so the assignment cannot roll anything else.
   const result = Tasks.assign(player, { ...duradel, tasks: [bossRow] }, () => 0.9999);
   assert.equal(result.line, undefined, "no task line yet");
-  assert.equal(result.pending.text, "How many would you like to slay? (3-35)");
+  const pendingBossName = Tasks.bossPromptName(result.pending.bossId);
+  assert.ok(pendingBossName.length > 0, "the prompt names the boss");
+  assert.equal(result.pending.text, `How many ${pendingBossName} would you like to slay? (3-35)`);
   assert.equal(Tasks.current(player), null, "the count is chosen before the task is set");
 
   assert.equal(Tasks.completeBossAssignment(player, 2).error, "You must choose an amount between 3 and 35.");

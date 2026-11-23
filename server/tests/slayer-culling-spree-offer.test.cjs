@@ -193,7 +193,7 @@ test("Duradel offers three tasks, one a boss from the unlocked areas, and the ty
 
   const [, chooseBoss] = menus[0].entries.find(([label]) => label === "Vardorvis");
   chooseBoss();
-  assert.equal(player.sent.prompts.at(-1), "How many would you like to slay? (3-35)");
+  assert.equal(player.sent.prompts.at(-1), "How many Vardorvis would you like to slay? (3-35)");
   for (const invalid of [36, 200, 2]) {
     typeAmount(player, invalid);
     assert.equal(Tasks.current(player), null, `${invalid} is outside the Boss task range`);
@@ -226,7 +226,7 @@ test("a boss task's count follows the Boss task's range: tiers raise it and Barr
     assignment(player, "Duradel");
     const [, chooseBoss] = menus.at(-1).entries.find(([label]) => label === "Vardorvis");
     chooseBoss();
-    assert.equal(player.sent.prompts.at(-1), "How many would you like to slay? (3-40)");
+    assert.equal(player.sent.prompts.at(-1), "How many Vardorvis would you like to slay? (3-40)");
     typeAmount(player, 41);
     assert.equal(Tasks.current(player), null);
     assert.equal(player.sent.messages.at(-1), "You must choose an amount between 3 and 40.");
@@ -243,7 +243,7 @@ test("a boss task's count follows the Boss task's range: tiers raise it and Barr
   const choice = { master: master.id, task: Data.BOSS_TASK_ID, boss: 17 };
   barrows.setAttribute(Offer.OFFER_ATTRIBUTE, [choice]);
   Offer.pick(barrows, master, choice);
-  assert.equal(barrows.sent.prompts.at(-1), "How many would you like to slay? (3-36)");
+  assert.equal(barrows.sent.prompts.at(-1), `How many ${Tasks.bossPromptName(17)} would you like to slay? (3-36)`);
   typeAmount(barrows, 37);
   assert.equal(Tasks.current(barrows), null);
   assert.equal(barrows.sent.messages.at(-1), "You must choose an amount between 3 and 36.");
@@ -331,12 +331,20 @@ test("without the relic (no relic picked, a main character) the master assigns a
     character("without", { picks: {} }),
     character("main", { profile: "main" }),
   ];
-  for (const player of others) {
-    assignment(player, "Duradel");
-    assert.equal(menus.length, 0, "no menu");
-    const task = Tasks.current(player);
-    assert.ok(task, "an assignment straight away");
-    assert.notEqual(player.sent.prompts.length, 1);
+  // The random Boss row waits for a count instead (tested above); this test is about a plain assignment.
+  const duradel = Data.get().masters.get(5);
+  const tasks = duradel.tasks;
+  duradel.tasks = tasks.filter((entry) => entry.task.id !== Data.BOSS_TASK_ID);
+  try {
+    for (const player of others) {
+      assignment(player, "Duradel");
+      assert.equal(menus.length, 0, "no menu");
+      const task = Tasks.current(player);
+      assert.ok(task, "an assignment straight away");
+      assert.notEqual(player.sent.prompts.length, 1);
+    }
+  } finally {
+    duradel.tasks = tasks;
   }
 });
 
