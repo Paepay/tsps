@@ -103,9 +103,11 @@ test("the unshielded attack's bonus: X^2 - 16 for crush, heavy ranged and spells
 
 function fakeDemon(x) {
   const delays = [];
+  const prayerActive = new Array(30).fill(false);
   return {
     delays,
     icon: null,
+    isPlayer: () => false,
     isNpc: () => true,
     getAsNpc() { return this; },
     getId: () => 13599,
@@ -113,6 +115,9 @@ function fakeDemon(x) {
     getSpawnPosition: () => new Location(x, 4400, 0),
     getLocation: () => new Location(x, 4400, 0),
     setHeadIcon(icon) { this.icon = icon; },
+    getHeadIcon() { return this.icon; },
+    getPrayerActive: () => prayerActive,
+    setPrayerActive(id, active) { prayerActive[id] = active; return this; },
     models: undefined,
     setModelCustomisation(models) { this.models = models; },
     performGraphicInSlot() {},
@@ -120,21 +125,22 @@ function fakeDemon(x) {
   };
 }
 
-function fakeHit(attacker, combatType, damages) {
+function fakeHit(attacker, combatType, damages, bypassProtectionPrayer = false) {
   const parts = damages.map((damage) => new core.HitDamage(damage, damage > 0 ? core.HitMask.RED : core.HitMask.BLUE));
   return {
     getAttacker: () => attacker,
     getCombatType: () => combatType,
+    bypassesProtectionPrayer: () => bypassProtectionPrayer,
     getHits: () => parts,
     updateTotalDamage() {},
     total: () => parts.reduce((sum, part) => sum + part.getDamage(), 0),
   };
 }
 
-function land(npc, player, combatType, damages, entry) {
+function land(npc, player, combatType, damages, entry, bypassProtectionPrayer = false) {
   const fight = Shared.fightOf(npc);
   fight.launches.set(player, [{ cycle: 0, ...entry }]);
-  const hit = fakeHit(player, combatType, damages);
+  const hit = fakeHit(player, combatType, damages, bypassProtectionPrayer);
   Shield._test.onHitModify({ npc, hit });
   return hit.total();
 }
@@ -146,6 +152,23 @@ test("the prayer stops its style, but lets a third of the unshielded bonus throu
   assert.equal(land(npc, player, core.CombatType.MELEE, [40], { shielded: true, bonus: 0 }), 0);
   // Wiki: a 7-tick weapon (+33) always hits 11 on prayer.
   assert.equal(land(npc, player, core.CombatType.MELEE, [0], { shielded: false, bonus: 33 }), 11);
+});
+
+test("a penetrating mastery hit keeps 60% of a prayed style through the fire shield", () => {
+  const npc = fakeDemon(4105);
+  Shared.setPrayer(npc, "melee");
+  const { PrayerHandler } = core;
+  assert.equal(PrayerHandler.isActivated(npc, PrayerHandler.PROTECT_FROM_MELEE), true);
+  assert.equal(PrayerHandler.isActivated(npc, PrayerHandler.PROTECT_FROM_MISSILES), false);
+
+  const plain = fakePlayer({ weaponType: "SCIMITAR", weapon: core.ItemIdentifiers.DRAGON_SCIMITAR });
+  // The mastery already left 60 of 100: the shield cuts that to 48, while a normal hit is 0.
+  assert.equal(land(npc, plain, core.CombatType.MELEE, [60], { shielded: true, bonus: 0 }, true), 48);
+  assert.equal(land(npc, plain, core.CombatType.MELEE, [100], { shielded: true, bonus: 0 }), 0);
+  // Demonbane ignores the shield, and the unshielded bonus still lands divided by three.
+  const arclight = fakePlayer({ weaponType: "SWORD", weapon: core.ItemIdentifiers.ARCLIGHT });
+  assert.equal(land(npc, arclight, core.CombatType.MELEE, [60], { shielded: true, bonus: 0 }, true), 60);
+  assert.equal(land(npc, plain, core.CombatType.MELEE, [60], { shielded: true, bonus: 33 }, true), 59);
 });
 
 test("the shield cuts 20% unless the attack is demonbane or abyssal; the bonus adds on top", () => {

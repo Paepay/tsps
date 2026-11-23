@@ -181,10 +181,15 @@ function onHitModify({ npc, hit }) {
   const entry = (player && fight.launches.get(player)?.shift()) ?? { shielded: fight.shield !== "down", bonus: 0 };
   const style = Shared.styleOf(hit.getCombatType());
   const prayed = Shared.prayerOf(npc) === style;
+  const bypassed = hit.bypassesProtectionPrayer?.() === true;
   const parts = hit.getHits().map((part) => part.getDamage());
   let amounts;
   if (prayed) {
-    amounts = parts.map((_, i) => (i === 0 ? Math.floor(entry.bonus / 3) : 0));
+    const cut = entry.shielded && !(player && pierces(player));
+    amounts = parts.map((value, i) => {
+      const kept = bypassed ? value : 0;
+      return (cut ? Math.floor((kept * SHIELD_DAMAGE_PERCENT) / 100) : kept) + (i === 0 ? Math.floor(entry.bonus / 3) : 0);
+    });
   } else {
     const cut = entry.shielded && !(player && pierces(player));
     amounts = parts.map((value, i) => (cut ? Math.floor((value * SHIELD_DAMAGE_PERCENT) / 100) : value) + (i === 0 ? entry.bonus : 0));
