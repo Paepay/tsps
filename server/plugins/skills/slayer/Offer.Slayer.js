@@ -140,7 +140,10 @@ function pick(player, master, choice) {
   const { min, max } = amountRange(player, choice, offer);
   // acceptsZero/acceptsNegative: 0 or less is out of range and says so, which the client's amount packet would otherwise drop.
   player.setEnteredAmountAction({ acceptsZero: true, acceptsNegative: true, execute: (count) => chosenAmount(player, master, choice, count) });
-  player.getPacketSender().sendEnterAmountPrompt(`How many would you like to slay? (${min}-${max})`);
+  const countPrompt = choice.boss
+    ? `How many ${Tasks.bossPromptName(choice.boss)} would you like to slay? (${min}-${max})`
+    : `How many would you like to slay? (${min}-${max})`;
+  player.getPacketSender().sendEnterAmountPrompt(countPrompt);
 }
 
 function chosenAmount(player, master, choice, count) {

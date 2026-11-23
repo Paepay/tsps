@@ -272,10 +272,21 @@ const between = (min, max, random) => min + Math.floor(random() * (max - min + 1
 /** A boss task whose kill count waits for the player to choose (Wiki, Boss task: 3-35). */
 const PENDING_BOSS_ATTRIBUTE = "slayer:pending-boss";
 
-/** The prompt for a boss task's count: the Boss task's range at the player's claimed tiers. */
+/** The boss's name for a count prompt, without a leading article ("The Giant Mole" -> "Giant Mole"). */
+function bossPromptName(bossId) {
+  return (Data.get().bosses.get(bossId)?.displayName ?? "").replace(/^The\s+/i, "");
+}
+
+/** The prompt for a boss task's count: the Boss task's range at the player's claimed tiers, naming the boss. */
 function bossAmountPrompt(player, bossId) {
   const { min, max } = bossAmountRange(player, bossId);
-  return { min, max, text: `How many would you like to slay? (${min}-${max})` };
+  const name = bossPromptName(bossId);
+  return {
+    min,
+    max,
+    bossId,
+    text: name ? `How many ${name} would you like to slay? (${min}-${max})` : `How many would you like to slay? (${min}-${max})`,
+  };
 }
 
 /** Rolls nothing yet: saves the boss task until the player types how many they want. */
@@ -805,6 +816,7 @@ module.exports = {
   pendingBossAssignment,
   completeBossAssignment,
   bossAmountPrompt,
+  bossPromptName,
   assignChosen,
   assignPicked,
   assignTzhaarBoss,
