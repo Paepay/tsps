@@ -234,13 +234,6 @@ function zukKills(player) {
   return Number.isInteger(request.total) ? request.total : 0;
 }
 
-/** The boss task a picked option gives, or 0 for "No". */
-function tzhaarBossTask(option) {
-  if (option === 1) return TZTOK_JAD_TASK_ID;
-  if (option === 2) return TZKAL_ZUK_TASK_ID;
-  return 0;
-}
-
 /** Plays the rest of the assignment after the offer, through the master's own transcript. */
 function playTzhaarTail(player, master, npcId, line) {
   playSteps(player, master, null, npcId, () => (line ? [{ npc: line }, afterTaskMenu(player, master)] : [afterTaskMenu(player, master)]));
@@ -249,22 +242,24 @@ function playTzhaarTail(player, master, npcId, line) {
 /**
  * Hot Stuff, after a TzHaar assignment: Jad instead, and Zuk as well once the player has a Zuk
  * kill. The master's line has already been said; this menu replaces the rest of that dialogue.
+ * The choices carry their task ids because the menu has two or three rows: picking No must keep
+ * the TzHaar task either way, never turn into Zuk just because the third row is missing.
  */
 function openTzhaarOffer(player, master, npcId) {
   if (!tzhaarOfferAvailable(player)) return false;
-  const labels = ["Yes, slay TzTok-Jad"];
-  if (zukKills(player) >= 1) labels.push("Yes, slay TzKal-Zuk");
-  labels.push("No, keep the Tzhaar task");
+  const choices = [{ label: "Yes, slay TzTok-Jad", taskId: TZTOK_JAD_TASK_ID }];
+  if (zukKills(player) >= 1) choices.push({ label: "Yes, slay TzKal-Zuk", taskId: TZKAL_ZUK_TASK_ID });
+  choices.push({ label: "No, keep the Tzhaar task", taskId: 0 });
   const { OptionDialogue, DialogueChainBuilder } = core;
   const menu = new OptionDialogue(0, { executeOption: (option) => {
-    const taskId = tzhaarBossTask(Number(option));
+    const taskId = choices[Number(option) - 1]?.taskId ?? 0;
     if (!taskId) {
       playTzhaarTail(player, master, npcId, null);
       return;
     }
     const result = Tasks.assignTzhaarBoss(player, master, taskId);
     playTzhaarTail(player, master, npcId, result?.line ?? null);
-  } }, ...labels).setTitle("Slay a TzHaar boss?");
+  } }, ...choices.map((choice) => choice.label)).setTitle("Slay a TzHaar boss?");
   player.getDialogueManager().startDialogues(new DialogueChainBuilder().add(menu));
   return true;
 }

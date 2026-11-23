@@ -18,6 +18,8 @@ let core;
 let Tasks;
 let State;
 let nextIndex = 1900;
+/** Zuk kills the test's Combat Achievements answer reports to Hot Stuff. */
+let offerZukKills = 0;
 
 before(() => {
   CachePipeline.initialize();
@@ -31,6 +33,9 @@ before(() => {
   require("../plugins/npcs/NpcDialogues.plugin").register(PluginManager.createApi("NpcDialogues"));
   Tasks = require("../plugins/skills/slayer/Tasks.Slayer");
   State = require("../plugins/skills/slayer/State.Slayer");
+  PluginManager.createApi("HotStuffOfferTest").onCustomEvent("combat-achievements:count", (request) => {
+    if (request?.monster === "TzKal-Zuk" && offerZukKills > 0) request.total = offerZukKills;
+  });
 });
 
 const ASSIGNMENT = "I need another assignment.";
@@ -340,6 +345,60 @@ test("Hot Stuff's offer also follows a TzHaar task from Talk-to's transcript bra
   } finally {
     Tasks.assign = assign;
     h.close();
+  }
+});
+
+/** A TzHaar assignment from Duradel with Hot Stuff's unlock, played up to the boss offer. */
+async function openHotStuffOffer() {
+  const h = harness(DURADEL);
+  const assign = Tasks.assign;
+  const master = [...require("../plugins/skills/slayer/Data.Slayer").get().masters.values()].find((row) => row.names.includes("Duradel"));
+  const tzhaar = master.tasks.find((row) => row.task.id === 96);
+  assert.ok(tzhaar, "Duradel can assign TzHaar with Hot Stuff");
+  State.setVarp(h.player, "slayer_rewards_unlocks", 1 << 18);
+  Tasks.assign = (player, owner) => ({ line: Tasks.assignPicked(player, owner, tzhaar, 0, 25, () => 0.5) });
+  await h.option("Assignment");
+  for (let i = 0; i < 5 && !h.player.getDialogueManager().getCurrent()?.getOptions; i++) {
+    const group = h.player.getPacketSender().getChatboxGroupId();
+    await h.continueDialogue((group << 16) | 5);
+  }
+  assert.equal(Tasks.current(h.player).taskId, 96, "the TzHaar task is assigned first");
+  return { h, restore: () => { Tasks.assign = assign; h.close(); } };
+}
+
+test("Hot Stuff's No keeps the TzHaar task, not TzKal-Zuk, when Zuk is still locked (#141)", async () => {
+  offerZukKills = 0;
+  const { h, restore } = await openHotStuffOffer();
+  try {
+    const menu = h.player.getDialogueManager().getCurrent();
+    assert.deepEqual(menu?.getOptions?.(), ["Yes, slay TzTok-Jad", "No, keep the Tzhaar task"]);
+    await h.chooseOption("No, keep the Tzhaar task");
+    const task = Tasks.current(h.player);
+    assert.equal(task.taskId, 96, "No keeps the TzHaar task; it must not become TzKal-Zuk (105)");
+    assert.equal(task.task.displayName, "Tzhaar");
+  } finally {
+    restore();
+  }
+});
+
+test("Hot Stuff's Zuk row gives TzKal-Zuk and No still keeps the TzHaar task (#141)", async () => {
+  offerZukKills = 1;
+  const first = await openHotStuffOffer();
+  try {
+    const menu = first.h.player.getDialogueManager().getCurrent();
+    assert.deepEqual(menu?.getOptions?.(), ["Yes, slay TzTok-Jad", "Yes, slay TzKal-Zuk", "No, keep the Tzhaar task"]);
+    await first.h.chooseOption("Yes, slay TzKal-Zuk");
+    assert.equal(Tasks.current(first.h.player).taskId, 105, "the Zuk row assigns the Zuk task");
+  } finally {
+    first.restore();
+  }
+  const second = await openHotStuffOffer();
+  try {
+    await second.h.chooseOption("No, keep the Tzhaar task");
+    assert.equal(Tasks.current(second.h.player).taskId, 96, "No keeps the TzHaar task with three rows too");
+  } finally {
+    second.restore();
+    offerZukKills = 0;
   }
 });
 

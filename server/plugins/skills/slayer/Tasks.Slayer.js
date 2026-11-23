@@ -762,8 +762,14 @@ function clueChance(request) {
  * (Wiki: TzTok-Jad, Slayer).
  */
 function leaveTaskAreaEvent({ player, npcId, message }) {
+  if (!player) return;
+  const task = current(player);
+  if (!task) return;
   const name = core.NpcDefinition.forId(npcId)?.getName?.() ?? "";
-  if (!player || !countsForTarget(current(player), { id: npcId, name, location: null })) return;
+  if (!countsForTarget(task, { id: npcId, name, location: null })) return;
+  // Only the monster's own boss task is tied to the area. A TzHaar task also counts Jad and
+  // Zuk, but it is fought elsewhere too, so leaving must not clear it (Wiki: Slayer task/TzHaar).
+  if (Data.get().namedTaskNpcs.get(task.taskId)?.has(name) !== true) return;
   clear(player);
   player.sendMessage(`You no longer have a slayer task as you left ${message ?? "the area"}.`);
 }
