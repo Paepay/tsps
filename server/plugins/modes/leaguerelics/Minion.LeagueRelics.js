@@ -116,7 +116,34 @@ function toggleRule(player, rule) {
   player.sendMessage(on ? DATA.rules[rule].on : DATA.rules[rule].off);
 }
 
-/** The style the target is weakest to: the lowest of its defence rolls (melee: its weakest of stab, slash and crush). */
+/**
+ * The styles the target is protected against: its active protection prayers, and any protection
+ * a plugin keeps by script (a demonic gorilla's id picks its overhead). Owners answer
+ * `combat:scripted-protection` { target, combatType, protecting } by setting `protecting` true.
+ */
+function protectedStyles(target) {
+  const active = target?.getPrayerActive?.();
+  const { PrayerHandler, CombatType } = core;
+  const styles = new Set();
+  if (Array.isArray(active)) {
+    if (active[PrayerHandler.PROTECT_FROM_MELEE] === true) styles.add("melee");
+    if (active[PrayerHandler.PROTECT_FROM_MISSILES] === true) styles.add("ranged");
+    if (active[PrayerHandler.PROTECT_FROM_MAGIC] === true) styles.add("magic");
+  }
+  for (const [style, combatType] of [["melee", CombatType.MELEE], ["ranged", CombatType.RANGED], ["magic", CombatType.MAGIC]]) {
+    if (styles.has(style)) continue;
+    const query = { target, combatType, protecting: false };
+    Common.api?.emitCustomEvent?.("combat:scripted-protection", query);
+    if (query.protecting === true) styles.add(style);
+  }
+  return styles;
+}
+
+/**
+ * The style the target is weakest to: the lowest of its defence rolls (melee: its weakest of stab,
+ * slash and crush), never one it is praying against. If it protects all three, the overall weakest
+ * (there is no way around the prayer; the minion still takes that style's look and attacks).
+ */
 function weakestStyle(target) {
   const { AccuracyFormulasDpsCalc: Formulas, BonusManager } = core;
   const rolls = {
@@ -124,7 +151,9 @@ function weakestStyle(target) {
     ranged: Formulas.defenseRangedRoll(target, "standard"),
     magic: Formulas.defenseMagicRoll(target),
   };
-  return Object.entries(rolls).sort(([, a], [, b]) => a - b)[0][0];
+  const protectedSet = protectedStyles(target);
+  const unprotected = Object.entries(rolls).filter(([style]) => !protectedSet.has(style));
+  return (unprotected.length > 0 ? unprotected : Object.entries(rolls)).sort(([, a], [, b]) => a - b)[0][0];
 }
 
 function defenceRoll(target, style) {
@@ -175,7 +204,11 @@ function targetOf(player) {
   const combat = player.getCombat();
   const target = combat.getTarget() ?? combat.getAttacker?.() ?? null;
   if (!target?.isNpc?.() || !target.isRegistered?.() || target.isUntargetable?.() || target.getHitpoints() <= 0) return null;
-  if (DATA.spared.includes(target.getDefinition?.()?.getName?.())) return null;
+  // The definition's own answer, not its name: a slayer master such as Duradel is not attackable,
+  // and CombatFactory's permission check alone does not ask that (#133).
+  const definition = target.getCurrentDefinition?.() ?? target.getDefinition?.();
+  if (definition?.isAttackable?.() === false) return null;
+  if (DATA.spared.includes(definition?.getName?.())) return null;
   if (core.CombatFactory.canAttackPermission(player, target) !== core.CanAttackResponse.CAN_ATTACK) return null;
   return target;
 }

@@ -2293,7 +2293,7 @@ test("Minion: each unique Zamorak item used on the whistle raises the max hit by
   }
 });
 
-test("Minion: the style the target is weakest to, and OSRS's hit chance for its 45,000 attack roll", (t) => {
+test("Minion: the style the target is weakest to, skipping a protected style, and OSRS's hit chance for its 45,000 attack roll", (t) => {
   const formulas = core.AccuracyFormulasDpsCalc;
   const rolls = { melee: 9000, ranged: 4000, magic: 6000 };
   t.mock.method(formulas, "defenseMeleeRoll", () => rolls.melee);
@@ -2302,8 +2302,89 @@ test("Minion: the style the target is weakest to, and OSRS's hit chance for its 
   assert.equal(Minion().weakestStyle({}), "ranged");
   rolls.ranged = 12000;
   assert.equal(Minion().weakestStyle({}), "magic");
+  rolls.ranged = 4000;
+  rolls.magic = 1000;
+  const prayers = [];
+  const target = { getPrayerActive: () => prayers };
+  assert.equal(Minion().weakestStyle(target), "magic", "no protection: the overall weakest");
+  prayers[core.PrayerHandler.PROTECT_FROM_MAGIC] = true;
+  assert.equal(Minion().weakestStyle(target), "ranged", "never the protected magic style (#132)");
+  prayers[core.PrayerHandler.PROTECT_FROM_MISSILES] = true;
+  assert.equal(Minion().weakestStyle(target), "melee", "the protected ranged style is skipped too");
+  prayers[core.PrayerHandler.PROTECT_FROM_MELEE] = true;
+  assert.equal(Minion().weakestStyle(target), "magic", "all protected: the overall weakest");
+  assert.equal(Minion().weakestStyle({}), "magic", "plain targets without prayer data keep the overall weakest");
   assert.equal(Minion().hitChance(45000, 45000), 45000 / 90002);
   assert.equal(Minion().hitChance(45000, 10000), 1 - 10002 / 90002);
+});
+
+test("Minion: skips a demonic gorilla's id-driven protection prayer and falls back when all are protected (#132)", (t) => {
+  const formulas = core.AccuracyFormulasDpsCalc;
+  const rolls = { melee: 1000, ranged: 5000, magic: 6000 };
+  t.mock.method(formulas, "defenseMeleeRoll", () => rolls.melee);
+  t.mock.method(formulas, "defenseRangedRoll", () => rolls.ranged);
+  t.mock.method(formulas, "defenseMagicRoll", () => rolls.magic);
+  const saved = custom["combat:scripted-protection"] ?? [];
+  const answers = [];
+  custom["combat:scripted-protection"] = answers;
+  require("../plugins/npcs/demonicgorillas/Prayer.DemonicGorillas")({
+    core,
+    onPlayerDealtDamage() {},
+    onNpcHitModify() {},
+    onCustomEvent: (name, handler) => {
+      if (name === "combat:scripted-protection") answers.push(handler);
+    },
+  });
+  try {
+    const gorilla = { isNpc: () => true, getId: () => 7144 };
+    assert.equal(Minion().weakestStyle(gorilla), "ranged", "7144's melee prayer is skipped, not attacked into");
+    const allProtected = { isNpc: () => true, getId: () => 7144 };
+    answers.push((query) => {
+      if (query.target === allProtected) query.protecting = true;
+    });
+    assert.equal(Minion().weakestStyle(allProtected), "melee", "all scripted styles protected: the overall weakest");
+  } finally {
+    if (saved.length === 0) delete custom["combat:scripted-protection"];
+    else custom["combat:scripted-protection"] = saved;
+  }
+});
+
+test("Minion: never attacks a non-attackable NPC such as a slayer master, but still fights an attackable one (#133)", (t) => {
+  const player = cases(MINION).relic;
+  player.setAttribute(Minion().ITEMS_ATTRIBUTE, null);
+  const formulas = core.AccuracyFormulasDpsCalc;
+  t.mock.method(formulas, "defenseMeleeRoll", () => 9000);
+  t.mock.method(formulas, "defenseRangedRoll", () => 9000);
+  t.mock.method(formulas, "defenseMagicRoll", () => 1000);
+  t.mock.method(core.CombatRange, "overlapsEntities", () => false);
+  t.mock.method(core.Projectile, "createProjectile", () => ({ withAngle() { return this; }, sendProjectile() {} }));
+  t.mock.method(core.CombatFactory, "canAttackPermission", () => core.CanAttackResponse.CAN_ATTACK);
+  let definition = { getName: () => "Duradel", isAttackable: () => false };
+  const target = {
+    isNpc: () => true, isRegistered: () => true, isUntargetable: () => false, getHitpoints: () => 50,
+    getDefinition: () => definition,
+    getCombat: () => ({ getHitQueue: () => ({ addPendingDamage() {} }), addDamage() {}, getLastAttack: () => ({ reset() {} }) }),
+  };
+  t.mock.method(player, "getCombat", () => ({ getTarget: () => target }));
+  const shown = { npc: null, animations: [], graphics: [] };
+  let following = null;
+  const npc = {
+    isRegistered: () => true, getFollowing: () => following, setFollowing: (mob) => (following = mob),
+    getInteractingMobile: () => target, setMobileInteraction() {},
+    calculateDistance: () => 0, getAttribute: () => null, setAttribute() {},
+    getMovementQueue: () => ({ reset() {} }), setNpcTransformationId: (id) => (shown.npc = id),
+    performAnimation: (animation) => shown.animations.push(animation.getId()), performGraphic: (graphic) => shown.graphics.push(graphic.getId()),
+  };
+  const minion = { npc, ticksLeft: 3000, style: "magic", attackIn: 0 };
+  Minion().minions.set(player, minion);
+  Minion().tick(player, minion);
+  assert.equal(shown.animations.length, 0, "the minion never attacks a non-attackable NPC");
+  assert.equal(shown.npc, null, "and does not take its style's look");
+  assert.equal(following, player, "it follows its owner instead");
+  definition = { getName: () => "Goblin", isAttackable: () => true };
+  Minion().tick(player, minion);
+  assert.equal(shown.animations.length, 1, "an attackable NPC is still fought");
+  Minion().minions.delete(player);
 });
 
 test("Minion: fights its owner's NPC every 3 ticks for 3 to its max, in the target's weakest style's look; never Yama; gone after 30 minutes", (t) => {
