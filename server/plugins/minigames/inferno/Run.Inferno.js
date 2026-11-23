@@ -15,6 +15,8 @@ let InfernoArea = null;
 const sessions = new WeakMap();
 /** Yt-HurKot that a player has hit: attacked healers stop healing for good, as live. */
 const TAGGED_HEALERS = new WeakSet();
+/** Jal-Nib that a player has hit: they turn on that player and stay on them, as live. */
+const TAGGED_NIBBLERS = new WeakSet();
 const DEFEATED_MESSAGE = "You have been defeated!";
 
 const ATTR_WAVE = "inferno:wave";
@@ -94,8 +96,11 @@ function init(pluginApi, combat, zukPhase) {
   monsters = combat;
   zuk = zukPhase;
   api.onNpcHitModify?.(({ npc }) => {
-    if (npc && (npc.getId?.() === core.NpcIdentifiers.YT_HURKOT_2 || npc.getId?.() === core.NpcIdentifiers.YT_HURKOT_3)) {
+    const id = npc?.getId?.();
+    if (id === core.NpcIdentifiers.YT_HURKOT_2 || id === core.NpcIdentifiers.YT_HURKOT_3) {
       TAGGED_HEALERS.add(npc);
+    } else if (id === core.NpcIdentifiers.JAL_NIB) {
+      TAGGED_NIBBLERS.add(npc);
     }
   });
 }
@@ -309,10 +314,8 @@ function tendNibblers(session) {
   for (const npc of session.npcs) {
     if (npc.getId() !== core.NpcIdentifiers.JAL_NIB || npc.getHitpoints() <= 0) continue;
     const current = npc.getCombat().getTarget();
-    const onPlayer = current?.isPlayer?.() === true;
-    // A support is kept until it falls; the player only once there are no supports left.
-    const keep = onPlayer ? session.supports.length === 0 : current?.getHitpoints() > 0 && current.isRegistered();
-    if (current && keep) continue;
+    // A target is kept while it stands: a support it went for, or the player who tagged it.
+    if (current?.getHitpoints() > 0 && current.isRegistered()) continue;
     if (target === undefined) target = nibblerTarget(session);
     if (target) npc.getCombat().attack(target);
     else if (current) npc.getCombat().reset();
@@ -355,8 +358,7 @@ function spawnWave(session) {
   const target = nibblers > 0 ? nibblerTarget(session) : null;
   for (let count = 0; count < nibblers; count++) {
     const at = nibblerTile(nibblerTiles);
-    // Hitting a Jal-Nib doesn't turn it on the player.
-    spawn(session, npcIds.nibbler, at, { target })?.setFlag("combat:no-retaliate");
+    spawn(session, npcIds.nibbler, at, { target });
   }
   const spawns = shuffled(SPAWNS);
   [...creatures].reverse().forEach((creature, index) => {
@@ -737,8 +739,8 @@ function guardPassives(event) {
   if (inRun(attacker) && passiveIds.has(attacker.getId())) {
     event.allow = false;
   } else if (inRun(attacker) && attacker.getId() === Npcs.JAL_NIB && target?.isPlayer?.()
-    && attacker.__infernoRun.supports.length > 0) {
-    // Jal-Nib leave the player alone while any rocky support stands.
+    && attacker.__infernoRun.supports.length > 0 && !TAGGED_NIBBLERS.has(attacker)) {
+    // A Jal-Nib nobody has hit leaves the player alone while any rocky support stands.
     event.allow = false;
   } else if (attacker?.isPlayer?.() && inRun(target) && untouchableIds.has(target.getId())) {
     event.allow = false;

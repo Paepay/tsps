@@ -905,28 +905,38 @@ test('the chasm is jumped into from 2496,5115 on the walkway, as its pit has no 
   assert.equal(other.destination, undefined);
 });
 
-test('Jal-Nib leave the player alone while a support stands, then always hit them', () => {
+test('a player can tag a Jal-Nib: it turns on them and stays on them while a support stands (#139)', () => {
   const { player, session } = startAt(1);
   tick(player, 20);
   const nibblers = [...session.npcs].filter((npc) => npc.id === Npcs.JAL_NIB);
   assert.ok(nibblers.length > 0);
-  assert.ok(nibblers.every((npc) => npc.hasFlag('combat:no-retaliate')), 'hitting one does not turn it');
+  assert.ok(nibblers.every((npc) => !npc.hasFlag('combat:no-retaliate')), 'nothing stops a Jal-Nib retaliating');
+  assert.ok(session.supports.length > 0, 'a support still stands');
   const deny = (attacker, target) => {
     const event = { attacker, target, allow: null };
     run.guardPassives(event);
     return event.allow;
   };
-  assert.equal(deny(nibblers[0], player), false);
+  assert.equal(deny(nibblers[0], player), false, 'an untagged one leaves the player alone');
 
-  nibblers[0].target = player;
+  // The player hits it: the engine's hit hook tags it, then retaliation puts it on the player.
+  for (const handler of world.hooks.onNpcHitModify ?? []) handler({ npc: nibblers[0], hit: { getAttacker: () => player } });
+  assert.equal(deny(nibblers[0], player), null, 'once tagged it may hit the player');
+  nibblers[0].getCombat().attack(player);
+  tick(player, 3);
+  assert.equal(nibblers[0].target, player, 'it stays on the player who tagged it');
+  assert.ok(!session.supports.some((support) => support.npc === nibblers[0].target), 'it does not resume on a support');
+
+  // A dead or departed player is untagged: it turns back on a standing support.
+  player.registered = false;
   tick(player);
-  assert.ok(session.supports.some((support) => support.npc === nibblers[0].target), 'back onto a support');
+  assert.ok(session.supports.some((support) => support.npc === nibblers[0].target), 'a fallen player lets it go');
+  player.registered = true;
 
   session.supports.length = 0;
   nibblers[0].target = null;
   tick(player);
   assert.equal(nibblers[0].target, player, 'with no support left it goes for the player');
-  assert.equal(deny(nibblers[0], player), null);
   tick(player);
   assert.equal(nibblers[0].target, player, 'and stays on them');
 

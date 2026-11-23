@@ -1803,6 +1803,22 @@ test("leaving the Fight Cave clears a Jad task, with the Wiki's message and the 
   assert.equal(varbit(player, "slayer_tasks_completed"), 7, "the streak is not reset");
 });
 
+test("leaving the Inferno clears the Zuk task but keeps a TzHaar task (#141)", () => {
+  const player = createPlayer();
+  const zuk = npcNamed("TzKal-Zuk");
+  const jad = npcNamed("TzTok-Jad");
+  const leave = (who, npcId, message) => handlers.events.get("slayer:leave-task-area").forEach((fn) => fn({ player: who, npcId, message }));
+  giveTask(player, 5, "Tzhaar", 4);
+  leave(player, zuk.getId(), "the Inferno");
+  assert.equal(varp(player, "slayer_count"), 4, "a TzHaar task is fought elsewhere too, so it stays");
+  leave(player, jad.getId(), "the fight cave");
+  assert.equal(varp(player, "slayer_count"), 4, "nor does leaving the Fight Cave clear it");
+  giveTask(player, 5, "TzKal-Zuk", 1);
+  leave(player, zuk.getId(), "the Inferno");
+  assert.equal(varp(player, "slayer_count"), 0, "the Zuk boss task is cleared");
+  assert.equal(player.messages.at(-1), "You no longer have a slayer task as you left the Inferno.");
+});
+
 test("native superior deaths keep three normal rolls and 550 XP; CoX scavengers keep two rolls", (t) => {
   const { Player } = require("../dist/game/entity/impl/player/Player");
   const { NPCDeathTask } = require("../dist/game/task/impl/NPCDeathTask");
@@ -2402,4 +2418,125 @@ test("the Dark Warriors' Fortress first floor is Wilderness, so Krystilia's task
     "the fortress's first floor is in the Wilderness");
   assert.equal(Tasks.countsFor(task, upper, null), true,
     "a fortress first-floor dark warrior counts for Krystilia's task");
+});
+
+test("a TzHaar task credits a real Inferno wave kill end to end (#141)", async (t) => {
+  // Isolate the real PluginManager world from the fake API the rest of this file registers.
+  if (process.env.INFERNO_TZHAAR_NATIVE_CHILD !== "1") {
+    const env = { ...process.env, INFERNO_TZHAAR_NATIVE_CHILD: "1" };
+    delete env.NODE_TEST_CONTEXT;
+    const child = require("node:child_process").spawnSync(process.execPath,
+      ["--test", "--test-reporter=tap", "--test-name-pattern=^a TzHaar task credits a real Inferno", __filename],
+      { env, encoding: "utf8", timeout: 180000, maxBuffer: 16 * 1024 * 1024 });
+    process.stdout.write(child.stdout ?? ""); process.stderr.write(child.stderr ?? "");
+    assert.equal(child.error, undefined, "the isolated Inferno process finishes");
+    assert.equal(child.signal, null);
+    assert.equal(child.status, 0, "the isolated Inferno assertions pass");
+    assert.match(child.stdout, /^ok \d+ - a TzHaar task credits a real Inferno/m,
+      "the isolated child executes the Inferno case");
+    return;
+  }
+  const path = require("node:path");
+  const { Player } = require("../dist/game/entity/impl/player/Player");
+  const { PlayerSession } = require("../dist/net/PlayerSession");
+  const { World, RegionManager, Location, TaskManager, PendingHit, CombatFactory, CombatType, SkillManager } = core;
+  const oldBots = process.env.DISABLE_PLAYER_BOTS;
+  const oldSubmit = TaskManager.submit;
+  const oldError = console.error;
+  const ownedTasks = new Set(), actors = [], targets = [], errors = [];
+  let started = false;
+  process.env.DISABLE_PLAYER_BOTS = "1";
+  TaskManager.submit = function (task, ...args) { ownedTasks.add(task); return oldSubmit.call(this, task, ...args); };
+  console.error = (...args) => { errors.push(args.map(String).join(" ")); oldError(...args); };
+  t.after(() => {
+    const cleanupErrors = [];
+    const clean = (fn) => { try { fn(); } catch (error) { cleanupErrors.push(String(error)); } };
+    try {
+      for (const player of actors) {
+        clean(() => player.closeInterruptibleInterfaces());
+        clean(() => player.getCombat().getHitQueue().clear());
+        clean(() => { if (player.isRegistered()) World.getPlayers().removes(player); });
+      }
+      for (const npc of [...World.getNpcs()]) {
+        if (npc?.__infernoRun) clean(() => { if (npc.isRegistered()) World.getNpcs().removes(npc); });
+      }
+      for (const target of targets) {
+        clean(() => target.getCombat().getHitQueue().clear());
+        clean(() => { if (target.isRegistered()) World.getNpcs().removes(target); });
+      }
+      if (started) clean(() => PluginManager.emitServerShutdown({}));
+      for (const task of ownedTasks) clean(() => { if (task.isRunning()) task.stop(); });
+      clean(() => World.process());
+      for (const task of ownedTasks) clean(() => { if (task.isRunning()) task.stop(); });
+    } finally {
+      TaskManager.submit = oldSubmit;
+      console.error = oldError;
+      if (oldBots === undefined) delete process.env.DISABLE_PLAYER_BOTS; else process.env.DISABLE_PLAYER_BOTS = oldBots;
+    }
+    assert.deepEqual(cleanupErrors, []);
+    assert.deepEqual(errors, [], "registered hooks and tasks must not hide failures");
+  });
+  await CachePipeline.initialize(path.resolve(__dirname, ".."));
+  PluginManager.loadFromDirectory(path.resolve(__dirname, "../plugins"));
+  RegionManager.init();
+  RegionManager.loadMapFiles(2270, 5344);
+  PluginManager.emitServerStartup({}); started = true;
+  const channel = { kind: "test", remoteAddress: "127.0.0.1", isOpen: () => true,
+    send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
+  const player = new Player(new PlayerSession(channel)); actors.push(player);
+  player.setUsername("infernotzhaar"); player.setLongUsername(core.Misc.stringToLongBigInt("infernotzhaar"));
+  player.setAttribute("bot-skip-persistence", true);
+  player.setLocation(new Location(2271, 5343, 0));
+  assert.equal(World.getPlayers().add(player), true); player.needsPlacement = false;
+  player.setAutoRetaliate(false);
+  const skills = player.getSkillManager();
+  for (const skill of Skill.values()) {
+    skills.setExperiences(skill, SkillManager.getExperienceForLevel(99), false);
+    skills.setMaxLevel(skill, 99); skills.setCurrentLevels(skill, 99);
+  }
+  const sender = player.getPacketSender();
+  sender.sendConfig(CacheDefinitions.getVarpId("slayer_target"), 96);
+  sender.sendConfig(CacheDefinitions.getVarpId("slayer_count"), 10);
+  sender.sendConfig(CacheDefinitions.getVarpId("slayer_count_original"), 10);
+  sender.sendVarbit(CacheDefinitions.getVarbitId("slayer_master"), 5);
+  assert.equal(Tasks.current(player).taskId, 96);
+  // The real Inferno run spawns its first wave (three Jal-Nib and a Jal-MejRah) on its own tick.
+  const run = require("../plugins/minigames/inferno/Run.Inferno");
+  run.enter(player);
+  const session = run.sessionOf(player);
+  assert.ok(session, "the run starts");
+  for (let tick = 0; tick < 80 && session.npcs.size === 0; tick++) World.process();
+  // #139: a Jal-Nib starts on the supports, but a player's hit turns it on them for good.
+  const nibbler = [...session.npcs].find((npc) => npc.getId() === core.NpcIdentifiers.JAL_NIB);
+  assert.ok(nibbler, "the wave spawned a Jal-Nib");
+  assert.ok(session.supports.some((support) => support.npc === nibbler.getCombat().getTarget()),
+    "an untagged Jal-Nib goes for a support");
+  assert.notEqual(nibbler.hasFlag("combat:no-retaliate"), true, "nothing stops it retaliating");
+  const tag = new PendingHit(player, nibbler, { type: () => CombatType.MELEE, accuracyDefenceType: () => undefined },
+    { damage: 1, rollAccuracy: false, experience: false, handleAfterHitEffects: false });
+  CombatFactory.executeHit(tag);
+  nibbler.getCombat().getHitQueue().process(999);
+  for (let tick = 0; tick < 5 && nibbler.getCombat().getTarget() !== player; tick++) World.process();
+  assert.equal(nibbler.getCombat().getTarget(), player, "the hit turned the Jal-Nib on the player");
+  assert.ok(!session.supports.some((support) => support.npc === nibbler.getCombat().getTarget()),
+    "and it does not go back to a support");
+  const target = [...session.npcs].find((npc) => npc.getId() === core.NpcIdentifiers.JAL_MEJRAH);
+  assert.ok(target, "a normal wave monster spawned through the run");
+  const onTask = { player, npc: target, onTask: false };
+  PluginManager.emitCustomEvent("slayer:on-task", onTask);
+  assert.equal(onTask.onTask, true, "the slayer helmet's on-task query covers the wave monster");
+  const beforeXp = skills.getExperience(Skill.SLAYER);
+  const hit = new PendingHit(player, target, { type: () => CombatType.MELEE, accuracyDefenceType: () => undefined },
+    { damage: target.getHitpoints(), rollAccuracy: false, experience: false, handleAfterHitEffects: false });
+  CombatFactory.executeHit(hit);
+  target.getCombat().getHitQueue().process(1000);
+  assert.equal(target.getHitpoints(), 0, "the applied hit is lethal");
+  assert.equal(target.getCombat().getLastDamager(), player, "the player owns the lethal damage");
+  for (let tick = 0; tick < 50 && target.isDyingFunction(); tick++) TaskManager.process();
+  assert.equal(target.isDyingFunction(), false, "the engine death task finishes");
+  assert.equal(skills.getExperience(Skill.SLAYER) - beforeXp, target.getDefinition().getHitpoints(),
+    "Slayer XP equals the monster's hitpoints");
+  assert.equal(sender.getVarp(CacheDefinitions.getVarpId("slayer_count")), 9, "the task counts the kill");
+  assert.equal(Tasks.current(player).count, 9);
+  run.leave(player);
 });
