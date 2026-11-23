@@ -220,6 +220,8 @@ function prayerOf(npc) {
 
 function setPrayer(npc, style) {
   prayers.set(spawnKey(npc), style);
+  const { PrayerHandler } = core();
+  PrayerHandler.activatePrayerPrayerId(npc, PrayerHandler.getProtectingPrayer(combatTypeOf(style)));
   npc.setHeadIcon(HEAD_ICON[style]);
 }
 
