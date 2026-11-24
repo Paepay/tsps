@@ -133,3 +133,10 @@ test("one stacked spawn deleted and the other moved away leaves neither on the t
   assert.deepEqual(spawnsAt(3320, 3320, 0), []);
   assert.deepEqual(spawnsAt(3324, 3320, 0).map((spawn) => spawn.getRadius()), [3]);
 });
+
+test("Farmer Gricoller's real spawn patch pins him to his chair", () => {
+  const fs = require("node:fs");
+  const custom = JSON.parse(fs.readFileSync(path.join(__dirname, "../data/definitions/npc-spawns-custom.json"), "utf8"));
+  const gricoller = custom.find((spawn) => spawn.id === 6920 && spawn.x === 1799 && spawn.y === 3498 && spawn.level === 0);
+  assert.equal(gricoller?.wanderRadius, 0);
+});
