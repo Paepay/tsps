@@ -662,13 +662,15 @@ test('a smashed Jewelled Crab drops its wander route and stays put for the stun'
   let route = 2;
   let blocked = false;
   let radius = 3;
+  let generation = 0;
   const queue = {
     reset() { route = 0; return queue; },
-    setBlockMovement(value) { blocked = value; return queue; },
+    setBlockMovement(value) { blocked = value; generation++; return queue; },
+    getBlockMovementGeneration: () => generation,
     size: () => route,
     isMovings: () => route > 0,
   };
-  const coordinator = { setRadius(value) { radius = value; return coordinator; } };
+  const coordinator = { setRadius(value) { radius = value; return coordinator; }, getRadius: () => radius };
   const crab = {
     colour: null,
     colourTicks: 0,
@@ -694,6 +696,17 @@ test('a smashed Jewelled Crab drops its wander route and stays put for the stun'
 
   ticks(61);
   assert.equal(blocked, false, 'movement clears after the longest stun');
+  assert.equal(radius, 3, 'and the crab can be lured again once the stun ends (issue #159)');
+
+  // A second smash while stunned takes a longer hold; the first smash's timer must not release it.
+  Crabs.CrabsRoom.prototype.smash.call(room, player, crab);
+  ticks(30);
+  Crabs.CrabsRoom.prototype.smash.call(room, player, crab);
+  ticks(30);
+  assert.equal(blocked, true, 'a stale timer does not end the newer stun');
+  ticks(40);
+  assert.equal(blocked, false, 'the newer stun ends on its own timer');
+  assert.equal(radius, 3);
 });
 
 test('a Challenge Mode raid loads every room without errors', () => {

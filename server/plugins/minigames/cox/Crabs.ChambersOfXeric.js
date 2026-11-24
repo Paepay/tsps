@@ -47,6 +47,8 @@ const CRAB = { WHITE: 7576, RED: 7577, GREEN: 7578, BLUE: 7579 };
 const FOCUS = { WHITE: 7580, RED: 7581, GREEN: 7582, BLUE: 7583 };
 const OBJECT = { DARK: 29753, LIT: 29762 };
 const HAMMER = 2347;
+/** Wiki (Chambers of Xeric/Strategies): crabs are lured, so they wander when not stunned. */
+const CRAB_WANDER_RADIUS = 3;
 const COLOUR_TICKS = 12;
 /** rsprox captures: how long a smashed crab stays red. */
 const SMASH_COLOUR_TICKS = [7, 9];
@@ -108,9 +110,9 @@ class CrabsRoom extends Raid.Room {
   load() {
     const variant = this.record.variant;
     for (const spot of CRAB_TILES[variant]) {
-      // The crabs stand where the cache puts them. They fight from those tiles and are knocked
-      // home by their combat, but must never wander: a smashed crab has to stay stunned in place.
-      const crab = this.spawnNpc(CRAB.WHITE, this.tile(spot.x, spot.y), { scale: false, wanderRadius: 0 });
+      // The crabs stand where the cache puts them but wander for lures; a smash roots one in place
+      // only for its stun, then it can be lured again (issue #159).
+      const crab = this.spawnNpc(CRAB.WHITE, this.tile(spot.x, spot.y), { scale: false, wanderRadius: CRAB_WANDER_RADIUS });
       if (crab) this.crabs.push(crab);
     }
     this.crystalTiles = SMALL_CRYSTAL_TILES[variant].map((spot) => this.tile(spot.x, spot.y));
@@ -328,10 +330,20 @@ class CrabsRoom extends Raid.Room {
     this.colour(crab, CRAB.RED, Shared.random(...SMASH_COLOUR_TICKS));
     crab.performGraphic(Shared.gfx(245, { delay: 30, height: 100 }));
     crab.getCombat().reset();
-    crab.getMovementCoordinator?.().setRadius(0);
-    crab.getMovementQueue().reset();
-    crab.getMovementQueue().setBlockMovement?.(true);
-    Shared.later(this.raid, ticks, () => crab.getMovementQueue().setBlockMovement?.(false));
+    const coordinator = crab.getMovementCoordinator?.();
+    const queue = crab.getMovementQueue();
+    // Keep the first smash's wander radius: a second smash while still stunned starts from 0.
+    crab.__coxWanderRadius ??= coordinator?.getRadius?.() ?? CRAB_WANDER_RADIUS;
+    coordinator?.setRadius(0);
+    queue.reset();
+    queue.setBlockMovement?.(true);
+    const generation = queue.getBlockMovementGeneration?.();
+    Shared.later(this.raid, ticks, () => {
+      // A later smash took its own, longer hold; only that one's timer may release it.
+      if (queue.getBlockMovementGeneration?.() !== generation) return;
+      queue.setBlockMovement?.(false);
+      coordinator?.setRadius(crab.__coxWanderRadius ?? CRAB_WANDER_RADIUS);
+    });
   }
 }
 
