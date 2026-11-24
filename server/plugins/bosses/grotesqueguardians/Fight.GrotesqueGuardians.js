@@ -112,7 +112,7 @@ class Fight {
     // Dawn finished, whoever is credited with her death (Kills.GrotesqueGuardians.js also calls it);
     // at 0 hitpoints she waits for the rock hammer first.
     if (this.phase === 3 && this.dawn.getHitpoints() <= 0 && (this.dawn.isDyingFunction?.() || this.dawn.isRegistered?.() === false)) this.dawnDied();
-    if (this.phase === 2 && this.tickCount % Common.data.rockfall.every === 0 && players[0]) this.dropRocks(players[0]);
+    if (this.phase === 2 && this.tickCount % Common.data.rockfall.every === 0) this.dropRocks();
     if (this.phase === 3) this.tickLightning(players);
     this.tickRocks(players);
     this.tickTrample(players);
@@ -124,19 +124,30 @@ class Fight {
 
   // --- Phase 2: rockfall
 
-  dropRocks(target) {
+  /**
+   * Wiki: 9-10 pieces of debris fall into the roof at four different speeds, each 3x3; a
+   * direct hit stuns for 10 ticks. They are aimed at the roof, not at a player's tile, so
+   * standing still is not a guaranteed stun every cycle (issue #148). The tile spread and the
+   * four warning lengths are ours: the Wiki gives the count of speeds, not their ticks.
+   */
+  dropRocks() {
     const { rockfall } = Common.data;
-    const base = target.getLocation();
-    const lands = this.tickCount + rockfall.warnTicks;
-    const tiles = [base];
-    for (let attempt = 0; tiles.length < rockfall.rocks && attempt < 40; attempt++) {
-      const tile = base.transform(Common.randomInt(-5, 5), Common.randomInt(-5, 5));
-      if (this.roof.contains(tile)) tiles.push(tile);
+    const { minX, maxX, minY, maxY } = this.roof.floor;
+    const speeds = rockfall.speeds ?? [rockfall.warnTicks];
+    const tiles = [];
+    for (let attempt = 0; tiles.length < rockfall.rocks && attempt < 200; attempt++) {
+      const tile = new Common.core.Location(
+        minX + Math.floor(this.random() * (maxX - minX + 1)),
+        minY + Math.floor(this.random() * (maxY - minY + 1)),
+        0
+      );
+      if (!this.roof.contains(tile) || tiles.some((other) => other.equals(tile))) continue;
+      tiles.push(tile);
     }
-    for (const tile of tiles) {
+    tiles.forEach((tile, index) => {
       Common.tileGraphic(this.roof.players(), tile, Common.ids.spotanims.debris);
-      this.rocks.push({ tile, lands });
-    }
+      this.rocks.push({ tile, lands: this.tickCount + speeds[index % speeds.length] });
+    });
   }
 
   tickRocks(players) {

@@ -113,7 +113,9 @@
     "max": 22,
     "stunTicks": 10,
     "warnTicks": 3,
-    "every": 6
+    "every": 6,
+    "speeds": [2, 3, 4, 5],
+    "_speeds": "calibrated: the Wiki says four different speeds with shadows on the tiles; the four warning lengths are ours"
   },
   "lightning": {
     "min": 5,
