@@ -319,8 +319,10 @@ module.exports = function registerPlagueCityQuest(api) {
   }
 
   function edmondVariant(stage, player) {
-    // Tick 889: holding the scroll, Edmond only thanks the player; the scroll offer is for one who lost it.
-    if (stage >= STAGE_READ_SCROLL || (stage >= STAGE_COMPLETE && held(player, ARDOUGNE_SCROLL_ITEM_ID))) {
+    // Tick 889: holding the scroll, Edmond only thanks the player. After the scroll is read and used, his
+    // after-quest offer is the only way back to another one (Wiki: "If a player loses this scroll, they can
+    // go back to Edmond").
+    if (stage >= STAGE_COMPLETE && held(player, ARDOUGNE_SCROLL_ITEM_ID)) {
       return "standard-dialogue-after-plague-city";
     }
     if (stage >= STAGE_COMPLETE) {
