@@ -114,12 +114,11 @@ class GauntletRun {
     this.bossCycle = 0;
     this.timer = null;
     this.room = null;
-    // Kills by tier and the weapon components dropped, for the drop rules (GauntletMonsters).
+    // Kills by tier, for the drop rules (GauntletMonsters); component ownership is checked live.
     this.kills = { weak: 0, strong: 0, demi: 0 };
     // Reward points for a run that doesn't kill the Hunllef (GauntletRewards).
     this.points = 0;
     this.strongFrame = false;
-    this.components = new Set();
     // What the player made, for the Combat Achievements that limit it.
     this.made = { armour: 0, attunedWeapons: 0, egniol: 0 };
     runs.set(player.getUsername(), this);
