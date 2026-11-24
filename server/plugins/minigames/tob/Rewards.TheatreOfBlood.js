@@ -266,14 +266,26 @@ class RewardsRoom extends Raid.Room {
     const { loot, uniqueWinner, uniqueId } = rollRaid(raid);
     for (const [player, items] of loot) setLoot(player, items);
     this.uniqueSlot = uniqueWinner ? this.slots.get(uniqueWinner) : -1;
+    this.uniqueWinner = uniqueWinner;
+    this.uniqueId = uniqueId;
+    this.uniqueAnnounced = false;
     raid.players.forEach((player, slot) => {
       const chest = CHESTS[slot];
       if (chest) this.chests[slot] = this.placeObject(chest.id, chest, 10, chest.face);
     });
-    if (uniqueWinner) {
-      const name = Shared.core().ItemDefinition.forId(uniqueId)?.getName?.() ?? "a unique";
-      // Captured (227/01852, 227/01764): both names in red.
-      for (const player of raid.players) player.sendMessage(`<col=ff0000>${Shared.displayName(uniqueWinner)}</col> found something special: <col=ff0000>${name}</col>`);
+  }
+
+  /**
+   * The vault announcement waits for the chest to be opened: sending it as the room builds told
+   * the party what the purple aura already hints at before anyone searched, which players report
+   * spoils the reveal. Captured line (227/01852, 227/01764): both names in red.
+   */
+  announceUnique(player) {
+    if (this.uniqueAnnounced || !this.uniqueWinner || player !== this.uniqueWinner) return;
+    this.uniqueAnnounced = true;
+    const name = Shared.core().ItemDefinition.forId(this.uniqueId)?.getName?.() ?? "a unique";
+    for (const member of this.raid.players) {
+      member.sendMessage(`<col=ff0000>${Shared.displayName(this.uniqueWinner)}</col> found something special: <col=ff0000>${name}</col>`);
     }
   }
 
@@ -306,6 +318,7 @@ class RewardsRoom extends Raid.Room {
       return true;
     }
     this.opened.add(slot);
+    this.announceUnique(player);
     claimPetLoot(player);
     const { Animation, ObjectManager } = Shared.core();
     player.performAnimation(new Animation(OPEN_ANIMATION));
