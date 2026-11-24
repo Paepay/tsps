@@ -266,6 +266,39 @@ test('q018 hidden trapdoor zone is at the cache tile 3166,9622 and runs deacon t
   assert.equal(h.quest.getStage(p), 5, 'rubble is discovered after the deacon');
   assert.equal(p.varbits.get(2258), 5);
   assert.ok((p.attrs.get(BITS_KEY) & BIT_TRAPDOOR) !== 0, 'trapdoor bit set');
+  assert.equal(p.varbits.get(2270), 1, 'the cache multiloc now shows the hidden trapdoor, not rubble');
+});
+
+test('q018 the H.A.M. storeroom trapdoor is the cache multiloc state, opened once and then climbed', () => {
+  const hidden = dttd(5);
+  hidden.p.attrs.set(BITS_KEY, BIT_TRAPDOOR);
+  hidden.h.login(hidden.p);
+  assert.equal(hidden.p.varbits.get(2270), 1, 'found, closed: the hidden trapdoor');
+  assert.equal(hidden.h.objects.some((object) => object.getId() === 15755),
+    false, 'the trapdoor is not a runtime object over the cache map');
+
+  hidden.h.object(hidden.p, O.HIDDEN_TRAPDOOR);
+  assert.equal(hidden.p.varbits.get(2270), 2, 'pick-locking opens the cache multiloc');
+  assert.ok((hidden.p.attrs.get(BITS_KEY) & (1 << 16)) !== 0, 'the open state is kept');
+  assert.deepEqual([hidden.p.getLocation().getX(), hidden.p.getLocation().getY()], [2568, 5185]);
+  assert.ok(hidden.p.messages.includes('You pick the lock and climb down.'));
+
+  hidden.h.object(hidden.p, O.TRAPDOOR_66);
+  assert.deepEqual([hidden.p.getLocation().getX(), hidden.p.getLocation().getY()], [2568, 5185],
+    'the open trapdoor climbs down again');
+  assert.ok(hidden.p.messages.includes('You climb down the trapdoor.'));
+
+  const early = dttd(4);
+  early.h.object(early.p, O.HIDDEN_TRAPDOOR);
+  assert.equal(early.p.varbits.get(2270) ?? 0, 0, 'no trapdoor before Zanik finds it');
+  assert.deepEqual([early.p.getLocation().getX(), early.p.getLocation().getY()], [3210, 3220]);
+
+  const done = dttd(14);
+  done.h.login(done.p);
+  assert.equal(done.p.varbits.get(2270), 2, 'a finished quest shows the open trapdoor');
+  done.h.object(done.p, O.TRAPDOOR_66);
+  assert.deepEqual([done.p.getLocation().getX(), done.p.getLocation().getY()], [2568, 5185],
+    'and it still leads into the storerooms');
 });
 
 test('q018 listen-at quest doors 15757/15758 advance caught -> jailed', () => {
@@ -291,9 +324,10 @@ test('q018 listen-at quest doors 15757/15758 advance caught -> jailed', () => {
 
 test('q018 scene objects and the corpse use the cache/Quest Helper tiles', () => {
   const { h, p } = dttd(7);
+  p.attrs.set(BITS_KEY, BIT_TRAPDOOR);
   h.login(p);
   const at = (id, x, y) => h.objects.some(object => object.getId() === id && object.getLocation().getX() === x && object.getLocation().getY() === y);
-  assert.ok(at(15755, 3166, 9622), 'hidden trapdoor at 3166,9622');
+  assert.equal(p.varbits.get(2270), 1, 'the cache multiloc at 3166,9622 is the hidden trapdoor');
   assert.ok(at(15753, 3230, 3286), 'mill trapdoor at 3230,3286');
   assert.ok(at(15748, 3217, 9706), 'tunnel object is registered');
   h.npc(p, N.JIMMY_THE_CHISEL, 'Talk-to');
@@ -397,7 +431,7 @@ test('q018 partial earned tour/guard/corpse flags replay using actual cache pare
   assert.equal(p.varbits.get(2259),1);assert.equal(p.varbits.get(2260),0);
   assert.equal(p.varbits.get(2263),0,'Duke alone does not earn sunlight');
   const parent=CacheDefinitions.getVarbit(2259).baseVar;
-  const ids=[2258,2264,...Object.values(names)];
+  const ids=[2258,2264,2270,...Object.values(names)];
   const mask=ids.filter(id=>CacheDefinitions.getVarbit(id).baseVar===parent).reduce((m,id)=>{
     const d=CacheDefinitions.getVarbit(id);return m|((2**(d.endBit-d.startBit+1)-1)<<d.startBit)},0);
   const siblings=0x5a5a5a5a&~mask;p.configs.set(parent,siblings);p.varbits.clear();

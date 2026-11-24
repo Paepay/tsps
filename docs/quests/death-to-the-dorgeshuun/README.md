@@ -17,6 +17,12 @@ No native playthrough recorded; natural completion pending.
 
 ## Findings
 
+- **fixed (source and test level, not played in game in this pass)** The H.A.M. storeroom entrance south of the
+  podium is the cache's multiloc 15766 on 3166,9622, whose forms are rubble, hidden trapdoor (15755) and open
+  trapdoor (15756). The plugin used to place a runtime 15755 over it, which a square rebuild could lose, and never
+  set the cache's varbit 2270 (`dttd_ham_trapdoor_state`); the storeroom door therefore stayed rubble. It now
+  sends state 0 before Zanik finds it, 1 once found, and 2 after the first pick-lock (or quest completion), and
+  handles both the closed `Open`/`Pick-lock` and open `Climb-down` clicks. Test: `qh728-q018`.
 - **fixed (source and test level, not played in game)** Optional Lumbridge tour stops. Fred the Farmer, the
   candle seller and the Al Kharid border guards (npcs 4287, 4288) now play their Wiki transcript pages once
   Zanik follows the player, like Millie, Father Urhney and Gee/Donie; they give no tour progress. Source: the
