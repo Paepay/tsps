@@ -21,6 +21,7 @@ let Player;
 let Location;
 let Common;
 let Lobby;
+let Run;
 
 before(async () => {
   await require('../dist/game/cache/CachePipeline').CachePipeline.initialize(ROOT);
@@ -37,6 +38,7 @@ before(async () => {
 
   Common = require('../plugins/minigames/roguesden/Common.RoguesDen');
   Lobby = require('../plugins/minigames/roguesden/Lobby.RoguesDen');
+  Run = require('../plugins/minigames/roguesden/Run.RoguesDen');
 });
 
 function account() {
@@ -65,8 +67,9 @@ test('the maze entry lands on a walkable tile with a route to the first obstacle
     'the doorway puts the player on the maze floor, not the solid wall at y=4992');
   assert.equal(Common.walkable(at.getX(), at.getY(), at.getZ()), true,
     'the entry tile must not be inside a wall');
-  assert.equal(Common.walkable(3056, 4992, 1), false,
-    'the old tile is the solid wall row the doorway must not land on');
+  const { RegionManager } = require('../dist/game/collision/RegionManager');
+  assert.equal(RegionManager.getRegion(3056, 4992).getClip(3056, 4992, 1) & 0x20, 0x20,
+    'the old tile sits in the wall row the doorway must not land on');
 
   const route = new core.RsmodRouteFinding().findRoute({
     level: 1,
@@ -75,4 +78,23 @@ test('the maze entry lands on a walkable tile with a route to the first obstacle
     privateArea: null, moveNear: false,
   });
   assert.equal(route.success, true, 'the first contortion bars are reachable from the entry');
+});
+
+test('a pendulum carries the player past it instead of ejecting them (issue #164)', () => {
+  const player = account();
+  Lobby.startEntry(player);
+  // A tile that only carries a wall's direction bit is walkable; the pendulum post is not.
+  assert.equal(Common.walkable(2958, 5025, 1), true);
+  assert.equal(Common.walkable(2954, 5025, 1), false);
+
+  player.moveTo(new Location(2955, 5026, 1));
+  Run.tick(player);
+  // Diagonal into the pendulum's base tile: the first tile past it is its own post.
+  player.moveTo(new Location(2956, 5025, 1));
+  Run.tick(player);
+  assert.equal(Run.runOf(player)?.ended ?? false, false, 'the carry does not eject the player');
+  assert.equal(Common.level(player, 'AGILITY'), 47, '3 Agility is drained for the pendulum');
+  const at = player.getLocation();
+  assert.notDeepEqual([at.getX(), at.getY()], [2956, 5025], 'the player is carried off the pendulum');
+  assert.equal(Common.walkable(at.getX(), at.getY(), at.getZ()), true, 'onto a real maze tile');
 });
