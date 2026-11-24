@@ -549,9 +549,15 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
 
   function bankHasItem(player, itemId) {
     for (const bank of player.getBanks?.() ?? []) {
-      if (bank?.contains?.(itemId) === true || (bank?.getAmount?.(itemId) ?? 0) > 0) return true;
+      // A bank placeholder is the item id at amount 0; only a real holding counts.
+      if ((bank?.getAmount?.(itemId) ?? 0) > 0) return true;
     }
     return false;
+  }
+
+  function equippedItem(player, itemId) {
+    return (player.getEquipment?.()?.getItems?.() ?? [])
+      .some((item) => item?.getId?.() === itemId && (item.getAmount?.() ?? 0) > 0);
   }
 
   function hasKrukGreegree(player) {
@@ -896,7 +902,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   }
 
   function hasReclaim(player, itemId) {
-    return hasItem(player, itemId) || bankHasItem(player, itemId);
+    return hasItem(player, itemId) || equippedItem(player, itemId) || bankHasItem(player, itemId);
   }
 
   function handleZooknockReclaim(event) {

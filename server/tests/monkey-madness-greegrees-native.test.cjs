@@ -284,6 +284,18 @@ test('postquest banked duplicate guards include later bank tabs',async t=>{
   const f=actor(t,9,195,stronghold);f.p.getBank(4).add(new core.Item(4024),false);assert.equal(f.p.getBank(4).getAmount(4024),1);
   await selectReclaim(f,reclaims[0][1]);await drain(f);assert.equal(amount(f,4024),0);assert.equal(f.p.getBank(4).getAmount(4024),1);
 });
+test('postquest bank placeholders do not count as owning a greegree (issue 136)',async t=>{
+  const f=actor(t,9,195,stronghold);f.p.getBank(4).add(new core.Item(4024,0),false);
+  assert.equal(f.p.getBank(4).getAmount(4024),0,'stored as a placeholder');
+  assert.equal(f.p.getBank(4).contains(4024),true,'the placeholder is still present');
+  await selectReclaim(f,reclaims[0][1]);await receiveReclaim(f,4024);
+});
+test('postquest a worn greegree counts as owned, so Zooknock hands out no duplicate',async t=>{
+  const f=actor(t,9,195,stronghold);
+  f.p.getEquipment().setItem(core.Equipment.WEAPON_SLOT,new core.Item(4024));
+  await selectReclaim(f,reclaims[0][1]);await drain(f);
+  assert.equal(amount(f,4024),0,'nothing is added to the inventory');
+});
 test('full postquest inventory refuses without charging materials and recovers after space is made',async t=>{
   const f=actor(t,9,195,stronghold);add(f,4023);while(f.p.getInventory().getFreeSlots()>0)add(f,1511);
   await selectReclaim(f,reclaims[0][1]);await drain(f);assert.equal(amount(f,4024),0);assert.equal(amount(f,4023),1);assert.ok(f.messages.some(s=>/free inventory slot/.test(s)));
