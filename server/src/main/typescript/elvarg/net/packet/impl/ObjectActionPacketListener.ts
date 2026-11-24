@@ -65,7 +65,7 @@ export class ObjectActionPacketListener {
       // on another boat's deck is checked on that deck (the player's own area doesn't hold it).
       const stands = remote
         ? BoatManager.getDeck(remote.boat)?.getObjects().includes(object) === true
-        : MapObjects.stillStands(player, id, objectLocation, object);
+        : MapObjects.stillStands(player, id, object.getLocation(), object);
       if (!stands) return;
       const interactionLocation = player.getLocation().clone();
       player.getMovementQueue().reset();
