@@ -86,12 +86,41 @@ function isFollower(id) {
   return Common.data.npcs.followers.some(([lo, hi]) => id >= lo && id <= hi);
 }
 
-/** A point of ancient essence for each follower killed in the prison. */
+/**
+ * Base ancient essence by follower (Wiki, Nex/Strategies): Spiritual Warriors and Rangers 2,
+ * Spiritual Mages and Nex 5, Blood Reavers 3. Others in the prison still give 1.
+ */
+const FOLLOWER_ESSENCE = new Map([[11290, 2], [11291, 2], [11292, 5], [11293, 3], [11278, 5]]);
+
+function essenceFor(npcId) {
+  return FOLLOWER_ESSENCE.get(Number(npcId)) ?? 1;
+}
+
+/** Zarosian items worn; the bonus roll counts them as the drops appear. */
+function zarosianWorn(player) {
+  const { ItemDefinition } = Common.core;
+  return player.getEquipment().getItems().filter((item) =>
+    item && item.getId() > 0 && Common.isZarosian(ItemDefinition.forId(item.getId())?.getName?.(), item.getId())).length;
+}
+
+/**
+ * Wiki: each Zarosian item gives a 20% chance of one extra essence, guaranteed at five, and each
+ * item past five another 20% chance at a second - never more than two.
+ */
+function bonusEssence(worn, random = Math.random) {
+  if (worn <= 0) return 0;
+  let bonus = 0;
+  if (worn >= 5 || random() < worn * 0.2) bonus += 1;
+  if (worn > 5 && random() < Math.min(1, (worn - 5) * 0.2)) bonus += 1;
+  return bonus;
+}
+
+/** The follower's essence plus the Zarosian bonus, credited to the killer. */
 function creditKill({ killer, npc }) {
   if (!killer?.isPlayer?.() || !npc || !isFollower(npc.getId())) return;
   const player = killer.getAsPlayer();
   if (!Common.inBox(Common.data.prison.box, player.getLocation())) return;
-  Common.setEssence(player, Common.getEssence(player) + 1);
+  Common.setEssence(player, Common.getEssence(player) + essenceFor(npc.getId()) + bonusEssence(zarosianWorn(player)));
 }
 
 /** Wiki: logging out in the prison proper (not the entry room) wakes the player in its entry room. */
@@ -290,4 +319,7 @@ function attachPrison(api) {
   api.onObjectSecondClick(objects.altar, teleport);
 }
 
-module.exports = { attachPrison, isFollower, assembleKey, openFrozenDoor, outerDoor, innerDoor, pray, teleport, creditKill, swing };
+module.exports = {
+  attachPrison, isFollower, assembleKey, openFrozenDoor, outerDoor, innerDoor, pray, teleport, creditKill, swing,
+  essenceFor, zarosianWorn, bonusEssence,
+};

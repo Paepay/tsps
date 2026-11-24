@@ -83,6 +83,23 @@ test("Ice Prison and Containment switch protection prayers off without locking t
   assert.equal(messages.length, 1);
 });
 
+test("Zarosian followers give their Wiki essence and the Zarosian bonus rolls on top", () => {
+  const Prison = require("../plugins/bosses/nex/Prison.Nex");
+  assert.equal(Prison.essenceFor(11290), 2, "Spiritual Warrior");
+  assert.equal(Prison.essenceFor(11291), 2, "Spiritual Ranger");
+  assert.equal(Prison.essenceFor(11292), 5, "Spiritual Mage");
+  assert.equal(Prison.essenceFor(11293), 3, "Blood Reaver");
+  assert.equal(Prison.essenceFor(11278), 5, "Nex");
+  assert.equal(Prison.essenceFor(99999), 1, "anything else");
+  assert.equal(Prison.bonusEssence(0, () => 0), 0);
+  assert.equal(Prison.bonusEssence(2, () => 0.39), 1, "two items: 40%");
+  assert.equal(Prison.bonusEssence(2, () => 0.41), 0);
+  assert.equal(Prison.bonusEssence(5, () => 0.99), 1, "five items: one guaranteed");
+  assert.equal(Prison.bonusEssence(6, () => 0.1), 2, "six: 20% for a second");
+  assert.equal(Prison.bonusEssence(6, () => 0.3), 1);
+  assert.equal(Prison.bonusEssence(10, () => 0.99), 2, "ten: two, never three");
+});
+
 test("the prison aggression rule requires Zarosian equipment, not a ring of endurance", () => {
   const Prison = require("../plugins/bosses/nex/Prison.Nex");
   let area;
