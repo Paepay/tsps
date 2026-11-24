@@ -13,6 +13,7 @@ const { Location } = require('../dist/game/model/Location');
 const Shared = require('../plugins/minigames/cox/Shared.ChambersOfXeric');
 const Layout = require('../plugins/minigames/cox/Layout.ChambersOfXeric');
 const CoxMap = require('../plugins/minigames/cox/Map.ChambersOfXeric');
+const { MapObjects } = require('../dist/game/entity/impl/object/MapObjects');
 const Parties = require('../plugins/minigames/cox/Parties.ChambersOfXeric');
 const RaidModule = require('../plugins/minigames/cox/RaidState.ChambersOfXeric');
 const Lobby = require('../plugins/minigames/cox/Lobby.ChambersOfXeric');
@@ -393,6 +394,37 @@ test('a raid: in, started by the leader, points, a safe death, and out', () => {
   ticks(2);
   assert.deepEqual([leader.location.getX(), leader.location.getY()], [Shared.OUTSIDE.x, Shared.OUTSIDE.y]);
   assert.equal(raid.destroyed, true, 'no one left to lead it');
+  ticks(4);
+  Parties.clear();
+});
+
+test('the first room has the steps back out, with Reload, and the raid announces its layout (#158)', () => {
+  Parties.clear();
+  const leader = fakePlayer('Scout');
+  channelWith('Scout', leader);
+  Lobby.makeParty(leader);
+  leader.setAttribute(Shared.ATTR.WARNED, true);
+  Lobby.enterChambers({ player: leader });
+  const raid = Parties.partyOf(leader).raid;
+  ticks(3 + 2);
+
+  const entrance = raid.rooms.find((room) => room.key === 'RAID_START');
+  assert.equal(entrance.steps?.getId(), Shared.OBJECT.STEPS_RELOAD, 'the steps carry the leader\'s Reload option');
+  assert.ok(entrance.steps.getLocation().equals(entrance.record.bound), 'the steps stand on the first room\'s bound tile');
+  assert.notEqual(raid.respawn.getX(), undefined, 'raiders land on an open tile beside them');
+  const viewer = { getPrivateArea: () => raid.map, getRights: () => 0, getPacketSender: () => leader.getPacketSender() };
+  assert.equal(MapObjects.getPrivateArea(viewer, Shared.OBJECT.STEPS_RELOAD, entrance.record.bound), entrance.steps,
+    'a click on the steps resolves to the placed object');
+
+  const summary = raid.layoutSummary();
+  assert.ok(summary.startsWith('Start > '), 'the first room comes first');
+  assert.ok(summary.endsWith(' > End'), 'the last room ends the floor');
+  assert.ok(summary.split(' > ').length >= 4, 'the rooms ahead are listed in order');
+  assert.ok(!summary.includes('OLM') && !summary.includes('undefined'), 'the Olm\'s chamber is not a room in the layout');
+  assert.ok(leader.messages.includes(`Raiding layout: ${summary}.`), 'the raider is told the layout on entry');
+
+  raid.leave(leader);
+  ticks(2);
   ticks(4);
   Parties.clear();
 });

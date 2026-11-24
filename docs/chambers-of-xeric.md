@@ -104,7 +104,9 @@ The rooms' set-up is covered by `server/tests/chambers-of-xeric.test.cjs`. A who
 
 **Scale** (820: a party scaled to 50 reports "24+ players"): the raid scales to the higher of its raiders and the party's scale. Monsters, the Olm's phases, caps, varbit 9540, and the team size in messages and personal bests use it. Team-size Combat Achievements (Solo, Trio, 5-Scale) count the raiders who started it: no source says a scaled raid counts as its scale.
 
-**Reload** (the first room's steps, 2528): before the raid begins, the leader can generate a new layout ("Reload the raid to generate a new layout?"). Anyone else inside is put out (Wiki).
+**Reload** (the first room's steps, 2528): before the raid begins, the leader can generate a new layout ("Reload the raid to generate a new layout?"). Anyone else inside is put out (Wiki). The cache places a Steps loc only at the Olm's exit; the raid puts the steps back in the first room on its bound tile, using the cache's second Steps version (50000, Climb and Reload) rather than the Olm's Climb-only one (29778). Climbing them offers to leave, as rsprox captures have it.
+
+**Scouting** (#158): the official client draws the whole layout; the browser client does not, so everyone entering the raid is sent "Raiding layout: Start > ... > End." after they land, and again after the leader reloads it. The rooms are in the order the party meets them (Start, the combat and puzzle rooms by name, Scavengers, Resources, End), without the Olm's chamber.
 
 **The instance** (`CoxMap`):
 - Rooms are 4x4 chunks of the cache's raid map: chunk x 408, 412 or 416 for the path turning west, going straight or turning east; chunk y and plane per room.

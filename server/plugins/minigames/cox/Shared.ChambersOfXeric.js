@@ -36,6 +36,11 @@ const OBJECT = {
   ENTRANCE: 29777,
   /** The steps in the first room, back out to Mount Quidamortem. */
   STEPS: 29778,
+  /**
+   * The same steps with the leader's Reload option. The cache places neither version in the
+   * first room; this one's second action is what the raid's steps use (rsprox capture 2528).
+   */
+  STEPS_RELOAD: 50000,
   /** The first room's bank chest, and as it is once the raid has begun. */
   BANK_CHEST: 47420,
   BANK_CHEST_SHUT: 47419,
