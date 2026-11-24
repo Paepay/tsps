@@ -18665,6 +18665,30 @@ test('Tenzing refuses unpaid/full-inventory purchases and accepts payment that f
 });
 
 
+test("Kruk's Dungeon jungle grass remains an entrance after Monkey Madness II", () => {
+  const { api, handlers, quest, player } = questScene('MonkeyMadnessII');
+  const prompts = [];
+  api.sendMultiChatboxPrompt = (_player, title, ...pairs) => prompts.push({ title, pairs });
+  quest.setStage(player, quest.completionValue);
+  const event = {
+    player,
+    objectId: api.core.ObjectIdentifiers.JUNGLE_GRASS_4,
+    clickType: 1,
+    definition: { getActions: () => ['Investigate'] },
+    location: { x: 2714, y: 2788, z: 0 },
+    handled: false,
+  };
+  for (const handler of handlers.objects) handler(event);
+  assert.equal(event.handled, true);
+  assert.equal(prompts.length, 1, 'the post-quest entrance asks before moving the player');
+  prompts[0].pairs[1]();
+  assert.deepEqual(
+    [player.getLocation().getX(), player.getLocation().getY(), player.getLocation().getZ()],
+    [2509, 9169, 1],
+  );
+});
+
+
 test('Death Plateau final handover conditions require both the map and combination', () => {
   const { api, handlers, quest, player, items } = questScene('DeathPlateau');
   const { SECRET_WAY_MAP, COMBINATION } = api.core.ItemIdentifiers;
