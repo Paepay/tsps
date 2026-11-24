@@ -4,6 +4,9 @@ Code: `plugins/items/CrystalWeapon.js` (shared), `CrystalShards.js` (the shard p
 `BladeOfSaeldor.plugin.js`. Recolouring the corrupted weapons: `docs/crystal-armour.md`.
 Test: `tests/crystal-weapons.test.cjs`.
 
+Reverting crystal bows, shields and halberds to a crystal weapon seed is separate:
+`plugins/items/CrystalWeaponRevert.plugin.js` and `tests/crystal-weapon-revert.test.cjs`.
+
 ## Rules (OSRS Wiki: Bow_of_Faerdhinen, Blade_of_Saeldor)
 
 - A new weapon has 10,000 charges; crystal shards add 100 each, up to 20,000.
@@ -31,6 +34,10 @@ Test: `tests/crystal-weapons.test.cjs`.
   melee attacks. `combat:consume-charge` lets content spare the charge.
 
 ## Not covered
+
+- The exact wording of the crystal bow/shield/halberd Revert message is ours; the Wiki records the
+  option and that the charges are forfeited, not a capture of the text. Reverting needs no free
+  inventory slot because the seed replaces the weapon in its own slot.
 
 - The blade's Check text is the bow's with the blade's name; no capture of it exists.
 - The blade's shard prompt and red reminder are the bow's with the blade's name; no blade capture exists.
