@@ -1125,6 +1125,19 @@ module.exports = function registerSwanSongQuest(api) {
     }
   }
 
+  /**
+   * The gate's own tile is walkable in this cache, so a plain click routes the player on top of
+   * it; `reachesObject` then fails from there and the interaction never ran (issue #152). Stop the
+   * approach on the clicked gate's outside or inside tile, where the click can fire.
+   */
+  function routeColonyGate(event) {
+    const { player, object } = event;
+    if (!player || !object || !COLONY_GATE_IDS.has(event.objectId)) return;
+    const x = object.getLocation().getX();
+    const y = player.getLocation().getY() > object.getLocation().getY() ? 3663 : 3661;
+    event.destination = { x, y, z: 0 };
+  }
+
   // ==========================================================================
   // Battles
   // ==========================================================================
@@ -1457,6 +1470,7 @@ module.exports = function registerSwanSongQuest(api) {
   api.onNpcInteraction("Fishing spot", { Net: handleFishingSpot });
   api.onNpcDeath(handleNpcDeath);
   api.onObjectInteraction(handleObjectInteraction);
+  api.onObjectRoute(routeColonyGate);
   api.onZoneEnter(COLONY_ZONE, handleZoneEnter);
   api.onServerStartup(installObjects);
   api.onPlayerLogin(handleLogin);
