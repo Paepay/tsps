@@ -445,6 +445,19 @@ test("a locked area refuses a walk, a teleport and a respawn; open ground and a 
   assert.equal(mainTeleport.allow, null);
 });
 
+test("a forced walk into a locked area stops at the border instead of being dragged through", () => {
+  const league = character("forcedwalker");
+  const lumbridgeSide = at(3263, 3220);
+  const alKharidSide = at(3270, 3220);
+  league.moveTo(lumbridgeSide);
+  let stopped = 0;
+  league.setAttribute("agility.obstacle", { stop() { stopped++; }, agility: false });
+  league.moveTo(alKharidSide);
+  hooks.onPlayerMapSquareChange({ player: league, previous: lumbridgeSide, location: alKharidSide });
+  assert.equal(stopped, 1, "the forced walk is stopped with the correction");
+  assert.ok(league.getLocation().equals(lumbridgeSide), "the player stays on the open side");
+});
+
 test("reopening View Areas resends the saved area state and count", () => {
   const league = character("staleareas");
   assert.equal(openAreas(league), true);

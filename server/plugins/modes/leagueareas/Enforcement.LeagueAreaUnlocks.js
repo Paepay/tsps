@@ -34,6 +34,9 @@ function home(type, player) {
 function sendBack(player, destination) {
   correcting.add(player);
   try {
+    // A forced walk (a gate, a boat, an obstacle) steps its own tiles; the correction would be
+    // walked straight back into. Stop it before moving the player (issue #170).
+    require("../../skills/agility/ObstacleRunner.Agility").cancel(player);
     player.getMovementQueue().reset();
     player.moveTo(destination);
   } finally {
