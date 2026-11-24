@@ -48,9 +48,9 @@ before(async () => {
 });
 
 /** A real player; the quest is set to `stage`, Desert Treasure I done unless `desert` is false. */
-function makePlayer(t, { stage = 0, desert = true, story = 0, unlocked = false } = {}) {
+function makePlayer(t, { stage = 0, desert = true, story = 0, unlocked = false, at = [2856, 5227, 0] } = {}) {
   const { Player } = require('../dist/game/entity/impl/player/Player');
-  const player = new Player(null, new api.core.Location(2856, 5227, 0));
+  const player = new Player(null, new api.core.Location(at[0], at[1], at[2] ?? 0));
   t.mock.method(player, 'getSession', () => ({ sendClientPacket: () => true, write: () => true }));
   player.setIndex(next++);
   player.setRegistered?.(true);
@@ -384,6 +384,25 @@ test('a player who unsealed the door before the quest existed completes it at As
   runAll(tasks);
   assert.equal(quest.getStage(player), COMPLETE);
   assert.equal(varbit(player, STORY_VARBIT), 1);
+});
+
+test('a player already in the prison safe room gets the real Ashuelot and her bank (issue #155)', (t) => {
+  captureTasks(t);
+  // Story 0 with the door already open: the state of someone who was inside before this miniquest shipped.
+  const player = makePlayer(t, { stage: 3, unlocked: true, story: 0, at: [2903, 5204, 0] });
+  const npc = api.core.NPC.create(11296, new api.core.Location(2904, 5205, 0));
+  assert.equal(npc.getContentId(player), 11296, 'at story 0 the multi-NPC is the nameless parent');
+  login(player);
+  PluginManager.updatePlayerZones(player);
+  assert.equal(varbit(player, STORY_VARBIT), 1, 'arriving in the safe room restores her Talk-to form');
+  assert.equal(npc.getContentId(player), ASHUELOT);
+  assert.equal(npc.getCurrentDefinition(player).getActions()[0], 'Talk-to');
+  assert.equal(talk(player, ASHUELOT), true);
+  const result = play(player, [4]); // I need to go.
+  assert.equal(result.lines[0], 'You made it?', 'the safe-room intro, not the door conversation');
+  assert.equal(quest.getStage(player), COMPLETE, 'the intro finishes a miniquest whose door was already open');
+  assert.equal(varbit(player, STORY_VARBIT), 2, 'and she is the banking form');
+  assert.equal(npc.getContentId(player), ASHUELOT_BANK);
 });
 
 test('relog at every stage keeps the stage, the destroyed count, the story form and the piece flags', (t) => {
