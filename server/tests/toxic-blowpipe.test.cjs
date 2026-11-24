@@ -116,6 +116,64 @@ test("blowpipe attack speed applies the Rapid style reduction in PvM and PvP", (
   }
 });
 
+test("a shot spends one dart and, on two shots in three, one scale (Wiki: 1/3 chance to save a scale)", (t) => {
+  const core = require("../dist/plugins/PluginManager").PluginManager.getCoreApi();
+  // The roll itself needs a whole player and target; this suite is about what the swing spends.
+  t.mock.method(PendingHit.prototype, "prepareHits", () => []);
+  t.mock.method(core.Projectile, "createProjectile", () => ({ sendProjectile() {} }));
+  t.mock.method(core.Sounds, "sendSound", () => {});
+
+  const makePlayer = () => {
+    const pipe = new Item(TOXIC_BLOWPIPE_ID, 1);
+    const { BlowpipeState } = ToxicBlowpipe._test;
+    BlowpipeState.write(pipe, { scales: 3, dartId: DRAGON_DART, dartAmount: 2 });
+    const player = {
+      isPlayer: () => true,
+      getAsPlayer: () => player,
+      getLocation: () => new Location(3200, 3200, 0),
+      getEquipment: () => ({
+        get: (slot) => (slot === Equipment.WEAPON_SLOT ? pipe : null),
+        getItems: () => { const items = []; items[Equipment.WEAPON_SLOT] = pipe; return items; },
+      }),
+      getAttackAnim: () => -1,
+      performAnimation() {},
+      getCombat: () => ({ reset() {}, getRangedWeapon: () => core.RangedWeapon.TOXIC_BLOWPIPE, getTarget: () => null }),
+      getWeapon: () => WeaponInterfaces.BLOWPIPE,
+      sendMessage() {},
+      getUpdateFlag: () => ({ flag() {} }),
+      getSkillManager: () => ({ getCurrentLevel: () => 99, getMaxLevel: () => 99 }),
+    };
+    return { player, pipe, state: () => BlowpipeState.read(pipe) };
+  };
+  const target = {
+    isPlayer: () => false,
+    getLocation: () => new Location(3205, 3200, 0),
+    getSize: () => 1,
+    getHitpoints: () => 100,
+    getCombat: () => ({ getHitQueue: () => ({}) }),
+  };
+
+  // 0 is the saved scale (getRandom(2) is 0..2), and it also keeps the dart out of Ava's share.
+  const saved = makePlayer();
+  t.mock.method(core.Misc, "getRandom", () => 0);
+  const keepingMethod = blowpipeMethod(saved.player);
+  keepingMethod.start(saved.player, target);
+  keepingMethod.hits(saved.player, target);
+  assert.deepEqual(saved.state(), { scales: 3, dartId: DRAGON_DART, dartAmount: 1 }, "the scale is saved");
+
+  const spent = makePlayer();
+  t.mock.method(core.Misc, "getRandom", () => 1);
+  const spendingMethod = blowpipeMethod(spent.player);
+  spendingMethod.start(spent.player, target);
+  spendingMethod.hits(spent.player, target);
+  assert.deepEqual(spent.state(), { scales: 2, dartId: DRAGON_DART, dartAmount: 1 }, "the scale is spent");
+
+  // Save shape: PlayerSave keeps a cloned Item, and the JSON persistence writes id, amount and meta.
+  const savedJson = JSON.parse(JSON.stringify({ id: spent.pipe.getId(), amount: 1, meta: spent.pipe.getMeta() }));
+  const restored = new Item(savedJson.id, savedJson.amount, savedJson.meta);
+  assert.deepEqual(ToxicBlowpipe._test.BlowpipeState.read(restored), spent.state(), "darts and scales survive a save round-trip");
+});
+
 /** The plugin's name-keyed item actions and the confirmdestroy button, as registered. */
 function registeredHooks() {
   const hooks = { actions: null, actionsByItem: new Map(), confirm: null, buttonId: -1 };
