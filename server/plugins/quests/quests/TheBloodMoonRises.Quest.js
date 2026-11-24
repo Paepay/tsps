@@ -535,13 +535,10 @@ module.exports = function registerTheBloodMoonRises(api) {
     [CASTLE_DOOR_IDS.SOLID, [ItemIdentifiers.SOLID_KEY, "solid key"]],
     [CASTLE_DOOR_IDS.SOLID_M, [ItemIdentifiers.SOLID_KEY, "solid key"]],
   ]);
-  // Quest Helper locates the Castle Drakan shrine at (3168, 7707) and the
-  // Vampyrium entry portal at (3161, 7710). The medallion lands beside the
-  // clipped shrine object; the entry portal then moves the player beside the
-  // return portal in the Vampyrium castle.
-  // shortcut: the Wiki does not publish teleport landing tiles; both adjacent
-  // tiles are cache-verified and connected to their respective portal.
-  const CASTLE_TELEPORT_TILE = Object.freeze({ x: 3167, y: 7707, z: 0 });
+  // The Castle Drakan shrine is at (3168, 7707)/(3168, 7713) and the Vampyrium
+  // entry portal at (3161, 7710). The medallion lands at (3166, 7711), the tile
+  // the Wiki's teleport table and RuneLite's teleportation_items.tsv both give.
+  const CASTLE_TELEPORT_TILE = Object.freeze({ x: 3166, y: 7711, z: 0 });
   const CASTLE_VAMPYRIUM_ENTRY = Object.freeze({ id: 61216, visibleId: 61214, x: 3161, y: 7710, z: 0 });
   const CASTLE_VAMPYRIUM_ARRIVAL = Object.freeze({ x: 2322, y: 7370, z: 0 });
   // Captured RSProx landing for returning from the public Castle shrine once

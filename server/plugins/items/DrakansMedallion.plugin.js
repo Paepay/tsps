@@ -12,7 +12,7 @@
  * - Ver Sinhaza (3649,3230) has no unlock, so A Taste of Hope's reward works at once;
  * - Darkmeyer (3592,3337) is added by Sins of the Father, Castle Drakan by The Blood Moon Rises,
  *   through the "drakan-medallion:destinations" event;
- * - Slepe (3166,7711, the Sisterhood Sanctuary) is unlocked by using a Slepey tablet on the
+ * - Slepe (3808,9700,1, the Sisterhood Sanctuary) is unlocked by using a Slepey tablet on the
  *   medallion, which uses the tablet up (Wiki: Slepey tablet); a second tablet picked up while one is
  *   held crumbles to dust (Wiki: Slepey tablet). The use sets varbit `slepe_teleport_unlocked`, plays
  *   synth sounds 581 and 3146 (delay 10) and shows both items in objectbox_double; the tablet's
@@ -36,7 +36,8 @@ const INSPECT_MESSAGES = [
 const TABLET_USED_SOUNDS = [[581, 0], [3146, 10]];
 
 const VER_SINHAZA = { label: "Ver Sinhaza", tile: { x: 3649, y: 3230, z: 0 } };
-const SLEPE = { label: "Slepe", tile: { x: 3166, y: 7711, z: 0 } };
+/** RuneLite's teleportation_items.tsv and the Wiki both land it in the Sanctuary (plane 1). */
+const SLEPE = { label: "Slepe", tile: { x: 3808, y: 9700, z: 1 } };
 /** The cache's worn option order, which the menu keeps. */
 const DESTINATION_ORDER = ["Ver Sinhaza", "Darkmeyer", "Slepe", "Castle Drakan"];
 

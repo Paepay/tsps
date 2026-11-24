@@ -11,9 +11,11 @@ The Blood Moon Rises adds Castle Drakan through the `drakan-medallion:destinatio
   Drakan. A destination the player has not unlocked does nothing. Wiki:
   https://oldschool.runescape.wiki/w/Drakan%27s_medallion
 - **Landings.** Live OSRS lands Ver Sinhaza at 3649,3230 (recordings 396, 403, 1429, 4266, 4288),
-  Darkmeyer at 3592,3337 (recordings 396, 411, 1636, 1637) and Slepe at 3166,7711 (recording
-  4269). Each is a standard teleport: `teleport_casting` and `human_castteleport` on the click,
-  the move on tick 3 with busy varbit 12393 set until it.
+  Darkmeyer at 3592,3337 (recordings 396, 411, 1636, 1637), Slepe at 3808,9700,1 in the Sisterhood
+  Sanctuary, and Castle Drakan at 3166,7711. The Wiki's teleport table and RuneLite's
+  `teleportation_items.tsv` agree on the last two (recording 4269's Slepe landing had been read as
+  3166,7711, which is Castle Drakan's tile). Each is a standard teleport: `teleport_casting` and
+  `human_castteleport` on the click, the move on tick 3 with busy varbit 12393 set until it.
 - **Access.** Ver Sinhaza has no unlock, so A Taste of Hope's reward works at once. Darkmeyer
   needs Sins of the Father. Slepe is unlocked by using a Slepey tablet on the medallion, which uses
   the tablet up (https://oldschool.runescape.wiki/w/Slepey_tablet). Castle Drakan needs the
