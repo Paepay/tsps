@@ -933,6 +933,39 @@ test('a shaman jump shakes the camera of the raiders it lands on, a tick later',
   }
 });
 
+// The old walk chose x before y, so a raider beside a north-south pair was force-walked sideways
+// into the door frame and left inside the wall (#160).
+test('the shaman tendrils walk through the doorway, not sideways into its frame (#160)', () => {
+  const Shamans = require('../plugins/minigames/cox/Shamans.ChambersOfXeric');
+  const room = Object.create(Shamans.ShamansRoom.prototype);
+  room.tendrilTiles = [new Location(3300, 5260, 0), new Location(3301, 5260, 0)];
+  const raid = { roomAt: () => room };
+  const raidOf = RaidModule.raidOf;
+  RaidModule.raidOf = () => raid;
+  const balanceWalk = Shared.balanceWalk;
+  const walked = [];
+  Shared.balanceWalk = (player, destination) => walked.push(destination);
+  try {
+    const entering = fakePlayer('Entering', new Location(3301, 5259, 0));
+    assert.equal(Shamans.passTendrils({ player: entering, object: { getLocation: () => new Location(3300, 5260, 0) } }), true);
+    assert.deepEqual([walked[0].getX(), walked[0].getY()], [3301, 5261], 'south through the pair, not west into its frame');
+
+    const vertical = Object.create(Shamans.ShamansRoom.prototype);
+    vertical.tendrilTiles = [new Location(3300, 5260, 0), new Location(3300, 5261, 0)];
+    raid.roomAt = () => vertical;
+    const side = fakePlayer('Side', new Location(3299, 5261, 0));
+    assert.equal(Shamans.passTendrils({ player: side, object: { getLocation: () => new Location(3300, 5260, 0) } }), true);
+    assert.deepEqual([walked[1].getX(), walked[1].getY()], [3301, 5261], 'east through the pair');
+
+    const offAxis = fakePlayer('Off axis', new Location(3302, 5259, 0));
+    assert.equal(Shamans.passTendrils({ player: offAxis, object: { getLocation: () => new Location(3300, 5260, 0) } }), false, 'no forced walk through the frame');
+    assert.equal(walked.length, 2);
+  } finally {
+    Shared.balanceWalk = balanceWalk;
+    RaidModule.raidOf = raidOf;
+  }
+});
+
 // ------------------------------------------------------------------ phase 7: rewards
 
 test('rewards follow the Wiki: unique odds, common amounts, target times', () => {

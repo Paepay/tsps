@@ -310,12 +310,28 @@ function passTendrils(event) {
   const room = Raid.raidOf(player)?.roomAt(player.getLocation());
   if (!(room instanceof ShamansRoom)) return false;
   if (player.__coxBalancing) return true;
-  Shared.sound(player, 3728);
   const at = object.getLocation();
   const here = player.getLocation();
   const { Location } = Shared.core();
-  const dx = Math.sign(at.getX() - here.getX());
-  const dy = dx === 0 ? Math.sign(at.getY() - here.getY()) : 0;
+  // The two tendrils are the doorway: they share one axis and the walk crosses the other one.
+  // Picking x first shoved a raider standing beside a north-south pair sideways into the door
+  // frame, where the forced two-tile walk left them stuck (#160).
+  const mate = room.tendrilTiles?.find((tile) => !tile.equals(at) && tile.getDistance(at) === 1);
+  let dx = 0;
+  let dy = 0;
+  if (mate && mate.getY() === at.getY()) {
+    if (here.getX() < Math.min(at.getX(), mate.getX()) || here.getX() > Math.max(at.getX(), mate.getX())) return false;
+    dy = Math.sign(at.getY() - here.getY());
+  } else if (mate && mate.getX() === at.getX()) {
+    if (here.getY() < Math.min(at.getY(), mate.getY()) || here.getY() > Math.max(at.getY(), mate.getY())) return false;
+    dx = Math.sign(at.getX() - here.getX());
+  } else {
+    // A single tendril (or one no longer in the room): walk the longer way towards it.
+    if (Math.abs(at.getX() - here.getX()) >= Math.abs(at.getY() - here.getY())) dx = Math.sign(at.getX() - here.getX());
+    else dy = Math.sign(at.getY() - here.getY());
+  }
+  if (dx === 0 && dy === 0) return false;
+  Shared.sound(player, 3728);
   Shared.balanceWalk(player, new Location(here.getX() + dx * 2, here.getY() + dy * 2, here.getZ()), -1, null);
   return true;
 }
@@ -373,4 +389,4 @@ module.exports = function registerCoxShamans(api) {
   api.registerNpcCombatMethodProvider(NPC.SHAMANS, shamanCombat(api));
 };
 
-Object.assign(module.exports, { ShamansRoom, shamanCount });
+Object.assign(module.exports, { ShamansRoom, shamanCount, passTendrils });
