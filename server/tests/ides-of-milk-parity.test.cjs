@@ -43,7 +43,7 @@ function harness({ npcDrops = false, nativeNpc = false, refuseNpcId = null, pend
       eventCounts.set(name, (eventCounts.get(name) ?? 0) + 1);
       (events[name] ?? []).forEach(handler => handler(event));
     },
-    registerNpcCombatMethodProvider: (ids, method) => { api.combat = method; },
+    registerNpcCombatMethodProvider: (ids, method) => { api.combat = method; api.combatIds = ids; },
     spawnNpc: definition => {
       if (definition.id === refuseNpcId) return null;
       if (nativeNpc) {
@@ -125,6 +125,15 @@ test('the low-combat recommendation is a start-menu warning, not a transcript bo
   const highMenu = { player: high, prompt: 'Start The Ides of Milk quest?', warning: null };
   h.emit('npc-dialogue:menu', highMenu);
   assert.equal(highMenu.warning, null);
+});
+
+test('every Brutus form, including the Demonic upgrade, uses the captured bull combat method (#171)', () => {
+  const h = harness();
+  const method = new h.api.combat();
+  for (const id of [N.BRUTUS, N.BRUTUS_2, N.DEMONIC_BRUTUS, N.DEMONIC_BRUTUS_2]) {
+    assert.ok(h.api.combatIds.includes(id), `npc ${id} has the bull combat provider`);
+  }
+  assert.equal(method.type(), core.CombatType.MELEE);
 });
 
 test('4153 quest states and Groats information follow the actual dialogue milestones', () => {
