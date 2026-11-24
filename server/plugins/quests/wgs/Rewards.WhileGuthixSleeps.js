@@ -27,7 +27,9 @@ module.exports=function registerRewards({api,stage,held,give,val,play,ATTRIBUTES
  const INSPECT_READ="Duradel's notes mentioned creating a weapon out of demon parts... Maybe I should try it with this.";
  ATTRIBUTES.push(...recipes.map(r=>r.made));
  const crafting=new WeakSet();
- function possessed(p){return held(p,NOTES)||Array.from({length:Bank.TOTAL_BANK_TABS},(_,i)=>p.getBank(i)).some(bank=>bank.contains(NOTES));}
+ // A bank placeholder keeps the item id at amount 0. `contains` counts it, which would block the
+ // handout forever after the notes were dropped (issue 145); only a real holding counts.
+ function possessed(p){return held(p,NOTES)||Array.from({length:Bank.TOTAL_BANK_TABS},(_,i)=>p.getBank(i)).some(bank=>(bank.getAmount?.(NOTES)??0)>0);}
  /** The objectbox (one item) or objectbox_double (two), as captured; the box writes its mesbox chat line. */
  function box(p,items,text){
   const {DialogueChainBuilder,ItemStatementDialogue,DoubleItemStatementDialogue,EndDialogue}=api.core;
