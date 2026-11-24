@@ -722,6 +722,7 @@ export class SceneRaycaster {
             const interactId = baseNpcTypeId(npcEcs.getNpcTypeId(ecsId) | 0);
             if (interactId < 0) continue;
             const npcPlane = npcEcs.getLevel(ecsId) | 0;
+            if (basePlane !== undefined && npcPlane !== basePlane) continue;
             let heightTiles = 0;
             try {
                 let npcType: NpcType | undefined = this.osrsClient.npcTypeLoader.load(interactId);
