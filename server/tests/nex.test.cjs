@@ -59,6 +59,30 @@ test("Zarosian items follow the God Wars table: the Ancient mace is Bandos's, no
   assert.equal(Common.isZarosian("Venator bow"), true);
 });
 
+test("Ice Prison and Containment switch protection prayers off without locking them out", () => {
+  const activated = new Set(["protect_missiles", "protect_magic"]);
+  let blocks = 0;
+  const messages = [];
+  fakeApi.core.PrayerHandler = {
+    PROTECTION_PRAYERS: ["protect_missiles", "protect_magic", "protect_melee"],
+    isActivated: (_player, prayer) => activated.has(prayer),
+    resetPrayers: (_player, prayers) => prayers.forEach((prayer) => activated.delete(prayer)),
+  };
+  const player = {
+    sendMessage: (message) => messages.push(message),
+    getCombat: () => ({ getPrayerBlockTimer: () => ({ start: () => { blocks += 1; } }) }),
+  };
+  // Wiki: the specials "deactivate their protection prayers"; a trapped player can pray again.
+  Specials.disableProtection(player, false);
+  assert.equal(activated.size, 0, "the prayers are switched off");
+  assert.equal(blocks, 0, "no prayer-block timer, so Protect from Missiles can go back on");
+  assert.equal(messages.length, 0, "no 'can't use protection prayers' line when they are not blocked");
+  activated.add("protect_missiles");
+  Specials.disableProtection(player, true);
+  assert.equal(blocks, 1, "the virus still blocks prayers");
+  assert.equal(messages.length, 1);
+});
+
 test("the prison aggression rule requires Zarosian equipment, not a ring of endurance", () => {
   const Prison = require("../plugins/bosses/nex/Prison.Nex");
   let area;

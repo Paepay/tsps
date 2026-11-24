@@ -13,7 +13,9 @@
  *   tiles away within six ticks, or takes up to 50 and splashes up to 12 on those beside them).
  * - Ice: Containment ("Contain this!": icicles in the 5x5 around her, up to 60 to anyone inside,
  *   halved by Protect from Missiles) and Ice Prison ("Die now, in a prison of ice!": stalagmites
- *   around a player that shatter for up to 75 eight ticks later unless one is broken).
+ *   around a player that shatter for up to 75 eight ticks later unless one is broken; Protect
+ *   from Missiles halves the shatter too). Both only switch protection prayers off, as the Wiki
+ *   has it - they do not lock them out, so a trapped player can pray again before the damage.
  * - Her ice spells freeze for 15 ticks unless the player prays against magic; a freeze only lands
  *   if the last one ended over 5 ticks before (Mod Ash).
  */
@@ -277,15 +279,17 @@ function besideHer(fight, player) {
 }
 
 /**
- * Protection prayers off and blocked for a while (the engine's prayer-block timer); "You've been
- * injured and can't use protection prayers!" when one was on (unverified: every captured case had one on).
+ * Protection prayers off. `block` also locks them out for a while (the engine's prayer-block
+ * timer); "You've been injured and can't use protection prayers!" when one was on (unverified:
+ * every captured case had one on). Nex's Ice Prison and Containment only deactivate, per the Wiki
+ * ("will deactivate their protection prayers"), so their victims can re-pray against the hit.
  */
-function disableProtection(player) {
+function disableProtection(player, block = true) {
   const { PrayerHandler } = Common.core;
   const praying = PrayerHandler.PROTECTION_PRAYERS.some((prayer) => PrayerHandler.isActivated(player, prayer));
-  player.getCombat().getPrayerBlockTimer().start(PRAYER_BLOCK_SECONDS);
+  if (block) player.getCombat().getPrayerBlockTimer().start(PRAYER_BLOCK_SECONDS);
   PrayerHandler.resetPrayers(player, PrayerHandler.PROTECTION_PRAYERS);
-  if (praying) player.sendMessage(Common.data.fight.messages.injured);
+  if (praying && block) player.sendMessage(Common.data.fight.messages.injured);
 }
 
 /** Holds a player where they stand: no moving or acting, no stun graphic or message. */
@@ -537,14 +541,15 @@ function containment(fight) {
       const at = player.getLocation();
       if (at.getX() < minX || at.getX() > maxX || at.getY() < minY || at.getY() > maxY) continue;
       player.sendMessage(spec.spiked);
-      disableProtection(player);
+      disableProtection(player, false);
       hold(player, CONTAINMENT_HOLD_TICKS);
       player.performAnimation(Common.animation(spec.playerAnim));
       player.getPacketSender().sendSoundEffect(spec.playerSound, 1, 0);
-      const max = Common.protectedStyle(player) === "ranged" ? Math.floor(spec.maxHit / 2) : spec.maxHit;
-      const amount = Common.randomInt(0, max);
       Common.later(1, () => {
         if (!player.isRegistered()) return;
+        // Read the prayer when the damage lands, not when the icicles went up.
+        const max = Common.protectedStyle(player) === "ranged" ? Math.floor(spec.maxHit / 2) : spec.maxHit;
+        const amount = Common.randomInt(0, max);
         Common.damage(player, amount);
         fight.noteHit(player, "containment", amount);
       });
@@ -582,7 +587,7 @@ function prison(fight) {
     const blocker = fight.effects.placeLoc(Common.data.objects.blocker, centre, 0);
     for (const player of inside) {
       player.sendMessage(spec.trapped);
-      disableProtection(player);
+      disableProtection(player, false);
       hold(player, spec.shatterTicks);
     }
     const state = { stalagmites, blocker, inside, broken: false };
@@ -594,8 +599,9 @@ function prison(fight) {
         if (!player.isRegistered() || player.getHitpoints() <= 0) continue;
         player.sendMessage(spec.shatters);
         player.getPacketSender().sendSoundEffect(spec.shatterSound, 1, 0);
-        const amount = Common.randomInt(0, spec.maxHit);
         Common.later(1, () => {
+          const max = Common.protectedStyle(player) === "ranged" ? Math.floor(spec.maxHit / 2) : spec.maxHit;
+          const amount = Common.randomInt(0, max);
           Common.damage(player, amount);
           fight.noteHit(player, "prison", amount);
         });
@@ -725,5 +731,5 @@ function attachSpecials(api) {
 
 module.exports = {
   attachSpecials, Effects, run, phaseEnded, interrupt, reaverDied, dragCandidate, drag, iceFreeze, attackStalagmite,
-  SPECIALS, bestStyleSkills, wearsGasProtection,
+  SPECIALS, bestStyleSkills, wearsGasProtection, disableProtection,
 };
