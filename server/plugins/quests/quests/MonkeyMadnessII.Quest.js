@@ -1559,7 +1559,8 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
 
   function handleJungleGrass(player) {
     const stage = stageOf(player);
-    if (stage === STAGE_ARCHER_ASKED || stage === STAGE_GARKOR_LAB) {
+    // After the quest the destroyed laboratory is the maniacal-monkey hunter area; the entrance stays open.
+    if (stage === STAGE_ARCHER_ASKED || stage === STAGE_GARKOR_LAB || stage >= STAGE_COMPLETE) {
       if (stage === STAGE_GARKOR_LAB && !equippedKrukGreegree(player)) {
         player.sendMessage("You need to wear the Kruk monkey greegree to enter the dungeon.");
         return;

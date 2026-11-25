@@ -556,6 +556,55 @@ test('Sotetseg\'s maze is one connected path from the bottom row to the portal, 
   }
 });
 
+test('Sotetseg\'s big ball cannot land after the room is complete', (t) => {
+  const { SotetsegRoom } = require('../plugins/minigames/tob/Sotetseg.TheatreOfBlood');
+  Raid.registerRoom('SOTETSEG', SotetsegRoom);
+  const roomFor = (name) => {
+    const { raid, players: [solo] } = startRaid([name]);
+    const room = raid.buildRoom('SOTETSEG');
+    const npc = {
+      hp: 100,
+      getLocation: () => new Location(3277, 4326, 0),
+      getHitpoints: () => npc.hp,
+      getMaxHitpoints: () => 100,
+      setHitpoints: (value) => { npc.hp = value; },
+      getMovementQueue: () => ({ setBlockMovement() {}, reset() {} }),
+      setNpcTransformationId() {},
+      setMobileInteraction() {},
+      performAnimation() {},
+      isRegistered: () => true,
+    };
+    room.sotetseg = npc;
+    Object.assign(raid.member(solo), { roomKey: 'SOTETSEG', inFight: true });
+    room.start();
+    return { raid, room, npc, solo };
+  };
+  t.mock.method(Shared, 'projectile', () => 2);
+  const hits = [];
+  t.mock.method(Shared, 'damage', (player, amount) => {
+    hits.push({ player, amount });
+    player.hp -= amount;
+  });
+
+  const finished = roomFor('SotetsegFinished');
+  finished.room.bigBall(finished.solo, [finished.solo]);
+  finished.npc.hp = 0;
+  finished.room.tick();
+  const restored = finished.solo.hp;
+  ticks(5);
+  assert.equal(finished.solo.hp, restored, 'the in-flight ball disappears with the boss');
+  assert.equal(hits.length, 0, 'no delayed hit is applied after completion');
+  finished.raid.dispose();
+
+  // The same callback still lands while the room is live, so the guard above is not vacuous.
+  const live = roomFor('SotetsegLive');
+  live.room.bigBall(live.solo, [live.solo]);
+  ticks(3);
+  assert.ok(live.solo.hp < 99, 'a big ball still hits during the fight');
+  assert.equal(hits.length, 1, 'the live room applies its hit');
+  live.raid.dispose();
+});
+
 test('Xarpus: 12 exhumed for a trio and 15 for four (Wiki)', () => {
   const { EXHUMED } = require('../plugins/minigames/tob/Xarpus.TheatreOfBlood');
   assert.equal(EXHUMED.count[3], 12);

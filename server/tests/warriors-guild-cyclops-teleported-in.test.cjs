@@ -68,9 +68,9 @@ test("a player teleported into Lorelai's basement pays too, and leaving the room
   assert.equal(p.getInventory().getAmount(token()), 30, "nothing more is taken outside");
 });
 
-function rollDrops(p, npcId) {
+function rollDrops(p, npcId, value = 0) {
   const random = Math.random;
-  Math.random = () => 0; // Guild.random(1, n) is 1: a defender drops
+  Math.random = () => value; // Guild.random(1, n) is 1: a defender drops
   try {
     const drops = [];
     PM.emitCustomEvent("npc-drops:roll", {
@@ -92,4 +92,15 @@ test("a player teleported straight into a cyclops room still gets its defender d
   assert.deepEqual(rollDrops(basement, core.NpcIdentifiers.CYCLOPS_2), [core.ItemIdentifiers.DRAGON_DEFENDER],
     "the basement's dragon defender");
   assert.equal(basement.getAttribute(ROOM)?.room, "basement");
+});
+
+test("the top floor is 1/50 and the basement 1/100 (Wiki: Defender, revid 15394471)", (t) => {
+  const top = guildPlayer(t, 9044, new core.Location(2860, 3545, 2));
+  const basement = guildPlayer(t, 9045, new core.Location(2920, 9960, 0));
+  // 1 + floor(0.019 * 50) is 1, 1 + floor(0.019 * 100) is 2: the top floor drops, the basement not.
+  assert.deepEqual(rollDrops(top, core.NpcIdentifiers.CYCLOPS_10, 0.019), [core.ItemIdentifiers.BRONZE_DEFENDER]);
+  assert.deepEqual(rollDrops(basement, core.NpcIdentifiers.CYCLOPS_2, 0.019), []);
+  // Below 1/100 both rooms drop.
+  assert.deepEqual(rollDrops(top, core.NpcIdentifiers.CYCLOPS_10, 0.009), [core.ItemIdentifiers.BRONZE_DEFENDER]);
+  assert.deepEqual(rollDrops(basement, core.NpcIdentifiers.CYCLOPS_2, 0.009), [core.ItemIdentifiers.DRAGON_DEFENDER]);
 });

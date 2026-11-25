@@ -197,7 +197,7 @@ class SotetsegRoom extends Raid.Room {
     this.balls++;
     const ticks = Shared.projectile(this.area, npc, target, GRAPHIC.MAGIC, PROJECTILE.BALL);
     this.later(ticks, () => {
-      if (this.maze || !this.fighters().includes(target)) return;
+      if (!this.isStarted() || this.maze || !this.fighters().includes(target)) return;
       this.ballLands(target, "magic");
       this.ricochet(target);
     });
@@ -205,6 +205,7 @@ class SotetsegRoom extends Raid.Room {
 
   /** The first ball splits: one magic and one ranged, at two others. */
   ricochet(from) {
+    if (!this.isStarted() || this.maze) return;
     const others = Shared.shuffle(this.fighters().filter((player) => player !== from)).slice(0, 2);
     const first = Math.random() < 0.5 ? "magic" : "ranged";
     others.forEach((player, index) => {
@@ -213,13 +214,15 @@ class SotetsegRoom extends Raid.Room {
         ? Shared.projectile(this.area, from, player, GRAPHIC.MAGIC, PROJECTILE.SPLIT_MAGIC)
         : Shared.projectile(this.area, from, player, GRAPHIC.RANGED, PROJECTILE.SPLIT_RANGED);
       this.later(ticks, () => {
-        if (!this.maze && this.fighters().includes(player)) this.ballLands(player, style);
+        if (!this.isStarted() || this.maze || !this.fighters().includes(player)) return;
+        this.ballLands(player, style);
       });
     });
   }
 
   /** Blocked by the right prayer; otherwise it hits and turns protection prayers off. */
   ballLands(player, style) {
+    if (!this.isStarted() || this.maze) return;
     if (Shared.isProtected(player, style)) return;
     Shared.damage(player, Shared.random(1, Shared.byMode(this.raid, BALL.max)));
     this.noteHit(player, style, 1);
@@ -239,11 +242,12 @@ class SotetsegRoom extends Raid.Room {
   }
 
   bigBall(target, fighters) {
+    if (!this.isStarted() || this.maze) return;
     target.sendMessage(MESSAGE.BIG_BALL);
     const ticks = Shared.projectile(this.area, this.sotetseg, target, GRAPHIC.BIG_BALL, PROJECTILE.BIG_BALL);
     this.later(ticks, () => {
       const present = this.fighters();
-      if (this.maze || !present.includes(target)) return;
+      if (!this.isStarted() || this.maze || !present.includes(target)) return;
       const sharing = present.filter((player) => Shared.distanceTo(target, player.getLocation()) <= 1);
       const damage = Shared.byMode(this.raid, BIG_BALL);
       const total = present.length <= 1 ? damage.solo : Math.round(damage.group + (present.length - 2) * damage.perPlayer);

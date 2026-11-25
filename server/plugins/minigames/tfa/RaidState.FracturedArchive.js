@@ -608,10 +608,17 @@ class Raid {
     player.moveTo(room.worldLoc(tile));
   }
 
-  /** Out of whichever of the raid's areas the player is in. */
+  /**
+   * Out of whichever of the raid's areas the player is in. The last member out disposes the raid
+   * (and destroys its area) before this runs, so there is no member list left to leave; the stale
+   * association is still cleared. A death's grave asks getPrivateArea() where it may stand, and a
+   * destroyed area left on the player would answer with their respawn point (Lumbridge) instead.
+   */
   leaveArea(player) {
     const area = player.getArea?.();
-    if (this.ownsArea(area) && !area.isDestroyed()) area.leave(player, false);
+    if (!this.ownsArea(area)) return;
+    if (!area.isDestroyed()) area.leave(player, false);
+    if (this.ownsArea(player.getArea?.())) player.setArea(null);
   }
 
   // ---------------------------------------------------------------- outside spectators

@@ -203,3 +203,13 @@ test('the locked-cell plea does not take over Elena outside Plague City', () => 
   player.setAttribute('quest.plague_city.stage',27);
   assert.equal(variant({player,npcId:core.NpcIdentifiers.ELENA}),null);
 });
+
+test('Edmond replaces a scroll that was already read and used', () => {
+  const {player,inv}=fixture(30),I=core.ItemIdentifiers,npcId=core.NpcIdentifiers.EDMOND_2;
+  assert.equal(quest.getStage(player),30);
+  assert.equal(inv.getAmount(I.ARDOUGNE_TELEPORT_SCROLL),0);
+  assert.equal(variant({player,npcId}),'after-freeing-elena-edmond-talking-to-edmond-again-before-using-the-ardougne-teleport-scroll');
+  line({player,npcId,text:'Yes, here you go.'});
+  assert.equal(inv.getAmount(I.ARDOUGNE_TELEPORT_SCROLL),1,'the replacement scroll is handed over');
+  assert.equal(variant({player,npcId}),'standard-dialogue-after-plague-city','holding one returns to his thanks');
+});
