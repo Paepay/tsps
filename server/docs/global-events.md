@@ -106,6 +106,21 @@ contract identity for storage, auditing and the eventual 32-bit item transport; 
 presentation only. Do not move the virtual ids onto the wire without changing both the server
 encoder and the client decoder.
 
+### Why Master's Arsenal loans keep real item ids
+
+The nine loans (Scythe of vitur, Twisted bow, Tumeken's shadow, Osmumten's fang, Dragon hunter
+lance, Bow of Faerdhinen, infernal axe, pickaxe and harpoon) use their real item ids plus the
+binding, not new `50008..50016` definitions. A custom definition inherits stats, appearance and
+animations, but weapon behaviour in this codebase is looked up by exact item id: the twisted
+bow's scaling (`isUsingTwistedBow`), the shadow's charge and multiplier, the scythe/fang special
+attacks (`CombatSpecial.getForWeaponId`) and every charge tracker all compare the equipped id.
+A loan on a new id would therefore lose its special attack and its normal PvM mechanics; the
+contract's preserve-special-attacks rule is the stronger one.
+
+Revisit this only together with a base-id resolver for item behaviour (definition `baseItemId`
+consulted by the weapon plugins and by `CombatSpecial.getForWeaponId`), and then register the
+nine definitions and their `specialAttack.from` rows in the same change.
+
 ## Opting out
 
 The platform scopes opt-outs to **account x event id**, not to a world or one activation. The

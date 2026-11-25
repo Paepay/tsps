@@ -727,6 +727,9 @@ function claimables(player) {
 }
 
 function login({ player }) {
+  // A hosted world has no slots until its first platform answer; purging then would delete
+  // every live loan. The next sync's global-events:ended cleans up anything stale instead.
+  if (!Common.stateKnown()) return;
   purgeInvalid(player);
 }
 

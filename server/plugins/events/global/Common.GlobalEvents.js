@@ -26,6 +26,12 @@ const CATEGORIES = Object.freeze(["combat", "skilling", "utility"]);
 let api = null;
 let storeFile = path.join(process.cwd(), "data", "saves", "global-events.json");
 let state = emptyState();
+/**
+ * False until this world has an authoritative state: its own saved document, or one successful
+ * platform answer. Cleanup must not run before that, or a hosted login that beats the first
+ * platform poll would read an empty world and delete live loans.
+ */
+let worldStateKnown = false;
 let timer = null;
 let syncTimer = null;
 let syncPromise = null;
@@ -156,7 +162,13 @@ function writeState(next) {
 function load() {
   const loaded = readState();
   state = loaded ?? emptyState();
+  worldStateKnown = loaded !== null;
   return loaded !== null;
+}
+
+/** True once the world's slots are authoritative (saved or read from the platform). */
+function stateKnown() {
+  return worldStateKnown;
 }
 
 function revision() {
@@ -395,6 +407,7 @@ function slotKey(slot) {
  * replaced activation is cleaned up immediately; a new one is announced once.
  */
 function applyPlatformWorld(events, { announce = true, reason = "platform" } = {}) {
+  worldStateKnown = true;
   const nextSlots = { combat: null, skilling: null, utility: null };
   for (const category of CATEGORIES) {
     nextSlots[category] = normalizePlatformSlot(events?.[category], category);
@@ -675,6 +688,7 @@ module.exports = {
   sendPluginMessage,
   setClaimablesProvider,
   setTokenStatusProvider,
+  stateKnown,
   broadcast,
   worldId,
   accountOf,
@@ -684,7 +698,7 @@ module.exports = {
   testing: {
     setStoreFile(file) { storeFile = file; },
     load,
-    reset() { state = emptyState(); },
-    setState(raw) { state = normalize(raw); },
+    reset() { state = emptyState(); worldStateKnown = false; },
+    setState(raw) { state = normalize(raw); worldStateKnown = true; },
   },
 };

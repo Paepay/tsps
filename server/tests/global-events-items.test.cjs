@@ -362,6 +362,19 @@ test("an offline expiry is purged on the next login", () => {
   assert.equal(p.getInventory().getAmount(Items.noteId()), 0);
 });
 
+test("a login before the first platform sync keeps a live loan", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("early");
+  assert.equal(claim(p, Items.KIND.NOTE), true);
+  assert.equal(Common.stateKnown(), false, "no authoritative world state yet");
+  for (const login of hooks.logins ?? []) login({ player: p });
+  assert.equal(p.getInventory().getAmount(Items.noteId()), 1, "do not purge on an unknown state");
+  Common.testing.setState({ version: 1, revision: 1, slots: { combat: null, skilling: null, utility: null } });
+  for (const login of hooks.logins ?? []) login({ player: p });
+  assert.equal(p.getInventory().getAmount(Items.noteId()), 0, "once the platform says no, it goes");
+});
+
 test("turning the note's event off stops its powers, keeps the item and blocks a reclaim", () => {
   Common.testing.reset();
   activate("bankers-note");
