@@ -563,7 +563,11 @@ function searchTask(player, visit) {
       visit.progress -= 1;
       setVarbit(player, "lootProgress", visit.progress);
       animate(player, "search");
-      if (Math.random() < successChance(player)) steal(player, visit, DATA.search.valuables, DATA.search.xp);
+      const success = { player, chance: successChance(player), alwaysSucceeds: false };
+      pluginApi.emitCustomEvent("thieving:search-success", success);
+      if (success.alwaysSucceeds || Math.random() < success.chance) {
+        steal(player, visit, DATA.search.valuables, DATA.search.xp);
+      }
       if (visit.progress <= 0) this.stop();
     }
   })();

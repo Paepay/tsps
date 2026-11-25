@@ -160,7 +160,7 @@ function showProc(target) {
 
 /**
  * Runs on the attack's tick ("combat:hit-queued", after protection prayers and damage caps):
- * the charge, the 500-hit countdown, the 20% roll and its graphic all go with the swing, a tick
+ * the charge, the 500-hit countdown, the 25% roll and its graphic all go with the swing, a tick
  * before an NPC's hitsplat (rsprox rec 481 ticks 273/274, 690/691).
  */
 function applyBloodFuryEffect(player, target, hit) {
@@ -172,6 +172,11 @@ function applyBloodFuryEffect(player, target, hit) {
   const startingCharges = bloodFuryCharges(amuletItem);
   let charges = startingCharges;
   let shown = false;
+  // Global Events' Bloodthirst rolls its own 25%/30% heal on the same hit; ask once so only one
+  // of the two rolls can happen (the event suppresses this one while it is enabled).
+  const source = { player, itemId: amuletItem.getId(), suppressed: false };
+  pluginApi?.emitCustomEvent?.("combat:blood-fury-source", source);
+  if (source.suppressed) return;
   for (const resolvedHit of Array.isArray(hit.getHits?.()) ? hit.getHits() : []) {
     const damage = Number(resolvedHit?.getDamage?.() ?? 0);
     if (damage <= 0 || charges <= 0) {

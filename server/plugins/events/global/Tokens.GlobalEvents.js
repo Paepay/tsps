@@ -98,11 +98,11 @@ function recordFor(player) {
   return accounts.get(player) ?? null;
 }
 
-function recordAccount(player, { userId, paebuxBalance = null, tokens = null, disabledEventIds = null } = {}) {
+function recordAccount(player, { userId, paepointsBalance = null, tokens = null, disabledEventIds = null } = {}) {
   const previous = recordFor(player) ?? {};
   const next = {
     userId: userId ?? previous.userId ?? userIdOf(player),
-    paebuxBalance: paebuxBalance === null ? previous.paebuxBalance ?? null : Math.max(0, Math.floor(Number(paebuxBalance) || 0)),
+    paepointsBalance: paepointsBalance === null ? previous.paepointsBalance ?? null : Math.max(0, Math.floor(Number(paepointsBalance) || 0)),
     tokens: tokens === null ? previous.tokens ?? new Map() : tokenMap(tokens),
     disabledEventIds: disabledEventIds === null ? previous.disabledEventIds ?? [] : disabledEventIds,
     fetchedAt: Date.now(),
@@ -117,7 +117,7 @@ function sendTokens(player, record) {
     type: "tokens",
     available: true,
     userId: record.userId,
-    paebuxBalance: record.paebuxBalance,
+    paepointsBalance: record.paepointsBalance,
     tokens: rows,
     balance: rows.reduce((total, row) => total + row.quantity, 0),
   });
@@ -153,7 +153,7 @@ function tokensPath(userId) {
 }
 
 /**
- * Re-read the account's authoritative opt-outs, token counts and PaeBux balance. Called on
+ * Re-read the account's authoritative opt-outs, token counts and PaePoints balance. Called on
  * login, reconnect and whenever the Events UI opens, so a stale local view is never used.
  */
 async function refreshAccount(player) {
@@ -173,7 +173,8 @@ async function refreshAccount(player) {
   Common.applyDisabledEvents(player, disabled);
   const record = recordAccount(player, {
     userId,
-    paebuxBalance: account.paebuxBalance,
+    // The platform renamed PaeBux to PaePoints; an older lease may still send the old field.
+    paepointsBalance: account.paepointsBalance ?? account.paebuxBalance,
     tokens: tokenRows(account),
     disabledEventIds: disabled,
   });
@@ -198,7 +199,7 @@ async function refreshTokens(player) {
   const body = result.json?.account ?? result.json ?? {};
   const record = recordAccount(player, {
     userId,
-    paebuxBalance: body.paebuxBalance,
+    paepointsBalance: body.paepointsBalance ?? body.paebuxBalance,
     tokens: tokenRows(body),
   });
   sendTokens(player, record);
@@ -214,8 +215,8 @@ function quantityFor(player, eventId) {
   return recordFor(player)?.tokens.get(eventId) ?? 0;
 }
 
-function paebuxBalance(player) {
-  return recordFor(player)?.paebuxBalance ?? null;
+function paepointsBalance(player) {
+  return recordFor(player)?.paepointsBalance ?? null;
 }
 
 function preferenceBody(userId, eventId, disabled) {
@@ -374,7 +375,7 @@ module.exports = {
   refreshTokens,
   refresh,
   quantityFor,
-  paebuxBalance,
+  paepointsBalance,
   setPreference,
   activate,
   recordFor,

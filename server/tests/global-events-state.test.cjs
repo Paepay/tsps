@@ -1,4 +1,4 @@
-﻿// Run after `yarn build`: node --test tests/global-events-state.test.cjs
+// Run after `yarn build`: node --test tests/global-events-state.test.cjs
 // Paepay/tsps#65: the world's event catalog, the one-slot-per-category rule, persisted timers,
 // the HUD state payload and per-player opt-outs scoped to the event instance.
 const assert = require("node:assert/strict");

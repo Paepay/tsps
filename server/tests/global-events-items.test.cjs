@@ -1,4 +1,4 @@
-﻿// Run after `yarn build`: node --test tests/global-events-items.test.cjs
+// Run after `yarn build`: node --test tests/global-events-items.test.cjs
 // Paepay/tsps#65: temporary event items are bound to account, world and instance; they cannot
 // leave the account; they are purged on expiry/login; claims obey the event, the player's toggle
 // and the combat lock; Master's Arsenal loans waive levels and keep charges, ammo and runes.

@@ -1,4 +1,4 @@
-﻿// Run after `yarn build`: node --test tests/global-events-skilling.test.cjs
+// Run after `yarn build`: node --test tests/global-events-skilling.test.cjs
 // Paepay/tsps#65: Endless Harvest banking, Abundance doubling with its XP, Infernal Gathering,
 // Production Master batching and Trickster success requests, each gated by the player's toggle.
 const assert = require("node:assert/strict");
@@ -174,7 +174,7 @@ test("Infernal Gathering burns logs, smelts ore and cooks fish with the right XP
   assert.equal(usual.stored, 0, "an opted-out player keeps the log");
 });
 
-test("Production Master batches whole inventories, at most 28, and skips stackable potion secondaries", () => {
+test("Production Master batches the whole eligible inventory, with no arbitrary cap", () => {
   Common.testing.reset();
   activate("production-master");
   const p = player();
@@ -183,12 +183,13 @@ test("Production Master batches whole inventories, at most 28, and skips stackab
     emit("skills:actions-per-cycle", event);
     return event.actions;
   };
-  assert.equal(request(core.Skill.SMITHING, "smelt"), 28);
-  assert.equal(request(core.Skill.HERBLORE, "clean"), 28);
-  assert.equal(request(core.Skill.FLETCHING, "arrows"), 10, "the per-kind cap");
-  assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.FEATHER }] }), 1,
-    "a stackable secondary is not batched (it would duplicate the stack)");
-  assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.GUAM_LEAF }] }), 28);
+  assert.equal(request(core.Skill.SMITHING, "smelt"), Number.MAX_SAFE_INTEGER);
+  assert.equal(request(core.Skill.HERBLORE, "clean"), Number.MAX_SAFE_INTEGER);
+  assert.equal(request(core.Skill.FLETCHING, "arrows"), Number.MAX_SAFE_INTEGER, "no per-kind cap");
+  assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.FEATHER }] }),
+    Number.MAX_SAFE_INTEGER, "a stackable secondary is consumed per potion, not duplicated");
+  assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.GUAM_LEAF }] }),
+    Number.MAX_SAFE_INTEGER);
   assert.equal(request(core.Skill.ATTACK, "smelt"), 1, "a skill outside the batch list is untouched");
   assert.equal(request(core.Skill.SMITHING, "not-a-kind"), 1);
 
@@ -196,11 +197,11 @@ test("Production Master batches whole inventories, at most 28, and skips stackab
   assert.equal(request(core.Skill.SMITHING, "smelt"), 1);
 });
 
-test("Trickster guarantees pickpocket, stall, blackjack, lock and Hunter success, and nothing else", () => {
+test("Trickster guarantees pickpocket, stall, blackjack, lock, search and Hunter success", () => {
   Common.testing.reset();
   activate("trickster");
   const p = player();
-  const events = ["thieving:pickpocket-target", "thieving:stall-success", "thieving:blackjack-success", "thieving:lock-success"];
+  const events = ["thieving:pickpocket-target", "thieving:stall-success", "thieving:blackjack-success", "thieving:lock-success", "thieving:search-success"];
   for (const name of events) {
     const event = { player: p, alwaysSucceeds: false };
     emit(name, event);

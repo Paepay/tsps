@@ -196,25 +196,14 @@ function infernalRoom(request) {
 
 /* --------------------------------------------------------- Production Master --- */
 
-const POTION = /\(\d\)$/;
-const UNFINISHED = /\(unf\)$/i;
-
-function stackableSecondary(recipe) {
-  return (recipe?.ingredients ?? []).some(({ id }) =>
-    !POTION.test(core.ItemDefinition.forId(id)?.getName?.() ?? "")
-    && !UNFINISHED.test(core.ItemDefinition.forId(id)?.getName?.() ?? "")
-    && core.ItemDefinition.forId(id)?.isStackable?.() === true);
-}
-
 function actionsPerCycle(request) {
   if (!request.player || !enabled(request.player, "production-master")) return;
-    const effect = Common.definition("production-master");
-    const batch = Common.config().production?.batch ?? effect?.config?.batch ?? {};
+  const effect = Common.definition("production-master");
+  const batch = Common.config().production?.batch ?? effect?.config?.batch ?? {};
   const skill = Object.keys(batch).find((name) => core.Skill[name] === request.skill);
   if (!skill || !batch[skill].includes(request.kind)) return;
-  if (request.kind === "mix" && stackableSecondary(request.recipe)) return;
-  const actions = effect?.config?.capped?.[request.kind] ?? effect?.config?.maxActions ?? 28;
-  request.actions = Math.max(request.actions ?? 1, actions);
+  // Far above any real inventory; each loop still stops when its materials or space run out.
+  request.actions = Math.max(request.actions ?? 1, Number.MAX_SAFE_INTEGER);
 }
 
 /* --------------------------------------------------------------- Trickster --- */
@@ -245,6 +234,7 @@ function attach(pluginApi) {
   api.onCustomEvent("thieving:stall-success", alwaysSucceeds);
   api.onCustomEvent("thieving:blackjack-success", alwaysSucceeds);
   api.onCustomEvent("thieving:lock-success", alwaysSucceeds);
+  api.onCustomEvent("thieving:search-success", alwaysSucceeds);
   api.onCustomEvent("hunter:catch-chance", catchChance);
 }
 

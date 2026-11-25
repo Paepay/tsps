@@ -236,6 +236,11 @@ export class CombatFactory {
                 maxHit = bounds.maximum;
                 minimumFloor = bounds.minimum;
             }
+            // A general multiplier (Global Events' Onslaught) sees the same calculated maximum
+            // the roll uses, in every style, before the damage is rolled.
+            if (type == CombatType.MELEE || type == CombatType.RANGED || type == CombatType.MAGIC) {
+                maxHit = PluginManager.modifyMaxHit(entity, victim, type, maxHit);
+            }
         });
         const rolls = type == CombatType.MELEE || type == CombatType.RANGED || type == CombatType.MAGIC;
         const range = rolls

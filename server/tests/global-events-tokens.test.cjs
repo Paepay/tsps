@@ -81,7 +81,7 @@ function defaultResponses(route, options) {
       json: {
         account: {
           userId: "user-1",
-          paebuxBalance: 250,
+          paepointsBalance: 250,
           tokens: tokens(2),
           preferences: [],
           disabledEventIds: [],
@@ -90,7 +90,7 @@ function defaultResponses(route, options) {
     };
   }
   if (route.startsWith("/events/tokens")) {
-    return { ok: true, status: 200, json: { userId: "user-1", paebuxBalance: 250, tokens: tokens(2) } };
+    return { ok: true, status: 200, json: { userId: "user-1", paepointsBalance: 250, tokens: tokens(2) } };
   }
   if (route === "/events/preferences" && options.method === "PUT") {
     const disabledEventIds = options.body?.disabled ? [options.body.eventId] : [];
@@ -215,7 +215,7 @@ test("refreshAccount applies the platform's disabledEventIds and per-event token
       json: {
         account: {
           userId: "user-1",
-          paebuxBalance: 42,
+          paepointsBalance: 42,
           tokens: tokens(3, "mystique"),
           preferences: [{ eventId: "accelerate", disabled: true }],
           disabledEventIds: ["accelerate"],
@@ -229,7 +229,7 @@ test("refreshAccount applies the platform's disabledEventIds and per-event token
   assert.deepEqual(Common.disabledEvents(p), ["accelerate"]);
   assert.equal(Tokens.quantityFor(p, "mystique"), 3);
   assert.equal(Tokens.quantityFor(p, "berserker"), 0);
-  assert.equal(Tokens.paebuxBalance(p), 42);
+  assert.equal(Tokens.paepointsBalance(p), 42);
   assert.match(calls[0].route, /^\/events\/account\?userId=user-1$/);
 });
 

@@ -14,7 +14,7 @@
       "summary": "Melee attacks have 100% accuracy through defensive bonuses and protection prayers.",
       "effect": { "kind": "perfect-accuracy", "style": "melee", "pvmOnly": true },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "combatType": "MELEE" }
     },
     {
@@ -28,7 +28,7 @@
       "summary": "Ranged attacks have 100% accuracy through defensive bonuses and protection prayers.",
       "effect": { "kind": "perfect-accuracy", "style": "ranged", "pvmOnly": true },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "combatType": "RANGED" }
     },
     {
@@ -42,7 +42,7 @@
       "summary": "Magic attacks have 100% accuracy through defensive bonuses and protection prayers.",
       "effect": { "kind": "perfect-accuracy", "style": "magic", "pvmOnly": true },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "combatType": "MAGIC" }
     },
     {
@@ -56,7 +56,7 @@
       "summary": "50% more maximum hit in every combat style against NPCs.",
       "effect": { "kind": "pvm-max-hit", "multiplier": 1.5, "styles": "all" },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "maxHitMultiplier": 1.5 }
     },
     {
@@ -66,12 +66,12 @@
       "name": "Bloodthirst",
       "medallion": "hitpoints",
       "iconItemId": 24780,
-      "description": "Every combat style can heal you for 30% of the damage it deals. PvM only.",
+      "description": "Your attacks in every combat style have a 1-in-4 chance to heal you for 30% of the damage they deal. PvM only.",
       "summary": "Blood Fury mechanics for every combat style against NPCs.",
       "effect": { "kind": "blood-fury", "styles": "all", "pvmOnly": true },
       "durationMinutes": null,
-      "costPaeBux": null,
-      "config": { "procChance": 0.2, "healFraction": 0.3, "graphic": 1542, "graphicHeight": 92 }
+      "costPaePoints": null,
+      "config": { "procChance": 0.25, "healFraction": 0.3, "graphic": 1542, "graphicHeight": 92 }
     },
     {
       "id": "endless-harvest",
@@ -84,7 +84,7 @@
       "summary": "Gathered resources go directly to your bank.",
       "effect": { "kind": "gather-to-bank" },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "skills": ["MINING", "WOODCUTTING", "FISHING"] }
     },
     {
@@ -98,7 +98,7 @@
       "summary": "Double every gathered resource, with XP for the extra resources.",
       "effect": { "kind": "double-resources", "xpMultiplier": 2 },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "multiplier": 2 }
     },
     {
@@ -112,7 +112,7 @@
       "summary": "Automatically burn logs, smelt ore and cook fish as they are gathered.",
       "effect": { "kind": "infernal-gathering", "skills": ["cooking", "smithing", "firemaking"] },
       "durationMinutes": null,
-      "costPaeBux": null
+      "costPaePoints": null
     },
     {
       "id": "production-master",
@@ -121,11 +121,11 @@
       "name": "Production Master",
       "medallion": "smithing",
       "iconItemId": 13243,
-      "description": "Smithing, Crafting, Fletching, Herblore and Cooking process a whole inventory in one cycle.",
+      "description": "Runecrafting, Smithing, Crafting, Fletching, Herblore, Cooking and Firemaking process the whole eligible inventory in one cycle.",
       "summary": "Process an entire inventory in one production cycle.",
       "effect": { "kind": "instant-production" },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": {
         "maxActions": 28,
         "capped": { "arrows": 10, "bolts": 10, "tipped": 10, "darts": 10 }
@@ -142,7 +142,7 @@
       "summary": "100% success for eligible Thieving and Hunter actions, plus temporary Sage's greaves.",
       "effect": { "kind": "guaranteed-gathering-loot", "skills": ["hunter", "thieving"], "temporaryItem": "sages-greaves" },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": {
         "runXpBase": 10,
         "runXpLevelFraction": [2, 3],
@@ -157,11 +157,11 @@
       "name": "Rags to Riches",
       "medallion": "coins",
       "iconItemId": 995,
-      "description": "Unique drops from every NPC, boss and raid are 10% more likely.",
-      "summary": "+10% multiplicative unique drop chance from NPCs, bosses and raids.",
+      "description": "Eligible unique drops from NPCs, bosses, raids and skilling encounters are 10% more likely.",
+      "summary": "Multiplies eligible unique drop chances by 1.1 across NPCs, bosses, raids and skilling encounters.",
       "effect": { "kind": "unique-drop-chance", "multiplier": 1.1 },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "multiplier": 1.1 }
     },
     {
@@ -175,7 +175,7 @@
       "summary": "Double experience from every source.",
       "effect": { "kind": "xp-multiplier", "multiplier": 2, "scope": "all" },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "multiplier": 2 }
     },
     {
@@ -186,10 +186,10 @@
       "medallion": "magic",
       "iconItemId": 11848,
       "description": "All skills are raised by 12 levels and refreshed every tick. Hitpoints and Prayer are excluded.",
-      "summary": "+12 visible levels in every skill, refreshed each tick.",
+      "summary": "+12 visible levels in every skill except Hitpoints and Prayer, refreshed each tick.",
       "effect": { "kind": "visible-level-boost", "levels": 12, "replenish": "tick", "resourcePools": false },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "levelBoost": 12, "excludedSkills": ["HITPOINTS", "PRAYER"] }
     },
     {
@@ -203,7 +203,7 @@
       "summary": "Access to a temporary Banker's Note that works anywhere.",
       "effect": { "kind": "temporary-item", "item": "bankers-note" },
       "durationMinutes": null,
-      "costPaeBux": null
+      "costPaePoints": null
     },
     {
       "id": "masters-arsenal",
@@ -212,11 +212,11 @@
       "name": "Master's Arsenal",
       "medallion": "weapon",
       "iconItemId": 22325,
-      "description": "Borrow one temporary Best-in-Slot weapon or tool at a time. It needs no charges, ammo or runes, but normal skill and quest requirements still apply. PvP damage is disabled.",
+      "description": "Borrow one temporary Best-in-Slot weapon or tool at a time. It needs no charges, ammo or runes and waives its equipment skill requirement, but quest, resource and activity requirements still apply. PvP damage is disabled.",
       "summary": "Borrow temporary Best-in-Slot weapons and tools with no charges required.",
       "effect": { "kind": "temporary-loadout", "item": "masters-arsenal", "pvp": false, "bestInSlot": true },
       "durationMinutes": null,
-      "costPaeBux": null,
+      "costPaePoints": null,
       "config": { "noCharges": true }
     }
   ],
@@ -282,7 +282,7 @@
     "adminPlatformOnly": "Global Events are activated and stopped on the PaeScape platform; this world only applies them."
   },
   "uniqueDropChance": {
-    "raids": ["Theatre of Blood", "Chambers of Xeric", "Tombs of Amascut"]
+    "sources": ["Theatre of Blood", "Chambers of Xeric", "Tombs of Amascut", "Barrows", "Gauntlet", "Zalcano", "Tempoross", "Wintertodt", "Guardians of the Rift", "superior-slayer-monster"]
   },
   "platform": {
     "_comment": "Platform-owned contract (PaeScape_Realms#110). The platform is the only writer of activations, token balances and account preferences; the world re-reads world state and account state and never reserves or consumes a token itself.",

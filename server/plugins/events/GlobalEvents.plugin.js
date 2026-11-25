@@ -48,8 +48,8 @@ function tokenInfo(player, eventId = null) {
   if (!Tokens.available()) return "Token service unavailable";
   if (!Tokens.linked(player)) return "Link a PaeScape account to use event tokens";
   if (!eventId) {
-    const paebux = Tokens.paebuxBalance(player);
-    return paebux === null ? "Token balance: checking..." : `PaeBux: ${paebux}`;
+    const paepoints = Tokens.paepointsBalance(player);
+    return paepoints === null ? "Token balance: checking..." : `PaePoints: ${paepoints}`;
   }
   return `Event tokens: ${Tokens.quantityFor(player, eventId)}`;
 }

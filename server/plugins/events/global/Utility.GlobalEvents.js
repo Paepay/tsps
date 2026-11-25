@@ -1,13 +1,17 @@
 "use strict";
 
 /**
- * Utility Global Events (Paepay/tsps#65).
+ * Utility Global Events (Paepay/tsps#65, PaeScape_Realms#110 follow-ups).
  *
- * Rags to Riches adds a multiplicative chance to unique-only NPC drops (and to the named raid
- * unique rollers). Accelerate multiplies every experience gain once, through the core's
- * multiplier hook, so no XP source is left out and no gain recurses. Prodigy raises every
- * skill's resting level by 12 and refreshes the current level each tick, excluding Hitpoints
- * and Prayer so it cannot restore them endlessly.
+ * Rags to Riches multiplies eligible unique rolls by 1.1: a boss NPC's unique table through
+ * `npc-drops:chance` (uniqueOnly, so ordinary loot never moves) and the unique-only rollers of
+ * the named bosses, raids and skilling encounters through `drops:chance`. Clue caskets, ordinary
+ * loot and PvP are never boosted, and each reward asks once so nothing applies twice.
+ *
+ * Accelerate multiplies every experience gain once, through the core's multiplier hook, so no XP
+ * source is left out and no gain recurses. Prodigy raises the resting level of the other 21
+ * skills by 12 and refreshes the current level each tick, never Hitpoints or Prayer and never
+ * below a boost the player already had.
  */
 
 const Common = require("./Common.GlobalEvents");
@@ -21,29 +25,38 @@ function enabled(player, eventId) {
 
 /* ------------------------------------------------------- Rags to Riches --- */
 
-function uniqueRule(event) {
-  if (!event?.player || !Array.isArray(event.rules) || !enabled(event.player, "rags-to-riches")) return;
-  const multiplier = Number(Common.effectOf("rags-to-riches")?.multiplier
+function multiplier() {
+  return Number(Common.effectOf("rags-to-riches")?.multiplier
     ?? Common.definition("rags-to-riches")?.config?.multiplier ?? 1.1);
-  if (multiplier > 1) event.rules.push({ pattern: /.*/, multiplier });
 }
 
-function raidRule(event) {
+/** Boss NPC uniques: the same chance roll every entry uses, gated to unique rows. */
+function uniqueRule(event) {
   if (!event?.player || !Array.isArray(event.rules) || !enabled(event.player, "rags-to-riches")) return;
-  const raids = Common.config().uniqueDropChance?.raids ?? [];
-  if (!raids.includes(event.source)) return;
-  const multiplier = Number(Common.effectOf("rags-to-riches")?.multiplier
-    ?? Common.definition("rags-to-riches")?.config?.multiplier ?? 1.1);
-  if (multiplier > 1) event.rules.push({ pattern: /.*/, multiplier });
+  const factor = multiplier();
+  if (factor > 1) event.rules.push({ pattern: /.*/, multiplier: factor, uniqueOnly: true });
+}
+
+/**
+ * The unique-only rollers (raids, boss chests and skilling encounters). Each names its source on
+ * `drops:chance` and only multiplies unique rows by the matching rule, so the whole-roll pattern
+ * cannot reach ordinary supplies.
+ */
+function encounterRule(event) {
+  if (!event?.player || !Array.isArray(event.rules) || !enabled(event.player, "rags-to-riches")) return;
+  const sources = Common.config().uniqueDropChance?.sources ?? [];
+  if (!sources.includes(event.source)) return;
+  const factor = multiplier();
+  if (factor > 1) event.rules.push({ pattern: /.*/, multiplier: factor });
 }
 
 /* -------------------------------------------------------------- Accelerate --- */
 
 function accelerate(event) {
   if (!event?.player || !enabled(event.player, "accelerate")) return;
-  const multiplier = Number(Common.effectOf("accelerate")?.multiplier
+  const factor = Number(Common.effectOf("accelerate")?.multiplier
     ?? Common.definition("accelerate")?.config?.multiplier ?? 2);
-  if (multiplier > 0) event.multiplier = (Number(event.multiplier) || 1) * multiplier;
+  if (factor > 0) event.multiplier = (Number(event.multiplier) || 1) * factor;
 }
 
 /* ----------------------------------------------------------------- Prodigy --- */
@@ -73,7 +86,7 @@ function restingLevel(player, skill, level) {
   return boost > 0 ? level + boost : level;
 }
 
-/** Keep every non-excluded skill at least at base + 12, without lowering a higher boost. */
+/** Keep every other skill at least at base + 12, without lowering a higher boost. */
 function refresh({ player }) {
   if (!player?.isPlayer?.() || !enabled(player, "prodigy") || inPvp(player)) return;
   const boost = prodigyBoost(player);
@@ -93,8 +106,8 @@ function attach(pluginApi) {
   api.registerRestingLevelModifier(restingLevel);
   api.onPlayerProcess(refresh);
   api.onCanGainExperience(accelerate);
-  api.onCustomEvent("npc-drops:unique-chance", uniqueRule);
-  api.onCustomEvent("drops:chance", raidRule);
+  api.onCustomEvent("npc-drops:chance", uniqueRule);
+  api.onCustomEvent("drops:chance", encounterRule);
 }
 
-module.exports = { attach, _test: { uniqueRule, raidRule, accelerate, restingLevel, refresh } };
+module.exports = { attach, _test: { uniqueRule, encounterRule, accelerate, restingLevel, refresh } };

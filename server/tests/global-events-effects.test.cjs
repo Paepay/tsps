@@ -1,4 +1,4 @@
-﻿// Run after `yarn build`: node --test tests/global-events-effects.test.cjs
+// Run after `yarn build`: node --test tests/global-events-effects.test.cjs
 // Paepay/tsps#65: combat events only ever touch NPC targets; Onslaught is +50% damage;
 // Bloodthirst is the Blood Fury roll for every style; Accelerate, Prodigy and Rags to Riches.
 const assert = require("node:assert/strict");
@@ -107,28 +107,23 @@ test("a player's opt-out turns the accuracy event off without ending the world e
   assert.ok(Common.active("combat"), "the event still runs for everyone else");
 });
 
-test("Onslaught raises a landed NPC hit by 50% and never touches PvP", () => {
+test("Onslaught raises the calculated NPC max hit by 50% before the roll, never PvP", () => {
   Common.testing.reset();
   activate("onslaught");
-  const damage = { value: 20, getDamage() { return damage.value; }, setDamage(value) { damage.value = value; } };
-  globalThis.hooks.get("hit-damage")({ attacker: fighter(), target: npc, damage });
-  assert.equal(damage.value, 30);
-
-  const pvp = { value: 20, getDamage() { return pvp.value; }, setDamage(value) { pvp.value = value; } };
-  globalThis.hooks.get("hit-damage")({ attacker: fighter(), target: otherPlayer, damage: pvp });
-  assert.equal(pvp.value, 20, "a player target is untouched");
+  assert.equal(Combat._test.onslaughtMaxHit(fighter(), npc, core.CombatType.MELEE, 20), 30);
+  assert.equal(Combat._test.onslaughtMaxHit(fighter(), npc, core.CombatType.MAGIC, 41), 61, "every style");
+  assert.equal(Combat._test.onslaughtMaxHit(fighter(), otherPlayer, core.CombatType.MELEE, 20), null,
+    "a player target is untouched");
 
   const opted = fighter();
   Common.setEffectsEnabled(opted, "onslaught", false);
-  const off = { value: 20, getDamage() { return off.value; }, setDamage(value) { off.value = value; } };
-  globalThis.hooks.get("hit-damage")({ attacker: opted, target: npc, damage: off });
-  assert.equal(off.value, 20);
+  assert.equal(Combat._test.onslaughtMaxHit(opted, npc, core.CombatType.MELEE, 20), null);
 });
 
-test("Bloodthirst is the Blood Fury 1-in-5 roll, heals 30% and only works on NPCs", () => {
+test("Bloodthirst is the Blood Fury 1-in-4 roll, heals 30%, and suppresses the amulet", () => {
   Common.testing.reset();
   activate("bloodthirst");
-  Math.random = () => 0; // Misc.getRandom(4) === 0
+  Math.random = () => 0; // 0 < 0.25: the proc
   const owner = fighter();
   let applied;
   const hit = { getHits: () => [{ getDamage: () => 20, onApplied(callback) { applied = callback; } }] };
@@ -139,7 +134,7 @@ test("Bloodthirst is the Blood Fury 1-in-5 roll, heals 30% and only works on NPC
 
   owner.healed = 0;
   npc.graphic = false;
-  Math.random = () => 0.9; // 4 -> no proc
+  Math.random = () => 0.9; // 0.9 >= 0.25: no proc
   globalThis.hooks.get("combat:hit-queued")({ player: owner, target: npc, hit });
   assert.equal(npc.graphic, false);
   assert.equal(owner.healed, 0);
@@ -147,6 +142,10 @@ test("Bloodthirst is the Blood Fury 1-in-5 roll, heals 30% and only works on NPC
   Math.random = () => 0;
   globalThis.hooks.get("combat:hit-queued")({ player: owner, target: otherPlayer, hit });
   assert.equal(owner.healed, 0, "PvP is untouched");
+
+  const guarded = { player: owner, suppressed: false };
+  globalThis.hooks.get("combat:blood-fury-source")(guarded);
+  assert.equal(guarded.suppressed, true, "the equipped amulet must not roll a second heal");
 });
 
 test("Accelerate doubles each XP gain once, and can be switched off per player", () => {
@@ -165,24 +164,31 @@ test("Accelerate doubles each XP gain once, and can be switched off per player",
   assert.equal(off.multiplier, 1);
 });
 
-test("Rags to Riches boosts unique NPC tables and the three raid unique rolls, and nothing else", () => {
+test("Rags to Riches boosts unique-only NPC rolls and encounter uniques, and nothing else", () => {
   Common.testing.reset();
   activate("rags-to-riches");
   const p = fighter();
   const unique = { player: p, rules: [] };
-  globalThis.hooks.get("npc-drops:unique-chance")(unique);
+  globalThis.hooks.get("npc-drops:chance")(unique);
   assert.deepEqual(unique.rules.map((rule) => rule.multiplier), [1.1]);
-  for (const source of ["Chambers of Xeric", "Theatre of Blood", "Tombs of Amascut"]) {
+  assert.equal(unique.rules[0].uniqueOnly, true, "ordinary NPC loot must not move");
+  const sources = [
+    "Chambers of Xeric", "Theatre of Blood", "Tombs of Amascut", "Barrows", "Gauntlet",
+    "Zalcano", "Tempoross", "Wintertodt", "Guardians of the Rift", "superior-slayer-monster",
+  ];
+  for (const source of sources) {
     const raid = { player: p, source, rules: [] };
     globalThis.hooks.get("drops:chance")(raid);
     assert.equal(raid.rules.length, 1, source);
   }
-  const ordinary = { player: p, source: "Barrows", rules: [] };
-  globalThis.hooks.get("drops:chance")(ordinary);
-  assert.equal(ordinary.rules.length, 0, "a non-unique source is not boosted");
+  for (const source of ["treasure-trails-casket", "Fractured Archive", "Chest"]) {
+    const ordinary = { player: p, source, rules: [] };
+    globalThis.hooks.get("drops:chance")(ordinary);
+    assert.equal(ordinary.rules.length, 0, `${source} is not in the unique scope`);
+  }
   Common.setEffectsEnabled(p, "rags-to-riches", false);
   const off = { player: p, rules: [] };
-  globalThis.hooks.get("npc-drops:unique-chance")(off);
+  globalThis.hooks.get("npc-drops:chance")(off);
   assert.equal(off.rules.length, 0);
 });
 
