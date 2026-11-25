@@ -85,7 +85,9 @@ A temporary copy is an ordinary item carrying a `global-event` binding in its me
 ```
 
 The binding is what makes a copy temporary. Bound copies cannot be traded, banked, sold, alched,
-listed on the GE, dropped, transformed or kept through death. They are purged on login, event
+listed on the GE, dropped, transformed, kept through death, or placed in the looting bag,
+POH costume storage or group storage. Tradeable-only containers refuse them by their
+untradeable flag as well as their binding. They are purged on login, event
 end and expiry. Claiming and deleting are blocked while in combat or for 10 seconds after combat
 (`combatLock.postCombatSeconds`). Master's Arsenal loans never spend charges, ammunition or runes;
 their equipment level and combat gates are waived (quest, resource and activity checks still

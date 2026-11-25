@@ -528,7 +528,7 @@ test("the Events UI lists the dedicated event item names and icons", () => {
   assert.deepEqual([note.name, note.iconItemId], ["Banker's note (e)", 50006]);
   assert.deepEqual([greaves.name, greaves.iconItemId], ["Sage's greaves (e)", 50007]);
 });
-test("the looting bag and POH costume storage refuse a temporary copy", () => {
+test("the looting bag, POH costume storage and group storage refuse a temporary copy", () => {
   Common.testing.reset();
   activate("bankers-note");
   const p = player("containers");
@@ -551,4 +551,12 @@ test("the looting bag and POH costume storage refuse a temporary copy", () => {
     "a bound temporary item is not a costume-room set piece",
   );
   assert.equal(p.getInventory().getAmount(note.getId()), 1, "the refused deposit leaves the loan in place");
+
+  const GroupStorage = require("../plugins/interface/groupstorage/Items.GroupStorage");
+  GroupStorage.init({ core });
+  assert.equal(
+    GroupStorage.refusal(note, true),
+    GroupStorage.MESSAGE.NOT_STORABLE,
+    "tradeable-only group storage refuses an untradeable, bound loan",
+  );
 });
