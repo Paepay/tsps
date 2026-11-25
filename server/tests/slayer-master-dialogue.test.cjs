@@ -17,6 +17,7 @@ const { Location } = require("../dist/game/model/Location");
 let core;
 let Tasks;
 let State;
+let Data;
 let nextIndex = 1900;
 /** Zuk kills the test's Combat Achievements answer reports to Hot Stuff. */
 let offerZukKills = 0;
@@ -33,6 +34,7 @@ before(() => {
   require("../plugins/npcs/NpcDialogues.plugin").register(PluginManager.createApi("NpcDialogues"));
   Tasks = require("../plugins/skills/slayer/Tasks.Slayer");
   State = require("../plugins/skills/slayer/State.Slayer");
+  Data = require("../plugins/skills/slayer/Data.Slayer");
   PluginManager.createApi("HotStuffOfferTest").onCustomEvent("combat-achievements:count", (request) => {
     if (request?.monster === "TzKal-Zuk" && offerZukKills > 0) request.total = offerZukKills;
   });
@@ -129,6 +131,15 @@ const id = (name) => core.CacheDefinitions.getNpcId(name);
 /** Duradel, as the slayer_master_5 multinpc shows him. */
 const DURADEL = 13622;
 
+/** Unlock Like a Boss, so Duradel can offer the Boss task. */
+function unlockBossTasks(player) {
+  const row = Data.get().masters.get(5).tasks.find((entry) => entry.task.id === Data.BOSS_TASK_ID);
+  const unlock = Data.get().unlocks.get(row.unlockRow);
+  const name = ["slayer_rewards_unlocks", "slayer_rewards_unlocks1", "slayer_rewards_unlocks2"][unlock.bit >> 5];
+  const id = core.CacheDefinitions.getVarpId(name);
+  player.getPacketSender().sendConfig(id, player.getPacketSender().getVarp(id) | (1 << (unlock.bit & 31)));
+}
+
 test("Assignment: the task line, then tips, cancel (with 30 points) and okay", async () => {
   const h = harness(DURADEL, { points: 37 });
   try {
@@ -144,6 +155,36 @@ test("Assignment: the task line, then tips, cancel (with 30 points) and okay", a
     await h.toMenu();
     assert.deepEqual(h.lines.slice(-3), ["Your task has been cancelled.", "Okay, great!", GOOD_LUCK]);
     assert.equal(h.player.getDialogueManager().isActive(), false);
+  } finally { h.close(); }
+});
+
+test("a boss task keeps its count prompt and pending boss through Continue and the next talk", async () => {
+  const h = harness(DURADEL);
+  const onlyThisPlayerBoss = (request) => {
+    if (request.player === h.player && request.bossId == null) request.available = false;
+  };
+  PluginManager.createApi("BossTaskRegression").onCustomEvent("slayer:task-available", onlyThisPlayerBoss);
+  try {
+    unlockBossTasks(h.player);
+    await h.option("Assignment");
+    const pending = Tasks.pendingBossAssignment(h.player);
+    assert.ok(pending, "the assignment waits for the count");
+    assert.equal(h.lines.at(-1), pending.text);
+
+    assert.equal(await h.toMenu(), null, "Continue reaches the count prompt, not a task menu");
+    assert.ok(h.player.getEnteredAmountAction(), "Continue leaves the count prompt armed");
+    const bossId = pending.bossId;
+
+    // Even if the prompt is dismissed, asking again resumes the same pending boss instead of rolling another task.
+    h.player.setEnteredAmountAction(null);
+    await h.option("Assignment");
+    assert.equal(await h.toMenu(), null);
+    assert.ok(h.player.getEnteredAmountAction(), "the pending boss reopens its count prompt");
+    assert.equal(Tasks.pendingBossAssignment(h.player)?.bossId, bossId);
+
+    h.player.getEnteredAmountAction().execute(10);
+    assert.equal(Tasks.current(h.player)?.bossId, bossId);
+    assert.equal(Tasks.current(h.player)?.count, 10);
   } finally { h.close(); }
 });
 
