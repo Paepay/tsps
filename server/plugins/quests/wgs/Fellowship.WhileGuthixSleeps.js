@@ -1,3 +1,13 @@
+/**
+ * The WGS NPC-visibility varps: Duradel becomes Kuradal once the fellowship is formed, and the
+ * heroes/captive appear as their chapters unlock. Shared so a Quests-off world still offers
+ * Kuradal and her post-quest notes (issue 186).
+ */
+function syncVisibility(sender,stageValue){
+ sender.sendVarbit(10782,stageValue>=650?2:stageValue>=300?1:0);
+ sender.sendVarbit(10792,stageValue>=650?2:stageValue>=340?1:0);
+ sender.sendVarbit(10781,stageValue>=300?2:stageValue>=280?1:0);
+}
 /** OSRS Wiki fellowship: mercenaries, spy, enriched seed, and seven heroes. */
 module.exports=function registerFellowship({api,stage,advance,held,give,val,play,hit,ATTRIBUTES}){
  const {Area,PrivateArea,Boundary,Location,HitDamage,HitMask,PrayerHandler,World}=api.core;
@@ -23,9 +33,7 @@ module.exports=function registerFellowship({api,stage,advance,held,give,val,play
   if(stage(p)===280&&(r&15)===15)advance(p,300);
   if(stage(p)===320&&(r&127)===127)advance(p,340);
   const s=stage(p);
-  p.getPacketSender().sendVarbit(10782,s>=650?2:s>=300?1:0);
-  p.getPacketSender().sendVarbit(10792,s>=650?2:s>=340?1:0);
-  p.getPacketSender().sendVarbit(10781,stage(p)>=300?2:stage(p)>=280?1:0);
+  syncVisibility(p.getPacketSender(),s);
   if(s>=250&&s<280)p.getPacketSender().sendVarbit(1537,val(p,SEED_ATTRIBUTE)===2?3:val(p,SEED_ATTRIBUTE)===1?2:0);
   if(s>=220&&s<900)p.getPacketSender().sendVarbit(10839,1);
  }
@@ -233,3 +241,4 @@ module.exports=function registerFellowship({api,stage,advance,held,give,val,play
  api.onCustomEvent('npc-dialogue:action',action);
  api.onNpcDialogueCondition(condition);
 };
+module.exports.syncVisibility=syncVisibility;
