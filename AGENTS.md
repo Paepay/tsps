@@ -21,10 +21,14 @@ A restart of a live world is a user-approved action, never a side effect:
 - A push to `prod` only updates and builds the shared checkout. It must not
   restart `paescape-official`, `paescape-level-up`, `tsps` or any other world.
 - That covers `systemctl --user restart`, the platform's five-minute counted
-  restart and `Deploy prod` with `mode=restart`.
+  restart and `Deploy prod` with `mode=update-and-restart`.
 - Name the world you intend to restart and ask for an explicit yes first. Do
   not restart one merely to pick up a build, to finish a deploy, or to verify
   or clean up your own change.
+- When they explicitly ask to deploy, run **Deploy prod** with
+  `mode=update-and-restart` and wait for the run to succeed. Do not use
+  `update-only` or report the deploy as live while the counted restart is still
+  pending; a successful run is what proves the replacement is serving.
 
 ## Linear integration (PaeScape)
 

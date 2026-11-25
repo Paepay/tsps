@@ -114,12 +114,21 @@ wait_health() {
 operator_restart() {
   load_operator_env
   [[ -n "${PLATFORM_OPERATOR_TOKEN:-}" ]] || die "PLATFORM_OPERATOR_TOKEN is not set in the official environment file"
-  local response
-  response="$(curl -fsS --max-time 20 -X POST \
-    -H "authorization: Bearer ${PLATFORM_OPERATOR_TOKEN}" \
-    -H "content-type: application/json" \
-    --data "{\"worldId\":\"${WORLD_ID}\"}" \
-    "${PLATFORM_LOCAL_URL}/api/official/restart")" || die "the platform did not accept the graceful restart request"
+  local response attempt
+  for attempt in 1 2 3; do
+    if response="$(curl -fsS --max-time 20 -X POST \
+      -H "authorization: Bearer ${PLATFORM_OPERATOR_TOKEN}" \
+      -H "content-type: application/json" \
+      --data "{\"worldId\":\"${WORLD_ID}\"}" \
+      "${PLATFORM_LOCAL_URL}/api/official/restart")"; then
+      break
+    fi
+    if (( attempt == 3 )); then
+      die "the platform did not accept the graceful restart request after ${attempt} attempts"
+    fi
+    log "platform restart request failed (attempt ${attempt}/3); retrying in 10s"
+    sleep 10
+  done
   printf '%s\n' "$response"
   log "five-minute countdown started; players are warned, logged out and saved before the process exits"
 }
@@ -188,15 +197,23 @@ cmd_logs() {
 }
 
 cmd_restart() {
-  local mode="${1:-graceful}"
-  if [[ "$mode" == "--immediate" ]]; then
+  local immediate=0 wait=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --immediate) immediate=1 ;;
+      --wait) wait=1 ;;
+      graceful) ;;
+      *) die "unknown restart option: $arg" ;;
+    esac
+  done
+  if (( immediate )); then
     log "WARNING: immediate restart has no countdown; online accounts rely on SIGTERM shutdown saving"
     systemctl_run restart "$SERVICE"
     wait_health 120 || die "the world did not become healthy after the immediate restart"
     return
   fi
   operator_restart
-  if [[ "${2:-}" == "--wait" ]]; then
+  if (( wait )); then
     wait_for_replacement 420
     wait_health 120 || die "the replacement did not become healthy"
   fi
@@ -252,9 +269,9 @@ cmd_update() {
 
   log "building the server"
   if command -v yarn >/dev/null 2>&1; then
-    (cd "$REPO_DIR" && yarn --cwd server build)
+    (cd "$REPO_DIR" && yarn --cwd server build:deploy)
   else
-    (cd "$REPO_DIR/server" && npm run build)
+    (cd "$REPO_DIR/server" && npm run build:deploy)
   fi
 
   service_start
@@ -267,9 +284,9 @@ cmd_update() {
   service_stop || true
   git -C "$REPO_DIR" checkout --detach "$previous"
   if command -v yarn >/dev/null 2>&1; then
-    (cd "$REPO_DIR" && yarn --cwd server build)
+    (cd "$REPO_DIR" && yarn --cwd server build:deploy)
   else
-    (cd "$REPO_DIR/server" && npm run build)
+    (cd "$REPO_DIR/server" && npm run build:deploy)
   fi
   service_start || true
   die "update failed and was rolled back to $previous; inspect journalctl -u $SERVICE"

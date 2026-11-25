@@ -7,9 +7,11 @@ name: Deploy prod
 # Behaviour:
 #   - push to prod → update the shared checkout + yarn install/build only. Never
 #     restarts a live world: running processes keep the previous build.
-#   - workflow_dispatch → manual update / restart / both (Actions → Deploy prod → Run).
-#     A restart asks the Official world for its five-minute counted restart, which
-#     warns, logs out and saves players before systemd starts the replacement.
+#   - workflow_dispatch → manual update / restart. The default deploy updates the
+#     checkout and build, requests the Official world's five-minute counted restart,
+#     then waits for the replacement process and its health endpoint. A restart
+#     request is never treated as live until that wait succeeds.
+#     `update-only` stages code for the next restart without touching the world.
 #     Community worlds (the Level-Up world) are never restarted by this workflow;
 #     their owner restarts them from the platform dashboard so they get the same
 #     five-minute timer.
@@ -43,13 +45,12 @@ on:
     workflow_dispatch:
         inputs:
             mode:
-                description: Update code, request the five-minute restart, or both
+                description: Deploy and restart (default), or stage an update without restarting
                 type: choice
                 options:
-                    - update
-                    - restart
                     - update-and-restart
-                default: update
+                    - update-only
+                default: update-and-restart
 
 permissions:
     contents: read
@@ -81,15 +82,14 @@ jobs:
 
                   if [ "$event" = workflow_dispatch ]; then
                       case "$mode" in
-                          update)
+                          update|update-only)
                               echo "do_update=true" >> "$GITHUB_OUTPUT"
                               echo "do_restart=false" >> "$GITHUB_OUTPUT"
                               ;;
-                          restart)
-                              echo "do_update=false" >> "$GITHUB_OUTPUT"
-                              echo "do_restart=true" >> "$GITHUB_OUTPUT"
-                              ;;
-                          update-and-restart)
+                          restart|update-and-restart)
+                              # A restart-only deploy used to load a build left by an
+                              # earlier push. Treat it as a full deploy so the commit
+                              # being restarted is always the one just fetched.
                               echo "do_update=true" >> "$GITHUB_OUTPUT"
                               echo "do_restart=true" >> "$GITHUB_OUTPUT"
                               ;;
@@ -183,6 +183,7 @@ jobs:
                   cd "$VPS_PATH"
 
                   if [ "$DO_UPDATE" = true ]; then
+                      build_started="$(date +%s)"
                       git fetch origin prod
                       git checkout prod 2>/dev/null || git checkout -B prod origin/prod
                       if [ -n "${DEPLOY_SHA:-}" ]; then
@@ -191,7 +192,16 @@ jobs:
                           git reset --hard origin/prod
                       fi
                       # One shared server tree: every world unit's WorkingDirectory is $VPS_PATH/server.
-                      (cd server && corepack enable && yarn install --immutable && yarn build)
+                      # build:deploy forces a compile: dist/tsconfig.tsbuildinfo survives
+                      # git resets, so an incremental build must never decide this deploy
+                      # is already current.
+                      (cd server && corepack enable && yarn install --immutable && yarn build:deploy)
+                      server_js=server/dist/Server.js
+                      test -f "$server_js" || { echo "build did not emit $server_js" >&2; exit 1; }
+                      test "$(stat -c %Y "$server_js")" -ge "$build_started" || {
+                          echo "build reused $server_js from before this deploy" >&2
+                          exit 1
+                      }
                       echo "Updated shared checkout to $(git rev-parse --short HEAD) ($VPS_PATH/server)"
                   fi
 
@@ -200,17 +210,17 @@ jobs:
                       # for the fixed five-minute counted restart, so players are warned,
                       # logged out and saved before systemd replaces the process.
                       operator=""
-                      if [ -x /usr/local/bin/paescape-official ]; then
-                          operator=/usr/local/bin/paescape-official
-                      elif [ -x "$VPS_PATH/server/deploy/paescape-official" ]; then
+                      if [ -x "$VPS_PATH/server/deploy/paescape-official" ]; then
                           operator="$VPS_PATH/server/deploy/paescape-official"
+                      elif [ -x /usr/local/bin/paescape-official ]; then
+                          operator=/usr/local/bin/paescape-official
                       fi
                       if [ -z "$operator" ]; then
                           echo "paescape-official was not found; refusing to hard-restart the official world" >&2
                           exit 1
                       fi
-                      "$operator" restart
-                      echo "Official world five-minute restart requested; community worlds stay untouched until their owner restarts them from the dashboard"
+                      "$operator" restart --wait
+                      echo "Official world restarted on $(git rev-parse --short HEAD); community worlds stay untouched until their owner restarts them from the dashboard"
                   else
                       echo "Skipped restart (shared build is on disk; live worlds pick it up on their five-minute counted restart)"
                   fi
