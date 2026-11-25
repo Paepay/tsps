@@ -91,6 +91,8 @@ function onMastersList(master, task) {
 function assignmentLine(player, master) {
   const task = Tasks.current(player);
   if (task) return Tasks.stillHunting(player, task);
+  const pending = Tasks.pendingBossAssignment(player);
+  if (pending) return pending.text;
   if (waitingElsewhere(player, master)) return CHOICE_WAITING;
   if (!Tasks.meetsMaster(player, master)) return tooWeak(master);
   const result = Tasks.assign(player, master);
@@ -125,6 +127,11 @@ function promptBossAmount(player, npcId) {
   });
   player.getPacketSender().sendEnterAmountPrompt(pending.text);
   return true;
+}
+
+/** The dialogue closes as it shows the master's line; open its count prompt only after that close. */
+function promptBossAmountAfterTalk(player, npcId) {
+  queueMicrotask(() => promptBossAmount(player, npcId));
 }
 
 /** Ours: the Wiki has no line for a player below a master's requirements. */
@@ -168,7 +175,7 @@ function offerChoice(player, master, definition, npcId) {
 function say(player, definition, text, after = null) {
   const { DialogueChainBuilder, NpcDialogue, EndDialogue, ActionDialogue } = core;
   const chain = new DialogueChainBuilder().add(new NpcDialogue(0, definition.getId(), text));
-  if (after) chain.add(new ActionDialogue(1, { execute: after }));
+  if (after) chain.add(new ActionDialogue(1, { execute: after }, true));
   chain.add(new EndDialogue(after ? 2 : 1));
   player.getDialogueManager().startDialogues(chain);
 }
@@ -197,7 +204,7 @@ function assignmentClick(event) {
   if (!Tasks.current(event.player) && playSteps(event.player, master, event.npc, event.definition.getId(), () => assignmentSteps(event.player, master, false))) return;
   const line = assignmentLine(event.player, master);
   say(event.player, event.definition, line, Tasks.pendingBossAssignment(event.player)
-    ? () => promptBossAmount(event.player, event.definition.getId())
+    ? () => promptBossAmountAfterTalk(event.player, event.definition.getId())
     : null);
 }
 
@@ -211,6 +218,10 @@ function assignmentSteps(player, master, praise) {
   if (waitingElsewhere(player, master)) return [{ npc: CHOICE_WAITING }, end];
   if (!Tasks.meetsMaster(player, master)) return [{ npc: tooWeak(master) }, end];
   if (offersChoice(player, master)) return null;
+  const pending = Tasks.pendingBossAssignment(player);
+  if (pending) {
+    return [{ npc: pending.text }, { type: "action", action: BOSS_AMOUNT_ACTION, target: master.names[0] }, end];
+  }
   const result = Tasks.assign(player, master);
   if (result.pending) {
     return [{ npc: result.pending.text }, { type: "action", action: BOSS_AMOUNT_ACTION, target: master.names[0] }, end];
@@ -365,13 +376,13 @@ function assignmentEvent(request) {
   const pending = Tasks.pendingBossAssignment(request.player);
   if (pending) {
     request.line = pending.text;
-    request.after = () => promptBossAmount(request.player, request.npcId ?? request.definitionId ?? null);
+    request.after = () => promptBossAmountAfterTalk(request.player, request.npcId ?? request.definitionId ?? null);
     return;
   }
   const result = Tasks.assign(request.player, master);
   if (result.pending) {
     request.line = result.pending.text;
-    request.after = () => promptBossAmount(request.player, request.npcId ?? request.definitionId ?? null);
+    request.after = () => promptBossAmountAfterTalk(request.player, request.npcId ?? request.definitionId ?? null);
     return;
   }
   request.line = result.line ?? result.refused;
@@ -528,7 +539,7 @@ function action(request) {
   if (request.action === BOSS_AMOUNT_ACTION) {
     request.handled = true;
     request.end = true;
-    promptBossAmount(player, request.npcId ?? request.definition.getId());
+    promptBossAmountAfterTalk(player, request.npcId ?? request.definition.getId());
     return;
   }
   if (request.action === CANCEL_ACTION) {
