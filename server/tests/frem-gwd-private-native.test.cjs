@@ -248,9 +248,8 @@ test('re-entering a parked chamber keeps the same chamber and dead general',asyn
   assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area&&n.getId()===generalId),false,'re-entering does not reset the general\'s respawn');
 });
 
-test('Crystal of memories returns to the public and parked Bandos chambers (issue #127)',async t=>{
+test('Crystal of memories returns to the public Bandos chamber (issue #127)',async t=>{
   const Crystal=require('../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics');
-  const {AreaManager}=require('../dist/game/model/areas/AreaManager');
   const f=actor(t),faction=Common.factionByKey('bandos'),source=new core.Location(2870,5360,2),landing=Common.toLocation(faction.door.landing);
   f.player.setProfile('league');
   f.player.setAttribute('league:type',4);
@@ -281,22 +280,86 @@ test('Crystal of memories returns to the public and parked Bandos chambers (issu
   clickBack();
   process(6);
   assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[source.getX(),source.getY(),source.getZ()],'public return');
+});
 
-  // Private chamber: the saved real tile is mapped back into the same parked instance.
-  // A league character always gets a private chamber without the instance fee (issue #68).
-  const {area}=await enterBandos(f,false),copy=area.copyOf([source.getX(),source.getY(),source.getZ()]);
+test('a non-league private chamber is still resumed by a crystal-of-memories recall (issue #127)',async t=>{
+  const {AreaManager}=require('../dist/game/model/areas/AreaManager');
+  const f=actor(t),faction=Common.factionByKey('bandos'),source=new core.Location(2870,5360,2),landing=Common.toLocation(faction.door.landing);
+  const {area}=await enterBandos(f),copy=area.copyOf([source.getX(),source.getY(),source.getZ()]);
   f.player.moveTo(copy.clone());f.player.setNeedsPlacement(false);
   Common.altarTeleport(f.player,landing);
-  process(10);
+  for(let i=0;i<10;i++)core.TaskManager.process();
   AreaManager.process(f.player);
-  assert.equal(Chambers.instanceOf(f.player),area,'altar Teleport parks the private chamber');
+  assert.equal(Chambers.instanceOf(f.player),area,'a non-league chamber is parked');
   assert.equal(f.player.getPrivateArea(),null);
-  assert.deepEqual(f.player.getAttribute(Crystal.RECALL_ATTRIBUTE),{x:source.getX(),y:source.getY(),z:source.getZ(),godwars:{faction:'bandos'}},'private chamber remembered as its real tile');
-  f.player.moveTo(new core.Location(3200,3200,0));f.player.setNeedsPlacement(false);
-  clickBack();
-  process(6);
+  const event={player:f.player,faction:'bandos',location:source.clone(),handled:false};
+  PM.emitCustomEvent('godwars:chamber-recall',event);
+  assert.equal(event.handled,true,'the registered chamber-recall handler resumes the parked copy');
   assert.equal(Chambers.instanceOf(f.player),area,'the parked chamber is reused');
   assert.equal(f.player.getPrivateArea(),area);
   assert.ok(area.hasMember(f.player));
   assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[copy.getX(),copy.getY(),copy.getZ()],'instance return');
+});
+
+test('league GWD entry is free, each visit spawns a fresh general, and the crystal returns outside the door (issue #202)',async t=>{
+  const Crystal=require('../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics');
+  const {AreaManager}=require('../dist/game/model/areas/AreaManager');
+  const f=actor(t),faction=Common.factionByKey('bandos'),I=core.ItemIdentifiers,landing=Common.toLocation(faction.door.landing);
+  f.player.setProfile('league');
+  f.player.setAttribute('league:type',4);
+  f.player.setAttribute('league:relics',{0:1,1:1,2:1});
+  f.player.setAttribute('league:areas',[1,2,3]);
+  f.player.setAttribute(Player.INFINITE_HEALTH_ATTRIBUTE,true);
+  const crystalId=I.CRYSTAL_OF_ECHOES;
+  f.player.getInventory().adds(crystalId,1);
+  f.player.getInventory().adds(I.ECUMENICAL_KEY,1);
+  assert.equal(Crystal.unlocked(f.player),true,'tier 3 crystal passive');
+  const calm=area=>{f.player.getSkillManager().setCurrentLevels(core.Skill.HITPOINTS,99,false);for(const npc of core.World.getNpcs())if(npc?.__godwarsChamber?.area===area)npc.getCombat().reset();};
+
+  // The door itself opens a free private room: no essence, key or coins are spent.
+  await useDoor(f,1);
+  const area=Chambers.instanceOf(f.player);assert.ok(area?.isGodWarsInstance,'league Open starts a private room');
+  assert.equal(f.player.getPrivateArea(),area);
+  assert.equal(Common.getEssence(f.player,faction),0,'entry spends no essence');
+  assert.equal(f.player.getInventory().getAmount(I.ECUMENICAL_KEY),1,'entry consumes no key');
+  assert.equal(f.player.getInventory().getAmount(I.COINS),0,'entry charges no coins');
+  let general=[...core.World.getNpcs()].find(n=>n?.isRegistered()&&n.getId()===faction.general&&n.getPrivateArea()===area);
+  assert.ok(general,'the room spawned its general');assert.ok(general.getHitpoints()>0);f.owned.add(general);
+  calm(area);
+  f.player.getCombat().reset();general.getCombat().reset();general.setHitpoints(0);
+  for(let i=0;i<20&&general.isRegistered();i++)core.World.process();
+  assert.equal(general.isRegistered(),false,'the general died through the engine');
+
+  // Leaving through the door destroys the room; re-entering builds a fresh one immediately.
+  area.leave(f.player,false);
+  assert.equal(Chambers.instanceOf(f.player),null,'the league room is not parked');
+  assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area),false,'no chamber NPCs outlive the visit');
+  f.player.getSkillManager().setCurrentLevels(core.Skill.HITPOINTS,99,false);
+  await useDoor(f,1);
+  const next=Chambers.instanceOf(f.player);assert.ok(next?.isGodWarsInstance,'the door builds another room');
+  assert.notEqual(next,area,'re-entry is not the old copy');
+  general=[...core.World.getNpcs()].find(n=>n?.isRegistered()&&n.getId()===faction.general&&n.getPrivateArea()===next);
+  assert.ok(general,'the fresh room spawned a general');assert.ok(general.getHitpoints()>0,'the general is alive immediately');f.owned.add(general);
+  assert.equal(Common.getEssence(f.player,faction),0,'re-entry is also free');
+  calm(next);
+
+  // Altar Teleport remembers the real tile, but the crystal returns outside the door.
+  const source=new core.Location(2870,5360,2);core.RegionManager.loadMapFiles(source.getX(),source.getY());
+  const copy=next.copyOf([source.getX(),source.getY(),source.getZ()]);
+  f.player.moveTo(copy.clone());f.player.setNeedsPlacement(false);
+  calm(next);
+  Common.altarTeleport(f.player,landing);
+  for(let i=0;i<10;i++)core.TaskManager.process();
+  AreaManager.process(f.player);
+  assert.equal(Chambers.instanceOf(f.player),null,'the league room is not parked for the crystal');
+  assert.deepEqual(f.player.getAttribute(Crystal.RECALL_ATTRIBUTE),{x:source.getX(),y:source.getY(),z:source.getZ(),godwars:{faction:'bandos'}},'the private room is remembered as its real tile');
+  f.player.moveTo(new core.Location(3200,3200,0));f.player.setNeedsPlacement(false);
+  f.player.setAttribute(Crystal.READY_AT_ATTRIBUTE,0);
+  const slot=f.player.getInventory().getSlotForItemId(crystalId);assert.ok(slot>=0);
+  assert.equal(PM.emitItemAction({player:f.player,item:f.player.getInventory().getItems()[slot],itemId:crystalId,slot,option:'Teleport-back',clickType:1,handled:false}),true,'the crystal item action is handled');
+  for(let i=0;i<6;i++)core.TaskManager.process();
+  const outside=Common.toLocation(faction.door.outside);
+  assert.deepEqual([f.player.getLocation().getX(),f.player.getLocation().getY(),f.player.getLocation().getZ()],[outside.getX(),outside.getY(),outside.getZ()],'the crystal returns outside the door');
+  assert.equal(f.player.getPrivateArea(),null);
+  assert.equal(Chambers.instanceOf(f.player),null);
 });
