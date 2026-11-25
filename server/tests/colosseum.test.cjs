@@ -175,7 +175,10 @@ function fakePlayer(name = 'Gladiator') {
     getEnteredAmountAction: () => p.amountAction,
     setEnteredAmountAction: (action) => { p.amountAction = action; },
     sendMessage: (message) => p.messages.push(message),
-    getDialogueManager: () => ({ startDialogues: (chain) => p.statements.push(chain) }),
+    getDialogueManager: () => ({
+      startDialogues: (chain) => { p.statements.push(chain); p.dialogueActive = true; },
+      isActive: () => p.dialogueActive === true,
+    }),
     getPacketSender() {
       const sender = {
         sendVarbit: (id, value) => { varbits.set(id, value); return sender; },
@@ -860,6 +863,29 @@ test('wave 12: Sol greets by attempt, lands behind the barricade, and his death 
   assert.equal(run.barricade.length, 0);
 });
 
+test('closing Sol’s greeting early still starts his landing (issue 199)', () => {
+  const player = fakePlayer('ClosedGreeting');
+  const run = Run.start(player);
+  run.removeMinimus();
+  run.wave = 11;
+  run.loot.future = Loot.roll(12, player);
+  run.stage = 'starting';
+  run.startWave();
+  assert.equal(run.stage, 'sol', 'his greeting first');
+  assert.equal(player.dialogueActive, true);
+  // Pressing Esc drops the chain before its final ActionDialogue, which was the only thing
+  // that started the jump. The run itself must notice the closed chatbox and land him.
+  player.dialogueActive = false;
+  run.tick();
+  assert.equal(run.stage, 'sol-landing', 'the jump starts even though the chain was dropped');
+  ticks(2);
+  assert.equal(run.stage, 'wave', 'he lands and the fight is under way');
+  assert.ok(run.solFight?.npc, 'Sol Heredit is in the arena');
+  assert.equal(run.solFight.npc.getId(), Sol.SOL);
+  assert.ok(run.barricade.length > 40, 'the barricade closes the arena');
+  run.end('left');
+});
+
 test("Sol opens with a Spear, and a second Spear or Shield in a row uses the second pattern", () => {
   const { run, fight, sol } = solRun();
   assert.equal(Sol.nextAttack(fight), 'spear');
@@ -1035,6 +1061,46 @@ test('forfeiting between waves brings out the chest; teleporting out loses it al
   assert.equal(first.run.stage, 'ended');
   assert.equal(Shared.gloryOf(first.player), glory, "a death keeps the run's Glory");
   assert.equal(first.player.getAttribute(Scoreboard.ATTR.DEATHS), 1, 'the death is counted');
+});
+
+test('the intermission Claim confirmation forfeits the run and brings out its loot (issue 198)', () => {
+  const player = fakePlayer('Claimer');
+  const run = Run.start(player);
+  run.completeWave();
+  assert.equal(run.stage, 'intermission');
+  assert.equal(run.wave, 1);
+  assert.deepEqual(run.loot.rewards, [{ id: 28924, amount: 80 }]);
+  run.openIntermission();
+  assert.equal(player.getInterfaceId(), 865, 'the modifier screen is open');
+  const button = hooks.buttons.find(({ ids }) => ids.includes((865 << 16) | 22));
+  assert.ok(button, 'interface 865:22 (the Claim confirmation) is handled');
+  assert.equal(button.handler({ player }), true);
+  assert.equal(run.stage, 'finished', 'the run is over');
+  assert.equal(player.getInterfaceId(), -1, 'the screen closes');
+  assert.ok(run.chest, 'the rewards chest comes out');
+  assert.deepEqual([run.minimus.location.getX(), run.minimus.location.getY()], [1830, 3103], 'Minimus beside it');
+  assert.deepEqual(run.loot.rewards, [{ id: 28924, amount: 80 }], 'the accumulated loot is kept');
+  assert.equal(Rewards.openChest({ player }), true);
+  assert.deepEqual(player.inventories[843], [[28924, 80]], 'and can be taken from the chest');
+  run.end('left');
+});
+
+test('the intermission Claim needs a cleared wave and the open screen', () => {
+  const player = fakePlayer('NoClaim');
+  const run = Run.start(player);
+  const button = hooks.buttons.find(({ ids }) => ids.includes((865 << 16) | 22));
+  run.openIntermission();
+  assert.equal(button.handler({ player }), false, 'no wave cleared: the cache leaves Claim inactive');
+  assert.equal(run.stage, 'intermission');
+  assert.equal(run.chest, null);
+
+  run.completeWave();
+  run.openIntermission();
+  player.getPacketSender().sendInterfaceRemoval();
+  assert.equal(button.handler({ player }), false, 'the confirmation must come from the open screen');
+  assert.equal(run.stage, 'intermission');
+  assert.equal(run.chest, null);
+  run.end('left');
 });
 
 test('rewards chest supports captured item withdrawals and bank-all (rsprox 4117 and 1227)', () => {
