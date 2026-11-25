@@ -288,6 +288,7 @@ module.exports = function registerDarknessOfHallowvaleQuest(api) {
     ],
     scrollItemId: COMPLETE_ICON_ITEM_ID,
     buildJournal,
+    restoreStageState: (player, stage) => state.restore(player, stage),
     onReward: grantReward,
   });
 
