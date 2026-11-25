@@ -122,6 +122,31 @@ function collides(
   return srcY < destY + destLength && destY < srcLength + srcY;
 }
 
+/**
+ * Place the local search map so both endpoints fit when their span allows it.
+ *
+ * RSMod anchors the 128x128 search map on the source, which silently makes any
+ * destination more than 64 tiles away unreachable even when the collision map
+ * has an open route. That matters for loc interactions: the Cam Torum landing
+ * to the Neypotzli entrance is 91 tiles of open tunnel, and live walks it in
+ * one click. Slide the map just far enough to keep both endpoints in it; when
+ * they cannot both fit, keep the source anchor (and its partial-route fallback).
+ */
+function localSearchBase(src: number, dest: number): number {
+  const base = src - (SEARCH_MAP_SIZE >> 1);
+  if (Math.abs(dest - src) >= SEARCH_MAP_SIZE) {
+    return base;
+  }
+  const localDest = dest - base;
+  if (localDest < 0) {
+    return base + localDest;
+  }
+  if (localDest >= SEARCH_MAP_SIZE) {
+    return base + localDest - (SEARCH_MAP_SIZE - 1);
+  }
+  return base;
+}
+
 export class RsmodRouteFinding {
   private readonly directions = new Int32Array(SEARCH_MAP_SIZE * SEARCH_MAP_SIZE);
   private readonly distances = new Int32Array(SEARCH_MAP_SIZE * SEARCH_MAP_SIZE);
@@ -160,8 +185,8 @@ export class RsmodRouteFinding {
 
     this.reset();
 
-    const baseX = srcX - (SEARCH_MAP_SIZE >> 1);
-    const baseY = srcY - (SEARCH_MAP_SIZE >> 1);
+    const baseX = localSearchBase(srcX, destX);
+    const baseY = localSearchBase(srcY, destY);
     const localSrcX = srcX - baseX;
     const localSrcY = srcY - baseY;
     const localDestX = destX - baseX;
@@ -215,7 +240,8 @@ export class RsmodRouteFinding {
       const outsideSearch = localDestX < 0 || localDestY < 0
         || localDestX >= SEARCH_MAP_SIZE || localDestY >= SEARCH_MAP_SIZE;
       if (!foundApproachPoint && !(allowPartialRoute && outsideSearch && locShape === -1
-        && destWidth === 1 && destLength === 1 && this.findPartialApproachPoint(localDestX, localDestY))) {
+        && destWidth === 1 && destLength === 1
+        && this.findPartialApproachPoint(localSrcX, localSrcY, localDestX, localDestY))) {
         return { waypoints: [], alternative: false, success: false, endX: srcX, endY: srcY };
       }
     }
@@ -794,9 +820,13 @@ export class RsmodRouteFinding {
   }
 
   /** Use only searched, reachable tiles and require progress towards the distant home. */
-  private findPartialApproachPoint(localDestX: number, localDestY: number): boolean {
-    const source = SEARCH_MAP_SIZE >> 1;
-    let lowestCost = (localDestX - source) ** 2 + (localDestY - source) ** 2;
+  private findPartialApproachPoint(
+    localSrcX: number,
+    localSrcY: number,
+    localDestX: number,
+    localDestY: number
+  ): boolean {
+    let lowestCost = (localDestX - localSrcX) ** 2 + (localDestY - localSrcY) ** 2;
     let pathLength = MAX_ALTERNATIVE_ROUTE_SEEK_RANGE;
     let found = false;
     for (let x = 0; x < SEARCH_MAP_SIZE; x++) {
