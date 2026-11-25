@@ -2,6 +2,7 @@
 // Paepay/tsps#65: temporary event items are bound to account, world and instance; they cannot
 // leave the account; they are purged on expiry/login; claims obey the event, the player's toggle
 // and the combat lock; Master's Arsenal loans waive levels and keep charges, ammo and runes.
+// The loans are dedicated custom items (50008..50016) aliased to the real weapons, never real ids.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -17,6 +18,9 @@ const { Location } = require("../dist/game/model/Location");
 
 const Common = require("../plugins/events/global/Common.GlobalEvents");
 const Items = require("../plugins/events/global/Items.GlobalEvents");
+const Woodcutting = require("../plugins/skills/Woodcutting.plugin");
+const Mining = require("../plugins/skills/Mining.plugin");
+const Fishing = require("../plugins/skills/Fishing.plugin");
 
 let core;
 let store;
@@ -54,6 +58,7 @@ before(async () => {
       };
     },
     onItemAction: (handler) => { hooks.itemAction = handler; },
+    onItemOnObject: (handler) => { hooks.itemOnObject = handler; },
     onItemDropPolicy: (handler) => { hooks.dropPolicy = handler; },
     onCanUseItem: (handler) => { hooks.canUse = handler; },
     onCanEquip: (handler) => { hooks.canEquip = handler; },
@@ -145,6 +150,63 @@ test("event items use dedicated custom ids and never shadow the league relics", 
     [Items.noteId(), Items.greavesId()],
     "the catalog icons are the dedicated event items",
   );
+});
+
+test("the nine Arsenal loans are dedicated custom items aliased to their real weapons", () => {
+  const expected = [
+    [50008, 22325], [50009, 20997], [50010, 27275], [50011, 26219], [50012, 22978],
+    [50013, 25865], [50014, 13241], [50015, 13243], [50016, 21031],
+  ];
+  const rows = Items.arsenalRows();
+  assert.deepEqual(rows.map((row) => [row.itemId, row.baseItemId]), expected);
+  for (const [id, baseId] of expected) {
+    const loan = core.ItemDefinition.forId(id);
+    const base = core.ItemDefinition.forId(baseId);
+    assert.equal(core.ItemAliases.baseOf(id), baseId, `${id} resolves weapon behaviour as ${baseId}`);
+    assert.equal(loan.getName(), base.getName(), `${id} keeps the real display name`);
+    assert.deepEqual(loan.getBonuses(), base.getBonuses(), `${id} keeps the real bonuses`);
+    assert.equal(loan.getEquipmentType().getSlot(), base.getEquipmentType().getSlot(), `${id} keeps its slot`);
+    assert.equal(loan.isTradeable(), false);
+    assert.equal(loan.isDropable(), false);
+    assert.equal(loan.isSellable(), false);
+  }
+});
+
+test("Arsenal loans resolve through the id-keyed weapon, special and tool tables", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("alias-tables");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "twisted-bow"), true);
+  equip(p, held(p, 50009), core.Equipment.WEAPON_SLOT);
+  assert.equal(core.RangedWeapon.getFor(p), core.RangedWeapon.TWISTED_BOW, "the loan is a twisted bow");
+
+  core.CombatSpecial.register({
+    id: "test-arsenal-alias", itemIds: [22325], drainAmount: 50,
+    strengthMultiplier: 1, accuracyMultiplier: 1, combatMethod: { type: () => "MELEE" },
+  });
+  assert.equal(core.CombatSpecial.getForWeaponId(50008)?.id, "test-arsenal-alias");
+
+  assert.ok(Woodcutting.AXES.some((axe) => axe.id === 50014 && axe.requiredLevel === 1));
+  assert.ok(Mining.PICKAXES.some((pickaxe) => pickaxe.id === 50015 && pickaxe.requiredLevel === 1));
+  assert.ok(Fishing.TOOLS.HARPOON.variants.some((variant) =>
+    variant.ids.includes(50016) && variant.level === 1 && variant.infernal === true));
+});
+
+test("an Arsenal loan saved under an older real id is purged, never released as a permanent weapon", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("stale-loan");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
+  const stale = held(p, 50008);
+  stale.setId(22325);
+  assert.equal(Items.valid(p, stale), false, "a real id is no longer a valid loan");
+  Common.testing.setState({ version: 1, revision: 1, slots: { combat: null, skilling: null, utility: null } });
+  for (const login of hooks.logins ?? []) login({ player: p });
+  assert.equal(p.getInventory().getAmount(22325), 0, "the stale loan does not become a real scythe");
+
+  p.getInventory().adds(22325, 1);
+  for (const login of hooks.logins ?? []) login({ player: p });
+  assert.equal(p.getInventory().getAmount(22325), 1, "an ordinary real weapon is untouched");
 });
 
 test("a bound copy left on a real item id is migrated back to that item, not deleted", () => {
@@ -397,7 +459,7 @@ test("opting out of Master's Arsenal removes the loan and interrupts combat", ()
   activate("masters-arsenal");
   const p = player("arsenal-optout");
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
-  const loan = held(p, 22325);
+  const loan = held(p, 50008);
   equip(p, loan);
   let cleared = false;
   let stopped = false;
@@ -409,8 +471,8 @@ test("opting out of Master's Arsenal removes the loan and interrupts combat", ()
   skills.stopSkillable = () => { stopped = true; stop(); };
 
   Common.setEffectsEnabled(p, "masters-arsenal", false);
-  assert.equal(p.getInventory().getAmount(22325), 0, "the carried loan is gone");
-  assert.ok(!p.getEquipment().getItems().some((item) => item?.getId?.() === 22325), "the equipped loan is gone");
+  assert.equal(p.getInventory().getAmount(50008), 0, "the carried loan is gone");
+  assert.ok(!p.getEquipment().getItems().some((item) => item?.getId?.() === 50008), "the equipped loan is gone");
   assert.equal(cleared, true, "an attack that depended on it is cancelled");
   assert.equal(stopped, true, "a skilling action that depended on it is cancelled");
 
@@ -418,23 +480,30 @@ test("opting out of Master's Arsenal removes the loan and interrupts combat", ()
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true, "opting back in allows one reclaim");
 });
 
-test("Master's Arsenal loans bind the real weapon and keep charges, ammo and runes", () => {
+test("Master's Arsenal loans bind a dedicated custom weapon and keep charges, ammo and runes", () => {
   Common.testing.reset();
   activate("masters-arsenal");
   const p = player("arsenal");
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
-  const scythe = held(p, 22325);
+  const scythe = held(p, 50008);
   assert.ok(scythe);
   assert.equal(Items.bindingOf(scythe).catalog, "scythe");
   assert.equal(scythe.getMetaValue(core.Item.UNTRADEABLE_META), true);
   assert.equal(scythe.getMetaValue(core.Item.UNBANKABLE_META), true);
+
+  const uncharge = { player: p, item: scythe, option: "Uncharge", handled: false };
+  hooks.itemAction(uncharge);
+  assert.equal(uncharge.handled, true, "a loan cannot be uncharged into tradeable resources");
+  const objectUse = { player: p, item: scythe, handled: false };
+  hooks.itemOnObject(objectUse);
+  assert.equal(objectUse.handled, true, "a loan cannot be used on world objects");
 
   const skilling = { player: p, item: scythe, skip: false };
   emit("skilling:consume-charge", skilling);
   assert.equal(skilling.skip, true, "a carried tool keeps its charges");
 
   equip(p, scythe);
-  const combat = { player: p, itemId: 22325, skip: false };
+  const combat = { player: p, itemId: 50008, skip: false };
   emit("combat:consume-charge", combat);
   assert.equal(combat.skip, true, "a wielded weapon keeps its charges");
 
@@ -457,8 +526,8 @@ test("claiming another Arsenal item removes the previous loan", () => {
   const p = player("swap");
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
   assert.equal(claim(p, Items.KIND.ARSENAL, "twisted-bow"), true);
-  assert.equal(p.getInventory().getAmount(22325), 0, "the old loan is gone");
-  assert.equal(p.getInventory().getAmount(20997), 1);
+  assert.equal(p.getInventory().getAmount(50008), 0, "the old loan is gone");
+  assert.equal(p.getInventory().getAmount(50009), 1);
 });
 
 test("a bound Arsenal loan waives its equipment levels, but a real copy and an opted-out loan do not", () => {
@@ -466,9 +535,9 @@ test("a bound Arsenal loan waives its equipment levels, but a real copy and an o
   activate("masters-arsenal");
   const p = player("levels");
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
-  const scythe = held(p, 22325);
+  const scythe = held(p, 50008);
 
-  const copy = new core.Item(22325, 1);
+  const copy = new core.Item(50008, 1);
   copy.setMetaValue(Items.BINDING_META, Items.bindingOf(scythe));
   const loan = { player: p, item: copy, waived: false };
   emit("equipment:requirement", loan);
@@ -489,7 +558,7 @@ test("a borrowed Arsenal weapon deals no PvP damage but keeps its PvM damage", (
   activate("masters-arsenal");
   const p = player("pvp-arsenal");
   assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
-  equip(p, held(p, 22325));
+  equip(p, held(p, 50008));
 
   const damage = () => {
     const hit = { value: 30, getDamage() { return hit.value; }, setDamage(value) { hit.value = value; } };

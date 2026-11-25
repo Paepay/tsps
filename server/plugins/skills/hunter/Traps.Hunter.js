@@ -316,13 +316,20 @@ function collect(event, reset = false, check = true) {
   if (!trap || !nearby(player, object)) return true;
   if (["luring", "closing"].includes(trap.state)) { player.sendMessage("Wait until the creature has finished investigating your trap."); return true; }
   if (check && trap.state !== "caught") return true;
+  const returned = returnedItems(trap);
   const rewards = trap.state === "caught" ? (trap.rewards ??= rewardsFor(player, trap)) : [];
-  const items = returnedItems(trap).concat(rewards);
+  const items = returned.concat(rewards);
   if (!catchExchange(player, [], items, false)) { catchRefusal(player, [], items); return true; }
   const def = H.data.traps[trap.kind];
   if (!begin(player, def.dismantleTicks ?? 2, def.dismantle ?? ANIM.TAKE, () => {
-    if (!H.traps.has(trap) || !owned(player, object) || !catchExchange(player, [], items)) return;
-    if (trap.state === "caught") xp(player, trap.xp ?? trap.creature.xp, trap.kind, trap.creature.npc);
+    if (!H.traps.has(trap) || !owned(player, object)) return;
+    // The trap's own parts are not gathered resources: Abundance must not mint a second box trap.
+    if (!catchExchange(player, [], returned, true, { bonus: false })) return;
+    if (trap.state === "caught") {
+      const experience = trap.xp ?? trap.creature.xp;
+      if (rewards.length > 0 && !catchExchange(player, [], rewards, true, { experience })) return;
+      xp(player, experience, trap.kind, trap.creature.npc);
+    }
     const { kind, location, base } = trap;
     const caught = trap.state === "caught";
     remove(trap);

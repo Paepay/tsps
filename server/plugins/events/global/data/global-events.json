@@ -96,10 +96,10 @@
       "iconItemId": 11920,
       "description": "Every gathered resource is doubled, and you gain the experience for the extra resource.",
       "summary": "Double every gathered resource, with XP for the extra resources.",
-      "effect": { "kind": "double-resources", "xpMultiplier": 2 },
+      "effect": { "kind": "double-resources", "xpMultiplier": 2, "skills": ["MINING", "WOODCUTTING", "FISHING", "HUNTER", "FARMING"] },
       "durationMinutes": null,
       "costPaePoints": null,
-      "config": { "multiplier": 2 }
+      "config": { "multiplier": 2, "skills": ["MINING", "WOODCUTTING", "FISHING", "HUNTER", "FARMING"] }
     },
     {
       "id": "infernal-gathering",
@@ -237,15 +237,15 @@
     "bankersNoteId": 50006,
     "sagesGreavesId": 50007,
     "arsenal": [
-      { "key": "scythe", "name": "Scythe of vitur", "itemId": 22325, "eventItemId": 1000010, "section": "Weapon" },
-      { "key": "twisted-bow", "name": "Twisted bow", "itemId": 20997, "eventItemId": 1000011, "section": "Weapon" },
-      { "key": "tumekens-shadow", "name": "Tumeken's shadow", "itemId": 27275, "eventItemId": 1000012, "section": "Weapon" },
-      { "key": "osmumtens-fang", "name": "Osmumten's fang", "itemId": 26219, "eventItemId": 1000013, "section": "Weapon" },
-      { "key": "dragon-hunter-lance", "name": "Dragon hunter lance", "itemId": 22978, "eventItemId": 1000014, "section": "Weapon" },
-      { "key": "bow-of-faerdhinen", "name": "Bow of Faerdhinen", "itemId": 25865, "eventItemId": 1000015, "section": "Weapon" },
-      { "key": "infernal-axe", "name": "Infernal axe", "itemId": 13241, "eventItemId": 1000016, "section": "Tool" },
-      { "key": "infernal-pickaxe", "name": "Infernal pickaxe", "itemId": 13243, "eventItemId": 1000017, "section": "Tool" },
-      { "key": "infernal-harpoon", "name": "Infernal harpoon", "itemId": 21031, "eventItemId": 1000018, "section": "Tool" }
+      { "key": "scythe", "name": "Scythe of vitur", "itemId": 50008, "baseItemId": 22325, "eventItemId": 1000010, "section": "Weapon" },
+      { "key": "twisted-bow", "name": "Twisted bow", "itemId": 50009, "baseItemId": 20997, "eventItemId": 1000011, "section": "Weapon" },
+      { "key": "tumekens-shadow", "name": "Tumeken's shadow", "itemId": 50010, "baseItemId": 27275, "eventItemId": 1000012, "section": "Weapon" },
+      { "key": "osmumtens-fang", "name": "Osmumten's fang", "itemId": 50011, "baseItemId": 26219, "eventItemId": 1000013, "section": "Weapon" },
+      { "key": "dragon-hunter-lance", "name": "Dragon hunter lance", "itemId": 50012, "baseItemId": 22978, "eventItemId": 1000014, "section": "Weapon" },
+      { "key": "bow-of-faerdhinen", "name": "Bow of Faerdhinen", "itemId": 50013, "baseItemId": 25865, "eventItemId": 1000015, "section": "Weapon" },
+      { "key": "infernal-axe", "name": "Infernal axe", "itemId": 50014, "baseItemId": 13241, "eventItemId": 1000016, "section": "Tool" },
+      { "key": "infernal-pickaxe", "name": "Infernal pickaxe", "itemId": 50015, "baseItemId": 13243, "eventItemId": 1000017, "section": "Tool" },
+      { "key": "infernal-harpoon", "name": "Infernal harpoon", "itemId": 50016, "baseItemId": 21031, "eventItemId": 1000018, "section": "Tool" }
     ]
   },
   "combatLock": { "postCombatSeconds": 10 },

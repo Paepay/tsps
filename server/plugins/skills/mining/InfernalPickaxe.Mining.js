@@ -13,6 +13,8 @@ const MAX_CHARGES = 5000;
 const CHARGES_META_KEY = "infernal-pickaxe";
 const SMITHING_LEVEL = 85;
 const ITEM_NAMES = Object.freeze(["Infernal pickaxe", "Infernal pickaxe (or)", "Infernal pickaxe (uncharged)"]);
+/** Master's Arsenal's custom invocation (50015) counts as charged but never degrades. */
+const LOAN_IDS = new Set([50015]);
 
 let api = null;
 let core = null;
@@ -115,7 +117,7 @@ function attach(pluginApi) {
     [ItemIds.INFERNAL_PICKAXE_OR_, ItemIds.INFERNAL_PICKAXE_UNCHARGED__2],
     [ItemIds.INFERNAL_PICKAXE_OR__3, ItemIds.INFERNAL_PICKAXE_UNCHARGED__4],
   ]);
-  chargedIds = new Set(unchargedByCharged.keys());
+  chargedIds = new Set([...unchargedByCharged.keys(), ...LOAN_IDS]);
   rechargeSourceIds = new Set([
     ItemIds.SMOULDERING_STONE,
     ItemIds.DRAGON_PICKAXE,

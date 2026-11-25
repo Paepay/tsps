@@ -7,10 +7,11 @@
  *
  *   { kind, eventId, instanceId, account, worldId, catalog }
  *
- * Arsenal loans use the real weapon/tool id with that binding, so every weapon keeps its
- * normal PvM mechanics (scythe sweeps, twisted bow scaling, shadow multiplier). The two
- * purpose-made items (Banker's note (e), Sage's greaves (e)) use dedicated custom ids in the
- * catalog, separate from the league relics they resemble.
+ * Arsenal loans use nine dedicated custom items (50008..50016, each with a `baseItemId`). They
+ * keep the real weapon's name so name-keyed gear checks still find them, and are registered as
+ * `ItemAliases` of those base ids so id-keyed combat and weapon-profile tables resolve them too.
+ * The two purpose-made items (Banker's note (e), Sage's greaves (e)) likewise use dedicated
+ * custom ids in the catalog, separate from the league relics they resemble.
  *
  * Every movement path is vetoed here: trade offers, bank deposits, shop sales, alchemy,
  * GE listings, drops, deaths and item-on-item transformations. `valid()` gates use on
@@ -31,6 +32,7 @@ const EVENT_FOR_KIND = Object.freeze({
   [KIND.ARSENAL]: "masters-arsenal",
 });
 const ACTIONS_BLOCKED_WHEN_DISABLED = new Set(["Wear", "Wield", "Use", "Activate", "Check", "Toggle", "Revert"]);
+const EXTRACTIVE_ACTIONS = new Set(["Uncharge", "Dismantle", "Disassemble", "Empty", "Revert", "Break"]);
 const CUSTOM_ITEM_ID_MIN = 50000;
 const CUSTOM_ITEM_ID_MAX = 65022;
 const EVENT_ITEMS = Object.freeze([
@@ -84,10 +86,12 @@ function isTemporaryId(itemId) {
  * Copies made before the catalog split reuse a real or league-relic id (the old Banker's note
  * grant handed out 28767 with a binding). The item itself is the player's real relic, so drop the
  * stale binding and let it behave as the plain item rather than deleting a relic on login.
- * Arsenal loans always use ids listed in `isTemporaryId`, so none of them are migrated away.
+ * Arsenal bindings are never migrated: a loan saved under an older real id must be purged, not
+ * released as a permanent weapon.
  */
 function migrateLegacy(item) {
   if (!isTemporary(item) || isTemporaryId(item.getId?.())) return false;
+  if (bindingOf(item)?.kind === KIND.ARSENAL) return false;
   item.setMetaValue(BINDING_META, undefined);
   return true;
 }
@@ -146,15 +150,39 @@ function validateItemIds(items = itemsConfig()) {
   if (ids[0][1] === ids[1][1]) {
     throw new Error("GlobalEvents: Banker's note and Sage's greaves need distinct item ids");
   }
-  const arsenalIds = new Set((Array.isArray(items.arsenal) ? items.arsenal : [])
-    .map((row) => row?.itemId)
-    .filter(Number.isInteger));
+  const arsenalIds = new Set();
+  for (const row of Array.isArray(items.arsenal) ? items.arsenal : []) {
+    const id = row?.itemId;
+    const baseItemId = row?.baseItemId;
+    if (!Number.isInteger(id) || id < CUSTOM_ITEM_ID_MIN || id > CUSTOM_ITEM_ID_MAX) {
+      throw new Error(`GlobalEvents: Master's Arsenal item ${String(row?.key)} must use a dedicated custom item id in ${CUSTOM_ITEM_ID_MIN}..${CUSTOM_ITEM_ID_MAX}, not ${String(id)}`);
+    }
+    if (arsenalIds.has(id)) {
+      throw new Error(`GlobalEvents: Master's Arsenal loan ids must be unique; ${id} is used twice`);
+    }
+    if (!Number.isInteger(baseItemId) || baseItemId <= 0 || baseItemId === id) {
+      throw new Error(`GlobalEvents: Master's Arsenal item ${String(row?.key)} needs a real baseItemId, not ${String(baseItemId)}`);
+    }
+    arsenalIds.add(id);
+  }
   for (const [label, id] of ids) {
     if (arsenalIds.has(id)) {
       throw new Error(`GlobalEvents: ${label} must not reuse a Master's Arsenal loan id ${id}`);
     }
   }
   return ids.map(([, id]) => id);
+}
+
+/**
+ * Make each loan answer to its real item wherever behaviour is keyed by id: special attacks,
+ * weapon profiles (speed, reach, animations), ranged weapons and ammunition. The alias is
+ * resolved only where the loan has no entry of its own, so a plugin that knows the loan id
+ * (the infernal tools and their charge trackers) still wins.
+ */
+function registerArsenalAliases(rows) {
+  for (const row of rows) {
+    core.ItemAliases.register(Number(row.itemId), Number(row.baseItemId));
+  }
 }
 
 function bind(item, player, eventId, kind, extra = {}) {
@@ -556,6 +584,13 @@ function itemAction(event) {
     event.handled = true;
     return true;
   }
+  // An event loan must never yield a tradeable resource or become an ordinary item: no
+  // uncharging a staff back into runes, no dismantling, no reverting a kit.
+  if (EXTRACTIVE_ACTIONS.has(option)) {
+    player.sendMessage("Temporary event items can't be broken down or uncharged.");
+    event.handled = true;
+    return true;
+  }
   if (ACTIONS_BLOCKED_WHEN_DISABLED.has(option) && !usable(player, item)) {
     player.sendMessage(Common.message("disabled"));
     event.handled = true;
@@ -569,6 +604,23 @@ function dropPolicy(event) {
   event.dropToGround = false;
   event.handled = true;
   confirmDelete(event.player, event.item);
+}
+
+/**
+ * A loan is not an ordinary item: it cannot be lowered into a well, used on an altar, or
+ * otherwise combined with the world. That also stops a charged loan from spending the
+ * player's own runes/vials to top up a copy that should cost nothing.
+ */
+function blockObjectUse(event) {
+  if (!isTemporary(event.item)) return;
+  if (migrateLegacy(event.item)) return;
+  event.handled = true;
+  if (!valid(event.player, event.item)) {
+    removeItem(event.player, event.item);
+    event.player.sendMessage(Common.message("expired"));
+    return;
+  }
+  event.player.sendMessage("Temporary event items can't be used on that.");
 }
 
 /* ------------------------------------------------------------------ hooks --- */
@@ -762,6 +814,7 @@ function attach(pluginApi) {
   core = api.core;
   validateEventItemIds();
   validateItemIds();
+  registerArsenalAliases(arsenalRows());
   Common.setClaimablesProvider(claimables);
   api.persistAttribute(LAST_COMBAT_ATTRIBUTE, 0);
   api.onPlayerProcess(greavesTick);
@@ -769,6 +822,7 @@ function attach(pluginApi) {
   api.onItemOnItem(noteOnItem);
   api.onItemOnItem(blockTransform);
   api.onItemAction(itemAction);
+  api.onItemOnObject(blockObjectUse);
   api.onItemDropPolicy(dropPolicy);
   api.onCanUseItem(onCanUseItem);
   api.onCanEquip(onCanEquip);

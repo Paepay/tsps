@@ -123,7 +123,11 @@ function collect(player, npc, def) {
   const generated = { player, npc, npcId: def.npc, drops: prey(def), handled: false };
   H.api.emitCustomEvent("npc-drops:generated", generated);
   if (generated.handled) return;
-  for (const drop of generated.drops) catchExchange(player, [], [[drop.itemId, drop.amount]]);
+  // The catch's XP is paid once, on the first reward that fits, so Abundance can pay its share.
+  let experience = def.xp;
+  for (const drop of generated.drops) {
+    if (catchExchange(player, [], [[drop.itemId, drop.amount]], true, { experience })) experience = 0;
+  }
 }
 
 function retrieve({ player, npc }) {

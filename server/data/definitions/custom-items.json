@@ -206,5 +206,150 @@
       "sellable": false,
       "value": 1
     }
+  },
+  {
+    "id": 50008,
+    "baseItemId": 22325,
+    "objType": {
+      "name": "Scythe of Vitur",
+      "examine": "A temporary Scythe of Vitur lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50009,
+    "baseItemId": 20997,
+    "objType": {
+      "name": "Twisted bow",
+      "examine": "A temporary Twisted bow lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50010,
+    "baseItemId": 27275,
+    "objType": {
+      "name": "Tumeken's shadow",
+      "examine": "A temporary Tumeken's shadow lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50011,
+    "baseItemId": 26219,
+    "objType": {
+      "name": "Osmumten's fang",
+      "examine": "A temporary Osmumten's fang lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false },
+    "specialAttack": { "from": 26219 }
+  },
+  {
+    "id": 50012,
+    "baseItemId": 22978,
+    "objType": {
+      "name": "Dragon hunter lance",
+      "examine": "A temporary Dragon hunter lance lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50013,
+    "baseItemId": 25865,
+    "objType": {
+      "name": "Bow of Faerdhinen",
+      "examine": "A temporary Bow of Faerdhinen lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50014,
+    "baseItemId": 13241,
+    "objType": {
+      "name": "Infernal axe",
+      "examine": "A temporary Infernal axe lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50015,
+    "baseItemId": 13243,
+    "objType": {
+      "name": "Infernal pickaxe",
+      "examine": "A temporary Infernal pickaxe lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
+  },
+  {
+    "id": 50016,
+    "baseItemId": 21031,
+    "objType": {
+      "name": "Infernal harpoon",
+      "examine": "A temporary Infernal harpoon lent by a global event.",
+      "isTradable": false,
+      "note": -1,
+      "noteTemplate": -1,
+      "unnotedId": -1,
+      "notedId": -1,
+      "placeholder": -1,
+      "placeholderTemplate": -1
+    },
+    "itemDef": { "tradeable": false, "dropable": false, "sellable": false }
   }
 ]

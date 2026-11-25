@@ -15,6 +15,7 @@ const InfernalPickaxe = require("../plugins/skills/mining/InfernalPickaxe.Mining
 InfernalPickaxe.attach({
   core: { Skill, Equipment, ItemIds, ItemIdentifiers },
   onItemOnItem() {},
+  onItemAction() {},
 });
 
 function pickaxe(id = ItemIds.INFERNAL_PICKAXE, meta = {}) {

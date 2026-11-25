@@ -113,6 +113,8 @@ const PICKAXES = [
   { id: ItemIds.ECHO_PICKAXE, key: "crystal", requiredLevel: 1, rank: 72, attemptIntervalTicks: 2, animation: new Animation(8347) },
   // Trailblazer Reloaded's Infernal Gathering pickaxe (custom item): same pace as the Echo pickaxe.
   { id: ItemIds.TRAILBLAZER_PICKAXE, key: "crystal", requiredLevel: 1, rank: 72, attemptIntervalTicks: 2, animation: new Animation(8347) },
+  // Master's Arsenal loan (custom 50015): the infernal pickaxe with its equipment requirement waived.
+  { id: 50015, key: "infernal", requiredLevel: 1, rank: 61, attemptIntervalTicks: 3, fastRollChance: 1 / 6, animation: new Animation(4482) },
 ];
 
 /** Best first: by the level they need, a `rank` standing in for a tool whose requirement understates it. */

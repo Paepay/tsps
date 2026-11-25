@@ -124,6 +124,38 @@ test("Abundance doubles the resource in the inventory and pays the extra's XP", 
   assert.equal(full.getInventory().getAmount(I.LOGS), 0, "no room means no extra, not a lost base");
 });
 
+test("Abundance doubles Hunter catches and pays the catch XP once", () => {
+  Common.testing.reset();
+  activate("abundance");
+  const p = player("abundance-hunter");
+  const before = xp(p, core.Skill.HUNTER);
+  const catchRequest = { player: p, itemId: I.RAW_PYRE_FOX, amount: 1, skill: core.Skill.HUNTER, xp: 100, stored: 0 };
+  emit("storage:gather", catchRequest);
+  assert.equal(p.getInventory().getAmount(I.RAW_PYRE_FOX), 1, "the extra catch is placed");
+  assert.equal(xp(p, core.Skill.HUNTER) - before, 100, "the extra catch pays one catch's XP, not more");
+
+  const returned = { player: p, itemId: I.BOX_TRAP, amount: 1, skill: core.Skill.HUNTER, xp: 100, stored: 0, bonus: false };
+  emit("storage:gather", returned);
+  assert.equal(p.getInventory().getAmount(I.BOX_TRAP), 0, "returned trap parts are not doubled");
+  assert.equal(xp(p, core.Skill.HUNTER) - before, 100, "returned trap parts pay no extra XP");
+});
+
+test("Abundance doubles a farming pick and its experience", () => {
+  Common.testing.reset();
+  activate("abundance");
+  const p = player("abundance-farming");
+  const pick = { player: p, crop: "HERB", itemId: I.LOGS, amount: 3, experience: 30, stored: 0 };
+  emit("farming:pick", pick);
+  assert.equal(pick.amount, 6);
+  assert.equal(pick.experience, 60);
+
+  Common.setEffectsEnabled(p, "abundance", false);
+  const off = { player: p, crop: "HERB", itemId: I.LOGS, amount: 3, experience: 30, stored: 0 };
+  emit("farming:pick", off);
+  assert.equal(off.amount, 3);
+  assert.equal(off.experience, 30);
+});
+
 test("Infernal Gathering burns logs, smelts ore and cooks fish with the right XP", () => {
   Common.testing.reset();
   activate("infernal-gathering");

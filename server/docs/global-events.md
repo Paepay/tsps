@@ -122,20 +122,31 @@ contract identity for storage, auditing and the eventual 32-bit item transport; 
 presentation only. Do not move the virtual ids onto the wire without changing both the server
 encoder and the client decoder.
 
-### Why Master's Arsenal loans keep real item ids
+### Master's Arsenal loans use dedicated custom items
 
-The nine loans (Scythe of vitur, Twisted bow, Tumeken's shadow, Osmumten's fang, Dragon hunter
-lance, Bow of Faerdhinen, infernal axe, pickaxe and harpoon) use their real item ids plus the
-binding, not new `50008..50016` definitions. A custom definition inherits stats, appearance and
-animations, but weapon behaviour in this codebase is looked up by exact item id: the twisted
-bow's scaling (`isUsingTwistedBow`), the shadow's charge and multiplier, the scythe/fang special
-attacks (`CombatSpecial.getForWeaponId`) and every charge tracker all compare the equipped id.
-A loan on a new id would therefore lose its special attack and its normal PvM mechanics; the
-contract's preserve-special-attacks rule is the stronger one.
+The nine loans (Scythe of Vitur, Twisted bow, Tumeken's shadow, Osmumten's fang, Dragon hunter
+lance, Bow of Faerdhinen, infernal axe, pickaxe and harpoon) are dedicated items `50008..50016`,
+each defined in `custom-items.json` with the real item as its `baseItemId`. The definitions keep
+the real display name, bonuses, slot, animations and requirements, and are sent through the
+existing `customItems` content packet at login. The ids are inside the client's 16-bit item range,
+so no transport change is involved.
 
-Revisit this only together with a base-id resolver for item behaviour (definition `baseItemId`
-consulted by the weapon plugins and by `CombatSpecial.getForWeaponId`), and then register the
-nine definitions and their `specialAttack.from` rows in the same change.
+Weapon behaviour in this codebase is looked up by item id, so `Items.GlobalEvents` registers each
+loan as an `ItemAliases` entry for its base id. The alias is consulted by the id-keyed tables:
+`CombatSpecial.getForWeaponId` (with the fang's explicit `specialAttack.from`), `WeaponProfile`
+(speed, reach, animations), `RangedWeapon`/`Ammunition`, and crystal armour's bow bonus. Plugins
+that know the loan id answer first: the infernal tools are added to the Woodcutting, Mining and
+Fishing tool tables with their equipment requirement waived, and their charge trackers recognise
+the loan ids.
+
+Loans never degrade into permanent items. The skilling charge event marks a loan as skipped, and
+every degrade path guards `setId` rather than assuming a charged-to-uncharged mapping exists.
+Item actions that would convert a loan into resources (`Uncharge`, `Dismantle`, `Disassemble`,
+`Empty`, `Revert`, `Break`) and all item-on-object use are refused, so a charged loan cannot be
+exchanged for runes or topped up with the player's own materials. A loan binding saved under an
+older real id is purged rather than migrated: `migrateLegacy` deliberately never releases an
+Arsenal binding, because that would mint a permanent weapon. Only the Banker's note's pre-split
+copies are migrated back to the player's real relic.
 
 ## Opting out
 

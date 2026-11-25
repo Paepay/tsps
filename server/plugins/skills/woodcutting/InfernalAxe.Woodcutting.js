@@ -16,10 +16,16 @@ const CHARGES_META_KEY = "infernal-axe";
 const BURN_GRAPHIC = 86; // smokepuff
 const BURN_GRAPHIC_HEIGHT = 150;
 const ITEM_NAMES = Object.freeze(["Infernal axe", "Infernal axe (or)", "Infernal axe (uncharged)"]);
+/** Master's Arsenal's custom invocations (50014) count as charged but never degrade. */
+const LOAN_IDS = new Set([50014]);
 
 let api = null;
 let core = null;
 let unchargedByCharged = new Map();
+
+function isCharged(id) {
+  return unchargedByCharged.has(Number(id)) || LOAN_IDS.has(Number(id));
+}
 
 function charges(item) {
   const saved = Number(item.getMetaValue?.(CHARGES_META_KEY)?.charges);
@@ -43,7 +49,8 @@ function useCharge(player, item) {
     item.setMetaValue(CHARGES_META_KEY, { charges: left });
     return;
   }
-  item.setId(unchargedByCharged.get(item.getId()));
+  const uncharged = unchargedByCharged.get(item.getId());
+  if (uncharged !== undefined) item.setId(uncharged);
   item.setMetaValue(CHARGES_META_KEY, undefined);
   player.getInventory().refreshItems();
   player.getEquipment().refreshItems();
@@ -53,7 +60,7 @@ function useCharge(player, item) {
 /** Returns true when the log was burnt instead of going to the inventory. */
 function tryBurnLog(player, axeId, logId) {
   if (!InfernalToolEffect.enabled(player, "axe")) return false;
-  if (!unchargedByCharged.has(axeId) || Math.floor(Math.random() * BURN_CHANCE) !== 0) {
+  if (!isCharged(axeId) || Math.floor(Math.random() * BURN_CHANCE) !== 0) {
     return false;
   }
   const item = findChargedAxe(player, axeId);
@@ -74,7 +81,7 @@ function tryBurnLog(player, axeId, logId) {
 
 /** "Check": the charges left as a share of 5,000, to one decimal place. */
 function check({ player, item }) {
-  if (!item || !unchargedByCharged.has(item.getId())) return false;
+  if (!item || !isCharged(item.getId())) return false;
   player.sendMessage(`Infernal axe: ${((charges(item) / MAX_CHARGES) * 100).toFixed(1)}% remaining.`);
   return true;
 }

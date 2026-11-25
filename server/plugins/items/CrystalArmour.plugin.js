@@ -100,7 +100,7 @@ function wornPieces(player) {
 
 function wieldingCrystalWeapon(player) {
   const weaponId = Number(player.getEquipment().getItems()[core.Equipment.WEAPON_SLOT]?.getId?.() ?? -1);
-  return crystalWeaponIds.has(weaponId);
+  return crystalWeaponIds.has(weaponId) || crystalWeaponIds.has(Number(core.ItemAliases.baseOf(weaponId) ?? weaponId));
 }
 
 function wearingSignet(player) {

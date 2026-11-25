@@ -60,6 +60,9 @@ function abundanceMultiplier(player) {
 function gather(request) {
   const { player, itemId, amount, skill, xp } = request;
   if (request.gatherProcessed || !player || !(amount > 0)) return;
+  // Returned trap parts (a box trap, rope and net) are not gathered resources: doubling them
+  // would mint traps. Hunter marks them with `bonus: false`.
+  if (request.bonus === false) return;
   const endless = enabled(player, "endless-harvest") && endlessSkills.has(skill);
   const abundance = enabled(player, "abundance") && abundanceSkills.has(skill);
   if (!endless && !abundance) return;
@@ -95,6 +98,22 @@ function room(request) {
       && player.getInventory().getAddableAmount(new core.Item(itemId, 1)) > 0) {
     request.room = true;
   }
+}
+
+/* --------------------------------------------------------------- Abundance --- */
+
+/**
+ * `farming:pick`: every eligible harvest is a gathered resource. Doubling the pick and its
+ * experience is safe here because the plot has already decided what one pick yields; the
+ * harvest's own level, tool and life checks are untouched.
+ */
+function farmingPick(request) {
+  const { player, amount, experience } = request;
+  if (!player || !enabled(player, "abundance") || !abundanceSkills.has(core.Skill.FARMING)) return;
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  const grown = Math.max(amount, Math.floor(amount * abundanceMultiplier(player)));
+  if (Number.isFinite(experience) && experience > 0) request.experience = experience * (grown / amount);
+  request.amount = grown;
 }
 
 /* --------------------------------------------------------- Infernal Gathering --- */
@@ -239,7 +258,7 @@ function attach(pluginApi) {
   api = pluginApi;
   core = api.core;
   endlessSkills = skillSet("endless-harvest", ["MINING", "WOODCUTTING", "FISHING"]);
-  abundanceSkills = skillSet("abundance", ["MINING", "WOODCUTTING", "FISHING"]);
+  abundanceSkills = skillSet("abundance", ["MINING", "WOODCUTTING", "FISHING", "HUNTER", "FARMING"]);
   smeltBars = new Map();
   // Registered first: a processed yield never reaches the banking / duplication handler.
   api.onCustomEvent("storage:gather", infernalGather);
@@ -249,6 +268,7 @@ function attach(pluginApi) {
   api.onCustomEvent("skills:actions-per-cycle", actionsPerCycle);
   api.onCustomEvent("firemaking:logs-per-action", logsPerAction);
   api.onCustomEvent("runecrafting:prepare-craft", prepareCraft);
+  api.onCustomEvent("farming:pick", farmingPick);
   // Pickpocketing and hunter catches already ask these; stalls and blackjacking now ask the
   // same success question so Trickster covers every eligible action, not just a subset.
   api.onCustomEvent("thieving:pickpocket-target", alwaysSucceeds);
@@ -259,4 +279,4 @@ function attach(pluginApi) {
   api.onCustomEvent("hunter:catch-chance", catchChance);
 }
 
-module.exports = { attach, _test: { gather, room, infernalGather, actionsPerCycle, logsPerAction, prepareCraft, alwaysSucceeds, catchChance } };
+module.exports = { attach, _test: { gather, room, farmingPick, infernalGather, actionsPerCycle, logsPerAction, prepareCraft, alwaysSucceeds, catchChance } };
