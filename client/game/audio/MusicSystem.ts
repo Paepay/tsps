@@ -868,10 +868,10 @@ export class MusicSystem {
             if (!audioBuf) {
                 const blobTypes = ["audio/ogg", "audio/wav", "audio/mpeg"];
                 for (const mime of blobTypes) {
+                    const url = URL.createObjectURL(
+                        new Blob([new Uint8Array(data)], { type: mime }),
+                    );
                     try {
-                        const url = URL.createObjectURL(
-                            new Blob([new Uint8Array(data)], { type: mime }),
-                        );
                         const audio = new Audio(url);
                         audio.loop = true;
                         audio.volume = this.outputVolume();
@@ -885,6 +885,7 @@ export class MusicSystem {
                         if (this.currentSource) {
                             try {
                                 this.currentSource.stop();
+                                this.currentSource.disconnect();
                             } catch {}
                             this.currentSource = null;
                         }
@@ -895,6 +896,9 @@ export class MusicSystem {
                         );
                         return true;
                     } catch (_e) {
+                        try {
+                            URL.revokeObjectURL(url);
+                        } catch {}
                         if (mySequence !== this.loadSequence) return false;
                         // Try next mime type
                     }

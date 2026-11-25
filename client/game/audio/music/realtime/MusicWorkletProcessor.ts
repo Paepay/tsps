@@ -77,6 +77,10 @@ export interface LoadSampleMessage {
     loopEnd: number;
 }
 
+export interface ResetSamplesMessage {
+    type: "resetSamples";
+}
+
 export type WorkletMessage =
     | NoteOnMessage
     | NoteOffMessage
@@ -85,4 +89,5 @@ export type WorkletMessage =
     | ProgramChangeMessage
     | SetVolumeMessage
     | StopAllMessage
-    | LoadSampleMessage;
+    | LoadSampleMessage
+    | ResetSamplesMessage;
