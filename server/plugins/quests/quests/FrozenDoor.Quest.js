@@ -63,6 +63,12 @@ module.exports = function registerFrozenDoorQuest(api) {
   const STORY_DEPARTED = 1; // she is in the safe room (Talk-to)
   const STORY_BANKING = 2; // after the safe-room talk she banks
 
+  // The inner Ashuelot is multi-NPC 11296 on `nex_story_npc`: at 0 its transform is -1, the nameless
+  // parent with no options at all. A player who was already inside the prison when this miniquest shipped
+  // has no story yet, so she could not be seen or clicked and there was no banker (issue #155). Reaching
+  // the safe room is proof she has already left the door, so restore her Talk-to form there.
+  const SAFE_ROOM = { minX: 2899, maxX: 2910, minY: 5199, maxY: 5209, levels: [0] };
+
   const LETTER_ATTRIBUTE = "frozen-door:letter";
   const DESTROYED_ATTRIBUTE = "frozen-door:destroyed";
   const STORY_ATTRIBUTE = "frozen-door:story";
@@ -328,6 +334,10 @@ module.exports = function registerFrozenDoorQuest(api) {
     if (action === "fd-bank-ready" && stepId === "fd:bank-ready") {
       // The intro is done: from now on she is the banking form (the dialogue's own bank option needs it).
       setStory(player, STORY_BANKING);
+      // A player who was already in the prison never had the door conversation; the intro is the same
+      // milestone, so it also finishes the miniquest for them.
+      if (stageOf(player) < STAGE_COMPLETE) quest.complete(player);
+      sendState(player);
       event.handled = true;
     } else if (stepId === "fd:departs" && event.kind === "message") {
       // "Ashuelot Reis departs for the inner section of the prison." ends the miniquest, a tick after the chat closes.
@@ -337,6 +347,12 @@ module.exports = function registerFrozenDoorQuest(api) {
         sendState(player);
       });
     }
+  }
+
+  function enteredSafeRoom({ player }) {
+    if (!player || story(player) !== STORY_OUTER) return;
+    if (stageOf(player) < STAGE_UNSEALED && !unsealedBefore(player)) return;
+    setStory(player, STORY_DEPARTED);
   }
 
   // --- journal -----------------------------------------------------------------------------------------
@@ -412,5 +428,6 @@ module.exports = function registerFrozenDoorQuest(api) {
   api.onCustomEvent("nex:frozen-key-assembled", keyAssembled);
   api.onCustomEvent("nex:frozen-door-unsealed", doorUnsealed);
   api.onCustomEvent("nex:prison-door", prisonDoor);
+  api.onZoneEnter(SAFE_ROOM, enteredSafeRoom);
   api.onPlayerLogin(handleLogin);
 };

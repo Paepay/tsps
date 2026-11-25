@@ -12156,15 +12156,19 @@ test('Akrisae’s Ice Mountain teleport requires the castle chapter and can be u
 });
 
 test('Duradel’s notes can be reclaimed until read and only grant Slayer XP once', () => {
- const {api}=mockApi(),attrs=new Map(),items=new Map();let banked=false,xp=0;
+ const {api}=mockApi(),attrs=new Map(),items=new Map();let banked=false,placeholder=false,xp=0;
  const inventory={contains:id=>(items.get(id)||0)>0,getFreeSlots:()=>28,deleteNumber:(id,n)=>items.set(id,(items.get(id)||0)-n),adds:(id,n)=>items.set(id,(items.get(id)||0)+n)};
- const player={getInventory:()=>inventory,getBank:()=>({contains:()=>banked}),getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),getSkillManager:()=>({getCurrentLevel:()=>70,addExperience:(skill,amount)=>{assert.equal(skill,api.core.Skill.SLAYER);xp+=amount;}}),sendMessage(){}};
+ const player={getInventory:()=>inventory,getBank:()=>({contains:()=>banked||placeholder,getAmount:()=>banked?1:0}),getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),getSkillManager:()=>({getCurrentLevel:()=>70,addExperience:(skill,amount)=>{assert.equal(skill,api.core.Skill.SLAYER);xp+=amount;}}),sendMessage(){}};
  const f=require('../plugins/quests/wgs/Rewards.WhileGuthixSleeps')({api,stage:()=>900,held:(p,id)=>inventory.contains(id),give:(p,id)=>{inventory.adds(id,1);return true;},val:(p,k)=>attrs.get(k)||0,ATTRIBUTES:[]});
  const condition=id=>f.condition({player,stepId:id,pages:[{page:'While Guthix Sleeps'}]});
  assert.equal(condition('omXWyi'),true);f.action({player,npcId:13623,stepId:'PGNPip'});assert.equal(items.get(29596),1);
  inventory.deleteNumber(29596,1);banked=true;assert.equal(condition('lIknwQ'),false);banked=false;assert.equal(condition('lIknwQ'),true);
  f.action({player,npcId:13623,stepId:'PGNPip'});f.read({player,itemId:29596,option:'Read'});assert.equal(xp,1050);assert.equal(items.get(29596),0);
  f.action({player,npcId:13623,stepId:'PGNPip'});assert.equal(items.get(29596),0);inventory.adds(29596,1);f.read({player,itemId:29596,option:'Read'});assert.equal(xp,1050);
+ // Issue 145: a bank placeholder keeps the id at amount 0; it must not look like a held copy.
+ attrs.delete('while-guthix-sleeps:duradel-notes-read');attrs.set('while-guthix-sleeps:duradel-notes-received',1);
+ placeholder=true;assert.equal(condition('lIknwQ'),true,'the notes are not really banked');
+ f.action({player,npcId:13623,stepId:'PGNPip'});assert.equal(items.get(29596),1,'Kuradal hands out another copy');
 });
 
 

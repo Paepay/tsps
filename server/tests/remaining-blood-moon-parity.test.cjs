@@ -342,7 +342,8 @@ test('post-quest Castle Drakan medallion destination is unlocked and reaches Efa
   const destinations = [];
   h.emit('drakan-medallion:destinations', { player: p, destinations });
   const castle = destinations.find(entry => entry.label === 'Castle Drakan.');
-  assert.deepEqual(castle?.tile, { x: 3167, y: 7707, z: 0 },
+  // Wiki Drakan's medallion teleport table and RuneLite teleportation_items.tsv (#146).
+  assert.deepEqual(castle?.tile, { x: 3166, y: 7711, z: 0 },
     'the completed quest keeps the canonical medallion destination');
 });
 

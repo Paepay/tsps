@@ -13,6 +13,7 @@ const { Location } = require('../dist/game/model/Location');
 const Shared = require('../plugins/minigames/cox/Shared.ChambersOfXeric');
 const Layout = require('../plugins/minigames/cox/Layout.ChambersOfXeric');
 const CoxMap = require('../plugins/minigames/cox/Map.ChambersOfXeric');
+const { MapObjects } = require('../dist/game/entity/impl/object/MapObjects');
 const Parties = require('../plugins/minigames/cox/Parties.ChambersOfXeric');
 const RaidModule = require('../plugins/minigames/cox/RaidState.ChambersOfXeric');
 const Lobby = require('../plugins/minigames/cox/Lobby.ChambersOfXeric');
@@ -397,6 +398,37 @@ test('a raid: in, started by the leader, points, a safe death, and out', () => {
   Parties.clear();
 });
 
+test('the first room has the steps back out, with Reload, and the raid announces its layout (#158)', () => {
+  Parties.clear();
+  const leader = fakePlayer('Scout');
+  channelWith('Scout', leader);
+  Lobby.makeParty(leader);
+  leader.setAttribute(Shared.ATTR.WARNED, true);
+  Lobby.enterChambers({ player: leader });
+  const raid = Parties.partyOf(leader).raid;
+  ticks(3 + 2);
+
+  const entrance = raid.rooms.find((room) => room.key === 'RAID_START');
+  assert.equal(entrance.steps?.getId(), Shared.OBJECT.STEPS_RELOAD, 'the steps carry the leader\'s Reload option');
+  assert.ok(entrance.steps.getLocation().equals(entrance.record.bound), 'the steps stand on the first room\'s bound tile');
+  assert.notEqual(raid.respawn.getX(), undefined, 'raiders land on an open tile beside them');
+  const viewer = { getPrivateArea: () => raid.map, getRights: () => 0, getPacketSender: () => leader.getPacketSender() };
+  assert.equal(MapObjects.getPrivateArea(viewer, Shared.OBJECT.STEPS_RELOAD, entrance.record.bound), entrance.steps,
+    'a click on the steps resolves to the placed object');
+
+  const summary = raid.layoutSummary();
+  assert.ok(summary.startsWith('Start > '), 'the first room comes first');
+  assert.ok(summary.endsWith(' > End'), 'the last room ends the floor');
+  assert.ok(summary.split(' > ').length >= 4, 'the rooms ahead are listed in order');
+  assert.ok(!summary.includes('OLM') && !summary.includes('undefined'), 'the Olm\'s chamber is not a room in the layout');
+  assert.ok(leader.messages.includes(`Raiding layout: ${summary}.`), 'the raider is told the layout on entry');
+
+  raid.leave(leader);
+  ticks(2);
+  ticks(4);
+  Parties.clear();
+});
+
 test('"Begin the raid." asks again whether the raid may start: someone who entered while it was up counts', () => {
   Parties.clear();
   const leader = fakePlayer('Raider');
@@ -662,13 +694,15 @@ test('a smashed Jewelled Crab drops its wander route and stays put for the stun'
   let route = 2;
   let blocked = false;
   let radius = 3;
+  let generation = 0;
   const queue = {
     reset() { route = 0; return queue; },
-    setBlockMovement(value) { blocked = value; return queue; },
+    setBlockMovement(value) { blocked = value; generation++; return queue; },
+    getBlockMovementGeneration: () => generation,
     size: () => route,
     isMovings: () => route > 0,
   };
-  const coordinator = { setRadius(value) { radius = value; return coordinator; } };
+  const coordinator = { setRadius(value) { radius = value; return coordinator; }, getRadius: () => radius };
   const crab = {
     colour: null,
     colourTicks: 0,
@@ -694,6 +728,17 @@ test('a smashed Jewelled Crab drops its wander route and stays put for the stun'
 
   ticks(61);
   assert.equal(blocked, false, 'movement clears after the longest stun');
+  assert.equal(radius, 3, 'and the crab can be lured again once the stun ends (issue #159)');
+
+  // A second smash while stunned takes a longer hold; the first smash's timer must not release it.
+  Crabs.CrabsRoom.prototype.smash.call(room, player, crab);
+  ticks(30);
+  Crabs.CrabsRoom.prototype.smash.call(room, player, crab);
+  ticks(30);
+  assert.equal(blocked, true, 'a stale timer does not end the newer stun');
+  ticks(40);
+  assert.equal(blocked, false, 'the newer stun ends on its own timer');
+  assert.equal(radius, 3);
 });
 
 test('a Challenge Mode raid loads every room without errors', () => {
@@ -917,6 +962,39 @@ test('a shaman jump shakes the camera of the raiders it lands on, a tick later',
     ticks(2);
   } finally {
     RegionManager.blocked = blocked;
+  }
+});
+
+// The old walk chose x before y, so a raider beside a north-south pair was force-walked sideways
+// into the door frame and left inside the wall (#160).
+test('the shaman tendrils walk through the doorway, not sideways into its frame (#160)', () => {
+  const Shamans = require('../plugins/minigames/cox/Shamans.ChambersOfXeric');
+  const room = Object.create(Shamans.ShamansRoom.prototype);
+  room.tendrilTiles = [new Location(3300, 5260, 0), new Location(3301, 5260, 0)];
+  const raid = { roomAt: () => room };
+  const raidOf = RaidModule.raidOf;
+  RaidModule.raidOf = () => raid;
+  const balanceWalk = Shared.balanceWalk;
+  const walked = [];
+  Shared.balanceWalk = (player, destination) => walked.push(destination);
+  try {
+    const entering = fakePlayer('Entering', new Location(3301, 5259, 0));
+    assert.equal(Shamans.passTendrils({ player: entering, object: { getLocation: () => new Location(3300, 5260, 0) } }), true);
+    assert.deepEqual([walked[0].getX(), walked[0].getY()], [3301, 5261], 'south through the pair, not west into its frame');
+
+    const vertical = Object.create(Shamans.ShamansRoom.prototype);
+    vertical.tendrilTiles = [new Location(3300, 5260, 0), new Location(3300, 5261, 0)];
+    raid.roomAt = () => vertical;
+    const side = fakePlayer('Side', new Location(3299, 5261, 0));
+    assert.equal(Shamans.passTendrils({ player: side, object: { getLocation: () => new Location(3300, 5260, 0) } }), true);
+    assert.deepEqual([walked[1].getX(), walked[1].getY()], [3301, 5261], 'east through the pair');
+
+    const offAxis = fakePlayer('Off axis', new Location(3302, 5259, 0));
+    assert.equal(Shamans.passTendrils({ player: offAxis, object: { getLocation: () => new Location(3300, 5260, 0) } }), false, 'no forced walk through the frame');
+    assert.equal(walked.length, 2);
+  } finally {
+    Shared.balanceWalk = balanceWalk;
+    RaidModule.raidOf = raidOf;
   }
 });
 

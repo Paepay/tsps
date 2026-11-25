@@ -116,6 +116,7 @@ function fakePlayer(x = 1695, y = 4575) {
 function fakeRoof(player) {
   const [minX, maxX, minY, maxY] = Common.data.roof.floor;
   return {
+    floor: { minX, maxX, minY, maxY },
     players: () => (player ? [player] : []),
     contains: (l) => l.getX() >= minX && l.getX() <= maxX && l.getY() >= minY && l.getY() <= maxY,
   };
@@ -292,13 +293,34 @@ test('stepping onto the gap escapes the prison', () => {
   assert.equal(dusk.hitpoints, 450);
 });
 
-test('phase 2 rocks fall on the floor only; a direct hit stuns', () => {
+test('phase 2 rocks fall across the roof, never anchored on the player, at four speeds', () => {
+  const player = fakePlayer(1695, 4575);
+  const { npcs } = Common.ids;
+  let seed = 12345;
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const fight = new Fight(fakeRoof(player), fakeGuardian(npcs.duskPhase1, 1689, 4573), fakeGuardian(npcs.dawnPhase1, 1701, 4573), random);
+  fight.phase = 2;
+  const speeds = new Set();
+  let onPlayer = 0;
+  for (let batch = 0; batch < 200; batch++) {
+    fight.dropRocks();
+    assert.equal(fight.rocks.length, Common.data.rockfall.rocks);
+    assert.ok(fight.rocks.every((rock) => fakeRoof(null).contains(rock.tile)));
+    if (fight.rocks.some((rock) => rock.tile.equals(player.getLocation()))) onPlayer++;
+    assert.equal(new Set(fight.rocks.map((rock) => `${rock.tile.getX()},${rock.tile.getY()}`)).size, fight.rocks.length, 'distinct tiles');
+    for (const rock of fight.rocks) speeds.add(rock.lands - fight.tickCount);
+    fight.rocks = [];
+  }
+  // A player standing still is not a guaranteed direct hit every cycle (issue #148).
+  assert.ok(onPlayer < 50, `only ${onPlayer}/200 batches hit the player's exact tile by chance`);
+  assert.deepEqual([...speeds].sort(), [...Common.data.rockfall.speeds].sort());
+});
+
+test('a direct hit still stuns for the Wiki’s 10 ticks', () => {
   const { fight, player } = newFight();
   fight.phase = 2;
-  fight.dropRocks(player);
-  assert.ok(fight.rocks.length > 1);
-  assert.ok(fight.rocks.every((rock) => fakeRoof(null).contains(rock.tile)));
-  for (let i = 0; i < Common.data.rockfall.warnTicks; i++) fight.tick([player]);
+  fight.rocks = [{ tile: player.getLocation(), lands: fight.tickCount + 1 }];
+  fight.tick([player]);
   assert.equal(player.blocked, true);
   assert.ok(player.damage.length >= 1);
 });

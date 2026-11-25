@@ -301,7 +301,7 @@ import { MusicSystem } from "./audio/MusicSystem";
 import { AmbientSoundCollector } from "./audio/AmbientSoundCollector";
 import { type SequenceSoundContext, SoundEffectSystem } from "./audio/SoundEffectSystem";
 import { ChatTextMetrics } from "./chat/ChatTextMetrics";
-import { isInTouchScrollLayer } from "./widgets/input/widgetTouchScrollInput";
+import { resolveTouchWidgetDrag } from "./widgets/input/widgetTouchScrollInput";
 import { MobileChatKeyboard } from "./chat/MobileChatKeyboard";
 import { KeyboardButtonProbe } from "./chat/keyboardButtonProbe";
 import { collectInputWidgetsAtPoint } from "./widgets/interaction/widgetClickProbe";
@@ -2562,14 +2562,7 @@ export class OsrsClient {
         this.inputManager.onCanvasTouchStart = (x, y) => {
             if (!this.isLoggedIn() || this.menuOpen || (this.renderer.canvas as any)?.__ui?.menu?.open) return false;
             const hits = collectInputWidgetsAtPoint(this.widgetManager, x, y);
-            for (let i = hits.length - 1; i >= 0; i--) {
-                const widget = hits[i];
-                if (this.widgetManager.isEffectivelyHidden(widget.uid)) continue;
-                if (!(widget.itemId >= 0) || !this.widgetInteraction.isWidgetDraggable(widget)) continue;
-                // Scrolling lists (the bank) keep swipe scrolling; their items drag after a short hold.
-                return isInTouchScrollLayer(widget, this.widgetManager) ? "afterHold" : true;
-            }
-            return false;
+            return resolveTouchWidgetDrag(hits, this.widgetManager);
         };
         this.inputManager.onCanvasTouchCancel = () => this.widgetInteraction.clearWidgetInteractionState();
         this.inputManager.onCanvasTouchTap = (x, y) => {

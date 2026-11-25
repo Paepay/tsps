@@ -1,5 +1,6 @@
 import type { WidgetManager } from "../../../widgets/WidgetManager";
 import type { WidgetInputControllerDeps, WidgetInputFrame } from "./widgetInputTypes";
+import { isWidgetDraggable } from "../interaction/widgetDragHelpers";
 
 /** scrollbar_vertical's wheel handler (36): (scrollbar, layer, step), set on the layer by 31. */
 const SCROLLBAR_WHEEL_SCRIPT = 36;
@@ -62,6 +63,26 @@ function scrollLayerOf(widget: any, widgetManager: WidgetManager): ScrollLayer |
 /** Whether a swipe that starts on this widget scrolls a layer (bank, lists) instead of dragging. */
 export function isInTouchScrollLayer(widget: any, widgetManager: WidgetManager): boolean {
     return scrollLayerOf(widget, widgetManager) !== undefined;
+}
+
+/**
+ * The drag a single finger pressing these hits should start, or false for no drag.
+ * Any widget the mouse can drag starts a touch drag too, not just items: cache scripts
+ * make model widgets draggable without an item id (the Beekeeper hive's parts, 420:10-21,
+ * scripts 3056/3060). Without this the gesture fell through to camera orbit. A draggable
+ * widget inside a scrolling layer keeps swipe-to-scroll and drags only after the finger rests.
+ */
+export function resolveTouchWidgetDrag(
+    hits: readonly any[],
+    widgetManager: WidgetManager,
+): boolean | "afterHold" {
+    for (let i = hits.length - 1; i >= 0; i--) {
+        const widget = hits[i];
+        if (widgetManager.isEffectivelyHidden(widget.uid)) continue;
+        if (!isWidgetDraggable(widgetManager, widget)) continue;
+        return isInTouchScrollLayer(widget, widgetManager) ? "afterHold" : true;
+    }
+    return false;
 }
 
 /** The scrollbar scrollbar_vertical wired to this layer, from the wheel listener it set. */

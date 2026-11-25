@@ -71,6 +71,9 @@ export class MapObjects {
         if (!object) {
             object = player.getPrivateArea()?.resolveObject(id, location, player) ?? null;
         }
+        if (!object) {
+            object = this.covering(player, id, location);
+        }
         // Locs on bridge tiles are loaded one plane down (RegionManager), but the player
         // standing beside them - on a castle wall, say - is still on the plane above.
         if (!object && location.getZ() > 0) {
@@ -78,6 +81,45 @@ export class MapObjects {
         }
         if (object && !ObjectDefinition.forPlayer(object.getId(), player)) return null;
         return object;
+    }
+
+    /** How far a multi-tile loc's origin can be from a tile of its footprint a click names. */
+    private static readonly MAX_FOOTPRINT = 16;
+
+    /**
+     * A map loc is registered only on its origin tile, but a client click names the tile under
+     * the pointer, which may be any tile of a multi-tile footprint (a 5x2 cave mouth, a 3x3
+     * guard). No object of this id stood on the named tile, so resolving the click to the loc
+     * whose rotated footprint covers it can only answer a click that was otherwise lost.
+     */
+    private static covering(player: Player, id: number, location: Location): GameObject | null {
+        const at = location.getZ() >= 4 ? location.clone().setZ(0) : location;
+        const matches = (entry: GameObject) =>
+            ObjectDefinition.forPlayer(entry.getId(), player)?.id === id && entry.footprintDistance(at) === 0;
+        const owned = this.ownerObjects.get(player);
+        if (owned) {
+            for (const list of owned.values()) {
+                const found = list.find(matches);
+                if (found) return found;
+            }
+        }
+        const area = player.getPrivateArea();
+        if (area != null) {
+            const instanced = area.getObjects().find(matches);
+            if (instanced) return instanced;
+        }
+        for (let dx = 0; dx < MapObjects.MAX_FOOTPRINT; dx++) {
+            for (let dy = 0; dy < MapObjects.MAX_FOOTPRINT; dy++) {
+                const list = this.mapObjects.get(this.getHash(at.getX() - dx, at.getY() - dy, at.getZ()));
+                const found = list?.find((entry) => entry.getPrivateArea() == null && matches(entry));
+                if (found) return found;
+            }
+        }
+        // A loc on a bridge tile is loaded one plane down while the player stands on the wall.
+        if (at.getZ() > 0) {
+            return this.covering(player, id, at.clone().setZ(at.getZ() - 1));
+        }
+        return null;
     }
 
     /**

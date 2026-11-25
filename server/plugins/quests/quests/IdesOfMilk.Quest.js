@@ -1088,7 +1088,14 @@ module.exports = function registerIdesOfMilkQuest(api) {
   api.onItemAction(handleItemAction);
   api.onItemOnNpc(feedAbyssalPotato);
   api.onNpcDeath(handleNpcDeath);
-  api.registerNpcCombatMethodProvider([QUEST_BRUTUS_NPC_ID], BrutusCombat);
+  // Every Brutus form shares the captured bull animations; the Demonic form spawned by the
+  // abyssal potato otherwise falls back to the NPC's cache attack animation (issue #171).
+  api.registerNpcCombatMethodProvider([
+    QUEST_BRUTUS_NPC_ID,
+    NpcIdentifiers.BRUTUS_2,
+    DEMONIC_BRUTUS_NPC_ID,
+    NpcIdentifiers.DEMONIC_BRUTUS_2,
+  ], BrutusCombat);
   api.onCustomEvent("combat-achievements:personal-best", answerBrutusBest);
   api.onPlayerLogout(handleLogout);
   api.onPlayerLogin(handleLogin);

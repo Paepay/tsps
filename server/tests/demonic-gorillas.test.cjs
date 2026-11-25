@@ -16,6 +16,7 @@ const State = require("../plugins/npcs/demonicgorillas/State.DemonicGorillas");
 const core = PluginManager.getCoreApi();
 const providers = [];
 const customEvents = new Map();
+const playerProcess = [];
 
 before(() => {
   const api = {
@@ -24,6 +25,7 @@ before(() => {
     onPlayerDealtDamage: () => {},
     onNpcHitModify: () => {},
     registerArea: () => {},
+    onPlayerProcess: (handler) => playerProcess.push(handler),
     emitCustomEvent: () => {},
     onCustomEvent: (name, handler) => {
       if (!customEvents.has(name)) customEvents.set(name, []);
@@ -87,6 +89,64 @@ test("a boulder takes a third of the hitpoints, rounded down, and never kills", 
   assert.equal(Combat.boulderDamage(120), 40);
   assert.equal(Combat.boulderDamage(99), 33);
   assert.equal(Combat.boulderDamage(1), 0);
+});
+
+/**
+ * A boulder victim whose turn has just run. `location` is moved before the handler is called,
+ * as the world does: the impact is drawn with the step that landed the player on (or took them
+ * off) the tile.
+ */
+function boulderPlayer(location, hitpoints = 99) {
+  const hits = [];
+  return {
+    hits,
+    getPrivateArea: () => null,
+    getHitpoints: () => hitpoints,
+    getLocation: () => location,
+    getCombat: () => ({ getHitQueue: () => ({ addPendingDamage: (parts) => hits.push(parts) }) }),
+  };
+}
+
+function settle(player) {
+  for (const handler of playerProcess) handler({ player });
+}
+
+test("a boulder misses a player who steps off its tile on the landing tick (#151)", () => {
+  const tile = new core.Location(2100, 5660, 0);
+  const player = boulderPlayer(new core.Location(2101, 5660, 0));
+  Combat.armBoulder(tile, null);
+  settle(player);
+  assert.equal(player.hits.length, 0, "the rock is behind them when it lands");
+});
+
+test("a boulder hits a player still on its tile, and one who steps onto it", () => {
+  const still = new core.Location(2102, 5660, 0);
+  Combat.armBoulder(still, null);
+  const standing = boulderPlayer(new core.Location(2102, 5660, 0), 99);
+  settle(standing);
+  assert.equal(standing.hits.length, 1);
+  assert.equal(standing.hits[0][0].getDamage(), 33);
+
+  const arriving = new core.Location(2103, 5660, 0);
+  Combat.armBoulder(arriving, null);
+  const stepOn = boulderPlayer(new core.Location(2103, 5660, 0), 120);
+  settle(stepOn);
+  assert.equal(stepOn.hits.length, 1);
+  assert.equal(stepOn.hits[0][0].getDamage(), 40);
+});
+
+test("one boulder hits each player on its tile once", () => {
+  const tile = new core.Location(2104, 5660, 0);
+  Combat.armBoulder(tile, null);
+  const first = boulderPlayer(new core.Location(2104, 5660, 0));
+  const second = boulderPlayer(new core.Location(2104, 5660, 0));
+  const elsewhere = boulderPlayer(new core.Location(2105, 5660, 0));
+  settle(first);
+  settle(second);
+  settle(elsewhere);
+  assert.equal(first.hits.length, 1);
+  assert.equal(second.hits.length, 1);
+  assert.equal(elsewhere.hits.length, 0);
 });
 
 test("the method's style and reach follow the gorilla's fight", () => {

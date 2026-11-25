@@ -90,6 +90,9 @@ module.exports = function registerGardenOfTranquillityQuest(api) {
 
   const PAGE = "Garden of Tranquillity";
   const START_HOOK = "quest:garden-of-tranquillity:start";
+  // Once the Wise Old Man activates the ring, every later recovery from Dr Fenkenstrain
+  // gives the activated form (Wiki: "it will always be activated when recovered").
+  const CHAROS_ACTIVATED_ATTRIBUTE = "garden-of-tranquillity:charos-activated";
 
   const VARP_GARDEN = 553;
   const VARBIT_GARDEN_QUEST = 961; // "garden_quest", varp 553 bits 0-5
@@ -528,6 +531,7 @@ module.exports = function registerGardenOfTranquillityQuest(api) {
   }
 
   function activateRing(player) {
+    player.setAttribute(CHAROS_ACTIVATED_ATTRIBUTE, 1);
     const equipment = player.getEquipment();
     const equipped = equipment.get(Equipment.RING_SLOT);
     if (equipped?.getId?.() === RING_OF_CHAROS) {
@@ -1881,6 +1885,7 @@ module.exports = function registerGardenOfTranquillityQuest(api) {
   // ==========================================================================
 
   api.persistAttribute(STATE_ATTRIBUTE);
+  api.persistAttribute(CHAROS_ACTIVATED_ATTRIBUTE);
 
   quest = registerQuest(api, {
     key: "garden_of_tranquillity",

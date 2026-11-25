@@ -1006,13 +1006,18 @@ test('drops follow the Wiki: a frame from the first weak kill, demi-bosses their
     const shards = first.find((drop) => drop.itemId === items.shards).amount;
     assert.ok(shards >= 20 && shards <= 30);
 
-    // The bear drops its spike first, then a missing component, never one owned or dropped.
-    assert.ok(has(Monsters.rollDrops(run, player, 9032), items.spike));
+    // Wiki: a component drops whenever it is not owned, even if an earlier kill dropped one
+    // that was used or left on the floor (issue #166).
+    assert.ok(has(Monsters.rollDrops(run, player, 9032), items.spike), 'unowned spike drops');
+    assert.ok(has(Monsters.rollDrops(run, player, 9032), items.spike), 'a spike left on the floor is still unowned');
+    player.inventory.adds(items.spike);
     const second = Monsters.rollDrops(run, player, 9032);
-    assert.ok(!has(second, items.spike) && (has(second, items.orb) || has(second, items.bowstring)));
+    assert.ok(!has(second, items.spike) && (has(second, items.orb) || has(second, items.bowstring)), 'an owned spike is skipped');
     assert.ok(has(second, items.frame), 'demi-bosses always drop a frame');
-    Monsters.rollDrops(run, player, 9032);
-    assert.ok(!COMPONENTS().some((id) => has(Monsters.rollDrops(run, player, 9033), id)), 'all three dropped: none more');
+    player.inventory.delete(items.spike); // perfecting the halberd consumes the spike
+    assert.ok(has(Monsters.rollDrops(run, player, 9032), items.spike), 'the next bear drops a spike again');
+    for (const id of COMPONENTS()) player.inventory.adds(id);
+    assert.ok(!COMPONENTS().some((id) => has(Monsters.rollDrops(run, player, 9033), id)), 'all three owned: none more');
 
     // The second strong kill brings a frame if the first did not.
     run.strongFrame = false;

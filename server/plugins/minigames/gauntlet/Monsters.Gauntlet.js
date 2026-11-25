@@ -167,10 +167,11 @@ function rollDrops(run, player, npcId, random = run.random) {
 
   if (monster.component) {
     const own = items[monster.component];
-    const missing = COMPONENTS.map((key) => items[key]).filter((id) => !hasComponent(player, id) && !run.components.has(id));
+    // Wiki: a component drops whenever the player does not own it, even if an earlier kill
+    // already dropped one that has since been used or left on the floor (issue #166).
+    const missing = COMPONENTS.map((key) => items[key]).filter((id) => !hasComponent(player, id));
     const id = missing.includes(own) ? own : missing.length ? pick(missing, random) : null;
     if (id != null) {
-      run.components.add(id);
       drops.push({ itemId: id, amount: 1 });
     }
   }

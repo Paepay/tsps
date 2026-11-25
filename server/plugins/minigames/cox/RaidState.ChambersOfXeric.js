@@ -225,9 +225,18 @@ class Room {
 
 /** The first room: no one goes past its passage until the leader starts the raid. */
 class EntranceRoom extends Room {
+  /** The steps back up: placed by the raid, not the cache (see Raid.build). */
+  steps = null;
+
   /** rsprox capture 843: the first room's bank chest is shut as the raid begins (Wiki too). */
   load() {
     for (const chest of this.templateObjects(Shared.OBJECT.BANK_CHEST)) Shared.replaceObject(this.map, chest, Shared.OBJECT.BANK_CHEST_SHUT);
+  }
+
+  cleanup() {
+    if (this.steps) Shared.core().ObjectManager.deregister(this.steps, true);
+    this.steps = null;
+    super.cleanup();
   }
 
   canPass(player) {
@@ -304,6 +313,17 @@ class Raid {
     this.map = CoxMap.createMap(layout, this.random);
     this.map.raid = this;
     this.rooms = this.map.rooms.map((record) => new (roomTypes.get(record.key) ?? Room)(this, record));
+    // The cache places a Steps loc only at the Olm's exit; the first room's steps (the way out,
+    // and the leader's Reload until the raid begins) are placed here, at the room's own spawn
+    // tile, so the landing code walks raiders off them (#158). Its Reload action is the cache's
+    // second Steps version, which appears nowhere in the cache map.
+    const entrance = this.rooms.find((room) => room.key === "RAID_START");
+    if (entrance?.record.bound) {
+      const { GameObject, ObjectManager } = Shared.core();
+      const face = (2 + (entrance.record.rotation ?? 0)) & 3;
+      entrance.steps = new GameObject(Shared.OBJECT.STEPS_RELOAD, entrance.record.bound.clone(), 10, face, this.map);
+      ObjectManager.register(entrance.steps, true);
+    }
     // The Olm's chamber isn't one of the layout's rooms; its unit registers a room for it.
     const OlmRoom = roomTypes.get("OLM");
     if (OlmRoom) {
@@ -350,7 +370,29 @@ class Raid {
       player.moveTo(this.respawn);
       this.showRaidHud(player);
     });
+    // The official client draws the whole raid; the browser client does not, so the layout is
+    // told to raiders when they enter (again after a Reload), for scouting (#158).
+    Shared.raidNotice(player, `Raiding layout: ${this.layoutSummary()}.`);
     this.refreshTabs();
+  }
+
+  /** The rooms in the order the party meets them, for scouting. */
+  layoutSummary() {
+    return this.rooms
+      .filter((room) => room.key !== "OLM")
+      .map((room) => {
+        switch (room.key) {
+          case "RAID_START":
+          case "FLOOR_START_UPSTAIRS": return "Start";
+          case "FLOOR_END_DOWNSTAIRS": return "End";
+          case "SMALL_SCAVENGER_RUNT":
+          case "LARGE_SCAVENGER_BEAST": return "Scavengers";
+          case "RESOURCES_A":
+          case "RESOURCES_B": return "Resources";
+          default: return Layout.ROOMS[room.key]?.name ?? room.key;
+        }
+      })
+      .join(" > ");
   }
 
   /** The party tab replaces the chat-channel tab, and the points overlay goes up. */

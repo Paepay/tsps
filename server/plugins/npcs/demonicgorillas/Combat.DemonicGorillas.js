@@ -59,10 +59,33 @@ function sound(target, id, delay = 0) {
   if (target.isPlayer()) target.getAsPlayer().getPacketSender().sendSound(id, 1, delay);
 }
 
-/** Players on the boulder's tile when it lands. */
-function playersOn(tile, area) {
-  return [...core.World.getPlayers()].filter((player) => player && player.getPrivateArea() === area
-    && player.getLocation().equals(tile) && player.getHitpoints() > 0);
+/**
+ * Landed boulders waiting for this cycle's movement, so the hit uses the tile the player is
+ * drawn on rather than the one they occupied before stepping. A task runs before the player
+ * turn; the impact graphic and the step reach the client in the same update.
+ */
+const landings = [];
+
+function armBoulder(tile, area) {
+  landings.push({ tile: tile.clone(), area, cycle: core.World.getProcessCycle() });
+}
+
+/** Hits everyone still on a boulder's tile once movement has been applied (#151). */
+function settleBoulder(player) {
+  const { HitDamage, HitMask } = core;
+  const cycle = core.World.getProcessCycle();
+  for (let index = landings.length - 1; index >= 0; index--) {
+    const landing = landings[index];
+    // One player turn late means the landing tick is over: nobody can still be under it.
+    if (landing.cycle < cycle) {
+      landings.splice(index, 1);
+      continue;
+    }
+    if (landing.cycle !== cycle || player.getPrivateArea() !== landing.area) continue;
+    if (!player.getLocation().equals(landing.tile) || player.getHitpoints() <= 0) continue;
+    const damage = boulderDamage(player.getHitpoints());
+    player.getCombat().getHitQueue().addPendingDamage([new HitDamage(damage, damage > 0 ? HitMask.RED : HitMask.BLUE)]);
+  }
 }
 
 function throwBoulder(npc, target) {
@@ -75,11 +98,8 @@ function throwBoulder(npc, target) {
   later(BOULDER.landTicks, () => {
     if (target.isPlayer()) target.getAsPlayer().getPacketSender().sendGlobalGraphic(new Graphic(BOULDER.impact, 0, BOULDER.impactHeight), tile);
     Sounds.playAreaSound({ soundId: BOULDER.sound, x: tile.getX(), y: tile.getY(), level: tile.getZ(), radius: BOULDER.soundRadius });
-    // Wiki: anyone's boulder hits anyone on the tile.
-    for (const player of playersOn(tile, area)) {
-      const damage = boulderDamage(player.getHitpoints());
-      player.getCombat().getHitQueue().addPendingDamage([new HitDamage(damage, damage > 0 ? HitMask.RED : HitMask.BLUE)]);
-    }
+    // Wiki: anyone's boulder hits anyone still on the tile. Settled after this cycle's movement.
+    armBoulder(tile, area);
   });
 }
 
@@ -161,6 +181,7 @@ function createGorillaCombat() {
 module.exports = function attachCombat(api) {
   core = api.core;
   api.registerNpcCombatMethodProvider([...DEMONIC_IDS, ...TORTURED_IDS], createGorillaCombat(), { singleton: false });
+  api.onPlayerProcess(({ player }) => settleBoulder(player));
 };
 
-Object.assign(module.exports, { projectileEnd, hitDelay, boulderDamage });
+Object.assign(module.exports, { projectileEnd, hitDelay, boulderDamage, armBoulder, settleBoulder });

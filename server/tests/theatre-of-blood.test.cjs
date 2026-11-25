@@ -684,6 +684,28 @@ test('the Dawnbringer: dropped for a teammate, and dropped on death', (t) => {
 });
 
 
+test('the vault stays quiet about the unique until its winner opens the chest', (t) => {
+  const Rewards = require('../plugins/minigames/tob/Rewards.TheatreOfBlood');
+  const { raid, players: [ann, bob] } = startRaid(['Quiet1', 'Quiet2']);
+  raid.member(ann).roomStats('MAIDEN').damage = 500;
+  raid.member(bob).roomStats('MAIDEN').damage = 500;
+  t.mock.method(Math, 'random', () => 0); // a unique every time, to the first weighted pick
+  raid.buildRoom('REWARDS');
+  const room = raid.room;
+  assert.ok(room.uniqueWinner, 'the vault rolled a unique');
+  const announced = (player) => player.messages.filter((message) => /found something special/.test(message));
+  assert.equal(announced(ann).length, 0, 'entry itself does not spoil the chest');
+  assert.equal(announced(bob).length, 0);
+  const chest = Rewards.CHESTS[0];
+  ann.performAnimation = () => {};
+  room.openChest(ann, new Location(chest.x, chest.y, 0));
+  assert.equal(announced(ann).length, 1, 'the winner opening the chest announces it');
+  assert.equal(announced(bob).length, 1, 'to the whole party');
+  room.openChest(ann, new Location(chest.x, chest.y, 0));
+  assert.equal(announced(bob).length, 1, 'only once');
+  raid.dispose();
+});
+
 test('rewards: a unique replaces the commons; no contribution gets the cabbage; three noted common rolls otherwise', () => {
   const Rewards = require('../plugins/minigames/tob/Rewards.TheatreOfBlood');
   const I = PluginManager.getCoreApi().ItemIdentifiers;

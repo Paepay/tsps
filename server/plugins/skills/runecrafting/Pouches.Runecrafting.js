@@ -104,6 +104,54 @@ function pouchFor(itemId) {
   return POUCHES.find((pouch) => objId(pouch.item) === itemId || (pouch.degraded && objId(pouch.degraded) === itemId)) ?? null;
 }
 
+/** The pouches in the order they are earned: each drops only once every smaller one is owned. */
+const POUCH_ORDER = ["small", "medium", "large", "giant"];
+
+function pouchByKey(key) {
+  return POUCHES.find((pouch) => pouch.key === key);
+}
+
+/** Whether the player carries the pouch (intact or degraded) or keeps it in any bank tab. */
+function ownsPouch(player, pouch) {
+  if (!pouch) return false;
+  const ids = pouch.degraded ? [objId(pouch.item), objId(pouch.degraded)] : [objId(pouch.item)];
+  const inventory = player.getInventory();
+  if (ids.some((id) => inventory.getAmount(id) > 0)) return true;
+  const banks = player.getBanks?.() ?? [];
+  return banks.some((bank, tab) => bank && tab !== core.Bank.BANK_SEARCH_TAB_INDEX
+    && ids.some((id) => bank.getAmount(id) > 0));
+}
+
+/**
+ * The one pouch a kill may drop: the lowest tier the player does not yet own, provided every
+ * smaller pouch is owned (Wiki, Small/Medium/Giant pouch), or null when the whole set is owned.
+ */
+function nextMissingPouch(player) {
+  for (const key of POUCH_ORDER) {
+    if (!ownsPouch(player, pouchByKey(key))) return pouchByKey(key);
+  }
+  return null;
+}
+
+/**
+ * "npc-drops:generated": abyssal creatures roll pouch rows independently, so without this a kill
+ * can drop any tier in any order and repeat a tier. Keep at most one row, for the eligible tier.
+ */
+function filterPouchDrops({ player, drops }) {
+  if (!player || !Array.isArray(drops)) return;
+  const eligible = nextMissingPouch(player);
+  const eligibleId = eligible ? objId(eligible.item) : null;
+  const kept = new Set();
+  const remove = [];
+  for (let i = 0; i < drops.length; i += 1) {
+    const pouch = pouchFor(drops[i].itemId);
+    if (!pouch) continue;
+    if (drops[i].itemId !== eligibleId || kept.has(pouch.key)) remove.push(i);
+    else kept.add(pouch.key);
+  }
+  for (let i = remove.length - 1; i >= 0; i -= 1) drops.splice(remove[i], 1);
+}
+
 function essenceOfType(type) {
   return ESSENCES.find((essence) => essence.type === type) ?? null;
 }
@@ -461,10 +509,16 @@ function attach(api) {
   api.onItemOnItem("Abyssal needle", "Giant pouch", stitch);
   api.onCustomEvent("runecrafting:repair-pouches", repairPouches);
   api.onCustomEvent("storage:death-containers", (query) => query.containers.push(deathContainer));
+  api.onCustomEvent("npc-drops:generated", filterPouchDrops);
   api.onNpcInteraction("Dark Mage", { Repairs: darkMageRepairs });
   api.onNpcDialogueCondition(darkMageCondition);
   api.onCustomEvent("npc-dialogue:action", darkMageAction);
   api.onCustomEvent("npc-dialogue:line", darkMageLine);
 }
 
-module.exports = { attach, words, POUCHES_ATTRIBUTE, _test: { states, capacity, pouchFor } };
+module.exports = {
+  attach,
+  words,
+  POUCHES_ATTRIBUTE,
+  _test: { states, capacity, pouchFor, nextMissingPouch, filterPouchDrops },
+};

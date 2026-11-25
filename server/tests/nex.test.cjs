@@ -59,6 +59,47 @@ test("Zarosian items follow the God Wars table: the Ancient mace is Bandos's, no
   assert.equal(Common.isZarosian("Venator bow"), true);
 });
 
+test("Ice Prison and Containment switch protection prayers off without locking them out", () => {
+  const activated = new Set(["protect_missiles", "protect_magic"]);
+  let blocks = 0;
+  const messages = [];
+  fakeApi.core.PrayerHandler = {
+    PROTECTION_PRAYERS: ["protect_missiles", "protect_magic", "protect_melee"],
+    isActivated: (_player, prayer) => activated.has(prayer),
+    resetPrayers: (_player, prayers) => prayers.forEach((prayer) => activated.delete(prayer)),
+  };
+  const player = {
+    sendMessage: (message) => messages.push(message),
+    getCombat: () => ({ getPrayerBlockTimer: () => ({ start: () => { blocks += 1; } }) }),
+  };
+  // Wiki: the specials "deactivate their protection prayers"; a trapped player can pray again.
+  Specials.disableProtection(player, false);
+  assert.equal(activated.size, 0, "the prayers are switched off");
+  assert.equal(blocks, 0, "no prayer-block timer, so Protect from Missiles can go back on");
+  assert.equal(messages.length, 0, "no 'can't use protection prayers' line when they are not blocked");
+  activated.add("protect_missiles");
+  Specials.disableProtection(player, true);
+  assert.equal(blocks, 1, "the virus still blocks prayers");
+  assert.equal(messages.length, 1);
+});
+
+test("Zarosian followers give their Wiki essence and the Zarosian bonus rolls on top", () => {
+  const Prison = require("../plugins/bosses/nex/Prison.Nex");
+  assert.equal(Prison.essenceFor(11290), 2, "Spiritual Warrior");
+  assert.equal(Prison.essenceFor(11291), 2, "Spiritual Ranger");
+  assert.equal(Prison.essenceFor(11292), 5, "Spiritual Mage");
+  assert.equal(Prison.essenceFor(11293), 3, "Blood Reaver");
+  assert.equal(Prison.essenceFor(11278), 5, "Nex");
+  assert.equal(Prison.essenceFor(99999), 1, "anything else");
+  assert.equal(Prison.bonusEssence(0, () => 0), 0);
+  assert.equal(Prison.bonusEssence(2, () => 0.39), 1, "two items: 40%");
+  assert.equal(Prison.bonusEssence(2, () => 0.41), 0);
+  assert.equal(Prison.bonusEssence(5, () => 0.99), 1, "five items: one guaranteed");
+  assert.equal(Prison.bonusEssence(6, () => 0.1), 2, "six: 20% for a second");
+  assert.equal(Prison.bonusEssence(6, () => 0.3), 1);
+  assert.equal(Prison.bonusEssence(10, () => 0.99), 2, "ten: two, never three");
+});
+
 test("the prison aggression rule requires Zarosian equipment, not a ring of endurance", () => {
   const Prison = require("../plugins/bosses/nex/Prison.Nex");
   let area;

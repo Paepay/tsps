@@ -34,7 +34,7 @@ They spawned with their stats and drops but fought as ordinary NPCs:
   - On the switch tick it plays `demonic_gorilla_smash_chest` (7228). In the captures every switch shows it, and nothing else.
   - Hits are checked when queued (a blocked hit gives no XP) and again when they land: a hit already in flight when it switches does nothing.
 - **Boulder (demonic, Ranged or Magic only):** instead of an attack, it beats its chest (7228) and a rock falls from above onto the target's tile.
-  - It lands 5 ticks later and takes a third of the current hitpoints (rounded down) from **every** player still on that tile.
+  - It lands 5 ticks later and takes a third of the current hitpoints (rounded down) from **every** player still on that tile. Damage is settled after that tick's step, so the rock misses a player who steps off as it lands (the graphic and the step reach the client together, #151).
   - A boulder alone can't kill, and it isn't one of the three misses.
 - **Anti-safespot:** a gorilla in Melee that can't reach its target changes style.
 - **Aggression:** the cavern's gorillas are aggressive until the player has completed Monkey Madness II. The cavern is an `Area`, which answers this and counts the anti-safespot ticks for its own NPCs only.

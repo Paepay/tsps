@@ -51,8 +51,11 @@ const tileKey = (x, y, z) => `${x},${y},${z}`;
 const keyOf = (location) => tileKey(location.getX(), location.getY(), location.getZ());
 
 function walkable(x, y, z) {
-  const region = core.RegionManager.getRegion(x, y);
-  return region != null && region.getClip(x, y, z) === 0;
+  // Clip 0 is too strict: a maze tile that merely has a wall beside it carries that wall's
+  // direction bit (2), and the pendulum/ledge jumps then found no landing tile and ejected the
+  // player (issue #164). The route finder's own blocking mask tells whether a tile can be stood on.
+  if (core.RegionManager.getRegion(x, y) == null) return false;
+  return !core.RegionManager.blocked(new core.Location(x, y, z), null);
 }
 
 function inBounds(location) {

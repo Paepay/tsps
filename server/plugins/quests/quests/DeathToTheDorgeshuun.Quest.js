@@ -41,10 +41,13 @@
  *    and Kazgar.
  *  - The twenty tears are collected in the Tears of Guthix cave (the minigame's
  *    quest mode: no time limit, nothing drunk, the weekly visit untouched).
- *  - The water mill tunnel, both quest trapdoors and the working drilling
- *    machine are runtime objects registered by this plugin, because the cache
- *    maps place only the broken machine. Smashing deregisters the working model
- *    and reveals the static broken one.
+ *  - The water mill tunnel, the mill trapdoor and the working drilling machine
+ *    are runtime objects registered by this plugin, because the cache maps
+ *    place only the broken machine and the mill trapdoor's multiloc child. The
+ *    H.A.M. storeroom trapdoor is the cache's own multiloc 15766 on 3166,9622;
+ *    its state (rubble, hidden closed, open) is varbit 2270
+ *    (dttd_ham_trapdoor_state), not a runtime replacement. Smashing the machine
+ *    deregisters the working model and reveals the static broken one.
  *  - The store-room guard sequence is one talk-to snipe per guard instead of
  *    the full patrol/line-of-sight puzzle; the agility crack and lock doors keep
  *    their 23 Agility / Thieving checks.
@@ -79,6 +82,7 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
 
   const VARP_DTTD = 794; // "dttd"
   const VARBIT_DTTD_MAIN = 2258; // dttd_main, bits 0-10
+  const VARBIT_DTTD_HAM_TRAPDOOR_STATE = 2270; // dttd_ham_trapdoor_state, varp 794 bits 22-23
   const VARBIT_ZANIK_CORPSE = 2271;
   const VARBIT_MILL_GUARDS_DEAD = 2283;
   const VARP_FOLLOWER_NPC = 447;
@@ -111,6 +115,8 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
   const BIT_TALKED_GUARD = 1 << 5;
   const BIT_TALKED_JOHANHUS = 1 << 6;
   const BIT_TRAPDOOR = 1 << 7;
+  /** The storeroom trapdoor has been opened: the cache's open form, eight feet down. */
+  const BIT_HAM_TRAPDOOR_OPEN = 1 << 16;
   const BIT_LISTENED = 1 << 8;
   const BIT_ESCAPED = 1 << 9;
   const BIT_BODY_TAKEN = 1 << 10;
@@ -262,7 +268,6 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
   /** The goblins east of Lumbridge: the tour stop is walking near them, not a Talk-to (Wiki Quick guide). */
   const GOBLIN_TOUR_ZONE = { minX: 3236, maxX: 3264, minY: 3228, maxY: 3262 };
 
-  const HIDDEN_TRAPDOOR_TILE = { x: 3166, y: 9622 };
   // The store room's Climb-up ladder (loc 15747) is at 2567,5185 in a one-tile
   // corridor; land on the open tile east of it. 2566,5186 is solid rock.
   const STORE_ROOM_TILE = { x: 2568, y: 5185 };
@@ -323,6 +328,13 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
       && !hasBit(player, BIT_BODY_TAKEN) ? 1 : 0);
     const dead = Number(player.getAttribute(MILL_GUARDS_ATTRIBUTE)) || 0;
     sender.sendVarbit(VARBIT_MILL_GUARDS_DEAD, (dead & 1) + ((dead >> 1) & 1) + ((dead >> 2) & 1));
+    // 15766's forms: 0/3 rubble, 1 hidden trapdoor (Open/Pick-lock), 2 open (Climb-down), 4 none.
+    // Until Zanik finds it, the cache's rubble stays; once found it is a trapdoor, and after its
+    // first opening (or the whole quest) it stays open for the storeroom trips.
+    const found = stage >= STAGE_TRAPDOOR && stage < STAGE_COMPLETE && hasBit(player, BIT_TRAPDOOR);
+    const trapdoorState = quest.isComplete(player) || (found && hasBit(player, BIT_HAM_TRAPDOOR_OPEN)) ? 2
+      : found ? 1 : 0;
+    sender.sendVarbit(VARBIT_DTTD_HAM_TRAPDOOR_STATE, trapdoorState);
   }
 
   const held = (player, itemId, amount = 1) => player.getInventory().getAmount(itemId) >= amount;
@@ -626,11 +638,10 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
     return true;
   }
 
-  /** The cache maps place only the broken machine, so the quest objects are runtime. */
+  /** The cache maps place only the broken machine and the mill's multiloc, so those are runtime. */
   function ensureWorldObjects() {
     if (worldObjectsReady) return;
     worldObjectsReady = true;
-    registerObject(ObjectIdentifiers.HIDDEN_TRAPDOOR, HIDDEN_TRAPDOOR_TILE);
     registerObject(ObjectIdentifiers.TRAPDOOR_65, MILL_TRAPDOOR_TILE);
     registerObject(ObjectIdentifiers.TUNNEL_17, { x: 3217, y: 9706 });
     machineObject = new GameObject(
@@ -1146,17 +1157,27 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
   // ==========================================================================
 
   function useHiddenTrapdoor(player) {
-    if (quest.getStage(player) !== STAGE_TRAPDOOR || !hasBit(player, BIT_TRAPDOOR)) {
+    const stage = quest.getStage(player);
+    const found = stage >= STAGE_TRAPDOOR && stage < STAGE_COMPLETE && hasBit(player, BIT_TRAPDOOR);
+    if (!found && !quest.isComplete(player)) {
       player.sendMessage("Nothing interesting happens.");
       return;
     }
-    if (player.getSkillManager().getCurrentLevel(Skill.THIEVING) < 23) {
-      playVariant(player, NpcIdentifiers.ZANIK, "ham-infiltrators-trying-to-pick-the-lock-without-23-thieving");
-      return;
+    // The closed hidden trapdoor is pick-locked once; after that (and after the quest) the open
+    // form's Climb-down is free. A save from before the open bit was kept still works: the
+    // quest's completion shows the open form.
+    if (found && !hasBit(player, BIT_HAM_TRAPDOOR_OPEN)) {
+      if (player.getSkillManager().getCurrentLevel(Skill.THIEVING) < 23) {
+        playVariant(player, NpcIdentifiers.ZANIK, "ham-infiltrators-trying-to-pick-the-lock-without-23-thieving");
+        return;
+      }
+      setBit(player, BIT_HAM_TRAPDOOR_OPEN);
+      player.sendMessage("You pick the lock and climb down.");
+    } else {
+      player.sendMessage("You climb down the trapdoor.");
     }
     player.moveTo(new Location(STORE_ROOM_TILE.x, STORE_ROOM_TILE.y, 0));
     placeZanik(player);
-    player.sendMessage("You pick the lock and climb down.");
   }
 
   function useMillTrapdoor(player) {
@@ -1361,7 +1382,7 @@ module.exports = function registerDeathToTheDorgeshuunQuest(api) {
       claimLargeDoor(event);
       return;
     }
-    if (objectId === ObjectIdentifiers.HIDDEN_TRAPDOOR) {
+    if (objectId === ObjectIdentifiers.HIDDEN_TRAPDOOR || objectId === ObjectIdentifiers.TRAPDOOR_66) {
       event.handled = true;
       useHiddenTrapdoor(event.player);
       return;

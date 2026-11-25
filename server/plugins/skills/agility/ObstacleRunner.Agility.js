@@ -101,6 +101,15 @@ function isBusy(player) {
   return player.getAttribute(BUSY_ATTRIBUTE) != null;
 }
 
+/**
+ * Stops the player's forced walk on the spot. A run of its own tiles is not a walk route the
+ * movement queue can correct: without this, a locked-area correction is stepped back into.
+ */
+function cancel(player) {
+  const task = player.getAttribute(BUSY_ATTRIBUTE);
+  if (task?.stop) task.stop();
+}
+
 function directionBetween(fromX, fromY, toX, toY) {
   const dx = toX - fromX;
   const dy = toY - fromY;
@@ -512,6 +521,7 @@ module.exports = {
   DIRECTION_VECTORS,
   init,
   isBusy,
+  cancel,
   isCrossingAgilityObstacle,
   holdAgilityCrossing,
   run,

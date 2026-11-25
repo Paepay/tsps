@@ -30,6 +30,7 @@
 module.exports = function registerCreatureOfFenkenstrainQuest(api) {
   const {
     Skill,
+    Bank,
     Equipment,
     Inventory,
     Item,
@@ -41,6 +42,7 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
   const { registerQuest, refreshQuestList, startTranscript } = require("../QuestRuntime");
 
   const PAGE = "Creature of Fenkenstrain";
+  const DR_FENKENSTRAIN_PAGE = "Dr Fenkenstrain";
 
   const DR_FENKENSTRAIN_NPC_ID = NpcIdentifiers.DR_FENKENSTRAIN; // 1269
   const MONSTER_NPC_ID = NpcIdentifiers.FENKENSTRAINS_MONSTER; // 1270
@@ -63,6 +65,12 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
   const STAGE_CREATURE_LOOSE = 5;
   const STAGE_CONVINCED = 6;
   const STAGE_COMPLETE = 7;
+  const RING_OF_CHAROS = ItemIdentifiers.RING_OF_CHAROS; // 4202
+  const RING_OF_CHAROS_A = ItemIdentifiers.RING_OF_CHAROS_A_; // 6465
+  const CHAROS_ACTIVATED_ATTRIBUTE = "garden-of-tranquillity:charos-activated";
+  // Activation raises Garden of Tranquillity to its building stage. The stage is the
+  // migration fallback for saves made before the explicit activation flag existed.
+  const GARDEN_RING_ACTIVATED_STAGE = 40;
 
   const GHOSTSPEAK_AMULET_IDS = new Set([
     ItemIdentifiers.GHOSTSPEAK_AMULET, // 552
@@ -107,6 +115,7 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
   const SIGNPOST_NOTE_MESSAGE_ID = "2ZQ6Ev";
   const QUEST_STARTED_MESSAGE_ID = "QswIf0";
   const RING_STEAL_XP_ACTION_ID = "GTM4ho";
+  const RING_RECEIVE_ACTION_ID = "rTGBw4";
   const HEAD_RECEIVE_ACTION_ID = "4dkVij";
   const BRAIN_RECEIVE_ACTION_ID = "KK0w2z";
   const HEAD_WITH_BRAIN_ACTION_ID = "45fvPu";
@@ -189,6 +198,23 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
   const npcsByPlayer = new Map();
 
   const held = (player, itemId, amount = 1) => player.getInventory().getAmount(itemId) >= amount;
+
+  function ownsCharos(player) {
+    const rings = [RING_OF_CHAROS, RING_OF_CHAROS_A];
+    if (rings.some((itemId) => player.getInventory().getAmount(itemId) > 0)) return true;
+    if (player.getEquipment().getItems().some((item) => rings.includes(item?.getId?.()))) return true;
+    for (let tab = 0; tab < Bank.TOTAL_BANK_TABS; tab++) {
+      const bank = player.getBank(tab);
+      if (rings.some((itemId) => (bank?.getAmount?.(itemId) ?? 0) > 0)) return true;
+    }
+    return false;
+  }
+
+  function recoveredCharosId(player) {
+    const activated = Number(player.getAttribute(CHAROS_ACTIVATED_ATTRIBUTE)) === 1 ||
+      (Number(player.getAttribute("quest.garden_of_tranquillity.stage")) || 0) >= GARDEN_RING_ACTIVATED_STAGE;
+    return activated ? RING_OF_CHAROS_A : RING_OF_CHAROS;
+  }
   const at = (location, x, y, radius = 0) =>
     Boolean(location) &&
     Math.abs(location.x - x) <= radius &&
@@ -654,6 +680,9 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
         event.end = true;
         if (!quest.isComplete(player) && quest.getStage(player) >= STAGE_CONVINCED) quest.complete(player);
         return;
+      case RING_RECEIVE_ACTION_ID:
+        grant(recoveredCharosId(player));
+        return;
       case GARDENER_FOLLOW_ACTION_ID:
         setFlag(player, FLAG_GARDENER_FOLLOWING);
         event.handled = true;
@@ -1014,7 +1043,26 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
     if (String(actions[event.clickType - 1] ?? "").toLowerCase() !== "pickpocket") return;
     event.handled = true;
     const { player } = event;
-    if (quest.isComplete(player)) return;
+    if (quest.isComplete(player)) {
+      if (ownsCharos(player)) {
+        startTranscript(
+          api,
+          player,
+          DR_FENKENSTRAIN_NPC_ID,
+          DR_FENKENSTRAIN_PAGE,
+          "standard-dialogue-after-the-great-brain-robbery-pickpocketing-ring-of-charos-while-already-having-one",
+        );
+      } else {
+        startTranscript(
+          api,
+          player,
+          DR_FENKENSTRAIN_NPC_ID,
+          DR_FENKENSTRAIN_PAGE,
+          "standard-dialogue-after-the-great-brain-robbery-pickpocketing-ring-of-charos",
+        );
+      }
+      return;
+    }
     if (quest.getStage(player) >= STAGE_CONVINCED) {
       if (player.getSkillManager().getCurrentLevel(Skill.THIEVING) < 25) {
         player.sendMessage("You need level 25 Thieving to pickpocket Dr Fenkenstrain.");
@@ -1103,7 +1151,7 @@ module.exports = function registerCreatureOfFenkenstrainQuest(api) {
     xpRewards: [{ skillId: Skill.THIEVING.getIndex(), amount: 1000, label: "Thieving" }],
     // The runtime only shows xpRewards on the scroll; the experience itself is paid here.
     onReward: (player) => player.getSkillManager().addExperiences(Skill.THIEVING, 1000),
-    rewardItemId: ItemIdentifiers.RING_OF_CHAROS,
+    rewardItemId: RING_OF_CHAROS,
     rewardItemLabel: "Ring of Charos",
     otherRewards: ["Access to the Werewolf Agility Course"],
     buildJournal,
