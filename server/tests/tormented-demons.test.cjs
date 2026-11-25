@@ -101,10 +101,11 @@ test("the unshielded attack's bonus: X^2 - 16 for crush, heavy ranged and spells
   assert.equal(unshieldedBonus(fakePlayer({ weaponType: "STAFF", spell: trident, castSpell: trident }), CombatType.MAGIC, 5), 9);
 });
 
-function fakeDemon(x) {
+function fakeDemon(x, hitpoints = 10000) {
   const delays = [];
   const prayerActive = new Array(30).fill(false);
   return {
+    hitpoints,
     delays,
     icon: null,
     isPlayer: () => false,
@@ -114,6 +115,7 @@ function fakeDemon(x) {
     getRealId: () => 13599,
     getSpawnPosition: () => new Location(x, 4400, 0),
     getLocation: () => new Location(x, 4400, 0),
+    getHitpoints() { return this.hitpoints; },
     setHeadIcon(icon) { this.icon = icon; },
     getHeadIcon() { return this.icon; },
     getPrayerActive: () => prayerActive,
@@ -181,6 +183,55 @@ test("the shield cuts 20% unless the attack is demonbane or abyssal; the bonus a
   assert.equal(land(npc, arclight, core.CombatType.MELEE, [30], { shielded: true, bonus: 0 }), 30);
   assert.equal(land(npc, whip, core.CombatType.MELEE, [30], { shielded: true, bonus: 0 }), 30);
   assert.equal(land(npc, plain, core.CombatType.MELEE, [30], { shielded: false, bonus: 20 }), 50);
+});
+
+test("a shielded hit on a 1 HP demon uses the pre-cap roll and finishes it", () => {
+  const npc = fakeDemon(4106, 1);
+  Shared.setPrayer(npc, "ranged");
+  const player = fakePlayer({ weaponType: "SCIMITAR", weapon: core.ItemIdentifiers.DRAGON_SCIMITAR });
+  const hit = fakeHit(player, core.CombatType.MELEE, [1]);
+  hit.getHits()[0].setDamageBeforeCap(30);
+  const fight = Shared.fightOf(npc);
+  fight.launches.set(player, [{ cycle: 0, shielded: true, bonus: 0 }]);
+
+  Shield._test.onHitModify({ npc, hit });
+
+  assert.equal(hit.total(), 1, "the 1 HP cap is not what the shield cuts");
+  assert.equal(hit.getHits()[0].getDamage(), 1);
+});
+
+test("PendingHit keeps the uncapped roll for the shield at impact", () => {
+  const { PendingHit } = require("../dist/game/content/combat/hit/PendingHit");
+  const { CombatFactory } = require("../dist/game/content/combat/CombatFactory");
+  const { AccuracyFormulasDpsCalc } = require("../dist/game/content/combat/formula/AccuracyFormulasDpsCalc");
+  const { Player } = require("../dist/game/entity/impl/player/Player");
+  const { PlayerSession } = require("../dist/net/PlayerSession");
+  const channel = { kind: "test", remoteAddress: "127.0.0.1", isOpen: () => true, send: () => true, close() {}, onData() {}, onError() {}, onClose() {} };
+  const player = new Player(new PlayerSession(channel));
+  player.setUsername("td-pre-cap");
+  player.setRegistered(true);
+  const npc = core.NPC.create(13599, new Location(4107, 4400, 0));
+  npc.setHitpoints(1);
+  Shared.setPrayer(npc, "ranged");
+
+  const accuracy = AccuracyFormulasDpsCalc.rollAccuracy, damage = CombatFactory.getHitDamage;
+  try {
+    AccuracyFormulasDpsCalc.rollAccuracy = () => true;
+    CombatFactory.getHitDamage = () => new core.HitDamage(30, core.HitMask.RED);
+    const hit = new PendingHit(player, npc, { type: () => core.CombatType.MELEE, accuracyDefenceType: () => undefined },
+      { experience: false, handleAfterHitEffects: false });
+    assert.equal(hit.getTotalDamage(), 1, "the roll is capped to the target's 1 HP");
+    assert.equal(hit.getHits()[0].getDamageBeforeCap(), 30, "the roll itself is kept");
+
+    const fight = Shared.fightOf(npc);
+    fight.launches.set(player, [{ cycle: 0, shielded: true, bonus: 0 }]);
+    Shield._test.onHitModify({ npc, hit });
+    assert.equal(hit.getTotalDamage(), 1, "a 20% cut of 30 still finishes a 1 HP demon");
+  } finally {
+    AccuracyFormulasDpsCalc.rollAccuracy = accuracy;
+    CombatFactory.getHitDamage = damage;
+    player.setRegistered(false);
+  }
 });
 
 test("every 150 damage it prays against the style that last hit it, and stops attacking 6 ticks", () => {

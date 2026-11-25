@@ -11,6 +11,7 @@ const Combat = require("./tormenteddemons/Combat.TormentedDemons");
 const Shield = require("./tormenteddemons/Shield.TormentedDemons");
 const Temple = require("./tormenteddemons/Temple.TormentedDemons");
 const Scroll = require("./tormenteddemons/Scroll.TormentedDemons");
+const Remains = require("./tormenteddemons/Remains.TormentedDemons");
 const CombatAchievements = require("./tormenteddemons/CombatAchievements.TormentedDemons");
 
 module.exports = {
@@ -23,6 +24,7 @@ module.exports = {
     Shield.attach(api);
     Temple.attach(api);
     Scroll.attach(api);
+    Remains.attach(api);
     CombatAchievements.attach(api);
   },
 };
