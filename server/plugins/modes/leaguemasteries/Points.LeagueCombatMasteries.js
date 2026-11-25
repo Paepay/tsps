@@ -136,7 +136,7 @@ function equipmentChanged(event) {
   const definition = Common.core?.ItemDefinition?.forId?.(Number(itemId));
   const requirements = definition?.getRequirements?.();
   const attack = Common.core?.Skill?.ATTACK?.getIndex?.() ?? 0;
-  if (Number(requirements?.[attack] ?? 0) === required) award(player, entry.key);
+  if (Number(requirements?.[attack] ?? 0) >= required) award(player, entry.key);
 }
 
 function prayerId(name) {
