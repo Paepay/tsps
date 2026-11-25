@@ -1381,12 +1381,13 @@ Level-Up uses its own skill-unlock XP tiers. Tier 1 counts once the character ch
   Pyramid Plunder's sceptre (`Pyramid plunder`), the Grand Hallowed Coffin's ring of endurance,
   Fishing Trawler's angler pieces, Tai Bwo Wannai's gout tuber and, in Raging Echoes and Demonic
   Pacts, aerial fishing's golden tench (the coffins' strange lockpick is not on the pages).
+  Pickpocketing asks `drops:chance` for its own rare item rolls, so Vyre blood shards and the
+  Prifddinas elves' enhanced crystal teleport seeds use their rows.
   Sources rolled by their own plugins are in the data but inert until that plugin asks
   `drops:chance` with the source's name: the Grotesque Guardians, Corporeal Beast's sigils (not
   on its table here), the Gauntlet, Moons of Peril, the Colosseum, Hunter rumours, the Shrine,
   the seed pack, the Fountain of Rune, Larran's and the brimstone chest, the Zombie Pirate's
-  Locker, chewed bones, the Volcanic Mine ore pack, Shades of Mort'ton, and the pickpocketed
-  blood shards (vyres) and teleport seeds (elves).
+  Locker, chewed bones, the Volcanic Mine ore pack, and Shades of Mort'ton.
 - **Minigame points** (Trailblazer Reloaded 3x/5x/8x from tiers 2/5/7; Raging Echoes and Demonic
   Pacts 4x/8x from tiers 1/4): a minigame asks `minigame:points { player, minigame, points }` as it awards and
   the league multiplies `points` (floored) when the passive's `minigames` (leagues.json) lists it. Other

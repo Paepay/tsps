@@ -47,6 +47,8 @@ const submitted = [];
 let repeatAgain = false;
 /** What content (the Ardougne Diary's rewards) answers "thieving:pickpocket-target" with. */
 let pickpocketTargetAnswer = null;
+/** What content (a league) answers "drops:chance" with. */
+let dropChanceAnswer = null;
 const interactions = [];
 const combat = {
     inCombat: () => false,
@@ -73,6 +75,7 @@ Thieving.register({
         if (name === 'loot-tracker:add-npc') tracked.push({ npcId: request.npcId, items: request.items, at: log.length });
         if (name === 'thieving:done' && repeatAgain) request.again = true;
         if (name === 'thieving:pickpocket-target') pickpocketTargetAnswer?.(request);
+        if (name === 'drops:chance') dropChanceAnswer?.(request);
         if (name === 'rune-pouch:gather') runePouchAnswer?.(request);
         // The Skillcapes plugin answers this; a worn Thieving cape is all these tests need.
         if (name === 'skillcape:has-perk' && request.skill === 'THIEVING') {
@@ -602,6 +605,31 @@ test('loot: Master Farmer herb seeds follow Farming level; the workman pays coin
     const pick = (who, value) => rollLoot(who, workman, () => value);
     assert.equal(pick(player(), 0.2)[0].id, I.SPECIMEN_BRUSH, 'before the quest coins are 1/11');
     assert.equal(pick(player({ attributes: { 'quest.the_dig_site.stage': 2 } }), 0.2)[0].id, I.COINS, 'after it, 4/11');
+});
+
+test('league boosted drops apply to rare pickpocket loot', () => {
+    const { rollLoot } = Pickpocket._test;
+    const vyre = DATA.targets.find((t) => t.key === 'vyre');
+    const elf = DATA.targets.find((t) => t.key === 'elf_prifddinas');
+    const seen = [];
+    dropChanceAnswer = (request) => {
+        seen.push(request.source);
+        const item = request.source === 'Vyre' ? 'Blood shard' : 'Enhanced crystal teleport seed';
+        request.rules.push({ pattern: { test: (name) => name === item }, multiplier: 5 });
+    };
+    try {
+        const who = player();
+        assert.equal(rollLoot(who, vyre, () => 0.0004)[0].id, I.BLOOD_SHARD,
+            '1/5000 at 5x accepts a roll of 1/2500');
+
+        const rolls = [0.5, 0.002];
+        const random = () => rolls.shift() ?? 0.5;
+        assert.equal(rollLoot(who, elf, random)[0].id, I.ENHANCED_CRYSTAL_TELEPORT_SEED,
+            '1/1024 at 5x accepts a roll that misses the 1/35 crystal shard and lands below 5/1024');
+        assert.deepEqual(seen.slice(0, 2), ['Vyre', 'Elf (Thieving)']);
+    } finally {
+        dropChanceAnswer = null;
+    }
 });
 
 test('stunTicks lasts exactly its ticks; stun in seconds is unchanged', () => {
