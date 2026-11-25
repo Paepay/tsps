@@ -15,6 +15,7 @@ const Scoreboard = require("./Scoreboard.Colosseum");
 
 const MOD_BUTTONS = Shared.COMPONENT.MOD_BUTTONS.map((component) => (Shared.INTERFACE.INTERMISSION << 16) | component);
 const CONFIRM_BUTTON = (Shared.INTERFACE.INTERMISSION << 16) | Shared.COMPONENT.CONFIRM;
+const CLAIM_CONFIRM_BUTTON = (Shared.INTERFACE.INTERMISSION << 16) | Shared.COMPONENT.CLAIM_CONFIRM;
 
 function ownRun(event) {
   const run = Run.runOf(event.player);
@@ -56,6 +57,13 @@ function confirm(event) {
   if (!run) return false;
   run.confirm();
   return true;
+}
+
+/** The intermission's Claim confirmation: forfeit the run and bring out the rewards chest. */
+function claim(event) {
+  const run = Run.runOf(event.player);
+  if (!run) return false;
+  return run.claimEarly();
 }
 
 /**
@@ -119,6 +127,7 @@ module.exports = function registerColosseumArena(api) {
   api.onNpcInteraction("Minimus", { "Start-wave": startWave, Leave: leave });
   api.onInterfaceActionButton(MOD_BUTTONS, pickModifier);
   api.onInterfaceActionButton(CONFIRM_BUTTON, confirm);
+  api.onInterfaceActionButton(CLAIM_CONFIRM_BUTTON, claim);
   api.onCustomEvent("gravestones:grave-location", graveInLobby);
   api.onPlayerDeath(dieInRun);
   api.onCustomEvent("player:dying", dyingInRun);
@@ -128,5 +137,6 @@ module.exports = function registerColosseumArena(api) {
 
 module.exports.pickModifier = pickModifier;
 module.exports.confirm = confirm;
+module.exports.claim = claim;
 module.exports.dieInRun = dieInRun;
 module.exports.dyingInRun = dyingInRun;

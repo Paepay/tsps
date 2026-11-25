@@ -512,6 +512,7 @@ module.exports.SOL = SOL;
 module.exports.ATTR = ATTR;
 module.exports.PHASES = PHASES;
 module.exports.begin = begin;
+module.exports.jump = jump;
 module.exports.land = land;
 module.exports.tick = tick;
 module.exports.attack = attack;

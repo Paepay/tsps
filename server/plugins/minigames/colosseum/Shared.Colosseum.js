@@ -81,6 +81,8 @@ const INTERFACE = {
 const COMPONENT = {
   MOD_BUTTONS: [15, 16, 17],
   CONFIRM: 41,
+  /** The Claim confirmation's own Confirm button (under the hidden overlay 19; cache script 4931). */
+  CLAIM_CONFIRM: 22,
 };
 
 const SCRIPT = {
