@@ -23,6 +23,7 @@ const Matthias = require("./hunter/Matthias.Hunter");
 const ImplingTracker = require("./hunter/ImplingTracker.Hunter");
 const Context = require("./hunter/Context.Hunter");
 const Supplies = require("./hunter/Supplies.Hunter");
+const RedChinchompa = require("./hunter/RedChinchompa.Hunter");
 
 // Ground traps are "Take" (op3) and "Lay"/"Activate" (op4) in the cache.
 const LAY_GROUND_OPTION = 4;
@@ -99,6 +100,7 @@ module.exports = {
     for (const name of ["Crab trap (baited)", "Crab trap (full)"]) api.onObjectInteraction(name, { Empty: Crabs.empty });
     api.onNpcInteraction("Ceto", { Pay: Ceto.pay });
     api.onObjectInteraction("Tunnel", { Enter: Ceto.tunnelEnter, Pay: Ceto.tunnelPay });
+    RedChinchompa.attach(api);
     api.onNpcDialogueCondition(Ceto.condition);
     api.onCustomEvent("npc-dialogue:action", Ceto.action);
     api.onCustomEvent("npc-dialogue:action", Annette.action);
