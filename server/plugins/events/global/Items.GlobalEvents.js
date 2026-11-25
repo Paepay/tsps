@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 /**
  * Temporary Global Event items (Paepay/tsps#65).
@@ -737,6 +737,26 @@ function ended({ category, slot }) {
   purgeEvent(category, slot);
 }
 
+/**
+ * The owner's Arsenal opt-out rule: a player who switches the event off must not be left wearing
+ * powerless loan equipment. The loan is removed and any combat or skilling action that depended
+ * on it is interrupted; opting back in may reclaim one loan while the same event runs. The
+ * note and greaves keep their copy because their powers stop without deleting a claimable item.
+ */
+function preferenceChanged({ player, eventId, enabled }) {
+  if (!player) return;
+  if (eventId !== "masters-arsenal" || enabled !== false) {
+    purgeInvalid(player);
+    return;
+  }
+  const removed = purge(player, (owner, item) => bindingOf(item)?.kind !== KIND.ARSENAL, false);
+  if (removed <= 0) return;
+  player.getCombat?.()?.clearInteraction?.();
+  player.getSkillManager?.()?.stopSkillable?.();
+  player.getUpdateFlag?.()?.flag?.(core.Flag.APPEARANCE);
+  player.sendMessage(Common.message("expired"));
+}
+
 function attach(pluginApi) {
   api = pluginApi;
   core = api.core;
@@ -768,7 +788,8 @@ function attach(pluginApi) {
   api.onCustomEvent("ranged:ammo-saving", saveAmmo);
   api.onCustomEvent("magic:rune-saving", saveRunes);
   api.onCustomEvent("global-events:ended", ended);
-  api.onCustomEvent("global-events:preference-changed", ({ player }) => purgeInvalid(player));
+
+  api.onCustomEvent("global-events:preference-changed", preferenceChanged);
 }
 
 module.exports = {

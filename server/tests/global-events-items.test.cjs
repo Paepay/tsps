@@ -392,6 +392,32 @@ test("turning the note's event off stops its powers, keeps the item and blocks a
   assert.equal(Items.usable(p, note), true);
 });
 
+test("opting out of Master's Arsenal removes the loan and interrupts combat", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("arsenal-optout");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
+  const loan = held(p, 22325);
+  equip(p, loan);
+  let cleared = false;
+  let stopped = false;
+  const combat = p.getCombat();
+  const clear = combat.clearInteraction.bind(combat);
+  combat.clearInteraction = () => { cleared = true; clear(); };
+  const skills = p.getSkillManager();
+  const stop = skills.stopSkillable.bind(skills);
+  skills.stopSkillable = () => { stopped = true; stop(); };
+
+  Common.setEffectsEnabled(p, "masters-arsenal", false);
+  assert.equal(p.getInventory().getAmount(22325), 0, "the carried loan is gone");
+  assert.ok(!p.getEquipment().getItems().some((item) => item?.getId?.() === 22325), "the equipped loan is gone");
+  assert.equal(cleared, true, "an attack that depended on it is cancelled");
+  assert.equal(stopped, true, "a skilling action that depended on it is cancelled");
+
+  Common.setEffectsEnabled(p, "masters-arsenal", true);
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true, "opting back in allows one reclaim");
+});
+
 test("Master's Arsenal loans bind the real weapon and keep charges, ammo and runes", () => {
   Common.testing.reset();
   activate("masters-arsenal");

@@ -146,7 +146,9 @@ gather, combat, conversion and temporary-item path.
 An opt-out never cancels the world event, changes its timer or slot, refunds a token, or affects
 another player. It only suppresses that account's benefit. The Events UI Toggle writes
 `PUT /api/server/events/preferences`; a standalone preview changes the local
-`global-events:disabled` attribute instead.
+`global-events:disabled` attribute instead. Opting out of Master's Arsenal also removes every loan
+from the inventory and equipment at once and interrupts the combat or skilling action that
+depended on it; opting back in may claim one loan while the same event runs.
 
 ## Event tokens and activation
 
