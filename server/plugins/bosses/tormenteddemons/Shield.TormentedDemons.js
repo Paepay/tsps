@@ -182,18 +182,28 @@ function onHitModify({ npc, hit }) {
   const style = Shared.styleOf(hit.getCombatType());
   const prayed = Shared.prayerOf(npc) === style;
   const bypassed = hit.bypassesProtectionPrayer?.() === true;
-  const parts = hit.getHits().map((part) => part.getDamage());
+  // PendingHit caps the rolled damage to the target's HP before the hit lands. The shield must
+  // cut the roll, not that cap: at 1 HP a shielded 30 otherwise became floor(1 * 0.8) = 0 and
+  // the demon could not be finished without switching attack style.
+  const parts = hit.getHits().map((part) => ({ damage: part.getDamage(), rolled: part.getDamageBeforeCap() }));
   let amounts;
   if (prayed) {
     const cut = entry.shielded && !(player && pierces(player));
-    amounts = parts.map((value, i) => {
-      const kept = bypassed ? value : 0;
-      return (cut ? Math.floor((kept * SHIELD_DAMAGE_PERCENT) / 100) : kept) + (i === 0 ? Math.floor(entry.bonus / 3) : 0);
+    amounts = parts.map((part, i) => {
+      const kept = bypassed ? (cut ? Math.floor((part.rolled * SHIELD_DAMAGE_PERCENT) / 100) : part.damage) : 0;
+      return kept + (i === 0 ? Math.floor(entry.bonus / 3) : 0);
     });
   } else {
     const cut = entry.shielded && !(player && pierces(player));
-    amounts = parts.map((value, i) => (cut ? Math.floor((value * SHIELD_DAMAGE_PERCENT) / 100) : value) + (i === 0 ? entry.bonus : 0));
+    amounts = parts.map((part, i) => (cut ? Math.floor((part.rolled * SHIELD_DAMAGE_PERCENT) / 100) : part.damage)
+      + (i === 0 ? entry.bonus : 0));
   }
+  let remaining = typeof npc.getHitpoints === "function" ? Math.max(0, npc.getHitpoints()) : Infinity;
+  amounts = amounts.map((amount) => {
+    const applied = Math.min(Math.max(0, amount), remaining);
+    remaining -= applied;
+    return applied;
+  });
   setDamage(hit, amounts);
   const total = amounts.reduce((sum, value) => sum + value, 0);
   if (total <= 0) return;

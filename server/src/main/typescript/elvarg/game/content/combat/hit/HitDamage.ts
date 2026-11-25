@@ -8,6 +8,12 @@ export class HitDamage {
     private damage: number;
     private hitmask: HitMask;
     private startHitmask: HitMask;
+    /**
+     * The damage before the hit was capped to the target's remaining HP at roll time. Content that
+     * scales a hit at impact (the tormented demons' fire shield) reads this: a 30 rolled into a
+     * 1-HP target was still a 30, and a 20% cut of it can finish the target.
+     */
+    private damageBeforeCap: number | null = null;
     private appliedObservers: Array<(damageTaken: number) => void> = [];
     private healthLost = 0;
 
@@ -48,6 +54,16 @@ export class HitDamage {
 
     public getDamage(): number {
         return this.damage;
+    }
+
+    /** Records the uncapped value when PendingHit caps this hit to the target's HP. */
+    public setDamageBeforeCap(damage: number): void {
+        this.damageBeforeCap = Number.isFinite(damage) ? Math.max(0, Math.floor(damage)) : 0;
+    }
+
+    /** The value this hit had before the HP cap, or its current damage when it was never capped. */
+    public getDamageBeforeCap(): number {
+        return this.damageBeforeCap ?? this.damage;
     }
 
     public setDamage(damage: number): void {
