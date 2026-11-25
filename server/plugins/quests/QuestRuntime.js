@@ -820,6 +820,9 @@ function sendQuestVarps({ player }) {
  *               rewardOrder? (the scroll's groups after the points: "xp", "item", "other"),
  *               scrollItemId? (item id or function of player),
  *               buildJournal?(player, quest, { row }?), onReward?(player, quest),
+ *               restoreStageState?(player, stage) (applies the quest-native varbits a stage
+ *               implies when the stage is set outside its gameplay hooks, such as Quests-off
+ *               auto-completion),
  *               varpValue?(stage, player) }
  */
 function registerQuest(api, def) {
@@ -856,6 +859,14 @@ function registerQuest(api, def) {
       // Quests whose progress shows in more than their varp publish their native state first.
       api.emitCustomEvent?.("quest:stage-changed", { player, key: def.key, stage: value | 0 });
       refreshQuestList(player);
+    },
+    /**
+     * Restores the quest-native state a stage implies (the varbits cache multilocs and multinpcs
+     * read) without awarding points, rewards or running the quest's gameplay hooks. Used when a
+     * world completes quests without them, so a Quests-off save still shows the repaired world.
+     */
+    restoreStageState(player, value) {
+      def.restoreStageState?.(player, value | 0);
     },
     isStarted(player) {
       return quest.getStage(player) >= (def.startedValue ?? 1);
@@ -947,11 +958,16 @@ function completeAllQuests(player) {
   let changed = false;
   for (const quest of quests) {
     const completedAt = Number(quest.completionValue ?? 2);
-    const current = quest.getStage(player);
-    if (current < completedAt) {
+    let stage = quest.getStage(player);
+    if (stage < completedAt) {
       player.setAttribute(stageAttribute(quest.key), completedAt);
+      stage = completedAt;
       changed = true;
     }
+    // Quests-off completion sets the saved stage directly, so quests whose native varbits
+    // normally change from "quest:stage-changed" must restore them here. This also heals saves
+    // made before that restoration existed, which already have the completed stage.
+    quest.restoreStageState?.(player, stage);
   }
   sendQuestVarps({ player });
   const totalPoints = quests.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);

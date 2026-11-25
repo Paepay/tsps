@@ -266,17 +266,26 @@ function createState(api, getQuest) {
   }
 
   /**
-   * "quest:stage-changed" from outside this quest's own code (the ::quest command, a quest pack's
-   * completion): the varbits become what live had by that stage, so the world matches the jump.
+   * Applies the varbits a stage implies: what live had set by the time the stage was reached.
+   * Used for outside stage jumps and Quests-off completion, where the gameplay hooks that set
+   * each varbit never run.
    */
-  function stageChanged({ player, key, stage: value }) {
-    if (key !== getQuest()?.key || !player || ownChange.has(player)) return;
+  function restore(player, value) {
     const next = impliedVarbits(value);
     const sender = player.getPacketSender();
     for (const varbit of Object.keys(vars(player))) if (!(varbit in next)) sender.sendVarbit(Number(varbit), 0);
     player.setAttribute(SAVE_VERSION_ATTRIBUTE, SAVE_VERSION);
     player.setAttribute(VARS_ATTRIBUTE, next);
     replay(player);
+  }
+
+  /**
+   * "quest:stage-changed" from outside this quest's own code (the ::quest command, a quest pack's
+   * completion): the varbits become what live had by that stage, so the world matches the jump.
+   */
+  function stageChanged({ player, key, stage: value }) {
+    if (key !== getQuest()?.key || !player || ownChange.has(player)) return;
+    restore(player, value);
   }
 
   /** Runs a quest-runtime call that sets the stage (complete()) as this quest's own change. */
@@ -303,7 +312,7 @@ function createState(api, getQuest) {
     api.onCustomEvent("quest:stage-changed", stageChanged);
   }
 
-  return { STAGE, VARBIT, get, set, stage, setStage, advance, replay, migrate, checkpoint, own, register };
+  return { STAGE, VARBIT, get, set, stage, setStage, advance, replay, restore, migrate, checkpoint, own, register };
 }
 
 module.exports = { STAGE, VARBIT, createState, impliedVarbits, migratedStage, VARS_ATTRIBUTE, SAVE_VERSION_ATTRIBUTE };

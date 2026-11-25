@@ -10,13 +10,17 @@ Server.installProductionPathResolver();
 const { PluginManager } = require('../dist/plugins/PluginManager');
 const { Player } = require('../dist/game/entity/impl/player/Player');
 const { PlayerSave } = require('../dist/game/entity/impl/player/persistence/PlayerSave');
+const { ObjectDefinition } = require('../dist/game/definition/ObjectDefinition');
 const QuestRuntime = require('../plugins/quests/QuestRuntime');
 const Quests = require('../plugins/quests/Quests.plugin.js');
 const QuestAutoComplete = require('../plugins/quests/QuestAutoComplete.plugin.js');
 const DrakansMedallion = require('../plugins/items/DrakansMedallion.plugin');
+const { VARBIT: INAID_VARBIT, impliedVarbits: inAidVarbits } = require('../plugins/quests/inaid/State.InAidOfTheMyreque');
+const { VARBIT: DARKNESS_VARBIT, impliedVarbits: darknessVarbits } = require('../plugins/quests/hallowvale/State.DarknessOfHallowvale');
 
 before(async () => {
   await require('../dist/game/cache/CachePipeline').CachePipeline.initialize(path.resolve(__dirname, '..'));
+  ObjectDefinition.init();
 });
 
 function coreWithQuestSwitch(enabled, saves, { members = true } = {}) {
@@ -206,6 +210,51 @@ test('a Quests-off world registers every definition and completes it at login', 
 
   const expectedPoints = registered.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);
   assert.equal(expectedPoints, 337, 'the implemented quest catalogue is worth 337 quest points');
+});
+
+test('a Quests-off world restores quest-native state at complete, including saved completed stages', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false));
+  QuestAutoComplete.register(api);
+
+  // The Burgh bank booth (12759) and wall (12760) are cache multilocs gated by varbits 1977/1978/1979.
+  const BANK_BOOTH = 12759;
+  const BANK_WALL = 12760;
+  const FIXED_BOOTH = 12798;
+  const FIXED_WALL = 12786;
+
+  const assertCompletedWorldState = (player, label) => {
+    for (const handler of hooks.login) handler({ player });
+    const sender = player.getPacketSender();
+
+    // Bind to the state modules' own stage maps, so this covers every quest varbit they restore.
+    for (const [varbit, value] of Object.entries(inAidVarbits(430))) {
+      assert.equal(sender.getVarbit(Number(varbit)), value, `${label}: In Aid varbit ${varbit}`);
+    }
+    for (const [varbit, value] of Object.entries(darknessVarbits(320))) {
+      assert.equal(sender.getVarbit(Number(varbit)), value, `${label}: Darkness varbit ${varbit}`);
+    }
+
+    assert.equal(sender.getVarbit(INAID_VARBIT.BANK_BOOTH), 1, `${label}: booth repaired`);
+    assert.equal(sender.getVarbit(INAID_VARBIT.BANK_WALL), 1, `${label}: wall repaired`);
+    assert.equal(sender.getVarbit(INAID_VARBIT.BANK_TELLER), 1, `${label}: banker present`);
+    assert.equal(sender.getVarbit(DARKNESS_VARBIT.BOAT_BROKEN), 2, `${label}: Darkness boat pushed`);
+
+    // Resolve the real cache transform the same way interactions do.
+    const booth = ObjectDefinition.forPlayer(BANK_BOOTH, player);
+    const wall = ObjectDefinition.forPlayer(BANK_WALL, player);
+    assert.equal(booth?.id, FIXED_BOOTH, `${label}: the bank booth is the fixed Bank/Collect variant`);
+    assert.deepEqual(booth?.getInteractions()?.filter(Boolean), ['Bank', 'Collect']);
+    assert.equal(wall?.id, FIXED_WALL, `${label}: the bank wall is repaired`);
+    assert.equal(wall?.getName(), 'Repaired wall');
+  };
+
+  assertCompletedWorldState(fakePlayer(), 'a fresh Quests-off character');
+
+  // A save written before the fix already has the completed stages but none of the native varbits.
+  const healed = fakePlayer();
+  healed.setAttribute('quest.in_aid_of_the_myreque.stage', 430);
+  healed.setAttribute('quest.darkness_of_hallowvale.stage', 320);
+  assertCompletedWorldState(healed, 'a save completed before native state was restored');
 });
 
 test('an older saved character is migrated and stays complete after a save and reload', () => {
