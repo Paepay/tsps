@@ -387,14 +387,16 @@ test("the five Level-Up additions use authoritative events, thresholds and one-t
 
   const weak = { getRequirements: () => [69] };
   const qualifying = { getRequirements: () => [70] };
+  const godsword = { getRequirements: () => [75] };
   fake.itemDefinitions.set(1001, weak);
   fake.itemDefinitions.set(1002, qualifying);
+  fake.itemDefinitions.set(1003, godsword);
   event("equipment:changed", { player: fake.player, equipped: false, itemId: 1002, slot: 3 });
   event("equipment:changed", { player: fake.player, equipped: true, itemId: 1002, slot: 4 });
   event("equipment:changed", { player: fake.player, equipped: true, itemId: 1001, slot: 3 });
-  assert.equal(done("equip-70-attack-weapon"), false, "only a successful weapon equip with an exact 70 Attack requirement counts");
-  event("equipment:changed", { player: fake.player, equipped: true, itemId: 1002, slot: 3 });
-  assert.equal(done("equip-70-attack-weapon"), true);
+  assert.equal(done("equip-70-attack-weapon"), false, "a weapon below the 70 Attack threshold does not count");
+  event("equipment:changed", { player: fake.player, equipped: true, itemId: 1003, slot: 3 });
+  assert.equal(done("equip-70-attack-weapon"), true, "a Godsword's 75 Attack requirement satisfies the 70 Attack task");
 
   event("prayer:activated", { player: fake.player, prayerId: 17 });
   assert.equal(done("protect-from-melee"), false, "another protection prayer is not Protect from Melee");
