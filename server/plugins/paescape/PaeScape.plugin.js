@@ -531,6 +531,71 @@ function isRealItem(item) {
   return Boolean(item) && Number(item.getId?.() ?? -1) > 0;
 }
 
+/**
+ * Issue #206: a platform-signed Discord Developer `/item` delivery. The platform
+ * has already resolved the unique character name to this world and authorised the
+ * Discord user; this route only checks that the player is online here and that the
+ * item fits the bank, so a full bank is reported back to the Developer instead of
+ * silently dropping the item.
+ */
+function deliverDiscordItem(body) {
+  const username = String(body?.username ?? "").trim();
+  const itemId = Number(body?.itemId);
+  const quantity = Number(body?.quantity ?? 1);
+  if (!username) return { status: 400, body: { ok: false, error: "A player name is required." } };
+  if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+    return { status: 400, body: { ok: false, error: "A valid item id is required." } };
+  }
+  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 2_147_483_647) {
+    return { status: 400, body: { ok: false, error: "A valid quantity is required." } };
+  }
+
+  const core = api?.core;
+  const { Bank, Item, ItemDefinition } = core ?? {};
+  if (!Bank || !Item || !ItemDefinition || !core?.World) {
+    return { status: 503, body: { ok: false, error: "This world cannot deliver items right now." } };
+  }
+  const definition = ItemDefinition.forId(itemId);
+  if (!definition || Number(definition.getId?.() ?? -1) !== itemId) {
+    return { status: 404, body: { ok: false, error: `Item ${itemId} does not exist.` } };
+  }
+
+  const player = core.World.getPlayerByName?.(username);
+  if (!player || player.isPlayerBot?.() === true) {
+    return { status: 404, body: { ok: false, error: `${username} is not online on this world.` } };
+  }
+  const displayName = String(player.getDisplayName?.() ?? player.getUsername?.() ?? username);
+  const itemName = String(definition.getName?.() ?? `item ${itemId}`);
+  const item = new Item(itemId, quantity);
+  const tab = Bank.getTabForItem(player, itemId);
+  const bank = player.getBank(tab);
+  const addable = Number(bank?.getAddableAmount?.(item) ?? 0);
+  if (!bank || addable < quantity) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        bankFull: true,
+        error: `${displayName}'s bank is full: ${itemName} x${quantity} does not fit in the remaining bank space. Nothing was delivered.`,
+      },
+    };
+  }
+
+  bank.add(item, true);
+  GameConstants.PLAYER_PERSISTENCE.requestSave(player, "discord-item");
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      worldId: String(platform.worldId ?? installation.worldId ?? ""),
+      username: displayName,
+      itemId,
+      itemName,
+      quantity,
+    },
+  };
+}
+
 /** The authoritative summary the website shows, read from a character's save. */
 function buildSummary(name) {
   const save = GameConstants.PLAYER_PERSISTENCE.load(name, MAIN_PROFILE);
@@ -799,6 +864,11 @@ async function handleControl(request) {
     return staffController.syncRank(body);
   }
 
+  // Issue #206: the platform-signed Discord Developer /item delivery into a bank.
+  if (request.method === "POST" && segments.length === 2 && segments[0] === "discord" && segments[1] === "item") {
+    return deliverDiscordItem(body);
+  }
+
   // POST /api/platform/restart -> protected five-minute graceful restart
   if (request.method === "POST" && segments.length === 1 && segments[0] === "restart") {
     return beginWorldRestart(body);
@@ -857,6 +927,7 @@ function verifyAction(pathname, method) {
   if (pathname === `${CONTROL_PREFIX}staff/lookup` && method === "GET") return "world:staff-lookup";
   if (pathname === `${CONTROL_PREFIX}staff/command` && method === "POST") return "world:staff-command";
   if (pathname === `${CONTROL_PREFIX}staff/rank` && method === "POST") return "world:staff-sync";
+  if (pathname === `${CONTROL_PREFIX}discord/item` && method === "POST") return "world:discord-item";
   if (pathname === `${CONTROL_PREFIX}restart` && method === "POST") return "world:restart";
   if (pathname === `${CONTROL_PREFIX}stop` && method === "POST") return "world:stop";
   if (pathname === `${CONTROL_PREFIX}characters` && method === "POST") return "character:create";

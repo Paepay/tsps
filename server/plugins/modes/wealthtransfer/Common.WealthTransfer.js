@@ -37,6 +37,18 @@ function message(key) {
 }
 
 /**
+ * A Discord Developer (the in-game DEVELOPER rank the platform applies from the
+ * Developer role) trades on any world, including one with wealth transfer off.
+ * The exemption is checked on both parties so a developer can also receive a
+ * trade from an ordinary account.
+ */
+function isDeveloper(player) {
+  const rights = player?.getRights?.();
+  const developer = api?.core?.PlayerRights?.DEVELOPER;
+  return rights != null && developer != null && rights.getId?.() === developer.getId?.();
+}
+
+/**
  * Content that moves items between players asks here first
  * (`wealth:can-transfer` { player, allow, message, reason }).
  * `reason` picks the refusal line: trade, pickup, duelStake, shopStock, grandExchange,
@@ -54,6 +66,7 @@ module.exports = {
   init,
   enabled,
   message,
+  isDeveloper,
   gateTransfer,
   get api() { return api; },
 };

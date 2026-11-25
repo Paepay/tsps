@@ -25,6 +25,8 @@ function pronouns(player) {
 
 /** Sends the refusal for whichever side is an Ironman; true when one was refused. */
 function refuse(player, target) {
+  // A Discord Developer may trade on any world, either side of the trade.
+  if (Common.isDeveloper(player) || Common.isDeveloper(target)) return false;
   if (Common.groupMate(player, target)) return false;
   if (Common.isIron(player)) {
     player.sendMessage(Common.message(Common.isGroup(player) ? "tradeGroupSelf" : "tradeSelf"));
