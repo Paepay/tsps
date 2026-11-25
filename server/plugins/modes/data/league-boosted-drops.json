@@ -52,6 +52,7 @@
     { "name": "Warped terrorbird and Warped tortoise", "npcs": ["Warped Terrorbird", "Warped Tortoise"], "items": ["/^Warped sceptre/"] },
     { "name": "Kalphite Queen", "npcs": ["Kalphite Queen"], "items": ["/^Kq head/", "Dragon chainbody", "Dragon pickaxe", "Dragon 2h sword"] },
     { "name": "Tombs of Amascut", "items": ["*"] },
+    { "name": "Fractured Archive", "items": ["*"], "leagues": [4] },
     { "name": "Pyramid plunder", "items": ["/^Pharaoh's sceptre/"] },
     { "name": "Dust devil", "npcs": ["Dust devil", "Choke devil"], "items": ["Dragon chainbody", "Dust battlestaff"] },
     { "name": "The Leviathan", "npcs": ["The Leviathan"], "items": ["Chromium ingot", "Venator vestige", "Venator ring", "Leviathan's lure", "Awakener's orb", "/^Virtus /"] },
