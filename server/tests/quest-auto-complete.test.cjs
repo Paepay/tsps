@@ -37,7 +37,7 @@ function coreWithQuestSwitch(enabled, saves, { members = true } = {}) {
 function recordingApi(core, { template = null } = {}) {
   const hooks = {
     login: [], logout: [], custom: new Map(), canShop: [], npcDialogueVariant: [], npcDialogueCondition: [],
-    objectInteraction: new Map(), itemAction: [], npcInteraction: new Map(), itemOnNpc: [], itemOnObject: [], objectRoute: [],
+    objectInteraction: new Map(), itemAction: [], npcInteraction: new Map(), itemOnNpc: [], itemOnItem: [], itemOnObject: [], objectRoute: [],
     mapSquareChange: [], objectHandlers: [], zones: [],
   };
   const emitted = [];
@@ -57,6 +57,7 @@ function recordingApi(core, { template = null } = {}) {
     onNpcDialogueCondition: (handler) => hooks.npcDialogueCondition.push(handler),
     onNpcInteraction: (name, actions) => hooks.npcInteraction.set(name, actions),
     onItemOnNpc: (handler) => hooks.itemOnNpc.push(handler),
+    onItemOnItem: (handler) => hooks.itemOnItem.push(handler),
     onItemOnObject: (handler) => hooks.itemOnObject.push(handler),
     onObjectRoute: (handler) => hooks.objectRoute.push(handler),
     onPlayerMapSquareChange: (handler) => hooks.mapSquareChange.push(handler),
@@ -67,7 +68,7 @@ function recordingApi(core, { template = null } = {}) {
     },
     onZoneEnter: (box, handler) => hooks.zones.push({ box, handler, enter: true }),
     onZoneExit: (box, handler) => hooks.zones.push({ box, handler, enter: false }),
-    onItemAction: (handler) => hooks.itemAction.push(handler),
+    onItemAction: (...args) => hooks.itemAction.push(typeof args[0] === "function" ? args[0] : args.at(-1)),
   };
   return { api, hooks, emitted };
 }

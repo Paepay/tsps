@@ -1,5 +1,5 @@
 /**
- * While Guthix Sleeps' chasm and temple travel when Quests is off.
+ * While Guthix Sleeps' post-quest travel and rewards when Quests is off.
  *
  * QuestAutoComplete marks While Guthix Sleeps complete, but the quest module's hooks live behind
  * a definition-only proxy. The light creatures therefore still drift (the Tears of Guthix
@@ -8,8 +8,13 @@
  * floor, and its map change brings back the light creature that returns players to the surface.
  * Reusing it keeps the TD entrance, the return trip and the quest scenery in step with the normal
  * Quests world instead of duplicating the route here.
+ *
+ * The Wiki rewards are the same shared unit as the quest: Kuradal's notes and the tormented
+ * synapse recipes gate on stage 900, which is the auto-completed value, so they must not be
+ * stranded behind the definition-only proxy either (issues 186/205).
  */
 const QuestRuntime = require("./QuestRuntime");
+const Fellowship = require("./wgs/Fellowship.WhileGuthixSleeps");
 
 const PAGE = "While Guthix Sleeps";
 const TEMPLE_ENTRY = [4061, 4466, 0];
@@ -63,6 +68,16 @@ module.exports = function attachWhileGuthixSleepsQuests(api) {
   };
 
   require("./wgs/Chasm.WhileGuthixSleeps")(context);
+  require("./wgs/Rewards.WhileGuthixSleeps")(context);
+
+  // The fellowship's login sync is what turns Duradel's multinpc into Kuradal. Without it
+  // auto-complete leaves the old master in place, so the notes cannot be obtained at all
+  // (issue 186).
+  const syncVisibility = ({ player }) => {
+    if (player) Fellowship.syncVisibility(player.getPacketSender(), stage(player));
+  };
+  api.onPlayerLogin(syncVisibility);
+  api.onPlayerMapSquareChange(syncVisibility);
 
   // The post-quest temple has no puzzle instance: the opening drops straight into its entrance,
   // and the crawl-through hole returns to the chasm floor.
