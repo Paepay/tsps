@@ -32,6 +32,8 @@ const NOT_ENOUGH_COINS_LINE = "I don't have enough coins to buy the leaves. I'll
 const NO_ROOM_MESSAGE = "You don't have enough inventory space.";
 const MEMBERS_WORLD_MESSAGE = "To use this item please login to a members' world.";
 
+const { makeBox } = require("../items/nest-boxes");
+
 function isWyson(core, event) {
   return event.npcId === core.NpcIdentifiers.WYSON_THE_GARDENER
     && event.pages?.some(({ page }) => page === PAGE);
@@ -39,14 +41,18 @@ function isWyson(core, event) {
 
 function moleParts(core) {
   const ids = core.ItemIdentifiers;
-  return { parts: new Set([ids.MOLE_CLAW, ids.MOLE_SKIN]), immaculate: ids.IMMACULATE_MOLE_SKIN };
+  return {
+    parts: new Set([ids.MOLE_CLAW, ids.MOLE_CLAW_2, ids.MOLE_SKIN, ids.MOLE_SKIN_2]),
+    immaculate: new Set([ids.IMMACULATE_MOLE_SKIN, ids.IMMACULATE_MOLE_SKIN_2]),
+    noted: new Set([ids.MOLE_CLAW_2, ids.MOLE_SKIN_2, ids.IMMACULATE_MOLE_SKIN_2]),
+  };
 }
 
 function selectVariant(core, event) {
   if (event.npcId !== core.NpcIdentifiers.WYSON_THE_GARDENER || !core.WorldDefinition.isMembersWorld()) return null;
   const inventory = event.player.getInventory();
   const { parts, immaculate } = moleParts(core);
-  if (inventory.getAmount(immaculate) > 0) return { page: PAGE, variant: IMMACULATE_VARIANT };
+  for (const id of immaculate) if (inventory.getAmount(id) > 0) return { page: PAGE, variant: IMMACULATE_VARIANT };
   for (const id of parts) if (inventory.getAmount(id) > 0) return { page: PAGE, variant: MOLE_PARTS_VARIANT };
   return null;
 }
@@ -69,24 +75,40 @@ function tradeMoleParts(core, event) {
     return;
   }
   const inventory = event.player.getInventory();
-  const { parts, immaculate } = moleParts(core);
+  const { parts, immaculate, noted } = moleParts(core);
   const items = inventory.getItems();
-  const partSlots = [];
-  const immaculateSlots = [];
+  const partStacks = [];
+  const boxes = new Map();
+  const loose = [];
   items.forEach((item, slot) => {
     const id = item?.getId?.() ?? -1;
-    if (parts.has(id)) partSlots.push(slot);
-    else if (id === immaculate) immaculateSlots.push(slot);
+    const amount = item?.getAmount?.() ?? 1;
+    const isImmaculate = immaculate.has(id);
+    if (!isImmaculate && !parts.has(id)) return;
+    partStacks.push({ slot, amount });
+    const count = (isImmaculate ? IMMACULATE_NESTS : 1) * (noted.has(id) ? amount : 1);
+    const boxed = noted.has(id);
+    for (let n = 0; n < count; n++) {
+      const nest = rollNest(core);
+      if (boxed) boxes.set(nest, (boxes.get(nest) ?? 0) + 1);
+      else loose.push(nest);
+    }
   });
-  // Each immaculate skin's nests need four slots beyond its own. Ours: skins with no room stay
-  // (live hands out nest boxes instead, not implemented).
-  const traded = immaculateSlots.slice(0, Math.floor(inventory.getFreeSlots() / (IMMACULATE_NESTS - 1)));
-  // Live takes the parts out, then the nests fill the first free slots.
-  for (const slot of [...partSlots, ...traded]) inventory.deleteAtSlot(slot, 1, false);
-  const nests = partSlots.length + traded.length * IMMACULATE_NESTS;
-  for (let n = 0; n < nests; n++) inventory.add(new core.Item(rollNest(core), 1), false);
+  // The parts' slots all free once they are taken. Noted parts pay in nest boxes (one per nest
+  // kind from the trade), so reserve those slots first and let the loose nests fill the rest.
+  const freeAfter = inventory.getFreeSlots() + partStacks.length;
+  while (loose.length > Math.max(0, freeAfter - boxes.size)) {
+    const nest = loose.pop();
+    boxes.set(nest, (boxes.get(nest) ?? 0) + 1);
+  }
+  if (boxes.size > freeAfter) {
+    event.player.sendMessage(NO_ROOM_MESSAGE);
+    return;
+  }
+  for (const { slot, amount } of partStacks) inventory.deleteAtSlot(slot, amount, false);
+  for (const [nest, count] of boxes) inventory.add(makeBox(core, nest, count), false);
+  for (const nest of loose) inventory.add(new core.Item(nest, 1), false);
   inventory.refreshItems();
-  if (traded.length < immaculateSlots.length) event.player.sendMessage(NO_ROOM_MESSAGE);
 }
 
 function dialogueCondition(core, event) {
