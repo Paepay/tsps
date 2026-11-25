@@ -48,6 +48,8 @@ const CHEST_SLOTS = 6;
 const INV_INIT_SCRIPT = 149;
 /** The items' click events: Take, Take-5, Take-10, Take-All and Examine. */
 const ITEM_EVENTS = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 10);
+/** The source this chest's unique roll names on "drops:chance". */
+const CHANCE_SOURCE = "Fractured Archive";
 
 class VaultRoom extends Raid.Room {
   onBuild() {
@@ -61,7 +63,7 @@ class VaultRoom extends Raid.Room {
       const chest = this.spawn(named("npc", `tfa_rewards_chest_vault_${slot + 1}_closed`), { x, y, z: 2 }, { scripted: true });
       if (chest) this.chests.set(slot, { npc: chest, open: false });
     });
-    for (const player of this.raid.players) this.loot.set(player.getUsername(), toEntries(rollLoot()));
+    for (const player of this.raid.players) this.loot.set(player.getUsername(), toEntries(rollLoot(player)));
     if ([...this.loot.values()].some((loot) => loot.unique)) {
       this.uniqueChest = this.spawn(named("npc", "tfa_unique_chest_vault_closed"), LAYOUT.unique, { scripted: true });
     }
@@ -194,11 +196,25 @@ function weightedPick(rows, weightAt) {
   return rows[rows.length - 1];
 }
 
+/** The unique names the league's boosted-drops rules can match. */
+function uniqueNames() {
+  return LOOT.uniques.map(([name]) => Shared.core()?.ItemDefinition?.forId?.(itemId(name))?.getName?.() ?? name);
+}
+
+/** A player's unique-roll multiplier from "drops:chance" (a league's boosted drops); 1 without one. */
+function uniqueBoost(player) {
+  if (!player) return 1;
+  const rules = [];
+  Shared.api()?.emitCustomEvent?.("drops:chance", { player, source: CHANCE_SOURCE, rules });
+  const names = uniqueNames();
+  return rules.reduce((value, rule) => (names.some((name) => rule.pattern.test(name)) ? value * rule.multiplier : value), 1);
+}
+
 /** One player's loot: a unique, or three standard rolls; then the tertiaries and the pet. */
-function rollLoot() {
+function rollLoot(player) {
   const items = [];
   let unique = null;
-  if (Math.random() < LOOT.uniqueChance) {
+  if (Math.random() < LOOT.uniqueChance * uniqueBoost(player)) {
     unique = weightedPick(LOOT.uniques, 1)[0];
     items.push([unique, 1]);
   } else {
@@ -429,4 +445,4 @@ module.exports = function registerVault(api) {
   api.onPlayerLogin(deliverHeld);
 };
 
-Object.assign(module.exports, { VaultRoom, LAYOUT, rollLoot, toEntries, awardPet, logLoot, HELD_ATTRIBUTE, deliverHeld });
+Object.assign(module.exports, { VaultRoom, LAYOUT, rollLoot, uniqueBoost, toEntries, awardPet, logLoot, HELD_ATTRIBUTE, deliverHeld });

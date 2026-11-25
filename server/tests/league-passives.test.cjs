@@ -460,7 +460,7 @@ test("boosted drops: the Barrows chest's equipment roll", () => {
   assert.equal(equipment(boost), 7, "boosted: a piece on each of the seven rolls");
 });
 
-test("boosted drops: the raids' unique rolls (Chambers of Xeric, Theatre of Blood, Tombs of Amascut)", () => {
+test("boosted drops: the raids' unique rolls (Chambers of Xeric, Theatre of Blood, Tombs of Amascut, Fractured Archive)", () => {
   const leagueApi = { core, emitCustomEvent: (name, payload) => ask(name, payload) };
   const I = core.ItemIdentifiers;
   // Chambers of Xeric: 8,676 points are a 1% roll, 5% for a tier-8 raider.
@@ -495,6 +495,31 @@ test("boosted drops: the raids' unique rolls (Chambers of Xeric, Theatre of Bloo
     assert.equal(Toa.rollRaidLoot(toaRaid(character("toamain", "main"))).uniqueWinner, null, "unboosted: no unique");
     const toa8 = character("toa8", "league", 8);
     assert.equal(Toa.rollRaidLoot(toaRaid(toa8)).uniqueWinner, toa8, "boosted: the unique");
+  } finally {
+    Math.random = realRandom;
+  }
+
+  // The Fractured Archive: its estimated 4% unique chance is 20% at tier 8. A 0.05 draw is
+  // outside the unboosted chest but inside the boosted one; its standard loot is unchanged.
+  const TfaShared = require("../plugins/minigames/tfa/Shared.FracturedArchive");
+  const Tfa = require("../plugins/minigames/tfa/Vault.FracturedArchive");
+  TfaShared.bind(leagueApi);
+  const tfaMain = character("tfamain", "main");
+  const tfa8 = character("tfa8", "league", 8);
+  assert.equal(Tfa.uniqueBoost(tfaMain), 1);
+  assert.equal(Tfa.uniqueBoost(tfa8), 5);
+  Math.random = () => 0.05;
+  try {
+    assert.equal(Tfa.rollLoot(tfaMain).unique, null, "unboosted: no unique");
+    assert.equal(Tfa.rollLoot(tfa8).unique, "rondache", "boosted: the unique");
+  } finally {
+    Math.random = realRandom;
+  }
+  Math.random = () => 0.5;
+  try {
+    const ordinaryMain = Tfa.rollLoot(tfaMain).items;
+    const ordinaryLeague = Tfa.rollLoot(tfa8).items;
+    assert.deepEqual(ordinaryLeague, ordinaryMain, "the standard rolls are not boosted");
   } finally {
     Math.random = realRandom;
   }

@@ -10,7 +10,7 @@ test("every restricted source applies in Level-Up (type 4)", () => {
 });
 
 test("later-league sources boost in type 4", () => {
-    for (const source of ["Araxxor", "Araxyte", "Vardorvis", "Tormented Demon", "Branda the Fire Queen", "Moons of Peril"]) {
+    for (const source of ["Araxxor", "Araxyte", "Vardorvis", "Tormented Demon", "Branda the Fire Queen", "Moons of Peril", "Fractured Archive"]) {
         assert.ok(patternsFor(4, source).length > 0, source);
     }
 });
