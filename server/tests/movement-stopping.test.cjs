@@ -265,19 +265,25 @@ test('partial retreat preserves in-grid exact, blocked and near-destination rout
   }
 });
 
-test('partial retreat respects directional local-grid boundaries and existing near-point results', () => {
+test('the search map fits both endpoints to 127 tiles and partial retreat bounds the rest', () => {
   const finder = new RsmodRouteFinding(() => 0);
   const base = { level:0, srcX:0, srcY:0, srcSize:1, privateArea:null };
-  for (const [destX,destY] of [[63,0],[-64,0],[0,63],[0,-64]]) {
+  for (const [destX,destY] of [[63,0],[-64,0],[0,63],[0,-64],[127,0],[-127,0],[0,127],[0,-127]]) {
     const args = {...base,destX,destY,moveNear:false};
-    assert.equal(finder.findRoute(args).success,true, 'inside local grid');
+    assert.equal(finder.findRoute(args).success,true, 'both endpoints fit the shifted local grid');
     assert.deepEqual(finder.findRoute({...args,allowPartialRoute:true}),finder.findRoute(args));
   }
-  for (const [destX,destY] of [[64,0],[-65,0],[0,64],[0,-65]]) {
+  for (const [destX,destY] of [[128,0],[-128,0],[0,128],[0,-128]]) {
     const args = {...base,destX,destY};
-    assert.equal(finder.findRoute({...args,moveNear:false}).success,false, 'outside exact local grid');
-    assert.deepEqual(finder.findRoute({...args,allowPartialRoute:true}),finder.findRoute(args),
-      'successful existing near-destination route is retained');
+    assert.equal(finder.findRoute({...args,moveNear:false}).success,false, 'outside exact fitted grid');
+    assert.equal(finder.findRoute(args).success,false, 'no approach point beyond the search map');
+    const partial = finder.findRoute({...args,allowPartialRoute:true});
+    assert.equal(partial.success,true, 'a retreat can still take a bounded first segment');
+    assert.equal(partial.alternative,true);
+    // Outside 127 the map stays source-anchored: the partial segment ends on
+    // its east edge at absolute 63, or its west edge at absolute -64.
+    const axisEnd = (dest) => dest === 0 ? 0 : dest > 0 ? 63 : -64;
+    assert.deepEqual([partial.endX,partial.endY],[axisEnd(destX),axisEnd(destY)]);
   }
 });
 
