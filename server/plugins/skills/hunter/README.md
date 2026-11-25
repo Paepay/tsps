@@ -51,6 +51,8 @@ nets, rumours, pursuit charges) is persisted and restored on login.
 - **Crab traps** (`Crabs.Hunter.js`): red/blue/rainbow traps built with Construction, baiting,
   auto-rebait, crab meat/paste cutting.
 - **Dungeon** (`Dungeon.Hunter.js`): seven Chambers of Xeric bats and the Neypotzli moss-lizard rope trap.
+- **Red chinchompa hunting ground** (`RedChinchompa.Hunter.js`): the Feldip cave and its interior exit,
+  gated on the hard Western Provinces Diary; the Hunting expert answers both diary branches.
 - **Rumours** (`Rumours.Hunter.js`): six guild hunters, eligibility and consecutive-rumour settings,
   rare-part pity/outfit rates, four loot sacks, quetzal-whistle blueprints and guild armour.
 - **Broavs** (`Broavs.Hunter.js`): While Guthix Sleeps pit trapping, wild broav capture, hunting-expert
