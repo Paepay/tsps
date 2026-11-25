@@ -20,6 +20,9 @@ The Blood Moon Rises adds Castle Drakan through the `drakan-medallion:destinatio
   needs Sins of the Father. Slepe is unlocked by using a Slepey tablet on the medallion, which uses
   the tablet up (https://oldschool.runescape.wiki/w/Slepey_tablet). Castle Drakan needs the
   shrine in the castle (The Blood Moon Rises). No destination works past level 20 Wilderness.
+- **Quests off.** Those worlds count every quest complete. `plugins/quests/DrakansMedallion.Quests.js`
+  restores the Sins of the Father and The Blood Moon Rises additions there, and opens Slepe at
+  login, so the whole menu is available.
 - **Using the tablet** (rsprox captures, recording 3389 tick 1888, rev 235): on the use tick the
   tablet leaves the inventory, varbit `slepe_teleport_unlocked` goes 0 -> 1, synth sounds 581 and
   3146 (delay 10) play, and objectbox_double opens with the medallion and the tablet: "As the

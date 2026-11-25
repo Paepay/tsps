@@ -13,6 +13,7 @@ const { PlayerSave } = require('../dist/game/entity/impl/player/persistence/Play
 const QuestRuntime = require('../plugins/quests/QuestRuntime');
 const Quests = require('../plugins/quests/Quests.plugin.js');
 const QuestAutoComplete = require('../plugins/quests/QuestAutoComplete.plugin.js');
+const DrakansMedallion = require('../plugins/items/DrakansMedallion.plugin');
 
 before(async () => {
   await require('../dist/game/cache/CachePipeline').CachePipeline.initialize(path.resolve(__dirname, '..'));
@@ -549,4 +550,26 @@ test('the completion hook skips player bots', () => {
   const player = fakePlayer(true);
   QuestRuntime.completeAllQuests(player);
   assert.equal(player.sent.length, 0, 'a bot has no client to send quest progress to');
+});
+
+test("a Quests-off world offers every Drakan's medallion destination", () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  // The medallion's own listeners answer on the same event bus as the quest hooks.
+  DrakansMedallion.register({
+    core: api.core,
+    persistAttribute: () => {},
+    onItemAction: () => {},
+    onItemOnItem: () => {},
+    onGroundItemPickup: () => {},
+    onCustomEvent: (name, handler) => hooks.custom.set(name, [...(hooks.custom.get(name) ?? []), handler]),
+    emitCustomEvent: (name, event) => {
+      for (const handler of hooks.custom.get(name) ?? []) handler(event);
+    },
+  });
+  const player = fakePlayer();
+  for (const handler of hooks.login) handler({ player });
+
+  assert.deepEqual(DrakansMedallion._test.destinationsFor(player).map((entry) => entry.label),
+    ['Ver Sinhaza', 'Darkmeyer', 'Slepe', 'Castle Drakan']);
 });

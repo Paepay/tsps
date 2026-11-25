@@ -62,6 +62,7 @@ function attach(api) {
     require("./BeneathCursedSands.Quests")(api);
     require("./TheFinalDawn.Quests")(api);
     require("./WhileGuthixSleeps.Quests")(api);
+    require("./DrakansMedallion.Quests").register(api);
   }
   api.log?.(`QuestAutoComplete: Quests is off; ${definitions.length} quests count as complete`);
 }
