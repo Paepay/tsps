@@ -179,7 +179,7 @@ test("Teleport casts, goes black at 3, lands a tile past the door's outer tile a
     ["text", (174 << 16) | 4, ""],
     ["open", OVERLAY_ATMOSPHERE, 174, [{ scriptId: 948, args: [0, 0, 0, 0, 0] }]],
   ]);
-  assert.deepEqual(h.events.map(([name]) => name), ["boss-hud:hide"]);
+  assert.deepEqual(h.events.map(([name]) => name), ["boss-hud:hide", "teleport:landed"]);
   assert.deepEqual(ticks[5], [["move", 2861, 5354, 2], ["anim", 65535]], "recorded landing, one tile past the outer tile");
   assert.deepEqual(ticks[6], [
     ["block", false],
