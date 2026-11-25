@@ -116,7 +116,16 @@ export class ArceuusThralls {
                 if (++elapsed === THRALL_RESURRECT_MESSAGE_TICKS && name) sendThrallMessage(player, `You resurrect a ${name}.`);
                 if (!thrall.isRegistered()) return;
                 const target = player.getCombat().getTarget();
-                if (!target?.isNpc() || !target.isRegistered() || target.isUntargetable() || target.getHitpoints() <= 0) {
+                // The owner's combat target can change into a corpse or another non-combat form
+                // while the reference stays in Combat (Araxxor's harvestable remains keep 1 HP
+                // so clicks still walk to them). Ask the current definition before every attack:
+                // a thrall must never finish a corpse, because that death would count the kill
+                // and its loot path again.
+                const npc = target?.isNpc?.() === true ? target.getAsNpc?.() : null;
+                const definition = npc?.getCurrentDefinition?.() ?? npc?.getDefinition?.();
+                if (!target?.isNpc() || !target.isRegistered() || target.isUntargetable()
+                    || npc?.isDyingFunction?.() === true || target.getHitpoints() <= 0
+                    || definition?.isAttackable?.() === false) {
                     if (thrall.getFollowing() !== player) {
                         thrall.getMovementQueue().reset();
                         thrall.setAttribute(THRALL_PURSUIT_KEY, null);

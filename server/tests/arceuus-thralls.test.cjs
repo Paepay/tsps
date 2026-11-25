@@ -20,7 +20,7 @@ const Slayer = require('../plugins/skills/slayer/Equipment.Slayer');
 const {CacheDefinitions} = require('../dist/game/cache/CacheDefinitions');
 const CHATBOX_TRANSPARENCY = 4608;
 
-function fixture(t,{magic=99,hp=100,claimed=false,name='Goblin',id=-1,attackHook=null,book='worn'}={}) {
+function fixture(t,{magic=99,hp=100,claimed=false,name='Goblin',id=-1,attackHook=null,book='worn',attackable=true,dying=false}={}) {
   const tasks=[],actors=[],shown=[],attributes=new Map(),runes=new Map([[558,100],[556,100],[560,100],[557,100],[565,100],[554,100],[564,100]]);
   const p={magic,prayer:100,registered:true,messages:[],transparent:0,animations:[],graphics:[],isNpc:()=>false,isPlayer:()=>true,isRegistered:()=>p.registered,
     performAnimation:animation=>p.animations.push(animation.getId()),performGraphic:graphic=>p.graphics.push(graphic.getId()),
@@ -31,8 +31,10 @@ function fixture(t,{magic=99,hp=100,claimed=false,name='Goblin',id=-1,attackHook
     getSkillManager:()=>({getCurrentLevel:s=>s===Skill.PRAYER?p.prayer:p.magic,
       decreaseCurrentLevel:(_s,n)=>{p.prayer-=n;},addExperiences(){}}),
     getCombat:()=>({getTarget:()=>target,getAttacker:()=>null,reset(){},setCastSpell(){}})};
-  const target={hp,registered:true,getId:()=>id,getDefinition:()=>({getName:()=>name}),isNpc:()=>true,isPlayer:()=>false,isRegistered:()=>target.registered,isUntargetable:()=>false,
-    getHitpoints:()=>target.hp,getSize:()=>1,getLocation:()=>new Location(3203,3200,0),
+  const definition={getName:()=>name,isAttackable:()=>attackable};
+  const target={hp,registered:true,getId:()=>id,getDefinition:()=>definition,getCurrentDefinition:()=>definition,
+    isNpc:()=>true,isPlayer:()=>false,getAsNpc:()=>target,isRegistered:()=>target.registered,isUntargetable:()=>false,
+    isDyingFunction:()=>dying,getHitpoints:()=>target.hp,getSize:()=>1,getLocation:()=>new Location(3203,3200,0),
     // Match Mobile's pre-healing applied-damage bookkeeping.
     decrementHealth:hit=>{hit.setDamage(Math.min(hit.getDamage(),Math.max(0,target.hp)));hit.setHealthLost(hit.getDamage());target.hp-=hit.getDamage();return hit;},
     addTickHit:hit=>shown.push(hit.getDamage()),getCombat:()=>combat};
@@ -80,6 +82,27 @@ test('a thrall deals no damage to a kurask, a turoth, a Vyrewatch Sentinel or a 
     ArceuusThralls.summon(f.p,10880,0,3,6);f.step(8);
     assert.deepEqual(f.shown,[],name);assert.equal(f.target.hp,100,name);
   }
+});
+
+// A dead boss can keep its combat target and a walkable hitpoint (Araxxor's corpse is 13669,
+// 1 HP, Harvest/Destroy only). A thrall hit there is a second death: the corpse's name still
+// counts for the boss task, so it removes task KC again.
+test("a thrall never attacks Araxxor's non-attackable harvestable corpse, so one kill cannot count twice",t=>{
+  const f=fixture(t,{id:13669,name:'Araxxor',hp:1,attackable:false});
+  t.mock.method(Math,'random',()=>0.999999);
+  ArceuusThralls.summon(f.p,10880,0,3,6);f.step(12);
+  assert.deepEqual(f.shown,[],'no hitsplat lands on the corpse');
+  assert.equal(f.target.hp,1,'the corpse keeps the hitpoint that lets players walk to it');
+  assert.equal(f.thrallAnimations.length,0,'the thrall does not even swing at it');
+  assert.equal(f.actors[0].getFollowing(),f.p,'it follows its owner instead');
+});
+
+test("a thrall still attacks the live Araxxor form",t=>{
+  const f=fixture(t,{id:13668,name:'Araxxor',hp:100,attackable:true});
+  t.mock.method(Math,'random',()=>0.999999);
+  ArceuusThralls.summon(f.p,10880,0,3,6);f.step(4);
+  assert.equal(f.shown.length,1);
+  assert.ok(f.target.hp<100);
 });
 
 // Wiki (Vyrewatch infobox, immunethrall): Yes for the level 87, 110, 120 and 125 forms, No for level 105.
