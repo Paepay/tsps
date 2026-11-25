@@ -1870,6 +1870,16 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     ensureKrukRemains(player);
   }
 
+  /**
+   * Quests can also complete outside this module's advance() (the quest command, quest packs and
+   * Level-Up auto-completion). The cache reads the side varbits immediately, so follow every
+   * native stage change rather than waiting for the next login.
+   */
+  function handleQuestStageChanged({ player, key }) {
+    if (key !== "monkey_madness_ii") return;
+    syncSideVarps(player);
+  }
+
   function handleQuestCompleted({ player, key }) {
     if (key === "monkey_madness_ii") releaseAwowogei(player);
   }
@@ -2239,6 +2249,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   api.onZoneEnter(CRASH_ZONE, handleCrashZone);
   api.onCustomEvent("loc-teleports:arrived", handleRecordedCavernArrival);
   api.onNpcDialogueCondition(answerCondition);
+  api.onCustomEvent("quest:stage-changed", handleQuestStageChanged);
   api.onCustomEvent("quest:completed", handleQuestCompleted);
   api.onCustomEvent("npc-dialogue:action", handleDialogueAction);
   api.onCustomEvent("npc-dialogue:choice", handleDialogueChoice);
