@@ -1392,6 +1392,72 @@ test('the chest gives the waiting reward once, and needs a free slot', () => {
   assert.equal(player.varbits.get(9179), 0);
 });
 
+/** The real treasure trails capacity service, with only its own event bus. */
+function clueCapacity(complete) {
+  const handlers = new Map();
+  const api = {
+    core: { ...PluginManager.getCoreApi(), WorldDefinition: { isMembersWorld: () => true } },
+    persistAttribute() {}, onPlayerLogin() {}, onItemAction() {}, onGroundItemPickup() {},
+    onNpcDialogueCondition() {}, onPlayerLogout() {},
+    onCustomEvent(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
+    emitCustomEvent(name, payload) { for (const handler of handlers.get(name) ?? []) handler(payload); },
+  };
+  api.onCustomEvent('quest:is-complete', (request) => {
+    if (request.key === 'x_marks_the_spot') request.complete = complete;
+  });
+  require('../plugins/treasuretrails/Capacity.ClueCapacity')(api);
+  return api;
+}
+
+test("the chest's elite clue goes through the clue capacity service: a scroll box after X Marks the Spot", () => {
+  const api = clueCapacity(true);
+  const player = fakePlayer('BoxedClue');
+  Shared.bind(api);
+  try {
+    let roll = null;
+    api.onCustomEvent('npc-drops:roll', (request) => { roll = request; });
+    Rewards.setReward(player, 'regular', 'completed');
+    Rewards.openChest(player, () => 0);
+    const clue = roll.drops.find((drop) => drop.id === Rewards.ID.CLUE_ELITE);
+    assert.ok(clue, 'the chest rolls its elite clue through npc-drops:roll');
+    assert.equal(clue.itemId, I.SCROLL_BOX_ELITE_, 'the capacity service resolves it to the elite scroll box');
+    assert.equal(player.inventory.getAmount(I.SCROLL_BOX_ELITE_), 1);
+    assert.equal(player.inventory.getAmount(I.CLUE_SCROLL_ELITE_), 0);
+  } finally {
+    bindHooks();
+  }
+});
+
+test('without X Marks the Spot the same chest still gives the elite clue scroll', () => {
+  const api = clueCapacity(false);
+  const player = fakePlayer('UnboxedClue');
+  Shared.bind(api);
+  try {
+    Rewards.setReward(player, 'regular', 'completed');
+    Rewards.openChest(player, () => 0);
+    assert.equal(player.inventory.getAmount(I.CLUE_SCROLL_ELITE_), 1);
+    assert.equal(player.inventory.getAmount(I.SCROLL_BOX_ELITE_), 0);
+  } finally {
+    bindHooks();
+  }
+});
+
+test("the clue capacity service caps the chest's elite scroll boxes and warns", () => {
+  const api = clueCapacity(true);
+  const player = fakePlayer('CappedBoxes');
+  player.inventory.adds(I.SCROLL_BOX_ELITE_, 2);
+  player.varbits.set(10724, 1);
+  Shared.bind(api);
+  try {
+    Rewards.setReward(player, 'regular', 'completed');
+    Rewards.openChest(player, () => 0);
+    assert.equal(player.inventory.getAmount(I.SCROLL_BOX_ELITE_), 2, 'the cap is kept');
+    assert.ok(player.messages.includes('You have a sneaking suspicion that you would have received an elite scroll box.'));
+  } finally {
+    bindHooks();
+  }
+});
+
 test('completing a run: messages, a personal best, the world\'s totals and the scoreboard', () => {
   const { player, run, fight } = bossRun('Champion');
   ticks(5);
