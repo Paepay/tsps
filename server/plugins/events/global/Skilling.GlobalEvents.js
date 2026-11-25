@@ -206,6 +206,25 @@ function actionsPerCycle(request) {
   request.actions = Math.max(request.actions ?? 1, Number.MAX_SAFE_INTEGER);
 }
 
+
+/**
+ * `firemaking:logs-per-action`: light the whole carried stack in one action. The count includes
+ * the log already on the ground (the lighting session burns that one too), so one extra.
+ */
+function logsPerAction(request) {
+  if (!request.player || !enabled(request.player, "production-master")) return;
+  const carried = request.player.getInventory().getAmount(request.logId);
+  if (carried > 0) request.amount = carried + 1;
+}
+
+/**
+ * `runecrafting:prepare-craft`: an altar craft adds the supported essence pouches to the same
+ * inventory batch. The pouch plugin moves only what fits, so nothing is destroyed.
+ */
+function prepareCraft(request) {
+  if (!request.player || !enabled(request.player, "production-master")) return;
+  api.emitCustomEvent("runecrafting:empty-pouches", request);
+}
 /* --------------------------------------------------------------- Trickster --- */
 
 function alwaysSucceeds(request) {
@@ -228,6 +247,8 @@ function attach(pluginApi) {
   api.onCustomEvent("storage:room", infernalRoom);
   api.onCustomEvent("storage:room", room);
   api.onCustomEvent("skills:actions-per-cycle", actionsPerCycle);
+  api.onCustomEvent("firemaking:logs-per-action", logsPerAction);
+  api.onCustomEvent("runecrafting:prepare-craft", prepareCraft);
   // Pickpocketing and hunter catches already ask these; stalls and blackjacking now ask the
   // same success question so Trickster covers every eligible action, not just a subset.
   api.onCustomEvent("thieving:pickpocket-target", alwaysSucceeds);
@@ -238,4 +259,4 @@ function attach(pluginApi) {
   api.onCustomEvent("hunter:catch-chance", catchChance);
 }
 
-module.exports = { attach, _test: { gather, room, infernalGather, actionsPerCycle, alwaysSucceeds, catchChance } };
+module.exports = { attach, _test: { gather, room, infernalGather, actionsPerCycle, logsPerAction, prepareCraft, alwaysSucceeds, catchChance } };

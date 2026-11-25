@@ -54,6 +54,20 @@ No event affects player-versus-player gameplay:
 - A Master's Arsenal loan sets PvP damage to zero (`onCombatHitDamage`), while keeping its normal
   PvM mechanics.
 
+## Production Master coverage
+
+`instant-production` makes each eligible make-X loop process the whole inventory: Smithing
+(smelting, smithing, cannonballs), Cooking, Crafting (leather, jewellery, battlestaves, pottery,
+gems, amethyst, glassblowing, spinning), Fletching (logs, shields, stringing, chisel, bolt tips,
+arrows, bolts, tipped bolts, darts) and Herblore (cleaning and mixing). The loop stops when its
+materials or free output space run out; it never consumes the bank or invents ingredients.
+
+Runecrafting altar crafts (including combination runes) empty the supported essence pouches that
+fit into the inventory before the essence is counted, so the pouch contents are part of the same
+one-click craft. Guardian essence stays in its pouch, and a pouch whose essence has nowhere to go
+is left intact. Firemaking lights the whole carried log stack in the one action that starts the
+fire.
+
 ## Temporary items
 
 A temporary copy is an ordinary item carrying a `global-event` binding in its metadata:

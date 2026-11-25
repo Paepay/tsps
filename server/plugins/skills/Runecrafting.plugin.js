@@ -539,6 +539,10 @@ function handleCraftRunes(event) {
     return true;
   }
 
+  // Content may add essence to this craft (Production Master empties the supported pouches first).
+  pluginApi.emitCustomEvent("runecrafting:prepare-craft", { player });
+  // Content may add essence to this craft (Production Master empties the supported pouches first).
+  pluginApi.emitCustomEvent("runecrafting:prepare-craft", { player });
   const { essence } = runeData;
   let essenceIds = bindable(player, essence);
   // Wiki (Daeyalt essence): every altar that binds pure essence binds daeyalt essence too, for 50%

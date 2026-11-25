@@ -528,3 +528,27 @@ test("the Events UI lists the dedicated event item names and icons", () => {
   assert.deepEqual([note.name, note.iconItemId], ["Banker's note (e)", 50006]);
   assert.deepEqual([greaves.name, greaves.iconItemId], ["Sage's greaves (e)", 50007]);
 });
+test("the looting bag and POH costume storage refuse a temporary copy", () => {
+  Common.testing.reset();
+  activate("bankers-note");
+  const p = player("containers");
+  assert.equal(claim(p, Items.KIND.NOTE), true);
+  const note = held(p, Items.noteId());
+
+  const LootingBag = require("../plugins/items/LootingBag.plugin");
+  assert.equal(LootingBag._test.canStore(note), false, "an untradeable loan cannot enter the bag");
+
+  require("../plugins/skills/construction/Core.Construction").init(PluginManager.createApi("GlobalEventsItemsTest"));
+  const Storage = require("../plugins/skills/construction/Storage.Construction");
+  const furniture = { hotspotKey: "CAPE_RACK", storage: {} };
+  const house = { owner: p, save: { rooms: [[{ furnitureByLocation: { 1: furniture } }]] } };
+  p.getPrivateArea = () => house;
+  const slot = p.getInventory().getSlotForItemId(note.getId());
+  assert.ok(slot >= 0);
+  assert.equal(
+    Storage.depositHouseItem(p, house, furniture, slot),
+    false,
+    "a bound temporary item is not a costume-room set piece",
+  );
+  assert.equal(p.getInventory().getAmount(note.getId()), 1, "the refused deposit leaves the loan in place");
+});

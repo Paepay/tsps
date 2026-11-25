@@ -20,6 +20,7 @@ const Skilling = require("../plugins/events/global/Skilling.GlobalEvents");
 let core;
 let I;
 let store;
+let api;
 const custom = new Map();
 
 function on(name, handler) {
@@ -39,7 +40,7 @@ before(async () => {
   store = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "global-events-")), "state.json");
   Common.testing.setStoreFile(store);
   Common.testing.reset();
-  const api = new Proxy({
+  api = new Proxy({
     core,
     onCustomEvent: on,
     emitCustomEvent: emit,
@@ -197,6 +198,42 @@ test("Production Master batches the whole eligible inventory, with no arbitrary 
   assert.equal(request(core.Skill.SMITHING, "smelt"), 1);
 });
 
+test("Production Master covers Firemaking stacks and supported Runecrafting pouches", () => {
+  Common.testing.reset();
+  activate("production-master");
+  const p = player();
+  p.getInventory().adds(I.LOGS, 5);
+  const burn = { player: p, logId: I.LOGS, amount: 1 };
+  emit("firemaking:logs-per-action", burn);
+  assert.equal(burn.amount, 6, "the log on the ground plus the five carried");
+
+  const Pouches = require("../plugins/skills/runecrafting/Pouches.Runecrafting");
+  Pouches.attach(api);
+  p.getInventory().adds(core.CacheDefinitions.getObjId("rcu_pouch_small"), 1);
+  p.getInventory().adds(core.CacheDefinitions.getObjId("rcu_pouch_medium"), 1);
+  p.setAttribute(Pouches.POUCHES_ATTRIBUTE, {
+    small: { amount: 3, type: 2, decay: 0 },
+    medium: { amount: 4, type: 4, decay: 0 },
+  });
+  const prepare = { player: p, moved: 0 };
+  emit("runecrafting:prepare-craft", prepare);
+  assert.equal(prepare.moved, 3);
+  assert.equal(p.getInventory().getAmount(I.PURE_ESSENCE), 3, "the pouch essence joins the inventory");
+  assert.equal(Pouches._test.states(p).small.amount, 0, "the pouch is emptied");
+  assert.equal(Pouches._test.states(p).medium.amount, 4, "guardian essence cannot leave the Rift");
+
+  Common.setEffectsEnabled(p, "production-master", false);
+  const usualBurn = { player: p, logId: I.LOGS, amount: 1 };
+  emit("firemaking:logs-per-action", usualBurn);
+  assert.equal(usualBurn.amount, 1, "an opted-out player lights one log");
+  p.setAttribute(Pouches.POUCHES_ATTRIBUTE, {
+    ...Pouches._test.states(p),
+    small: { amount: 2, type: 2, decay: 0 },
+  });
+  const off = { player: p, moved: 0 };
+  emit("runecrafting:prepare-craft", off);
+  assert.equal(Pouches._test.states(p).small.amount, 2, "an opted-out player's pouch is untouched");
+});
 test("Trickster guarantees pickpocket, stall, blackjack, lock, search and Hunter success", () => {
   Common.testing.reset();
   activate("trickster");
