@@ -214,7 +214,7 @@ Sources:
 
 **Start:**
 1. Confirming the twelfth intermission plays his greeting for the attempt: first, second, third, or later (persisted per player). The greeting is skipped once he has been beaten.
-2. He jumps (anim 10876), with "Sol Heredit jumps down from his seat...", and the screen fades.
+2. He jumps (anim 10876), with "Sol Heredit jumps down from his seat...", and the screen fades. Closing the greeting (Esc) still starts the jump: the run notices the chatbox is gone and lands him anyway.
 3. The seated Sol and his seat's blocker go.
 4. The gladiators' barricade goes up: locs 50753-50758 along the edges between the four pillars, (1817, 3099)-(1832, 3114) (**RSPS**).
 5. The player is put at (1825, 3103) (**RSPS**).
@@ -273,6 +273,7 @@ Enraged (150 HP): 5 pools at once, then one more every 3 ticks, and the crystals
 
 **The chest** (Wiki; rsprox captures 1193, 1227 and 4117; tiles **RSPS**):
 - Forfeiting between waves, or beating Sol Heredit (once his death animation has played and his hazards have gone), brings the Rewards Chest (loc 50741, appear anim 10825) out at (1829, 3105), with Minimus at (1830, 3103) to leave by.
+- The intermission screen's Claim (component 10, confirmed on component 22; cache scripts 4932/4933/4950) forfeits the rest of the run and brings that chest out with the loot earned so far. It is the same end as Minimus's Leave after a wave, and the cache only activates it once a wave has been cleared.
 - Search opens interface 864 and sends inventory 843. Its reward list is component 17, and its Discard-all, Take-all and Bank-all buttons are components 13, 14 and 15. Capture 4117 shows taking one item, entering two with Take-X, both answers to the discard confirmation, and the empty-chest message. Capture 1193 shows Take-All on one item; capture 1227 shows Bank-all clearing the 80 splinters after wave 1.
 - Refusals (captures 1193 and 1194, Leagues VI worlds; no normal-world capture has them): Bank-all with no room gives one "Your bank cannot hold your items.", Take-all with no room "You don't have enough space to take anything.", a single Take with no room "You don't have enough inventory space to take any.", and Bank-all on an emptied chest "You have nothing to deposit.". The chest keeps its rewards and resends its value line. Every recorded refusal had nothing fit; when only part fits we take what fits without a line (ours).
 - The chest value uses script 4929, whose current cache definition takes a long. The older interface's value text and item setup are also sent as shown in the captures. Varbit 9802 marks loot opened and clears on leaving the arena.

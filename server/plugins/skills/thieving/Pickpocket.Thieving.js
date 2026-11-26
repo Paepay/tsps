@@ -59,6 +59,15 @@ function clueItems() { return {
 
 const DATA = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "pickpocketing.json"), "utf8"));
 const TARGETS = DATA.targets;
+/**
+ * Pickpocket targets whose rare loot is a league Boosted drops row. The row names the
+ * target group, not the individual NPC standing in front of the player.
+ */
+const BOOSTED_DROP_SOURCES = new Map([
+  ["vyre", "Vyre"],
+  ["elf_lletya", "Elf (Thieving)"],
+  ["elf_prifddinas", "Elf (Thieving)"],
+]);
 /** NPC name -> the targets that list it; a target with `ids` only claims those NPC ids. */
 const TARGETS_BY_NAME = new Map();
 for (const target of TARGETS) {
@@ -214,6 +223,22 @@ function tableRate(player, target, entry) {
   return rateOf(entry.rate);
 }
 
+/** The league's chance rules for this target's rare loot ("drops:chance"), or none outside a league. */
+function boostRules(player, target) {
+  const source = BOOSTED_DROP_SOURCES.get(target.key);
+  if (!source || typeof pluginApi?.emitCustomEvent !== "function") return [];
+  const rules = [];
+  pluginApi.emitCustomEvent("drops:chance", { player, source, rules });
+  return rules;
+}
+
+/** A loot entry's chance, raised by every league rule whose pattern names the item. */
+function boostedRate(player, target, entry, rules) {
+  const rate = tableRate(player, target, entry);
+  const multiplier = rules.reduce((boost, rule) => rule.pattern.test(entry.name ?? "") ? boost * rule.multiplier : boost, 1);
+  return Math.min(1, rate * multiplier);
+}
+
 /** Wiki (Clue scroll): one clue of each tier at a time, in any form, carried or banked. */
 function ownsClue(player, tier) {
   const names = new Set(["clue scroll", "clue bottle", "clue nest", "scroll box"].map((kind) => `${kind} (${tier})`));
@@ -233,8 +258,9 @@ function ownsAny(player, ids) {
 /** The loot of one successful pickpocket: [{ id, amount, clue? }]. */
 function rollLoot(player, target, random = Math.random) {
   const loot = (target.always ?? []).map((entry) => rolled(entry, roll(entry.amount, random)));
+  const rules = boostRules(player, target);
   for (const entry of target.first ?? []) {
-    if (random() >= rateOf(entry.rate)) continue;
+    if (random() >= boostedRate(player, target, entry, rules)) continue;
     if (entry.clue) {
       // Wiki: rolling a clue while already holding one of that tier gives nothing.
       if (ownsClue(player, entry.clue)) return loot;
@@ -245,7 +271,7 @@ function rollLoot(player, target, random = Math.random) {
   }
   let pick = random();
   for (const entry of target.table ?? []) {
-    pick -= tableRate(player, target, entry);
+    pick -= boostedRate(player, target, entry, rules);
     if (pick < 0) return [...loot, rolled(entry, roll(entry.amount, random))];
   }
   return loot;

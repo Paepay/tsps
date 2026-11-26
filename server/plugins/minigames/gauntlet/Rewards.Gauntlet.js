@@ -48,7 +48,9 @@ const MAIN = {
 };
 const ROLLS = { regular: 2, corrupted: 3 };
 const SHARDS = { regular: [5, 9], corrupted: [7, 12] };
-// [item id, 1 in n]
+// [item id, 1 in n]. The elite clue is rolled as its scroll, like every other clue source; the
+// treasure trails' capacity service sees it on "npc-drops:roll" and swaps in the tier's scroll
+// box once X Marks the Spot is complete, enforcing its stack limit (and warning when full).
 const TERTIARY = {
   regular: [[ID.CLUE_ELITE, 25], [ID.WEAPON_SEED, 120], [ID.ARMOUR_SEED, 120], [ID.ENHANCED_SEED, 2000], [ID.YOUNGLLEF, 2000]],
   corrupted: [[ID.CLUE_ELITE, 20], [ID.WEAPON_SEED, 50], [ID.ARMOUR_SEED, 50], [ID.ENHANCED_SEED, 400], [ID.YOUNGLLEF, 800]],
@@ -145,6 +147,9 @@ function openChest(player, random = Math.random) {
   const { Item, ItemDefinition } = Shared.core();
   const items = rollReward(reward, ownsItem(player, ID.GAUNTLET_CAPE), random);
   if (reward.echo && Array.isArray(reward.echoDrops)) items.push(...reward.echoDrops.map(drop => ({ ...drop, id: drop.id ?? drop.itemId })));
+  // Drop handlers read itemId, as every other loot roll gives them: the clue capacity service
+  // turns a clue scroll into the tier's scroll box (after X Marks the Spot) and caps the stack.
+  for (const item of items) item.itemId ??= item.id;
   setReward(player, null, null);
   player.sendMessage("You open the chest.");
   // Pets turns a rolled Youngllef into a follower/backpack item and removes it here; a completed
@@ -152,8 +157,10 @@ function openChest(player, random = Math.random) {
   const source = !reward.echo && reward.kind === "completed" && reward.mode === "corrupted" ? "Corrupted Hunllef" : undefined;
   Shared.api().emitCustomEvent("npc-drops:roll", { player, drops: items, source });
   for (const reward of items) {
-    const noteId = reward.noted ? ItemDefinition.forId(reward.id)?.getNoteId?.() ?? -1 : -1;
-    const id = noteId >= 0 ? noteId : reward.id;
+    // A handler may have changed the item (a clue scroll to a scroll box) or removed it.
+    const rewardId = reward.itemId ?? reward.id;
+    const noteId = reward.noted ? ItemDefinition.forId(rewardId)?.getNoteId?.() ?? -1 : -1;
+    const id = noteId >= 0 ? noteId : rewardId;
     const room = inventory.getAddableAmount(new Item(id, reward.amount));
     if (room > 0) inventory.adds(id, room);
     if (room < reward.amount) {

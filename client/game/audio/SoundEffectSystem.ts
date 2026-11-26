@@ -410,12 +410,21 @@ export class SoundEffectSystem {
         source.addEventListener("ended", () => {
             const idx = this.activeSources.indexOf(source);
             if (idx >= 0) this.activeSources.splice(idx, 1);
+            // Disconnect the source itself, not just its gain: a finished source left wired to
+            // the bus keeps its decoded AudioBuffer reachable in Firefox's Web Audio graph, so a
+            // long session accumulated one per effect until all audio began to stutter (#184).
+            try {
+                source.disconnect();
+            } catch {}
             this.disconnectNodes(extraNodes);
         });
         if (this.activeSources.length > this.maxSimultaneous) {
             const oldest = this.activeSources.shift();
             try {
                 oldest?.stop();
+            } catch {}
+            try {
+                oldest?.disconnect();
             } catch {}
         }
     }

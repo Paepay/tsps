@@ -20,6 +20,7 @@ trusted for packets, animations, graphics, sounds and timing; damage comes from 
 | `Shield.TormentedDemons.js` | The player's attacks on it: the fire shield and the unshielded attack, defenceless accuracy, its prayer and the 150-damage swap. |
 | `Temple.TormentedDemons.js` | The temple `Area`: each room's demon limit and its indicator, who may attack which demon, lost targets, the respawn summon, death effects. |
 | `Scroll.TormentedDemons.js` | The Guthixian temple teleport. |
+| `Remains.TormentedDemons.js` | The smouldering pile of flesh, heart and gland: their ground options, effects, messages, floor life and telegrab refusal. |
 | `CombatAchievements.TormentedDemons.js` | The kill-count varp and the Combat Achievement tasks. |
 
 Outside the plugin:
@@ -99,6 +100,22 @@ captured value except the two where it changes.
 | Death | 11394 and `luc2_undead_demon_death_spot` (2848), its overhead cleared, area sounds 9333 (4), 9332 (128), 9336 (136) at its spawn tile, range 7. | capture |
 | Drops | `tormented_demon` in `data/definitions/npc-drops.json`, unchanged. | Wiki |
 | Kill count | `wgs_tormented_demon_killcount` (varp 4240): one more each kill (captured), saved as `tormented-demons:kills` and sent at login. | capture |
+
+## Smouldering remains
+
+The three consumable drops have their own ground options instead of Take: "Eat-from" on the pile
+of flesh and "Crush" on the heart and gland (cache action 3), and none may be telegrabbed. Each
+lasts ten minutes on the floor, paused while its owner is logged out.
+
+| Item | Ground option | Effect | Source |
+| --- | --- | --- | --- |
+| Smouldering pile of flesh | Eat-from | Heals 18 Hitpoints at level 99, up to four bites; overheal caps at 117; eating at the cap uses no bite. The line is "Even as the flesh burns your throat, you feel your wounds begin to mend." No food attack delay. | Wiki |
+| Smouldering heart | Crush | One use: +20 Attack, Strength and Defence, +14 Ranged, +11 Magic at level 99, held for two minutes before ordinary decay. The line is "You crush the heart. Dark energy swirls around you..." | Wiki |
+| Smouldering gland | Crush | One use: 10-15 Prayer every few seconds for about 49 seconds; teleporting away ends it. The line is "You crush the gland, releasing its unholy blessing." | Wiki |
+
+The Wiki publishes only the level-99 values. Lower-level scaling, the flesh's overheal cap below
+99 and the gland's exact pulse clock are this server's approximations (18/99 of Hitpoints, one
+extra bite of overheal, ten pulses eight ticks apart).
 
 ## Combat Achievements
 

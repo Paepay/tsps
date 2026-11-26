@@ -256,6 +256,7 @@ module.exports = function registerInAidOfTheMyrequeQuest(api) {
     ],
     scrollItemId: ROD_OF_IVANDIS_ITEM_ID,
     buildJournal,
+    restoreStageState: (player, stage) => state.restore(player, stage),
     onReward: grantReward,
   });
 

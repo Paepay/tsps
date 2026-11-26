@@ -7,10 +7,13 @@
  *   essence is short ("Your ecumenical key melts into the door.", captured). From inside, the
  *   door lets the player out. An account the world keeps isolated (Ironman, a league character,
  *   or wealth transfer off) gets its own chamber from this option instead: it never shares a
- *   boss, and the 150,000-coin instance fee does not apply (issue #68).
+ *   boss, and the 150,000-coin instance fee does not apply (issue #68). A league character
+ *   (seasonal league or Level-Up) also enters free and gets a freshly built room each visit,
+ *   as OSRS leagues do (issue #202).
  * - The instance option: a private copy of the chamber for 150,000 coins on top of the essence.
  *   A chamber stays built for a while after its owner leaves (the door, a teleport, a crystal
- *   of memories), so coming back finds the same NPCs instead of a fresh copy (issue #68).
+ *   of memories), so coming back finds the same NPCs instead of a fresh copy (issue #68), except
+ *   under league rules where the room is rebuilt with a live general (issue #202).
  *   tsps has no Combat Achievements, so the Hard tier's price applies to everyone. As captured,
  *   godwars_fader_init fades the overlay, the chamber is rebuilt a tick later around the same
  *   inside tile, and varbit godwars_instance is 1 while in it.
@@ -140,7 +143,8 @@ function instanceClass() {
 
     /**
      * Leaving returns the player outside; logging out puts them outside its door first. A chamber
-     * left behind stays built for INSTANCE_PARK_TICKS so its NPCs keep their state.
+     * left behind stays built for INSTANCE_PARK_TICKS so its NPCs keep their state, except under
+     * league rules: its room is destroyed so the next visit spawns a fresh general (issue #202).
      */
     postLeave(mobile, logout) {
       if (!mobile.isPlayer() || mobile.getAsPlayer() !== this.player) {
@@ -159,6 +163,10 @@ function instanceClass() {
         return;
       }
       Common.later(1, () => player.isRegistered() && !Dungeon.inGodWars(player) && Dungeon.closeOverlay(player));
+      if (leagueRules(player)) {
+        end(player);
+        return;
+      }
       park(player, this);
     }
 
@@ -220,15 +228,27 @@ function isLeagueCharacter(player) {
   return query.league !== null && query.league !== undefined;
 }
 
+/** Whether the player is on a Level-Up world's relic profile (`level-up:relic-profile`). */
+function isLevelUpCharacter(player) {
+  const query = { player, active: false };
+  Common.api.emitCustomEvent("level-up:relic-profile", query);
+  return query.active === true;
+}
+
+/**
+ * Whether God Wars follows league rules for this account: a seasonal league character or a
+ * Level-Up character. Their boss rooms are free and are rebuilt on every visit (issue #202).
+ */
+function leagueRules(player) {
+  return isLeagueCharacter(player) || isLevelUpCharacter(player);
+}
+
 /**
  * Whether the world keeps this account out of shared chambers: an Ironman, a league character
  * (including Level-Up's relic profile), or any account on a world without wealth transfer.
  */
 function isolatedAccount(player) {
-  if (isIronman(player) || isLeagueCharacter(player)) return true;
-  const levelUp = { player, league: null, active: false };
-  Common.api.emitCustomEvent("level-up:relic-profile", levelUp);
-  if (levelUp.active === true) return true;
+  if (isIronman(player) || leagueRules(player)) return true;
   if (Common.api.getPluginConfig?.("WealthTransfer:enabled", true) === false) return true;
   const wealth = { enabled: true };
   Common.api.emitCustomEvent("wealth:enabled", wealth);
@@ -276,7 +296,8 @@ function openDoor({ player, objectId }) {
     leaveChamber(player, inside[0], inside[1]);
     return true;
   }
-  // Isolated accounts never share a chamber (issue #68); their own room costs the essence only.
+  // Isolated accounts never share a chamber (issue #68); their own room costs the essence only,
+  // except under league rules where entry is free (issue #202).
   if (isolatedAccount(player)) return startPrivate(player, faction, false);
   if (!payEntry(player, faction)) return true;
   player.getMovementQueue().reset();
@@ -298,15 +319,23 @@ function reenter(player, area) {
 }
 
 /**
- * A crystal of memories' teleport back into a parked private chamber: the saved location is a real
+ * A crystal of memories' teleport back to a God Wars chamber. Under league rules it lands the
+ * player outside the door, never in a room (issue #202). Otherwise the saved location is a real
  * chamber tile, mapped back into this player's own copy. A chamber that has been ended or belongs
  * to another god is not revived; the caller's public landing is then left in place.
  */
 function recallPrivate(event) {
   const { player, faction, location } = event;
+  const god = Common.factionByKey(faction);
+  if (!god || !location || !Common.inBox(god.room, location.getX(), location.getY(), location.getZ())) return false;
+  if (leagueRules(player)) {
+    player.getMovementQueue().reset();
+    player.moveTo(Common.toLocation(god.door.outside));
+    event.handled = true;
+    return true;
+  }
   const area = instanceOf(player);
-  if (!area || area.isDestroyed() || area.faction.key !== faction || !location
-      || !Common.inBox(area.faction.room, location.getX(), location.getY(), location.getZ())) return false;
+  if (!area || area.isDestroyed() || area.faction.key !== faction) return false;
   player.getMovementQueue().reset();
   area.enter(player);
   player.moveTo(area.copyOf([location.getX(), location.getY(), location.getZ()]));
@@ -316,11 +345,13 @@ function recallPrivate(event) {
 
 /**
  * The private chamber, as captured: the fade, then a tick later the rebuilt chamber. A chamber
- * this player already has is re-entered (the essence is paid again, the coins are not).
+ * this player already has is re-entered (the essence is paid again, the coins are not), except
+ * under league rules: entry is free and every visit builds a fresh chamber (issue #202).
  */
 function startPrivate(player, faction, chargeCoins) {
+  const freeEntry = leagueRules(player);
   const existing = instanceOf(player);
-  if (existing && existing.faction === faction && !existing.hasMember(player)) {
+  if (!freeEntry && existing && existing.faction === faction && !existing.hasMember(player)) {
     if (!payEntry(player, faction)) return true;
     reenter(player, existing);
     return true;
@@ -330,7 +361,7 @@ function startPrivate(player, faction, chargeCoins) {
     player.sendMessage(`You need ${cost.toLocaleString("en-US")} coins to start your own instance.`);
     return true;
   }
-  if (!payEntry(player, faction)) return true;
+  if (!freeEntry && !payEntry(player, faction)) return true;
   if (chargeCoins) player.getInventory().delete(COINS, cost);
   player.getMovementQueue().reset();
   const { overlay } = Common.data;
@@ -422,4 +453,4 @@ function attachChambers(api) {
   api.onNpcDeath(respawnInChamber);
 }
 
-module.exports = { attachChambers, instanceOf, _test: { end, park, recallPrivate, isolatedAccount, isLeagueCharacter, startPrivate } };
+module.exports = { attachChambers, instanceOf, _test: { end, park, recallPrivate, isolatedAccount, isLeagueCharacter, isLevelUpCharacter, leagueRules, startPrivate } };

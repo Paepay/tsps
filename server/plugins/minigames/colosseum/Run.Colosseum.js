@@ -263,6 +263,20 @@ class ColosseumRun {
     return true;
   }
 
+  /**
+   * The intermission screen's Claim (interface 865's confirmation): forfeit the rest of the run
+   * and bring the rewards chest out so the loot earned so far can be taken before leaving.
+   * Live asks "Are you sure you want to claim your loot?" first (cache scripts 4932/4933/4950);
+   * only a run with a wave already cleared has an active Claim button.
+   */
+  claimEarly() {
+    if (this.stage !== "intermission" || this.wave < 1) return false;
+    if (this.player.getInterfaceId?.() !== Shared.INTERFACE.INTERMISSION) return false;
+    this.player.getPacketSender().sendInterfaceRemoval();
+    this.finish();
+    return true;
+  }
+
   // ---------------------------------------------------------------- waves
 
   startWave() {
@@ -303,6 +317,10 @@ class ColosseumRun {
 
   tick() {
     if (this.stage === "ended") return false;
+    // Sol's greeting ends in an ActionDialogue that starts his jump. Closing the chatbox (Esc)
+    // drops that chain before it reaches the entry, which used to leave the run at "sol" with
+    // no NPC and nothing to advance it. No open dialogue means he should be jumping now.
+    if (this.stage === "sol" && !this.player.getDialogueManager?.()?.isActive?.()) Sol.jump(this);
     if (this.stage !== "wave") return true;
     this.waveTicks++;
     for (const npc of [...this.npcs]) {

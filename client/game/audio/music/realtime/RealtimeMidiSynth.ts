@@ -101,6 +101,8 @@ export class RealtimeMidiSynth {
 
     // Sample cache (index -> already sent to worklet)
     private loadedSamples = new Set<number>();
+    /** Incremented when a load starts so sample replies for the previous track are dropped. */
+    private sampleCacheGeneration = 0;
 
     // Current playback state
     private events: MidiEvent[] = [];
@@ -136,6 +138,19 @@ export class RealtimeMidiSynth {
         this.cache = cache;
         this.soundCache = new SoundCache(cache);
         this.channelBanks[9] = 128; // Channel 10 defaults to bank 1 (drums)
+    }
+
+    /**
+     * Each synth plays one track/jingle at a time, so samples from the previous one are dead
+     * weight. Keeping every sample ever heard grew the worklet's map with every area loaded
+     * until Firefox's audio thread began to glitch (#184). Reset it on each load and bump the
+     * generation so sample loads still in flight for the old track cannot repopulate it.
+     */
+    private beginSampleCacheGeneration(): number {
+        this.sampleCacheGeneration++;
+        this.loadedSamples.clear();
+        this.workletNode?.port.postMessage({ type: "resetSamples" });
+        return this.sampleCacheGeneration;
     }
 
     /**
@@ -340,6 +355,10 @@ class MusicWorkletProcessor extends AudioWorkletProcessor {
                     loopStart: msg.loopStart,
                     loopEnd: msg.loopEnd,
                 });
+                break;
+
+            case "resetSamples":
+                this.samples.clear();
                 break;
 
             case "noteOn":
@@ -1138,6 +1157,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
 
         // Stop any current playback
         this.stop();
+        const generation = this.beginSampleCacheGeneration();
 
         // Load track from cache
         const trackIndex = this.cache.getIndex(IndexType.DAT2.musicTracks);
@@ -1148,6 +1168,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
 
         // Track data may still be streaming in (sparse cache); wait for it.
         const file = await retryOnMissingGroup(() => trackIndex.getFileSmart(trackId));
+        if (generation !== this.sampleCacheGeneration) return false;
         if (!file) {
             console.error(`[RealtimeMidiSynth] Track ${trackId} not found`);
             return false;
@@ -1218,6 +1239,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
         const patchMap = new Map<number, MusicPatch | null>();
         for (const program of programsUsed) {
             const patch = await this.loadPatch(program);
+            if (generation !== this.sampleCacheGeneration) return false;
             patchMap.set(program, patch);
         }
 
@@ -1234,10 +1256,10 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
         for (const [program, patch] of patchMap) {
             if (!patch) continue;
 
-            await this.preloadSamplesForPatch(patch, program);
+            await this.preloadSamplesForPatch(patch, program, generation);
         }
 
-        return true;
+        return generation === this.sampleCacheGeneration;
     }
 
     /**
@@ -1255,6 +1277,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
 
         // Stop any current playback
         this.stop();
+        const generation = this.beginSampleCacheGeneration();
 
         // Load jingle from cache (musicJingles index = 11)
         const jingleIndex = this.cache.getIndex(IndexType.DAT2.musicJingles);
@@ -1265,6 +1288,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
 
         // Jingle data may still be streaming in (sparse cache); wait for it like a track.
         const file = await retryOnMissingGroup(() => jingleIndex.getFileSmart(jingleId));
+        if (generation !== this.sampleCacheGeneration) return false;
         if (!file) {
             console.error(`[RealtimeMidiSynth] Jingle ${jingleId} not found`);
             return false;
@@ -1332,6 +1356,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
         const patchMap = new Map<number, MusicPatch | null>();
         for (const program of programsUsed) {
             const patch = await MusicPatch.tryLoad(this.cache, program);
+            if (generation !== this.sampleCacheGeneration) return false;
             patchMap.set(program, patch);
         }
 
@@ -1346,10 +1371,10 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
         // Preload samples for all patches used
         for (const [program, patch] of patchMap) {
             if (!patch) continue;
-            await this.preloadSamplesForPatch(patch, program);
+            await this.preloadSamplesForPatch(patch, program, generation);
         }
 
-        return true;
+        return generation === this.sampleCacheGeneration;
     }
 
     /**
@@ -1596,22 +1621,30 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
     /**
      * Load patch for a specific channel based on program number
      */
-    private async loadPatchForChannel(channel: number, program: number): Promise<void> {
+    private async loadPatchForChannel(
+        channel: number,
+        program: number,
+        generation: number = this.sampleCacheGeneration,
+    ): Promise<void> {
         const patch = await this.loadPatch(program);
-        if (patch) {
-            this.channelPatches[channel] = patch;
-            // Preload samples for this patch
-            await this.preloadSamplesForPatch(patch, program);
-        }
+        if (!patch || generation !== this.sampleCacheGeneration) return;
+        this.channelPatches[channel] = patch;
+        // Preload samples for this patch
+        await this.preloadSamplesForPatch(patch, program, generation);
     }
 
     /**
      * Preload samples for a specific patch
      */
-    private async preloadSamplesForPatch(patch: MusicPatch, patchId: number): Promise<void> {
-        if (!this.workletNode) return;
+    private async preloadSamplesForPatch(
+        patch: MusicPatch,
+        patchId: number,
+        generation: number = this.sampleCacheGeneration,
+    ): Promise<void> {
+        if (!this.workletNode || generation !== this.sampleCacheGeneration) return;
 
         for (let key = 0; key < 128; key++) {
+            if (generation !== this.sampleCacheGeneration) return;
             const sampleId = patch.sampleIds[key];
             if (sampleId === 0) continue;
 
@@ -1628,7 +1661,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
                 ? await this.soundCache.method883(sid)
                 : await this.soundCache.method881(sid);
 
-            if (!raw) {
+            if (!raw || generation !== this.sampleCacheGeneration || !this.workletNode) {
                 continue;
             }
 
@@ -1658,8 +1691,11 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
     /**
      * Preload samples used by a patch
      */
-    private async preloadSamplesForTrack(patch: MusicPatch | null): Promise<void> {
-        if (!patch || !this.workletNode) return;
+    private async preloadSamplesForTrack(
+        patch: MusicPatch | null,
+        generation: number = this.sampleCacheGeneration,
+    ): Promise<void> {
+        if (!patch || !this.workletNode || generation !== this.sampleCacheGeneration) return;
 
         // Find all unique sample IDs used and track their type
         const sampleInfo = new Map<number, { sid: number; isMusicSample: boolean }>();
@@ -1678,6 +1714,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
         }
 
         for (const [sid, info] of sampleInfo) {
+            if (generation !== this.sampleCacheGeneration) return;
             if (this.loadedSamples.has(sid)) {
                 continue;
             }
@@ -1687,6 +1724,7 @@ registerProcessor("music-worklet-processor", MusicWorkletProcessor);
                 ? await this.soundCache.method883(sid)
                 : await this.soundCache.method881(sid);
 
+            if (generation !== this.sampleCacheGeneration || !this.workletNode) return;
             if (!raw && info.isMusicSample) {
                 console.warn(
                     `[RealtimeMidiSynth] Music sample ${sid} failed to load - vorbis decode issue?`,

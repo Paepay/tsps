@@ -18692,6 +18692,19 @@ test("Kruk's Dungeon jungle grass remains an entrance after Monkey Madness II", 
   );
 });
 
+test("Monkey Madness II syncs Kruk's trapdoor varbit on every external stage change", () => {
+  const { quest, player } = questScene('MonkeyMadnessII');
+  const varbits = new Map();
+  const sender = new Proxy({}, {
+    get: (_target, key) => key === 'sendVarbit'
+      ? (id, value) => { varbits.set(id, value); return sender; }
+      : () => sender,
+  });
+  player.getPacketSender = () => sender;
+  quest.setStage(player, quest.completionValue);
+  assert.equal(varbits.get(5033), 1, 'mm2_tracking_kruk reveals the post-quest trapdoor immediately');
+});
+
 
 test('Death Plateau final handover conditions require both the map and combination', () => {
   const { api, handlers, quest, player, items } = questScene('DeathPlateau');

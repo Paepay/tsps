@@ -51,6 +51,17 @@ function message(key, values = {}) {
   return data.messages[key].text.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
 }
 
+/**
+ * A Discord Developer (the in-game DEVELOPER rank the platform applies from the
+ * Developer role) trades on any world, whatever account mode they or their
+ * partner hold. Nothing else about Ironman is lifted.
+ */
+function isDeveloper(player) {
+  const rights = player?.getRights?.();
+  const developer = api?.core?.PlayerRights?.DEVELOPER;
+  return rights != null && developer != null && rights.getId?.() === developer.getId?.();
+}
+
 /** The varbits the client reads for the account type (and a fallen Hardcore's record). */
 function sendVarbits(player) {
   const sender = player.getPacketSender();
@@ -71,7 +82,7 @@ function setMode(player, mode) {
 }
 
 module.exports = {
-  init, modeOf, isIron, isGroup, groupMate, message, sendVarbits, setMode, MODE_ATTRIBUTE, HARDCORE_DEAD_ATTRIBUTE,
+  init, modeOf, isIron, isGroup, groupMate, message, isDeveloper, sendVarbits, setMode, MODE_ATTRIBUTE, HARDCORE_DEAD_ATTRIBUTE,
   get data() { return data; },
   get api() { return api; },
   get core() { return core; },

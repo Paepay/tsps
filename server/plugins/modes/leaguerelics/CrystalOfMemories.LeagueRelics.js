@@ -4,8 +4,10 @@
  * memories). Teleport-back returns to where the last teleport began (`teleport:landed`), with a
  * cooldown of six minutes cut by one per 300 total levels (none at 1,800). Save-memory only says
  * the crystal keeps itself. Instances and `noRecall` places are skipped, except the God Wars
- * chambers: their real tile is remembered and a parked private copy is resumed. Holding the item is
- * the token for clicking it; the passive itself is the unlocked tier.
+ * chambers: their real tile is remembered and a parked private copy is resumed, except under
+ * league rules (seasonal or Level-Up), where Teleport-back lands outside the room's door
+ * (issue #202). Holding the item is the token for clicking it; the passive itself is the unlocked
+ * tier.
  */
 const Common = require("./Common.LeagueRelics");
 

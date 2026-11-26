@@ -4,6 +4,7 @@
 const assert = require("node:assert/strict");
 const { before, after, test } = require("node:test");
 const h = require("./quest-capture-harness.cjs");
+const Fellowship = require("../plugins/quests/wgs/Fellowship.WhileGuthixSleeps");
 
 const DURADEL_SPAWN = 13654;
 const DURADEL = 13622;
@@ -31,7 +32,9 @@ test("after While Guthix Sleeps the Shilo spawn resolves to Kuradal for that pla
 
 test("before the quest the same spawn stays Duradel", (t) => {
   const f = h.actor(t, { at: [2869, 2982, 1], done: [], questKey: "while_guthix_sleeps", stage: 100 });
-  h.PM.emitPlayerLogin({ player: f.player, username: f.player.getUsername() });
+  // Quests-off worlds auto-complete at login, so check the pre-quest transform through the
+  // shared visibility sync rather than by running the login hooks.
+  Fellowship.syncVisibility(f.player.getPacketSender(), 100);
   assert.equal(f.player.getPacketSender().getVarbit(WGS_MASTER_VARBIT), 0);
   assert.equal(spawn().getContentId(f.player), DURADEL);
 });

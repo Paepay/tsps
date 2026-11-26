@@ -1301,6 +1301,8 @@ export class World {
                 // Kick any copies before adding the new player
                 let existingPlayer = World.getPlayerByName(player.username);
                 if (existingPlayer) {
+                    console.log(`[World] Replacing the existing copy of ${player.getUsername()} (new login)`);
+                    existingPlayer.setDisconnectSource("duplicate-login");
                     existingPlayer.requestLogout();
                 }
                 // Bots must not be dropped by a host-imposed human player cap: they

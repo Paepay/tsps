@@ -412,6 +412,9 @@ export class PendingHit {
         let remaining = Math.max(0, this.target.getHitpoints());
         const capToRemaining = (damage: HitDamage): HitDamage => {
             if (damage.getDamage() > remaining) {
+                // Keep what was rolled: a hit-time reduction (the tormented demons' shield) must
+                // scale the real damage, not the 1 left after the target was already nearly dead.
+                damage.setDamageBeforeCap(damage.getDamage());
                 damage.setDamage(remaining);
             }
             remaining -= damage.getDamage();
@@ -454,7 +457,9 @@ export class PendingHit {
             // protection/Elysian reductions, so tick-eating and XP see this value.
             capToRemaining(damage);
             if (this.damageMultiplier !== 1) {
+                const beforeCap = damage.getDamageBeforeCap();
                 damage.setDamage(Math.floor(damage.getDamage() * this.damageMultiplier));
+                damage.setDamageBeforeCap(Math.floor(beforeCap * this.damageMultiplier));
                 // The multiplier is a size bonus, never an excuse for an overkill splat.
                 const hitpointCap = Math.max(0, this.target.getHitpoints());
                 if (damage.getDamage() > hitpointCap) damage.setDamage(hitpointCap);

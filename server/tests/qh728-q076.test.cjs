@@ -163,6 +163,21 @@ function register() {
     getItemOnGroundManager: () => ({
       registerLocation: (player, item, location) => drops.push({ player, item, location }),
     }),
+    // The real API overloads onNpcInteraction(fn) with onNpcInteraction(name, actions); the
+    // adapters below register a function, the quest units a name/option map (issue #196).
+    onNpcInteraction(...args) {
+      const handler = args.find(arg => typeof arg === 'function');
+      if (handler) {
+        (hooks.onNpcInteraction ??= []).push(handler);
+        return;
+      }
+      const actions = args[1];
+      if (!actions || typeof actions !== 'object') return;
+      (hooks.onNpcInteraction ??= []).push(event => {
+        const option = event.definition?.getActions?.()[event.clickType - 1];
+        actions[option]?.(event);
+      });
+    },
   }, { get: (target, key) => target[key] ?? ((...args) => {
     (hooks[key] ??= []).push(args.find(arg => typeof arg === 'function'));
   }) });

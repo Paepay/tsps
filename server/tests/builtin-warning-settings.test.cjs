@@ -101,3 +101,28 @@ test('clicking the Alchemy threshold asks live\'s prompt and saves the answer th
   AlchemyThreshold._test.settingClicked(other);
   assert.equal(other.handled, false);
 });
+
+test('the Alchemy spells\' Warnings option opens the threshold prompt', () => {
+  const log = [];
+  const p = player();
+  p.setEnteredAmountAction = () => {};
+  p.getPacketSender().sendEnterAmountPrompt = (text) => { log.push(text); };
+  for (const spellName of ['High Level Alchemy', 'low level alchemy']) {
+    const event = { player: p, spellName, opId: 10, handled: false };
+    AlchemyThreshold._test.spellCast(event);
+    assert.equal(event.handled, true, `${spellName} consumes its Warnings option`);
+  }
+  assert.deepEqual(log, [
+    'Set value threshold for alchemy warnings:',
+    'Set value threshold for alchemy warnings:',
+  ]);
+
+  for (const event of [
+    { player: p, spellName: 'High Level Alchemy', opId: 1, handled: false },
+    { player: p, spellName: 'Wind Strike', opId: 10, handled: false },
+  ]) {
+    AlchemyThreshold._test.spellCast(event);
+    assert.equal(event.handled, false);
+  }
+  assert.equal(log.length, 2, 'only the Warnings option on an alchemy spell prompts');
+});

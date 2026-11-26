@@ -10,11 +10,22 @@ const Value = require("./ValueWarning");
 const SETTING_ID = 66;
 const MAX_VALUE = 2147483647; // the varbit is 31 bits wide
 const PROMPT = "Set value threshold for alchemy warnings:";
+const CONFIGURE_OP = 10;
+const ALCHEMY_SPELLS = new Set(["high level alchemy", "low level alchemy"]);
 
 function settingClicked(request) {
   if (request.settingId !== SETTING_ID) return;
   request.handled = true;
   Value.promptSetting(pluginApi, request.player, SETTING_ID, PROMPT, MAX_VALUE);
+}
+
+/** The spellbook's "Warnings" option opens the same threshold prompt as All Settings row 66. */
+function spellCast(event) {
+  const spellName = String(event.spellName ?? "").trim().toLowerCase();
+  if (event.opId !== CONFIGURE_OP || !ALCHEMY_SPELLS.has(spellName)) return;
+  const request = { player: event.player, settingId: SETTING_ID, handled: false };
+  settingClicked(request);
+  if (request.handled) event.handled = true;
 }
 
 let pluginApi = null;
@@ -25,6 +36,7 @@ module.exports = {
   register(api) {
     pluginApi = api;
     api.onCustomEvent("settings:setting-clicked", settingClicked);
+    api.onSpellCast(spellCast);
   },
-  _test: { settingClicked, setApi: (api) => { pluginApi = api; } },
+  _test: { settingClicked, spellCast, setApi: (api) => { pluginApi = api; } },
 };

@@ -126,6 +126,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     Skill,
   } = api.core;
   const { registerQuest, startTranscript } = require("../QuestRuntime");
+  const ZooknockReclaims = require("../monkeymadnessii/ZooknockReclaims.MonkeyMadnessII");
 
   // ==========================================================================
   // Ids and constants
@@ -317,22 +318,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   const MONKEY_TALISMAN_ITEM = ItemIdentifiers.MONKEY_TALISMAN; // 4023
   const KRUKS_PAW_ITEM = ItemIdentifiers.KRUKS_PAW; // 19523
   const KRUK_GREEGREE_ITEM = ItemIdentifiers.KRUK_MONKEY_GREEGREE; // 19525
-  // Canonical Transcript:Zooknock postquest page. These are free replacements,
-  // distinct from the tunnel's paid remains exchange and the MM2 paw quest step.
-  const ZOOKNOCK_RECLAIMS = [
-    ["vCCtz2", "qhilom", ItemIdentifiers.NINJA_MONKEY_GREEGREE],
-    ["eUnnK9", "bzMEBy", ItemIdentifiers.NINJA_MONKEY_GREEGREE_2],
-    ["mmr4it", "l9BRxu", KRUK_GREEGREE_ITEM],
-    ["QE-M1k", "VulznX", ItemIdentifiers.ZOMBIE_MONKEY_GREEGREE],
-    ["0HZd3F", "O3moWv", ItemIdentifiers.ZOMBIE_MONKEY_GREEGREE_2],
-    ["moHRJE", "6WKlze", ItemIdentifiers.GORILLA_GREEGREE],
-    ["FuxRIL", "S-kK90", ItemIdentifiers.BEARDED_GORILLA_GREEGREE],
-    ["Jkpi5j", "g6Dp--", ItemIdentifiers.KARAMJAN_MONKEY_GREEGREE],
-    ["34nXxJ", "1FErIR", ItemIdentifiers.MSPEAK_AMULET],
-    ["zZr5-T", "Xrklqr", ItemIdentifiers._10TH_SQUAD_SIGIL],
-  ];
-  const ZOOKNOCK_RECLAIM_CONDITIONS = new Map(ZOOKNOCK_RECLAIMS.map(([condition, , item]) => [condition, item]));
-  const ZOOKNOCK_RECLAIM_MESSAGES = new Map(ZOOKNOCK_RECLAIMS.map(([, message, item]) => [message, item]));
   const SATCHEL_ITEM = ItemIdentifiers.SATCHEL; // 19527
   const FILLED_SATCHEL_ITEM = ItemIdentifiers.SATCHEL_2; // 19528
   const CHARGED_ONYX_ITEM = ItemIdentifiers.CHARGED_ONYX; // 19560
@@ -490,6 +475,10 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   function stageOf(player) {
     return quest.getStage(player);
   }
+
+  // Zooknock's post-quest replacements are registered by the shared unit so a Quests-off
+  // world resolves the same transcript conditions and hand-outs (issue 196).
+  ZooknockReclaims.attach(api, { stageOf });
 
   function attribute(player, key) {
     return Number(player.getAttribute(key)) || 0;
@@ -896,33 +885,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
       || (stage >= STAGE_GREE_GREE && !hasKrukGreegree(event.player));
   }
 
-  function isPostquestZooknock(event) {
-    return event.npcId === NpcIdentifiers.ZOOKNOCK_4 && stageOf(event.player) >= STAGE_COMPLETE
-      && event.pages?.some(page => page.page === ZOOKNOCK_PAGE && page.variants?.includes(POST_QUEST));
-  }
-
-  function hasReclaim(player, itemId) {
-    return hasItem(player, itemId) || equippedItem(player, itemId) || bankHasItem(player, itemId);
-  }
-
-  function handleZooknockReclaim(event) {
-    const itemId = ZOOKNOCK_RECLAIM_MESSAGES.get(event.stepId);
-    if (event.kind !== "message" || !itemId || !isPostquestZooknock(event)) return false;
-    event.handled = true;
-    // Recheck at delivery, not just while resolving the condition. Never replace
-    // an already-owned item or drop a free reward on a full inventory.
-    if (hasReclaim(event.player, itemId)) {
-      event.player.sendMessage("You already have one of those.");
-      event.end = true;
-    } else if (!tryAddItem(event.player, itemId)) {
-      event.player.sendMessage("You need a free inventory slot before Zooknock can hand you a replacement.");
-      event.end = true;
-    } else {
-      event.box = { items: [itemId] };
-    }
-    return true;
-  }
-
   function handleZooknockTalk(event) {
     const { player, npcId } = event;
     const stage = stageOf(player);
@@ -1109,7 +1071,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   // ==========================================================================
 
   function handleDialogueAction(event) {
-    if (handleZooknockReclaim(event)) return;
     const { player, stepId } = event;
     if (!DIALOGUE_NPC_IDS.has(event.npcId)) return;
     switch (stepId) {
@@ -1300,9 +1261,6 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   }
 
   function answerCondition(event) {
-    if (isPostquestZooknock(event) && ZOOKNOCK_RECLAIM_CONDITIONS.has(event.stepId)) {
-      return hasReclaim(event.player, ZOOKNOCK_RECLAIM_CONDITIONS.get(event.stepId));
-    }
     const { player, stepId } = event;
     if (!DIALOGUE_NPC_IDS.has(event.npcId)) return null;
     switch (stepId) {
@@ -1912,6 +1870,16 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
     ensureKrukRemains(player);
   }
 
+  /**
+   * Quests can also complete outside this module's advance() (the quest command, quest packs and
+   * Level-Up auto-completion). The cache reads the side varbits immediately, so follow every
+   * native stage change rather than waiting for the next login.
+   */
+  function handleQuestStageChanged({ player, key }) {
+    if (key !== "monkey_madness_ii") return;
+    syncSideVarps(player);
+  }
+
   function handleQuestCompleted({ player, key }) {
     if (key === "monkey_madness_ii") releaseAwowogei(player);
   }
@@ -2281,6 +2249,7 @@ module.exports = function registerMonkeyMadnessIIQuest(api) {
   api.onZoneEnter(CRASH_ZONE, handleCrashZone);
   api.onCustomEvent("loc-teleports:arrived", handleRecordedCavernArrival);
   api.onNpcDialogueCondition(answerCondition);
+  api.onCustomEvent("quest:stage-changed", handleQuestStageChanged);
   api.onCustomEvent("quest:completed", handleQuestCompleted);
   api.onCustomEvent("npc-dialogue:action", handleDialogueAction);
   api.onCustomEvent("npc-dialogue:choice", handleDialogueChoice);
