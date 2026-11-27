@@ -289,6 +289,24 @@ test("Trickster guarantees pickpocket, stall, blackjack, lock, search and Hunter
   assert.equal(usual.chance, 0.3);
 });
 
+test("Trickster repeats a pickpocket the way the Trickster relic does", () => {
+  Common.testing.reset();
+  activate("trickster");
+  const p = player();
+  const again = { player: p, kind: "pickpocket", again: false };
+  emit("thieving:done", again);
+  assert.equal(again.again, true, "a successful or failed pickpocket asks for another go");
+
+  const stall = { player: p, kind: "stall", again: false };
+  emit("thieving:done", stall);
+  assert.equal(stall.again, false, "a stall theft stays one click");
+
+  Common.setEffectsEnabled(p, "trickster", false);
+  const off = { player: p, kind: "pickpocket", again: false };
+  emit("thieving:done", off);
+  assert.equal(off.again, false, "an opted-out player pickpockets once");
+});
+
 test("only one skilling event can run at a time", () => {
   Common.testing.reset();
   assert.equal(activate("endless-harvest").ok, true);
