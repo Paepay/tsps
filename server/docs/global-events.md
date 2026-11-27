@@ -34,7 +34,7 @@ The names, summaries and effect parameters are the frozen contract from
 | Skilling | Abundance | `double-resources`, XP for the extra resources |
 | Skilling | Infernal Gathering | burn logs, smelt ore, cook fish |
 | Skilling | Production Master | `instant-production` |
-| Skilling | Trickster | guaranteed Thieving/Hunter success, temporary Sage's greaves (e) |
+| Skilling | Trickster | guaranteed Thieving/Hunter success, automatic pickpocketing, temporary Sage's greaves (e) |
 | Utility | Rags to Riches | `unique-drop-chance` x1.1 |
 | Utility | Accelerate | `xp-multiplier` x2, all sources |
 | Utility | Prodigy | `visible-level-boost` +12 each tick |
