@@ -266,7 +266,7 @@
     "tokenBalance": "Event tokens: {tokens}",
     "tokenUnavailable": "The PaeScape platform is unavailable right now. Nothing was spent.",
     "tokenAccountUnlinked": "Your character is not linked to a PaeScape account yet.",
-    "tokenNone": "You don't have a {event} token to activate.",
+    "tokenNone": "You don't have a {event} token. Buy one with PaePoints in the Store on the PaeScape website.",
     "tokenActivated": "{event} activated for {minutes} minutes. One event token was spent.",
     "tokenNoDuration": "{event} does not have a configured duration yet; nothing was spent.",
     "tokenNotMember": "That account is not a member of this world.",

@@ -163,7 +163,10 @@ depended on it; opting back in may claim one loan while the same event runs.
 
 ## Event tokens and activation
 
-The platform owns token prices, balances and purchased durations. The world makes **one** atomic
+The platform owns token prices, balances and durations (every event currently lasts 90 minutes and
+is bought on the website with PaePoints). A player activates from the **::events** interface: select
+any event, then **Activate**. No inventory item is involved, and the world never judges token
+ownership; it forwards the click and the platform answers. The world makes **one** atomic
 activation call:
 
 1. `GET /api/server/events/account?userId=...` after login/reconnect or when the UI opens.
@@ -178,13 +181,14 @@ stored result instead of spending again.
 | Status | Meaning | In-game result |
 | --- | --- | --- |
 | `201` / `200` | activated / idempotent replay | event applied, token count updated |
-| `402` | no token for that event | `tokenNone`; nothing spent |
-| `409` | slot busy or no configured duration | `eventAlreadyRunning` / `tokenNoDuration` |
+| `402` | no token for that event | `tokenNone` (points the player to the website Store); nothing spent |
+| `409` | category slot busy | `eventAlreadyRunning` (`tokenNoDuration` is kept only for older platforms) |
 | `403` | account is not a member of this world | `tokenNotMember` |
 | `400` | bad event or idempotency key | `tokenBadRequest` |
 
-The platform routes are `Paepay/PaeScape_Realms#112`; until they are deployed a hosted world
-reports the token service as unavailable and never invents a free activation or duration.
+The routes are lease-authenticated (`/api/server/events/*`, bound to the lease's world), so only a
+hosted world with a platform lease can activate. A legacy secret-configured world has no such route
+and reports the token service as unavailable; it never invents a free activation or duration.
 
 ## Commands and testing
 

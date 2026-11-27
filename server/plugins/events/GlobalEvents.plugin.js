@@ -44,6 +44,10 @@ function categoryLabel(category) {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
+function ownedTokens(player, eventId) {
+  return Tokens.available() && Tokens.linked(player) ? Tokens.quantityFor(player, eventId) : 0;
+}
+
 function tokenInfo(player, eventId = null) {
   if (!Tokens.available()) return "Token service unavailable";
   if (!Tokens.linked(player)) return "Link a PaeScape account to use event tokens";
@@ -60,9 +64,10 @@ function eventRows(player) {
     const slot = Common.activeByEventId(event.id);
     const enabled = slot ? Common.effectsEnabled(player, event.id) : false;
     const active = slot !== null;
+    const owned = ownedTokens(player, event.id);
     const detail = active
       ? ` (${enabled ? "on" : "off"}, ${formatTime(Common.remainingSeconds(slot))})`
-      : ` (${categoryLabel(event.category)})`;
+      : ` (${categoryLabel(event.category)}${owned > 0 ? `, ${owned} token${owned === 1 ? "" : "s"}` : ""})`;
     return {
       id: index + 1,
       eventId: event.id,
@@ -76,7 +81,9 @@ function eventRows(player) {
         info: active ? `Time left: ${formatTime(Common.remainingSeconds(slot))}` : tokenInfo(player, event.id),
         info2: active
           ? `Effects: ${enabled ? "on" : "off"}${slot.activatedBy ? ` - by ${slot.activatedBy}` : ""}`
-          : "One event token starts this event.",
+          : owned > 0
+            ? "Select Activate to spend one token. No item is needed."
+            : "No token yet: buy one with PaePoints in the website Store.",
         description: event.description,
       },
     };
@@ -232,11 +239,17 @@ function claimSelected({ player }) {
   return true;
 }
 
+/**
+ * Activate the selected event. The client never decides whether the player may: no inventory
+ * item or local token count is required, and the platform is the only judge of token ownership
+ * (402 no token, 409 category busy, 403 not a member). Any non-claim tab selection qualifies.
+ */
 function activateSelected({ player }) {
   if (!isOpen(player)) return false;
-  const event = selectedEvent(player, TAB.TOKENS);
+  const selected = selection(player);
+  const event = selected && selected.tab !== TAB.CLAIMABLE ? Common.catalog()[selected.id - 1] ?? null : null;
   if (!event) {
-    player.sendMessage("Select an event on the Tokens tab first.");
+    player.sendMessage("Select an event first.");
     return true;
   }
   void Tokens.activate(player, event.id)
