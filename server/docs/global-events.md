@@ -93,6 +93,14 @@ end and expiry. Claiming and deleting are blocked while in combat or for 10 seco
 their equipment level and combat gates are waived (quest, resource and activity checks still
 apply), and only one loan may be held at a time.
 
+A Master's Arsenal loan can only be worn, taken off and destroyed. Its inventory menu is
+`Wield` and `Destroy` (the base item's Drop, Check, Operate and charge options are gone, and any
+other option the server receives is refused). Every item-on-item, item-on-object, item-on-NPC,
+item-on-player, item-on-ground-item and spell-on-item use is refused through `onCanUseItem` (the
+`use` and `magic` actions), which runs before any plugin's own handler so load order cannot let
+another plugin transform, charge, imbue, gift or cast on a loan. The Omnishop's `omnishop:can-sell`
+check also refuses it. A worn loan is held back from the bank by `onCanBankItem` as well.
+
 The event's two purpose-made items are their own custom items: `Banker's note (e)` (50006, based
 on the real 28767) and `Sage's greaves (e)` (50007, based on the greaves at 28771). They
 deliberately do not reuse the league relic ids (`BANKERS_NOTE` 28767 and the league `Sage's
