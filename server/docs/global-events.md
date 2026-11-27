@@ -158,8 +158,10 @@ copies are migrated back to the player's real relic.
 
 ## The Events interface
 
-`::events` (Developer-only in game; every player reaches events through the website) opens a
-three-tab interface. All of it is server-declared (`global/Interface.GlobalEvents.js`) and driven
+`::events` (every player; the blue partyhat HUD icon opens it too, and the client's **Global
+Events** plugin switches the icon on or off) opens a three-tab interface. An operator can
+restrict it again with a `world.json` command override; the icon and every route follow it.
+`::globalevent` (start/stop) stays Developer-only. All of it is server-declared (`global/Interface.GlobalEvents.js`) and driven
 by the generic custom-interface runtime, so it needs no Global Events code in the client.
 
 | Tab | Shows |

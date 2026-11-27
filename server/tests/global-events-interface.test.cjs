@@ -206,13 +206,18 @@ function platformActivation(eventId, { startedAgoMs = 1000, minutes = 90, endsIn
   };
 }
 
-test("the Events interface and the globalevent admin command are Developer-only in game", async () => {
-  const developer = PluginManager.getCoreApi().PlayerRights.DEVELOPER;
-  assert.equal(commandRights.events.getId(), developer.getId(), "::events needs Developer rights");
-  assert.equal(commandRights.globalevent.getId(), developer.getId(), "::globalevent needs Developer rights");
+test("every player may open the Events interface, but only Developers manage events", async () => {
+  const rights = PluginManager.getCoreApi().PlayerRights;
+  assert.equal(commandRights.events.getId(), rights.NONE.getId(), "::events needs no special rights");
+  assert.equal(commandRights.globalevent.getId(), rights.DEVELOPER.getId(), "::globalevent needs Developer rights");
+  const ordinary = player();
+  assert.equal(Common.statePayload(ordinary).canOpen, true, "an ordinary player is told to show the button");
+  customEvents["global-events:open"]({ player: ordinary });
+  await settle();
+  assert.equal(ordinary.getInterfaceId(), GROUP_ID, "the HUD route opens the interface for an ordinary player");
 });
 
-test("a player without Developer rights cannot open Events by any route and is told so", async () => {
+test("a command-rights restriction on ::events still blocks every route and is told so", async () => {
   const Manager = PluginManager;
   const original = Manager.playerHasCommandRights;
   Manager.playerHasCommandRights = (_player, base) => (base === "events" ? false : original.call(Manager, _player, base));
