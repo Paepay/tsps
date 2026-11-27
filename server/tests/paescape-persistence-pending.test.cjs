@@ -19,7 +19,16 @@ const state = {
   documents: new Map(),
   /** When set, every PUT awaits this promise before completing. */
   putGate: null,
+  /** character id -> HTTP status every PUT for it answers with while set. */
+  rejectPuts: new Map(),
 };
+
+/** Test character names the fake platform knows, mapped to their ids. */
+const KNOWN_CHARACTERS = new Map([
+  ["pending hero", "char-pending"],
+  ["stale hero", "char-stale"],
+  ["broken hero", "char-broken"],
+]);
 
 function ok(json) {
   return { ok: true, status: 200, json, text: JSON.stringify(json) };
@@ -39,7 +48,7 @@ const fakeTransport = {
   requestSync({ url, method }) {
     if (String(url).includes("/api/server/characters/by-name/")) {
       const name = decodeURIComponent(String(url).split("/by-name/")[1] || "").toLowerCase();
-      if (name === "pending hero") return ok({ character: { id: "char-pending" } });
+      if (KNOWN_CHARACTERS.has(name)) return ok({ character: { id: KNOWN_CHARACTERS.get(name) } });
       return notFound();
     }
     const parsed = parseUrl(url);
@@ -54,6 +63,10 @@ const fakeTransport = {
     const parsed = parseUrl(url);
     if (!parsed || method !== "PUT") return notFound();
     const key = parsed.characterId + ":" + parsed.profile;
+    const rejected = state.rejectPuts.get(parsed.characterId);
+    if (rejected) {
+      return { ok: false, status: rejected, json: { error: "rejected by the platform" }, text: "rejected" };
+    }
     const payload = typeof body === "string" ? JSON.parse(body) : body;
     const expected = Number(payload.expectedRevision) || 0;
     const current = state.revisionByCharacter.get(key) || 0;
@@ -148,4 +161,67 @@ test("load returns a queued logout save before the platform PUT finishes", async
   releasePut();
   await active.flush();
   assert.equal(active.load("Pending Hero").getInventory()[0].getAmount(), 99, "the snapshot still matches after the write lands");
+});
+
+test("a failed save that a later save superseded does not block the next flush", async () => {
+  // Shutdown (a counted stop or restart) flushes every save and cancels itself if
+  // flush() throws. A save that failed hours earlier for a session that has since
+  // ended, and whose character later saved fine, used to stay queued and cancel the
+  // next stop even though no progress was unsaved.
+  state.revisionByCharacter.clear();
+  state.documents.clear();
+  state.putGate = null;
+  state.rejectPuts.clear();
+
+  const active = installAdapter();
+  const player = makePlayer("Stale Hero");
+  player.getInventory().setItem(0, new Item(995, 5));
+
+  state.rejectPuts.set("char-stale", 409);
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    active.save(player, "autosave");
+    await active.writeChain;
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(active.describe().failures, 1, "the failed save is remembered while nothing superseded it");
+
+  state.rejectPuts.clear();
+  // A new login reloads from the platform, then saves successfully.
+  active.invalidateCharacterId("Stale Hero");
+  active.cache.clear();
+  active.save(player, "logout");
+  await active.writeChain;
+  assert.equal(active.describe().failures, 0, "a later successful save supersedes the old failure");
+  await active.flush();
+});
+
+test("a character whose latest save failed still blocks the flush, once", async () => {
+  // The guard stays fail-closed: a stop must not exit while any character's most
+  // recent save was rejected, and the failure is reported, not silently dropped.
+  state.revisionByCharacter.clear();
+  state.documents.clear();
+  state.putGate = null;
+  state.rejectPuts.clear();
+
+  const active = installAdapter();
+  const player = makePlayer("Broken Hero");
+  player.getInventory().setItem(0, new Item(995, 7));
+
+  state.rejectPuts.set("char-broken", 400);
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    active.save(player, "logout");
+    await assert.rejects(() => active.flush(), /Broken Hero/);
+  } finally {
+    console.error = originalError;
+    state.rejectPuts.clear();
+  }
+
+  // The failure was reported once; a retry with a healthy platform succeeds.
+  active.save(player, "logout");
+  await active.flush();
 });
