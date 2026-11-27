@@ -353,6 +353,87 @@ test("temporary copies cannot be banked, traded, sold, alched, listed, dropped o
   assert.equal(use.allow, true, "a valid copy may be used");
 });
 
+test("Master's Arsenal loans offer only Wield and Destroy and refuse every other option", () => {
+  for (const row of Items.arsenalRows()) {
+    const actions = core.CacheDefinitions.getItem(row.itemId).inventoryActions;
+    assert.deepEqual(
+      [actions[0], actions[1], actions[2], actions[3], actions[4]],
+      ["Wield", null, null, null, "Destroy"],
+      `${row.key} shows only Wield and Destroy`,
+    );
+  }
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("arsenal-options");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
+  const loan = held(p, 50008);
+  const ask = (option) => {
+    const event = { player: p, item: loan, itemId: loan.getId(), slot: 0, option, handled: false };
+    hooks.itemAction(event);
+    return event.handled;
+  };
+  for (const option of ["Check", "Charge", "Operate", "Uncharge", "Dismantle", "Toggle", "Imbue", "Set", "Use", "Activate"]) {
+    assert.equal(ask(option), true, `${option} is refused`);
+  }
+  for (const option of ["Wield", "Wear", "Remove", "Examine", undefined]) {
+    assert.equal(ask(option), false, `${String(option)} is left to the normal equip route`);
+  }
+  for (const option of ["Destroy", "Drop", "Delete"]) {
+    assert.equal(ask(option), true, `${option} opens the destroy confirmation`);
+  }
+  assert.ok(held(p, 50008), "nothing was removed without confirming");
+});
+
+test("every use of a Master's Arsenal loan is refused before any other plugin sees it", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("arsenal-use");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "twisted-bow"), true);
+  for (const row of Items.arsenalRows()) {
+    for (const action of ["use", "magic"]) {
+      const use = { player: p, itemId: row.itemId, action, allow: null };
+      hooks.canUse(use);
+      assert.equal(use.allow, false, `${row.key} ${action} is refused`);
+    }
+    const options = { player: p, itemId: row.itemId, action: "action", option: "Wield", allow: null };
+    hooks.canUse(options);
+    assert.notEqual(options.allow, false, `${row.key} can still be wielded`);
+  }
+  for (const action of ["use", "magic"]) {
+    const real = { player: p, itemId: core.ItemIdentifiers.LOGS, action, allow: null };
+    hooks.canUse(real);
+    assert.equal(real.allow, null, `an ordinary item is not touched by ${action}`);
+  }
+  // Using the Banker's note on another item still works: it is not an Arsenal loan.
+  const note = { player: p, itemId: Items.noteId(), action: "use", allow: null };
+  hooks.canUse(note);
+  assert.equal(note.allow, null);
+});
+
+test("an Omnishop that stocks a loan's base item still refuses to buy the loan", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("arsenal-omnishop");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
+  const sale = { player: p, itemId: 50008, cancel: false };
+  emit("omnishop:can-sell", sale);
+  assert.equal(sale.cancel, true);
+  const ordinary = { player: p, itemId: core.ItemIdentifiers.LOGS, cancel: false };
+  emit("omnishop:can-sell", ordinary);
+  assert.equal(ordinary.cancel, false);
+});
+
+test("a worn Arsenal loan cannot be banked from the equipment tab either", () => {
+  Common.testing.reset();
+  activate("masters-arsenal");
+  const p = player("arsenal-worn-bank");
+  assert.equal(claim(p, Items.KIND.ARSENAL, "scythe"), true);
+  const worn = equip(p, held(p, 50008), core.Equipment.WEAPON_SLOT);
+  const bank = { player: p, item: worn, allow: null, quiet: true };
+  hooks.canBank(bank);
+  assert.equal(bank.allow, false);
+});
+
 test("the Banker's note notes and un-notes carried items", () => {
   Common.testing.reset();
   activate("bankers-note");

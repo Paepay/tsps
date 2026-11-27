@@ -213,6 +213,7 @@
     "objType": {
       "name": "Scythe of Vitur",
       "examine": "A temporary Scythe of Vitur lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -229,6 +230,7 @@
     "objType": {
       "name": "Twisted bow",
       "examine": "A temporary Twisted bow lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -245,6 +247,7 @@
     "objType": {
       "name": "Tumeken's shadow",
       "examine": "A temporary Tumeken's shadow lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -261,6 +264,7 @@
     "objType": {
       "name": "Osmumten's fang",
       "examine": "A temporary Osmumten's fang lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -278,6 +282,7 @@
     "objType": {
       "name": "Dragon hunter lance",
       "examine": "A temporary Dragon hunter lance lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -294,6 +299,7 @@
     "objType": {
       "name": "Bow of Faerdhinen",
       "examine": "A temporary Bow of Faerdhinen lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -310,6 +316,7 @@
     "objType": {
       "name": "Infernal axe",
       "examine": "A temporary Infernal axe lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -326,6 +333,7 @@
     "objType": {
       "name": "Infernal pickaxe",
       "examine": "A temporary Infernal pickaxe lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
@@ -342,6 +350,7 @@
     "objType": {
       "name": "Infernal harpoon",
       "examine": "A temporary Infernal harpoon lent by a global event.",
+      "inventoryActions": ["Wield", null, null, null, "Destroy"],
       "isTradable": false,
       "note": -1,
       "noteTemplate": -1,
