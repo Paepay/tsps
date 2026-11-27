@@ -33,6 +33,9 @@ const EVENT_FOR_KIND = Object.freeze({
 });
 const ACTIONS_BLOCKED_WHEN_DISABLED = new Set(["Wear", "Wield", "Use", "Activate", "Check", "Toggle", "Revert"]);
 const EXTRACTIVE_ACTIONS = new Set(["Uncharge", "Dismantle", "Disassemble", "Empty", "Revert", "Break"]);
+/** The only item options a Master's Arsenal loan answers to; the delete options are handled first. */
+const ARSENAL_OPTIONS = new Set(["Wield", "Wear", "Equip", "Remove", "Examine"]);
+const ARSENAL_ONLY_MESSAGE = "Borrowed event items can only be equipped or destroyed.";
 const CUSTOM_ITEM_ID_MIN = 50000;
 const CUSTOM_ITEM_ID_MAX = 65022;
 const EVENT_ITEMS = Object.freeze([
@@ -584,6 +587,13 @@ function itemAction(event) {
     event.handled = true;
     return true;
   }
+  // A Master's Arsenal loan is wielded, taken off and deleted, nothing else: no Check, Operate,
+  // Charge, Toggle or any other option the base item brings along.
+  if (bindingOf(item)?.kind === KIND.ARSENAL && option && !ARSENAL_OPTIONS.has(option)) {
+    player.sendMessage(ARSENAL_ONLY_MESSAGE);
+    event.handled = true;
+    return true;
+  }
   // An event loan must never yield a tradeable resource or become an ordinary item: no
   // uncharging a staff back into runes, no dismantling, no reverting a kit.
   if (EXTRACTIVE_ACTIONS.has(option)) {
@@ -625,7 +635,28 @@ function blockObjectUse(event) {
 
 /* ------------------------------------------------------------------ hooks --- */
 
+/** A Master's Arsenal loan, by its dedicated custom id: no real item shares one. */
+function isArsenalId(itemId) {
+  return arsenalRows().some((row) => row.itemId === itemId);
+}
+
+/**
+ * Every "use" (item on item, object, NPC, player or ground item) and every spell cast on an item
+ * asks `emitCanUseItem` before any plugin's own handler runs, so this one refusal covers every
+ * way of changing, combining, gifting or casting on a loan, whatever order other plugins load in.
+ * A loan only goes on and comes off.
+ */
+function refuseArsenalUse(event) {
+  if (!isArsenalId(event.itemId)) return;
+  event.allow = false;
+  event.player?.sendMessage?.(ARSENAL_ONLY_MESSAGE);
+}
+
 function onCanUseItem(event) {
+  if (event.action === "use" || event.action === "magic") {
+    refuseArsenalUse(event);
+    return;
+  }
   if (event.action !== "action") return;
   if (!isTemporaryId(event.itemId)) return;
   const item = event.player.getInventory().getItems().find((held) => held?.getId?.() === event.itemId && isTemporary(held));
@@ -682,6 +713,14 @@ function canSell(request) {
   if (request.sellable !== true) return;
   const held = temporaryIn(request.player?.getInventory?.()).find((item) => item.getId() === request.itemId);
   if (held) request.sellable = false;
+}
+
+/** The Omnishop's own sell check: a shop that stocks the base item must still refuse a loan. */
+function omnishopSale(request) {
+  if (request.cancel) return;
+  if (temporaryIn(request.player?.getInventory?.(), (item) => item.getId() === request.itemId).length > 0) {
+    request.cancel = true;
+  }
 }
 
 function alchemy(policy) {
@@ -831,6 +870,7 @@ function attach(pluginApi) {
   api.onCanBankItem(canBank);
   api.onCustomEvent("trade:item-eligibility", canTradeItem);
   api.onCustomEvent("shop:can-sell", canSell);
+  api.onCustomEvent("omnishop:can-sell", omnishopSale);
   api.onCustomEvent("magic:alchemy-policy", alchemy);
   api.onCustomEvent("ge:offer-confirmed", geOffer);
   api.onShouldKeepItemOnDeath(keepOnDeath);

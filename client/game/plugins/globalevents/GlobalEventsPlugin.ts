@@ -1,11 +1,12 @@
 import { GameState } from "@runelite/api/GameState";
-import type { GameStateChanged, PluginMessage } from "@runelite/api/events";
+import { PluginMessage, type GameStateChanged } from "@runelite/api/events";
 import { Plugin, type PluginDescriptor } from "@runelite/client/plugins/Plugin";
 import { CLIENT_TOKEN, inject } from "@runelite/client/plugins/PluginInjector";
 import { OverlayPosition } from "@runelite/client/ui/overlay/OverlayPosition";
 import { getMousePos } from "../../InputManager";
 import type { OsrsClient } from "../../OsrsClient";
 import { sendChat } from "../../../network/ServerConnection";
+import { subscribePluginMessages } from "../../../network/serverConnection/domain/pluginMessages";
 import type { OverlayMenuEntry, WidgetOverlay, WidgetOverlayDrawContext } from "../ClientPluginManager";
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -30,9 +31,10 @@ const FLASH_B: Rgba = [1, 1, 1, 1];
 export class GlobalEventsPlugin extends Plugin {
     static descriptor: PluginDescriptor = {
         name: "Global Events",
-        description: "Shows active world events and opens the Events interface",
-        tags: ["events", "global", "hud", "overlay"],
-        hidden: true,
+        description: "Shows the Events icon (a blue partyhat) under the special attack orb; click it to open the Events interface",
+        tags: ["events", "global", "hud", "overlay", "icon", "partyhat"],
+        // On for everyone by default; switch the plugin off to hide the icon.
+        enabledByDefault: true,
         configKey: "globaleventsplugin",
     };
 
@@ -43,8 +45,9 @@ export class GlobalEventsPlugin extends Plugin {
     private iconName = "";
     private activeCount = 0;
     private flashing = false;
-    /** The Events interface is Developer-only in game; the server tells us per player. */
+    /** Whether this player may open the Events interface; the server tells us per player. */
     private canOpen = false;
+    private stopListening?: () => void;
     private iconBounds?: Rect;
     private removeInputFilter?: () => void;
     private removeTouchHandler?: () => void;
@@ -61,9 +64,17 @@ export class GlobalEventsPlugin extends Plugin {
             draw: (context) => this.draw(context),
             menuEntries: () => this.menuEntries(),
         };
+        // A stopped plugin gets no events from the bus, so a player who switches the plugin off
+        // and back on mid-session would wait for the server's next push to see the icon. Keep the
+        // server's state current while stopped; while running the bus delivers it as usual.
+        this.stopListening = subscribePluginMessages(({ channel, data }) => {
+            if (!this.isStarted()) this.onPluginMessage(new PluginMessage(channel, data));
+        });
     }
 
     protected async startUp(): Promise<void> {
+        // The last state belongs to a session that may have ended while the plugin was off.
+        if (!this.isLoggedIn()) this.forget();
         const input = this.osrsClient?.inputManager;
         if (input?.addInputFilter) this.removeInputFilter = input.addInputFilter(this.onInput);
         if (input?.addTouchTapHandler) this.removeTouchHandler = input.addTouchTapHandler(this.onTouchTap);
@@ -74,9 +85,16 @@ export class GlobalEventsPlugin extends Plugin {
         this.removeTouchHandler?.();
         this.removeInputFilter = undefined;
         this.removeTouchHandler = undefined;
+        // Only the click target goes: the server's state is kept (and kept current by the
+        // listener above) so switching the plugin back on shows the icon at once.
+        this.iconBounds = undefined;
+    }
+
+    private forget(): void {
         this.activeKey = "";
         this.seenKey = "";
         this.iconItemId = -1;
+        this.iconName = "";
         this.activeCount = 0;
         this.flashing = false;
         this.canOpen = false;
@@ -114,14 +132,7 @@ export class GlobalEventsPlugin extends Plugin {
             && state !== GameState.STARTING && state !== GameState.UNKNOWN && state !== GameState.HOPPING) {
             return;
         }
-        this.activeKey = "";
-        this.seenKey = "";
-        this.iconItemId = -1;
-        this.iconName = "";
-        this.activeCount = 0;
-        this.flashing = false;
-        this.canOpen = false;
-        this.iconBounds = undefined;
+        this.forget();
     }
 
     private signature(): string {
@@ -130,7 +141,7 @@ export class GlobalEventsPlugin extends Plugin {
     }
 
     private menuEntries(): OverlayMenuEntry[] {
-        if (!this.isLoggedIn() || !this.canOpen) return [];
+        if (!this.isStarted() || !this.isLoggedIn() || !this.canOpen) return [];
         return [{ option: "Open", target: "Global Events", onClick: () => this.open() }];
     }
 
@@ -141,7 +152,7 @@ export class GlobalEventsPlugin extends Plugin {
     private draw(context: WidgetOverlayDrawContext): Rect[] {
         // The button stays on the HUD after login even while no event is running, so the
         // Events interface is always one click away.
-        if (!this.isLoggedIn() || !this.canOpen) {
+        if (!this.isStarted() || !this.isLoggedIn() || !this.canOpen) {
             this.iconBounds = undefined;
             return [];
         }
@@ -194,7 +205,7 @@ export class GlobalEventsPlugin extends Plugin {
     private onInput = (type: string, event: MouseEvent | KeyboardEvent): boolean => {
         if (type !== "mousePressed") return false;
         const mouse = event as MouseEvent;
-        if (mouse.button !== 0 || !this.isLoggedIn() || !this.canOpen || !this.iconBounds) return false;
+        if (mouse.button !== 0 || !this.isStarted() || !this.isLoggedIn() || !this.canOpen || !this.iconBounds) return false;
         const element = this.osrsClient?.inputManager?.element;
         if (!element) return false;
         const [x, y] = getMousePos(element, mouse);
@@ -204,7 +215,7 @@ export class GlobalEventsPlugin extends Plugin {
     };
 
     private onTouchTap = (x: number, y: number): boolean => {
-        if (!this.isLoggedIn() || !this.canOpen || !this.iconBounds || !inside(this.iconBounds, x, y)) return false;
+        if (!this.isStarted() || !this.isLoggedIn() || !this.canOpen || !this.iconBounds || !inside(this.iconBounds, x, y)) return false;
         this.open();
         return true;
     };
