@@ -562,7 +562,7 @@ function message(key, values = {}) {
   return template.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
 }
 
-/** Command base the in-game Events interface is authorized against (Developer-only). */
+/** Command base the in-game Events interface is authorized against (everyone unless restricted). */
 const INTERFACE_COMMAND = "events";
 
 /**

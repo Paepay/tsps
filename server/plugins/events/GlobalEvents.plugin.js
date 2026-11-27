@@ -269,9 +269,9 @@ function resend(player) {
 }
 
 function open({ player, parts = [] }) {
-  // ::events is registered as a Developer command, but the HUD icon reaches this through the
+  // ::events is a command with its own rights, but the HUD icon reaches this through the
   // "global-events:open" custom event, which skips the command gate. Re-check here so every
-  // route fails closed.
+  // route follows the same rights (and fails closed if an operator restricted the command).
   if (!Common.mayOpenInterface(player)) {
     player.sendMessage("You do not have permission to use this command.");
     return true;
@@ -488,9 +488,11 @@ function register(pluginApi) {
 
   api.registerCustomInterface(buildInterface());
   api.persistAttribute(TAB_ATTRIBUTE, TAB.LIVE);
-  // In game the Events interface is Developer-only; every player reaches events through the
-  // website. The events themselves still apply world-wide.
-  api.registerCommand("events", open, core.PlayerRights.DEVELOPER, "Developer: browse live Global Events, claim temporary items and spend event tokens");
+  // Every player may open the Events interface (the HUD icon, which the client's "Global Events"
+  // plugin can hide, and ::events). An operator can still restrict it with a world.json command
+  // override: `mayOpenInterface` asks the same command-rights system, so every route follows.
+  // Managing events (::globalevent) stays Developer-only.
+  api.registerCommand("events", open, core.PlayerRights.NONE, "Browse live Global Events, claim temporary items and spend event tokens");
   api.registerCommand("globalevent", globalEventCommand, core.PlayerRights.DEVELOPER, "Developer: manage Global Events: list | start <event-id> <minutes> | stop [combat|skilling|utility]");
   api.onCustomEvent("global-events:open", open);
   api.onCustomEvent("global-events:changed", () => refreshOpenInterfaces());
