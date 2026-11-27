@@ -18,11 +18,17 @@ const CREATE_XP = Object.freeze({ fishing: 200, cooking: 350 });
 const COOK_GRAPHIC = 86;
 const COOK_GRAPHIC_HEIGHT = 150;
 const ITEM_NAMES = Object.freeze(["Infernal harpoon", "Infernal harpoon (or)", "Infernal harpoon (uncharged)"]);
+/** Master's Arsenal's custom invocation (50016) counts as charged but never degrades. */
+const LOAN_IDS = new Set([50016]);
 
 let api = null;
 let core = null;
 let unchargedByCharged = new Map();
 let chargedByUncharged = new Map();
+
+function isCharged(id) {
+  return unchargedByCharged.has(Number(id)) || LOAN_IDS.has(Number(id));
+}
 
 function charges(item) {
   const saved = Number(item.getMetaValue?.(CHARGES_META_KEY)?.charges);
@@ -32,10 +38,10 @@ function charges(item) {
 /** The charged infernal harpoon the player is wielding or carrying, wielded first. */
 function findCharged(player) {
   const weapon = player.getEquipment().getItems()[core.Equipment.WEAPON_SLOT];
-  if (weapon && unchargedByCharged.has(weapon.getId())) {
+  if (weapon && isCharged(weapon.getId())) {
     return weapon;
   }
-  return player.getInventory().getItems().find((item) => item && unchargedByCharged.has(item.getId())) ?? null;
+  return player.getInventory().getItems().find((item) => item && isCharged(item.getId())) ?? null;
 }
 
 function refresh(player) {
@@ -44,12 +50,16 @@ function refresh(player) {
 }
 
 function useCharge(player, item) {
+  const consume = { player, item, skip: false };
+  api?.emitCustomEvent?.("skilling:consume-charge", consume);
+  if (consume.skip) return;
   const left = charges(item) - 1;
   if (left > 0) {
     item.setMetaValue(CHARGES_META_KEY, { charges: left });
     return;
   }
-  item.setId(unchargedByCharged.get(item.getId()));
+  const uncharged = unchargedByCharged.get(item.getId());
+  if (uncharged !== undefined) item.setId(uncharged);
   item.setMetaValue(CHARGES_META_KEY, undefined);
   refresh(player);
   player.sendMessage("Your infernal harpoon has run out of charges.");

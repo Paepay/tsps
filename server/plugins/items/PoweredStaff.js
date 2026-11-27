@@ -52,9 +52,16 @@ function definePoweredStaff(api, config) {
   let method = null;
 
   const weaponOf = (player) => player.getEquipment().getItems()[core.Equipment.WEAPON_SLOT] ?? null;
-  const isCharged = (id) => unchargedByCharged.has(Number(id));
-  const isStaff = (id) => isCharged(id) || chargedByUncharged.has(Number(id));
-  const chargesOf = (item) => clamp(item?.getMetaValue?.(config.chargesKey), config.maxCharges);
+  /** An event loan's custom id behaves as the staff it was defined from. */
+  const baseId = (id) => Number(core.ItemAliases.baseOf(Number(id)) ?? id);
+  const isCharged = (id) => unchargedByCharged.has(baseId(id));
+  const isStaff = (id) => isCharged(id) || chargedByUncharged.has(baseId(id));
+  const chargesOf = (item) => {
+    const saved = item?.getMetaValue?.(config.chargesKey);
+    // A loan is granted ready to cast even if nothing filled its charge metadata.
+    if (saved === undefined && core.ItemAliases.baseOf(Number(item?.getId?.())) != null) return config.maxCharges;
+    return clamp(saved, config.maxCharges);
+  };
 
   function wields(player, chargedOnly = false) {
     const id = weaponOf(player)?.getId?.();

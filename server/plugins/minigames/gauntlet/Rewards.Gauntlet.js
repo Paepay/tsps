@@ -94,15 +94,36 @@ function rewardFor(run, reason) {
   return points > 0 ? "junk" : null;
 }
 
+/** The source the chest's unique tertiary rolls name on drops:chance. */
+const CHANCE_SOURCE = "Gauntlet";
+
+/**
+ * drops:chance for one chest: an item id's unique multiplier, or 1. Only the tertiary uniques
+ * are asked about; the crystal shards, the cape and the elite clue are never boosted.
+ */
+function dropBoost(player) {
+  const rules = [];
+  Shared.api()?.emitCustomEvent?.("drops:chance", { player, source: CHANCE_SOURCE, rules });
+  if (rules.length === 0) return () => 1;
+  return (id) => {
+    if (id === ID.CLUE_ELITE) return 1;
+    const name = Shared.core().ItemDefinition.forId(id)?.getName?.() ?? "";
+    return rules.reduce((value, rule) => (rule.pattern.test(name) ? value * rule.multiplier : value), 1);
+  };
+}
+
 /** The items a waiting reward gives, as { id, amount, noted }. */
-function rollReward(reward, ownsCape, random = Math.random) {
+function rollReward(reward, ownsCape, random = Math.random, boost = () => 1) {
   const items = [];
   if (reward.kind === "completed") {
     items.push({ id: ID.CRYSTAL_SHARD, amount: randomInt(random, ...SHARDS[reward.mode]) });
     if (reward.mode === "corrupted" && !ownsCape) items.push({ id: ID.GAUNTLET_CAPE, amount: 1 });
     for (let i = 0; i < ROLLS[reward.mode]; i++) items.push(rollWeighted(MAIN[reward.mode], random));
     for (const [id, chance] of TERTIARY[reward.mode]) {
-      if (Math.floor(random() * chance) === 0) items.push({ id, amount: 1 });
+      const multiplier = boost(id);
+      if (multiplier > 1 ? random() * chance < multiplier : Math.floor(random() * chance) === 0) {
+        items.push({ id, amount: 1 });
+      }
     }
   } else if (reward.kind === "incomplete") {
     items.push(entry(INCOMPLETE[Math.floor(random() * INCOMPLETE.length)], random));
@@ -145,7 +166,7 @@ function openChest(player, random = Math.random) {
     return;
   }
   const { Item, ItemDefinition } = Shared.core();
-  const items = rollReward(reward, ownsItem(player, ID.GAUNTLET_CAPE), random);
+  const items = rollReward(reward, ownsItem(player, ID.GAUNTLET_CAPE), random, dropBoost(player));
   if (reward.echo && Array.isArray(reward.echoDrops)) items.push(...reward.echoDrops.map(drop => ({ ...drop, id: drop.id ?? drop.itemId })));
   // Drop handlers read itemId, as every other loot roll gives them: the clue capacity service
   // turns a clue scroll into the tier's scroll box (after X Marks the Spot) and caps the stack.
@@ -174,5 +195,5 @@ function openChest(player, random = Math.random) {
 
 module.exports = {
   ATTR_REWARD, POINTS, INCOMPLETE_POINTS, ID, MAIN, TERTIARY, INCOMPLETE, JUNK, SHARDS, ROLLS,
-  rewardFor, rollReward, waitingReward, setReward, sendChest, openChest,
+  CHANCE_SOURCE, rewardFor, dropBoost, rollReward, waitingReward, setReward, sendChest, openChest,
 };

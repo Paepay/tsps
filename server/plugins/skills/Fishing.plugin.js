@@ -199,6 +199,8 @@ const HARPOONS = Object.freeze([
     bonus: 120,
     infernal: true,
   },
+  // Master's Arsenal loan (custom 50016): infernal catch-cooking with its equipment requirement waived.
+  { ids: [50016], level: 1, bonus: 120, infernal: true },
   {
     ids: [
       ItemIds.INFERNAL_HARPOON_UNCHARGED_, ItemIds.INFERNAL_HARPOON_UNCHARGED__2, ItemIds.INFERNAL_HARPOON_UNCHARGED__4,

@@ -115,15 +115,19 @@ function catchRefusal(player, remove, add) {
  * `exchange` for a catch's loot. As live (rsprox captures pyre-fur-and-smallpouch-1/-4): the catch
  * needs inventory room for all of it, meat and fur included, whatever an open pouch holds; once it
  * fits, an open meat or fur pouch takes what it has room for (`storage:gather`, skill Hunter) and
- * the rest goes to the inventory.
+ * the rest goes to the inventory. `options.experience` is the catch's own XP, paid on the first
+ * reward so Abundance can pay the doubled resource's share; `options.bonus: false` marks returned
+ * trap parts, which are not gathered resources.
  */
-function catchExchange(player, remove, add, commit = true) {
+function catchExchange(player, remove, add, commit = true, options = {}) {
   if (!exchange(player, remove, add, false)) return false;
   if (!commit) return true;
   const inv = player.getInventory();
   for (const [id, amount] of remove) inv.deleteNumber(id, amount);
-  for (const [id, amount] of add) {
+  for (const [index, [id, amount]] of add.entries()) {
     const request = { player, itemId: id, amount, stored: 0, skill: H.core.Skill.HUNTER };
+    if (index === 0 && options.experience > 0) request.xp = options.experience;
+    if (options.bonus === false) request.bonus = false;
     H.api.emitCustomEvent("storage:gather", request);
     const left = amount - request.stored;
     if (left > 0) inv.adds(id, left);

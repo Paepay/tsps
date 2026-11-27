@@ -89,7 +89,8 @@ function catchPrey({ player, object }) {
   if (!requireLevel(player, def.level)) return true;
   if (!catchExchange(player, [], rewards, false)) { player.getInventory().full(); return true; }
   begin(player, 2, ANIM.NOOSE, () => {
-    if (trails.get(player) !== state || !requireLevel(player, def.level) || !hasTool(player, H.core.ItemIdentifiers.NOOSE_WAND) || !catchExchange(player, [], rewards)) return;
+    if (trails.get(player) !== state || !requireLevel(player, def.level) || !hasTool(player, H.core.ItemIdentifiers.NOOSE_WAND)
+        || !catchExchange(player, [], rewards, true, { experience: def.xp })) return;
     clear({ player }); xp(player, def.xp, "tracking", H.core.NpcIdentifiers[last.kebbit.toUpperCase()], { creature: last.kebbit.toUpperCase() });
     player.sendMessage(`You catch a ${last.kebbit.replaceAll("_", " ")}!`);
   });

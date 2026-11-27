@@ -127,7 +127,14 @@ function knockOut(event) {
   player.performAnimation(new core.Animation(core.CacheDefinitions.getSeqId(KNOCKOUT_ANIMATION)));
   player.getPacketSender().sendSound(KNOCKOUT_SOUND, 1, 0);
   const [low, high] = knockoutChart(event.npcId);
-  if (Math.random() >= successChance(low, high, player.getSkillManager().getCurrentLevel(core.Skill.THIEVING))) {
+  const success = {
+    player,
+    npcId: event.npcId,
+    chance: successChance(low, high, player.getSkillManager().getCurrentLevel(core.Skill.THIEVING)),
+    alwaysSucceeds: false,
+  };
+  api?.emitCustomEvent?.("thieving:blackjack-success", success);
+  if (!success.alwaysSucceeds && Math.random() >= success.chance) {
     spam(player, "Your blow only glances off the bandit's head.");
     npc.forceChat("I'll kill you for that!");
     const attempt = {};

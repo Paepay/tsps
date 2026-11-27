@@ -133,7 +133,8 @@ import {
   PluginRangedAmmoHandler,
   PluginRangedAmmoResolver,
   PluginRangedAmmoRecovery,
-  PluginRangedCombatModifier,
+ PluginRangedCombatModifier,
+ PluginMaxHitModifier,
   PluginSpellRuneSource,
   PluginNpcCombatMethodProvider,
   PluginNpcCombatMethodProviderEntry,
@@ -438,6 +439,7 @@ export class PluginManager {
   private static rangedAmmoRecoveries: Array<{ pluginName: string; recovery: PluginRangedAmmoRecovery }> = [];
   private static spellRuneSources: Array<{ pluginName: string; source: PluginSpellRuneSource }> = [];
   private static rangedCombatModifiers: Array<{ pluginName: string; modifier: PluginRangedCombatModifier }> = [];
+  private static maxHitModifiers: Array<{ pluginName: string; modifier: PluginMaxHitModifier }> = [];
   private static combatMethodResolvers: PluginCombatMethodResolver[] = [];
   private static npcCombatMethodProviders: PluginNpcCombatMethodProviderEntry[] = [];
   private static pluginPerfEnabled = false;
@@ -5062,6 +5064,15 @@ export class PluginManager {
         }
         PluginManager.registerRangedCombatModifierInternal(pluginName, modifier);
       },
+      registerMaxHitModifier: (modifier) => {
+        if (!modifier || typeof modifier.modifyMaxHit !== "function") {
+          console.warn(
+            `[plugins] ${pluginName} attempted invalid max hit modifier registration`
+          );
+          return;
+        }
+        PluginManager.registerMaxHitModifierInternal(pluginName, modifier);
+      },
       registerWeaponProfile: (profile) => {
         if (!Array.isArray(profile?.itemIds) || !profile.itemIds.every((id) => Number.isInteger(id) && id > 0)) {
           console.warn(`[plugins] ${pluginName} attempted invalid weapon profile registration`);
@@ -5347,6 +5358,29 @@ export class PluginManager {
     return current;
   }
 
+  /**
+   * Every style's calculated max hit, before the damage roll (Global Events' Onslaught and any
+   * later content that raises it). Ranged's own modifier runs first, so a rule here composes
+   * with a weapon's multiplier instead of replacing it.
+   */
+  public static modifyMaxHit(attacker: any, target: any, combatType: any, maxHit: number): number {
+    let current = Number.isFinite(maxHit) ? Math.max(0, Math.floor(maxHit)) : 0;
+    for (const entry of PluginManager.maxHitModifiers) {
+      try {
+        const modified = entry.modifier.modifyMaxHit(attacker, target, combatType, current);
+        if (modified != null && Number.isFinite(modified)) {
+          current = Math.max(0, Math.floor(modified));
+        }
+      } catch (err) {
+        console.error(
+          `[plugins] max hit modifier failed (${entry.pluginName})`,
+          err
+        );
+      }
+    }
+    return current;
+  }
+
   public static modifyRangedAttackRoll(attacker: any, target: any, attackRoll: number): number {
     let current = Number.isFinite(attackRoll) ? Math.max(0, Math.floor(attackRoll)) : 0;
     for (const entry of PluginManager.rangedCombatModifiers) {
@@ -5445,6 +5479,13 @@ export class PluginManager {
     modifier: PluginRangedCombatModifier
   ): void {
     PluginManager.rangedCombatModifiers.push({ pluginName, modifier });
+  }
+
+  private static registerMaxHitModifierInternal(
+    pluginName: string,
+    modifier: PluginMaxHitModifier
+  ): void {
+    PluginManager.maxHitModifiers.push({ pluginName, modifier });
   }
 
   private static registerCombatMethodResolverInternal(

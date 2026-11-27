@@ -331,8 +331,37 @@ function empty(event) {
   return true;
 }
 
-// ------------------------------------------------------------------ decay and repair
+/**
+ * `runecrafting:empty-pouches` { player, moved }: move the essence of every carried, non-guardian
+ * pouch into the inventory when a slot is available. Production Master calls this before an altar
+ * craft so the pouch contents join the same inventory batch. Essence is never destroyed: a pouch
+ * whose essence kind has neither a stack nor a free slot stays as it is.
+ */
+function emptyAll(request) {
+  const { player } = request;
+  const inventory = player.getInventory();
+  let moved = 0;
+  for (const pouch of POUCHES) {
+    const carried = inventory.getAmount(objId(pouch.item))
+      + (pouch.degraded ? inventory.getAmount(objId(pouch.degraded)) : 0);
+    if (carried <= 0) continue;
+    const state = stateOf(player, pouch);
+    if (state.amount <= 0 || state.type === GUARDIAN_ESSENCE_TYPE) continue;
+    const essence = essenceOfType(state.type);
+    if (!essence) continue;
+    const essenceId = objId(essence.item);
+    if (inventory.getAmount(essenceId) <= 0 && inventory.getFreeSlots() <= 0) continue;
+    inventory.adds(essenceId, state.amount);
+    moved += state.amount;
+    state.amount = 0;
+    save(player, pouch, state);
+  }
+  if (moved > 0) inventory.refreshItems();
+  request.moved = moved;
+  return true;
+}
 
+// ------------------------------------------------------------------ decay and repair
 function wearsRunecraftCape(player) {
   const request = { player, skill: "RUNECRAFTING", result: false };
   pluginApi.emitCustomEvent("skillcape:has-perk", request);
@@ -503,6 +532,7 @@ function attach(api) {
   api.onItemAction("Giant pouch", { Fill: fill, Check: check, Empty: empty });
   api.onItemAction("Colossal pouch", { Fill: fill, Check: check, Empty: empty });
   api.onCustomEvent("runecrafting:remove-guardian-essence", removeGuardianEssence);
+  api.onCustomEvent("runecrafting:empty-pouches", emptyAll);
   api.onItemOnItem("Abyssal needle", "Small pouch", stitch);
   api.onItemOnItem("Abyssal needle", "Medium pouch", stitch);
   api.onItemOnItem("Abyssal needle", "Large pouch", stitch);
@@ -520,5 +550,5 @@ module.exports = {
   attach,
   words,
   POUCHES_ATTRIBUTE,
-  _test: { states, capacity, pouchFor, nextMissingPouch, filterPouchDrops },
+  _test: { states, capacity, pouchFor, nextMissingPouch, filterPouchDrops, emptyAll },
 };
