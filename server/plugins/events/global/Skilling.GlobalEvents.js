@@ -5,8 +5,9 @@
  *
  * Endless Harvest banks gathered resources, Abundance doubles them (and the extra resource's
  * experience), Infernal Gathering processes what is gathered, Production Master batches
- * production, and Trickster guarantees eligible Thieving and Hunter success. Every effect is
- * gated by the player's own Enable Effects switch for that event instance.
+ * production, and Trickster guarantees eligible Thieving and Hunter success and keeps a
+ * pickpocket going, the same repeat the Trickster relic asks for. Every effect is gated by
+ * the player's own Enable Effects switch for that event instance.
  *
  * The Infernal Gathering handler is registered before the banking/duplication handler so a
  * processed yield is never also banked as a raw resource. With Abundance active, the processed
@@ -254,6 +255,14 @@ function catchChance(request) {
   if (request.player && enabled(request.player, "trickster")) request.chance = 1;
 }
 
+/**
+ * `thieving:done`: the same automatic repeat as the Trickster relic. Only a pickpocket asks
+ * to go again; stalls and the other thieving actions stay one click.
+ */
+function pickpocketAgain(request) {
+  if (request.kind === "pickpocket" && request.player && enabled(request.player, "trickster")) request.again = true;
+}
+
 function attach(pluginApi) {
   api = pluginApi;
   core = api.core;
@@ -276,7 +285,8 @@ function attach(pluginApi) {
   api.onCustomEvent("thieving:blackjack-success", alwaysSucceeds);
   api.onCustomEvent("thieving:lock-success", alwaysSucceeds);
   api.onCustomEvent("thieving:search-success", alwaysSucceeds);
+  api.onCustomEvent("thieving:done", pickpocketAgain);
   api.onCustomEvent("hunter:catch-chance", catchChance);
 }
 
-module.exports = { attach, _test: { gather, room, farmingPick, infernalGather, actionsPerCycle, logsPerAction, prepareCraft, alwaysSucceeds, catchChance } };
+module.exports = { attach, _test: { gather, room, farmingPick, infernalGather, actionsPerCycle, logsPerAction, prepareCraft, alwaysSucceeds, catchChance, pickpocketAgain } };
