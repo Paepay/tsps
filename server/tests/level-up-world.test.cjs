@@ -42,6 +42,7 @@ function validContract() {
 
 function createRuntime() {
   const handlers = {};
+  const commandRights = {};
   const contentData = [];
   const runtimeSkills = RUNTIME_SKILLS.map((name, index) => ({
     getIndex: () => index,
@@ -62,7 +63,11 @@ function createRuntime() {
           Object.assign(this, { x, y, z });
         }
       },
-      PlayerRights: { NONE: 0 },
+      PlayerRights: { NONE: 0, DEVELOPER: 4 },
+      // Mirrors PluginManager.playerHasCommandRights: a command's rank is a floor everyone above clears.
+      PluginManager: {
+        playerHasCommandRights: (player, base) => (player.rights ?? 0) >= (commandRights[base] ?? 1),
+      },
     },
     getSkillManager: () => ({ getExperienceForLevel: (level) => level * 100 }),
     getPluginConfig: (_key, fallback) => fallback,
@@ -75,7 +80,10 @@ function createRuntime() {
     onNpcDeath: (handler) => { (handlers.npcDeath ??= []).push(handler); },
     onCombatHitResolved: (handler) => { (handlers.hitResolved ??= []).push(handler); },
     onCanGainExperience: (handler) => { handlers.xp = [handler]; },
-    registerCommand: (name, handler) => { handlers[`command:${name}`] = [handler]; },
+    registerCommand: (name, handler, rights) => {
+      handlers[`command:${name}`] = [handler];
+      commandRights[name] = rights;
+    },
     emitCustomEvent: (name, payload) => {
       events.push({ name, payload });
       for (const handler of handlers[name] ?? []) handler(payload);
@@ -124,7 +132,7 @@ function createRuntime() {
     sendMessage: (message) => { (player.messages ??= []).push(message); },
   };
   manager.combatLevel = 3;
-  return { api, handlers, runtimeSkills, byName, skill, itemDefinitions, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets, strings };
+  return { api, handlers, commandRights, runtimeSkills, byName, skill, itemDefinitions, attributes, baseLevels, currentLevels, experiences, locked, manager, player, events, contentData, packets, strings };
 }
 
 function summaryFor(fake, unlocked, levels = {}, extra = {}) {
@@ -1018,13 +1026,14 @@ test("the runtime plugin is fail-closed, persists canonical progress, and restor
   assert.equal(plugin._test.active(), false, "Level-Up progress is absent outside the level_up template");
 });
 
-test("::levelup master unlocks all skills at level 99", () => {
+test("::levelup master unlocks all skills at level 99 for a developer", () => {
   const fake = createRuntime();
   const plugin = require("../plugins/modes/TemplateWorlds.plugin");
   fake.plugin = plugin;
   plugin.register(fake.api);
   assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
   try {
+    fake.player.rights = fake.api.core.PlayerRights.DEVELOPER;
     login(fake, { player: fake.player, isNewAccount: true });
     assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [Rules.HITPOINTS_INDEX]);
 
@@ -1046,6 +1055,67 @@ test("::levelup master unlocks all skills at level 99", () => {
     assert.equal(plugin._test.progress(fake.player).unlockedCount, 24);
     assert.equal(plugin._test.progress(fake.player).requiredLevel, 99);
     assert.match(fake.player.messages.at(-1), /all 24 skills unlocked at level 99/i);
+  } finally {
+    plugin._test.configure("", null);
+  }
+});
+
+test("::levelup master refuses everyone below Developer and leaves their progress alone", () => {
+  const fake = createRuntime();
+  const plugin = require("../plugins/modes/TemplateWorlds.plugin");
+  fake.plugin = plugin;
+  plugin.register(fake.api);
+  assert.equal(plugin._test.configure("level_up", JSON.stringify(validContract())), true);
+  try {
+    login(fake, { player: fake.player, isNewAccount: true });
+    const { DEVELOPER } = fake.api.core.PlayerRights;
+    assert.equal(fake.commandRights.levelup, fake.api.core.PlayerRights.NONE, "::levelup itself stays open to players");
+    assert.equal(fake.commandRights.levelupmaster, DEVELOPER, "the master command base is developer-only");
+
+    const run = (parts) => fake.handlers["command:levelup"][0]({ player: fake.player, parts });
+    const before = {
+      experiences: [...fake.experiences],
+      baseLevels: [...fake.baseLevels],
+      currentLevels: [...fake.currentLevels],
+      locked: [...fake.locked].sort(),
+    };
+    assert.equal(before.locked.length > 0, true, "the new character starts with locked skills");
+    const untouched = () => {
+      assert.deepEqual(fake.attributes.get("level-up:unlocked-skills"), [Rules.HITPOINTS_INDEX]);
+      assert.equal(plugin._test.progress(fake.player).unlockedCount, 1);
+      assert.deepEqual([...fake.locked].sort(), before.locked, "locked skills stay locked");
+      assert.deepEqual(fake.experiences, before.experiences, "no experience was granted");
+      assert.deepEqual(fake.baseLevels, before.baseLevels, "no level changed");
+      assert.deepEqual(fake.currentLevels, before.currentLevels, "no current level changed");
+    };
+
+    for (const rights of [0, 1, DEVELOPER - 1]) {
+      fake.player.rights = rights;
+      fake.player.messages = [];
+      assert.equal(run(["levelup", "master"]), true, `rights ${rights}: the command is handled, not run`);
+      assert.match(fake.player.messages.at(-1), /do not have permission/i);
+      untouched();
+      fake.player.messages = [];
+      run(["levelup"]);
+      assert.doesNotMatch(fake.player.messages.join("\n"), /master/i, `rights ${rights}: help does not advertise master`);
+    }
+    fake.player.rights = 0;
+    fake.player.messages = [];
+    run(["levelup", "MASTER"]);
+    assert.match(fake.player.messages.at(-1), /do not have permission/i, "the subcommand name is case-insensitive");
+    untouched();
+
+    fake.player.rights = DEVELOPER;
+    fake.player.messages = [];
+    run(["levelup"]);
+    assert.match(fake.player.messages.join("\n"), /::levelup master/, "a developer is shown the subcommand");
+
+    // Fail closed: no permission system to ask means nobody, a developer included, is allowed.
+    delete fake.api.core.PluginManager;
+    fake.player.messages = [];
+    assert.equal(run(["levelup", "master"]), true);
+    assert.match(fake.player.messages.at(-1), /do not have permission/i);
+    untouched();
   } finally {
     plugin._test.configure("", null);
   }
