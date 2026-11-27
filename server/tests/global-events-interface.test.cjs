@@ -19,6 +19,8 @@ const Plugin = require("../plugins/events/GlobalEvents.plugin");
 const { GROUP_ID, COMPONENT, TAB, TAB_UIDS, ROW_UIDS, uid } = Plugin._test;
 
 let commands;
+let commandRights;
+let customEvents;
 let buttons;
 let calls;
 let respond;
@@ -33,10 +35,13 @@ before(async () => {
   const api = new Proxy({
     core,
     log: noop,
-    registerCommand: (name, handler) => { commands[name] = handler; },
+    registerCommand: (name, handler, rights) => { commands[name] = handler; commandRights[name] = rights; },
+    onCustomEvent: (name, handler) => { customEvents[name] = handler; },
     onInterfaceActionButton: (ids, handler) => { buttons.push({ ids: [].concat(ids), handler }); },
   }, { get: (target, key) => (key in target ? target[key] : noop) });
   commands = {};
+  commandRights = {};
+  customEvents = {};
   buttons = [];
   Plugin.register(api);
 });
@@ -140,6 +145,42 @@ async function openAndSelect(p, eventId, tab = TAB.TOKENS) {
 }
 
 const pressActivate = (p) => handlerFor(uid(COMPONENT.ACTIVATE_BUTTON))({ player: p });
+
+test("the Events interface and the globalevent admin command are Developer-only in game", async () => {
+  const developer = PluginManager.getCoreApi().PlayerRights.DEVELOPER;
+  assert.equal(commandRights.events.getId(), developer.getId(), "::events needs Developer rights");
+  assert.equal(commandRights.globalevent.getId(), developer.getId(), "::globalevent needs Developer rights");
+});
+
+test("a player without Developer rights cannot open Events by any route and is told so", async () => {
+  const Manager = PluginManager;
+  const original = Manager.playerHasCommandRights;
+  Manager.playerHasCommandRights = (_player, base) => (base === "events" ? false : original.call(Manager, _player, base));
+  try {
+    const typed = player();
+    commands.events({ player: typed, parts: ["events"] });
+    await settle();
+    assert.notEqual(typed.getInterfaceId(), GROUP_ID, "the typed command does not open the interface");
+    assert.match(typed.messages.join(" "), /do not have permission/);
+
+    // The HUD icon's route is the custom event, which skips the command gate.
+    const icon = player();
+    customEvents["global-events:open"]({ player: icon });
+    await settle();
+    assert.notEqual(icon.getInterfaceId(), GROUP_ID, "the HUD route does not open the interface either");
+    assert.match(icon.messages.join(" "), /do not have permission/);
+    assert.equal(calls.length, 0, "a refused player causes no platform request");
+    assert.equal(Common.statePayload(icon).canOpen, false, "the client is told to hide the button");
+  } finally {
+    Manager.playerHasCommandRights = original;
+  }
+  // A developer still gets the button and the interface.
+  const dev = player();
+  assert.equal(Common.statePayload(dev).canOpen, true);
+  customEvents["global-events:open"]({ player: dev });
+  await settle();
+  assert.equal(dev.getInterfaceId(), GROUP_ID);
+});
 
 test("::events opens the Events interface and lists every event without any inventory item", async () => {
   balances.berserker = 2;

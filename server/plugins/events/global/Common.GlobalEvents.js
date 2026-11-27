@@ -520,6 +520,24 @@ function message(key, values = {}) {
   return template.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
 }
 
+/** Command base the in-game Events interface is authorized against (Developer-only). */
+const INTERFACE_COMMAND = "events";
+
+/**
+ * Whether this player may open the in-game Events interface. It asks the command permission
+ * system about the `events` base, so a world.json override and platform-resolved hosted-staff
+ * developers behave as they do for every other command, and it fails closed when that system
+ * is unavailable.
+ */
+function mayOpenInterface(player) {
+  if (!player || !core) return false;
+  try {
+    return core.PluginManager?.playerHasCommandRights?.(player, INTERFACE_COMMAND) === true;
+  } catch {
+    return false;
+  }
+}
+
 function statePayload(player = null) {
   const now = Date.now();
   const slots = {};
@@ -547,6 +565,8 @@ function statePayload(player = null) {
   const newest = newestSlot();
   return {
     type: "state",
+    // The client only draws the HUD button when the server says this player may open it.
+    canOpen: player ? mayOpenInterface(player) : false,
     revision: state.revision,
     now,
     activeKey: activeKey(),
@@ -683,6 +703,7 @@ module.exports = {
   applyPlatformWorld,
   syncWorld,
   statePayload,
+  mayOpenInterface,
   sendState,
   sendSeen,
   sendPluginMessage,

@@ -128,6 +128,13 @@ function sendRows(player, activeTab = undefined) {
 }
 
 function open({ player, parts = [] }) {
+  // ::events is registered as a Developer command, but the HUD icon reaches this through the
+  // "global-events:open" custom event, which skips the command gate. Re-check here so every
+  // route fails closed.
+  if (!Common.mayOpenInterface(player)) {
+    player.sendMessage("You do not have permission to use this command.");
+    return true;
+  }
   const tab = tabOf(player);
   player.setAttribute(TAB_ATTRIBUTE, tab);
   player.setAttribute(SELECTED_ATTRIBUTE, undefined);
@@ -326,8 +333,10 @@ function register(pluginApi) {
 
   api.registerCustomInterface(buildInterface());
   api.persistAttribute(TAB_ATTRIBUTE, TAB.ACTIVE);
-  api.registerCommand("events", open, core.PlayerRights.NONE, "Browse active Global Events, claim temporary items and spend event tokens");
-  api.registerCommand("globalevent", globalEventCommand, core.PlayerRights.OWNER, "Manage Global Events: list | start <event-id> <minutes> | stop [combat|skilling|utility]");
+  // In game the Events interface is Developer-only; every player reaches events through the
+  // website. The events themselves still apply world-wide.
+  api.registerCommand("events", open, core.PlayerRights.DEVELOPER, "Developer: browse active Global Events, claim temporary items and spend event tokens");
+  api.registerCommand("globalevent", globalEventCommand, core.PlayerRights.DEVELOPER, "Developer: manage Global Events: list | start <event-id> <minutes> | stop [combat|skilling|utility]");
   api.onCustomEvent("global-events:open", open);
   api.onCustomEvent("global-events:changed", () => refreshOpenInterfaces());
   api.onCustomEvent("global-events:ui-refresh", ({ player }) => {

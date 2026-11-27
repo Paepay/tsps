@@ -43,6 +43,8 @@ export class GlobalEventsPlugin extends Plugin {
     private iconName = "";
     private activeCount = 0;
     private flashing = false;
+    /** The Events interface is Developer-only in game; the server tells us per player. */
+    private canOpen = false;
     private iconBounds?: Rect;
     private removeInputFilter?: () => void;
     private removeTouchHandler?: () => void;
@@ -77,6 +79,7 @@ export class GlobalEventsPlugin extends Plugin {
         this.iconItemId = -1;
         this.activeCount = 0;
         this.flashing = false;
+        this.canOpen = false;
         this.iconBounds = undefined;
     }
 
@@ -84,6 +87,8 @@ export class GlobalEventsPlugin extends Plugin {
         if (event.channel !== CHANNEL) return;
         const data = event.data ?? {};
         if (data.type === "state") {
+            // Absent or anything but `true` hides the button (fail closed for older servers).
+            this.canOpen = data.canOpen === true;
             this.activeKey = typeof data.activeKey === "string" ? data.activeKey : "";
             this.iconItemId = Number(data.iconItemId) || -1;
             this.iconName = typeof data.iconName === "string" ? data.iconName : "";
@@ -115,16 +120,17 @@ export class GlobalEventsPlugin extends Plugin {
         this.iconName = "";
         this.activeCount = 0;
         this.flashing = false;
+        this.canOpen = false;
         this.iconBounds = undefined;
     }
 
     private signature(): string {
         const phase = this.flashing ? Math.floor(Date.now() / FLASH_MS) % 2 : 0;
-        return `${this.activeKey}:${this.seenKey}:${this.iconItemId}:${this.activeCount}:${phase}`;
+        return `${this.activeKey}:${this.seenKey}:${this.iconItemId}:${this.activeCount}:${phase}:${this.canOpen ? 1 : 0}`;
     }
 
     private menuEntries(): OverlayMenuEntry[] {
-        if (!this.isLoggedIn()) return [];
+        if (!this.isLoggedIn() || !this.canOpen) return [];
         return [{ option: "Open", target: "Global Events", onClick: () => this.open() }];
     }
 
@@ -135,7 +141,7 @@ export class GlobalEventsPlugin extends Plugin {
     private draw(context: WidgetOverlayDrawContext): Rect[] {
         // The button stays on the HUD after login even while no event is running, so the
         // Events interface is always one click away.
-        if (!this.isLoggedIn()) {
+        if (!this.isLoggedIn() || !this.canOpen) {
             this.iconBounds = undefined;
             return [];
         }
@@ -188,7 +194,7 @@ export class GlobalEventsPlugin extends Plugin {
     private onInput = (type: string, event: MouseEvent | KeyboardEvent): boolean => {
         if (type !== "mousePressed") return false;
         const mouse = event as MouseEvent;
-        if (mouse.button !== 0 || !this.isLoggedIn() || !this.iconBounds) return false;
+        if (mouse.button !== 0 || !this.isLoggedIn() || !this.canOpen || !this.iconBounds) return false;
         const element = this.osrsClient?.inputManager?.element;
         if (!element) return false;
         const [x, y] = getMousePos(element, mouse);
@@ -198,7 +204,7 @@ export class GlobalEventsPlugin extends Plugin {
     };
 
     private onTouchTap = (x: number, y: number): boolean => {
-        if (!this.isLoggedIn() || !this.iconBounds || !inside(this.iconBounds, x, y)) return false;
+        if (!this.isLoggedIn() || !this.canOpen || !this.iconBounds || !inside(this.iconBounds, x, y)) return false;
         this.open();
         return true;
     };
