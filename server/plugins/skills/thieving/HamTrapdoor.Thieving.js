@@ -1,4 +1,5 @@
 /** H.A.M. entrance: its own Wiki success chart, cache multiloc and live capture 3199. */
+let api;
 let core;
 const HAM_TRAPDOOR_ID = 5492; // ham_multi_trapdoor is nameless in the cache
 const OPEN_VARBIT = 235;
@@ -77,7 +78,9 @@ function pickLock(player) {
       const inventory = player.getInventory();
       const lockpick = inventory.contains(core.ItemIdentifiers.LOCKPICK) || inventory.contains(core.ItemIdentifiers.HAIR_CLIP);
       const chance = successChance(player.getSkillManager().getCurrentLevel(core.Skill.THIEVING), lockpick);
-      if (Math.random() < chance) {
+      const success = { player, chance, alwaysSucceeds: false };
+      api?.emitCustomEvent?.("thieving:lock-success", success);
+      if (success.alwaysSucceeds || Math.random() < chance) {
         spam(player, "You pick the lock on the trapdoor.");
         player.getPacketSender().sendVarbit(OPEN_VARBIT, 1);
         player.performAnimation(new core.Animation(OPEN_ANIMATION));
@@ -123,7 +126,8 @@ function cancel({ player }) {
   attempts.get(player)?.stop();
 }
 
-module.exports = function attach(api) {
+module.exports = function attach(pluginApi) {
+  api = pluginApi;
   core = api.core;
   api.onBeforeObjectInteraction(useTrapdoor);
   api.onCustomEvent("loc-teleports:arrived", arrived);

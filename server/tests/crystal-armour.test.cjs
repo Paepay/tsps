@@ -12,13 +12,14 @@ const { Equipment } = require("../dist/game/model/container/impl/Equipment");
 const { ItemIds } = require("../dist/util/IdEnums");
 const { ItemIdentifiers } = require("../dist/util/ItemIdentifiers");
 const { CacheDefinitions } = require("../dist/game/cache/CacheDefinitions");
+const { ItemAliases } = require("../dist/game/model/ItemAliases");
 
 const CrystalArmour = require("../plugins/items/CrystalArmour.plugin");
 const EquipmentEffects = require("../plugins/combat/EquipmentEffects.plugin");
 
 function makeApi(extra = {}) {
   const api = {
-    core: { Equipment, ItemIdentifiers, Skill, CacheDefinitions },
+    core: { Equipment, ItemIdentifiers, Skill, CacheDefinitions, ItemAliases },
     emitCustomEvent() {},
     registerRangedAttackAccuracyModifier() {},
     registerRangedHitModifier() {},

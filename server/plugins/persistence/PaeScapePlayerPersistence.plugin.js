@@ -128,8 +128,13 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
     this.nextWriteSequence = 0;
     /** The ordered background write chain; every save appends to it. */
     this.writeChain = Promise.resolve();
-    /** Failures since the last flush, so flush() can rethrow them. */
-    this.failures = [];
+    /**
+     * The most recent failed save per character/profile that has not since been
+     * superseded by a successful save, so flush() can rethrow it. Keyed rather than
+     * a plain list: a failure from a session that ended hours ago, whose later saves
+     * all succeeded, must not cancel a counted stop or restart for the whole world.
+     */
+    this.failedSaves = new Map();
     this.writesQueued = 0;
     this.writesCompleted = 0;
   }
@@ -324,10 +329,13 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
       .then(() => this.write(storageKey, username, profile, serialized, envelope, reason, sequence))
       .then(() => {
         this.writesCompleted++;
+        // The platform now holds this character's latest state, so an earlier
+        // failed save for it no longer represents unsaved progress.
+        this.failedSaves.delete(storageKey);
       })
       .catch((error) => {
         this.writesCompleted++;
-        this.failures.push(error instanceof Error ? error : new Error(String(error)));
+        this.failedSaves.set(storageKey, error instanceof Error ? error : new Error(String(error)));
         console.error("[persistence] platform save failed for " + username + " (" + profile + ")", error);
       });
   }
@@ -429,9 +437,9 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
   async flush() {
     await super.flush();
     await this.writeChain.catch(() => undefined);
-    if (this.failures.length > 0) {
-      const first = this.failures[0];
-      this.failures.length = 0;
+    if (this.failedSaves.size > 0) {
+      const first = this.failedSaves.values().next().value;
+      this.failedSaves.clear();
       throw first;
     }
   }
@@ -632,7 +640,7 @@ class PaeScapePlayerPersistence extends PlayerPersistence {
       mode: "paescape-platform",
       writesQueued: this.writesQueued,
       writesCompleted: this.writesCompleted,
-      failures: this.failures.length,
+      failures: this.failedSaves.size,
       localSaves: false,
     };
   }

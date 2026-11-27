@@ -2,6 +2,7 @@ const { CombatType } = require("../../src/main/typescript/elvarg/game/content/co
 const { ItemIdentifiers } = require("../../src/main/typescript/elvarg/util/ItemIdentifiers");
 const { Equipment } = require("../../src/main/typescript/elvarg/game/model/container/impl/Equipment");
 const { Skill } = require("../../src/main/typescript/elvarg/game/model/Skill");
+const { ItemAliases } = require("../../src/main/typescript/elvarg/game/model/ItemAliases");
 
 const TWISTED_BOW_ID = ItemIdentifiers.TWISTED_BOW;
 const MAGIC_CAP = 250;
@@ -16,7 +17,7 @@ function isUsingTwistedBow(attacker) {
   if (!attacker?.isPlayer?.()) {
     return false;
   }
-  return getEquippedWeaponId(attacker.getAsPlayer()) === TWISTED_BOW_ID;
+  return ItemAliases.same(getEquippedWeaponId(attacker.getAsPlayer()), TWISTED_BOW_ID);
 }
 
 function getTargetMagicLevel(target) {

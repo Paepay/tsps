@@ -266,6 +266,8 @@ const AXES = [
   axe(ItemIds.ECHO_AXE, 1, 7, 8324),
   // Trailblazer Reloaded's Infernal Gathering axe (custom item): crystal-tier, no requirement.
   axe(ItemIds.TRAILBLAZER_AXE, 1, 7, 8324),
+  // Master's Arsenal loan (custom 50014): the infernal axe with its equipment requirement waived.
+  axe(50014, 1, 7, 2117, { requiredFiremaking: 1, speed: 0.3 }),
 ];
 
 // OSRS Wiki "cut chance" charts: [low, high] per axe tier (bronze, iron, steel, black, mithril,

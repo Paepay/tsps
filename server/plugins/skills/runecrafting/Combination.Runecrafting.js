@@ -140,6 +140,8 @@ function combine(event) {
     player.sendMessage(`You need a Runecrafting level of at least ${rune.level} to craft this.`);
     return;
   }
+  // Production Master's supported pouches join this craft before the essence is counted.
+  api.emitCustomEvent("runecrafting:prepare-craft", { player });
   // Wiki (Daeyalt essence): daeyalt binds first, at 1.5 times the XP; pure essence takes a second use.
   // What binds in place of pure essence goes with it, after it.
   const daeyaltSlots = takeable(inventory, I.DAEYALT_ESSENCE);

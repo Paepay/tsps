@@ -2,6 +2,7 @@ import { TOPLEVEL, TOPLEVEL_OSM, TOPLEVEL_OSRS_STRETCH, TOPLEVEL_PRE_EOC } from 
 import type { OsrsClient } from "../../../../game/OsrsClient";
 import { getMousePos } from "../../../../game/InputManager";
 import { combatStatusAnchor } from "../../../../game/widgets/MobileHudLayout";
+import { OrbComponent, orbBounds } from "../../../../game/plugins/orbWidgets";
 import type {
     ClientPlugin,
     OverlayPlacement,
@@ -199,7 +200,9 @@ export class OverlayRenderer implements ClientPlugin {
                 : manager.minimapWidget!._absX! + manager.minimapWidget!._absWidth!,
             top: status.top + status.rowHeight,
         };
-        return { canvas, hud, chat, scaleX, scaleY, combatStatus, resized: manager.rootInterface !== TOPLEVEL };
+        const orb = orbBounds(this.client, OrbComponent.ORB_SPECENERGY);
+        const specialAttack = orb && { x: orb.x, y: orb.y, w: orb.w, h: orb.h };
+        return { canvas, hud, chat, scaleX, scaleY, combatStatus, specialAttack, resized: manager.rootInterface !== TOPLEVEL };
     }
 
     private draw(context: WidgetOverlayDrawContext): Rect[] {

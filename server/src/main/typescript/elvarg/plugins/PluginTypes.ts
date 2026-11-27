@@ -1096,6 +1096,11 @@ export interface PluginRangedCombatModifier {
   modifyAttackRoll(attacker: any, target: any, attackRoll: number): number | null;
 }
 
+/** A share of a player's calculated max hit in any style, applied before the damage roll. */
+export interface PluginMaxHitModifier {
+  modifyMaxHit(attacker: any, target: any, combatType: any, maxHit: number): number | null;
+}
+
 export interface PluginApi {
   /** Attributes registered hook/area timings to this label while retaining plugin ownership. */
   withProfileLabel(label: string): PluginApi;
@@ -1644,6 +1649,7 @@ export interface PluginApi {
   registerRangedAmmoRecovery(recovery: PluginRangedAmmoRecovery): void;
   registerSpellRuneSource(source: PluginSpellRuneSource): void;
   registerRangedCombatModifier(modifier: PluginRangedCombatModifier): void;
+  registerMaxHitModifier(modifier: PluginMaxHitModifier): void;
   registerWeaponProfile(profile: WeaponCombatProfile): void;
   /**
    * Registers a weapon special attack. `id` is a stable plugin-chosen key (used by
