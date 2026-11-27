@@ -133,6 +133,14 @@ const { redact, timestamp: stamp, line: startupLine, stageLine, boundedFetch } =
 // Lease-renewal cadence: a renewal is the platform's liveness signal, so the
 // cadence lives beside the platform contract and is unit-tested on its own.
 const { leaseRenewalDelayMs } = require("./LeaseLiveness.js");
+// A character session is a live gameplay lease: it has its own heartbeat and
+// reclaim window, separate from the world's installation lease.
+const {
+  DEFAULT_CHARACTER_SESSION_TTL_SECONDS,
+  characterSessionRenewIntervalMs,
+  characterSessionRetryDelayMs,
+  isAuthoritativeCharacterSessionRefusal,
+} = require("./CharacterSessionLiveness.js");
 // The platform stores a world config in the website's shape; translate it to the
 // runtime's world.json shape before applying it (see PlatformWorldConfig.js).
 const { toWorldOverlay } = require("./PlatformWorldConfig.js");
@@ -993,8 +1001,7 @@ async function preAuthenticate({ typedName, password }, connection) {
   if (hosted) {
     try {
       const characterId = await characterIdFor(characterName);
-      const issued = characterId ? await openCharacterSession(characterId, characterName) : null;
-      if (issued) characterSessions.set(accountKey, issued);
+      if (characterId) await startCharacterSession(accountKey, characterId, characterName);
     } catch (error) {
       // A duplicate live session is a refusal: the platform is authoritative.
       if (error && error.status === 409) {
@@ -1073,11 +1080,11 @@ async function authorizeInGameStaffCommand(actorName, targetName, action) {
   }
 }
 
-/** Create a live platform session and schedule its renewal. */
-async function openCharacterSession(characterId, characterName) {
+/** Create a live platform session for a character. */
+async function openCharacterSession(accountKey, characterId, characterName) {
   const result = await platformFetch("/api/server/character-sessions", {
     method: "POST", token: lease.token,
-    body: { characterId, ttlSeconds: 900 },
+    body: { characterId, ttlSeconds: DEFAULT_CHARACTER_SESSION_TTL_SECONDS },
   });
   if (!result.ok || !result.json?.token) {
     const error = new Error(result.json?.error ?? `session creation failed (${result.status})`);
@@ -1087,49 +1094,150 @@ async function openCharacterSession(characterId, characterName) {
   const issued = {
     token: String(result.json.token),
     characterId,
+    accountKey,
     username: characterName,
-    expiresAt: Date.parse(result.json.session?.expiresAt) || Date.now() + 900_000,
+    expiresAt: Date.parse(result.json.session?.expiresAt) || Date.now() + DEFAULT_CHARACTER_SESSION_TTL_SECONDS * 1000,
+    failedRenewals: 0,
     timer: null,
   };
+  return issued;
+}
+
+/** Open a session and make it the one whose renewal keeps this login alive. */
+async function startCharacterSession(accountKey, characterId, characterName) {
+  const issued = await openCharacterSession(accountKey, characterId, characterName);
+  const previous = characterSessions.get(accountKey);
+  if (previous && previous !== issued) {
+    // The login this replaces is over: end its platform lease now instead of
+    // leaving it to expire, and make sure its cleanup can never touch the new one.
+    previous.superseded = true;
+    if (previous.timer) clearTimeout(previous.timer);
+    previous.timer = null;
+    void endCharacterSession(previous, "superseded");
+  }
+  characterSessions.set(accountKey, issued);
   scheduleCharacterSessionRenewal(issued);
   return issued;
 }
 
-function scheduleCharacterSessionRenewal(issued) {
-  if (issued.timer) clearInterval(issued.timer);
-  issued.timer = setInterval(async () => {
-    if (!lease) return;
-    const result = await platformFetch(`/api/server/character-sessions/${encodeURIComponent(issued.token)}/renew`, {
-      method: "POST", token: lease.token, body: { ttlSeconds: 900 },
-    });
-    if (result.ok) {
-      issued.expiresAt = Date.parse(result.json.expiresAt) || Date.now() + 900_000;
-      return;
-    }
-    // A revoked or expired lease is a hard logout: the platform is authoritative.
-    characterSessions.delete(Accounts.key(issued.username));
-    if (issued.timer) clearInterval(issued.timer);
-    const player = api.core.World.getPlayerByName?.(issued.username);
-    if (player) player.requestLogout?.();
-  }, 300_000);
+/** Bind the issued session to the player object that owns this login. */
+function bindCharacterSessionPlayer(username, player) {
+  if (!username || !player) return;
+  const key = Accounts.accountOf(username) ?? Accounts.key(username);
+  const issued = characterSessions.get(key);
+  if (issued && !issued.superseded && !issued.player) issued.player = player;
+}
+
+function scheduleCharacterSessionRenewal(issued, delayMs = characterSessionRenewIntervalMs()) {
+  if (issued.timer) clearTimeout(issued.timer);
+  issued.timer = setTimeout(() => {
+    issued.timer = null;
+    void renewCharacterSession(issued);
+  }, delayMs);
   issued.timer.unref?.();
 }
 
-/** End a player's hosted gameplay session (logout, disconnect or ban). */
-async function closeCharacterSession(username) {
-  const key = Accounts.key(username);
-  const issued = characterSessions.get(key);
-  if (!issued) return;
-  characterSessions.delete(key);
-  if (issued.timer) clearInterval(issued.timer);
-  if (!lease) return;
+function sessionErrorText(issued, error) {
+  const message = String(error && error.message ? error.message : error ?? "unknown error");
+  return issued.token ? message.split(issued.token).join("<redacted>") : message;
+}
+
+/** Stop treating a session as live. The caller decides whether to log the player out. */
+function forgetCharacterSession(issued) {
+  if (characterSessions.get(issued.accountKey) !== issued) return false;
+  characterSessions.delete(issued.accountKey);
+  if (issued.timer) clearTimeout(issued.timer);
+  issued.timer = null;
+  return true;
+}
+
+function retryCharacterSessionRenewal(issued, detail) {
+  issued.failedRenewals = (issued.failedRenewals ?? 0) + 1;
+  if (issued.failedRenewals === 1) {
+    warn(`could not renew the gameplay session for ${issued.username} (${detail}); retrying without ending the session`);
+  }
+  scheduleCharacterSessionRenewal(issued, characterSessionRetryDelayMs(issued.failedRenewals));
+}
+
+async function renewCharacterSession(issued) {
+  // A timer from a superseded login must never touch the session that replaced it.
+  if (characterSessions.get(issued.accountKey) !== issued) return;
+  if (!lease) {
+    retryCharacterSessionRenewal(issued, "the world lease is not available");
+    return;
+  }
+
+  let result;
   try {
-    await platformFetch(`/api/server/character-sessions/${encodeURIComponent(issued.token)}?reason=logout`, {
-      method: "DELETE", token: lease.token,
+    result = await platformFetch(`/api/server/character-sessions/${encodeURIComponent(issued.token)}/renew`, {
+      method: "POST", token: lease.token, body: { ttlSeconds: DEFAULT_CHARACTER_SESSION_TTL_SECONDS },
     });
   } catch (error) {
-    warn(`could not end the gameplay session for ${username}: ${error.message}`);
+    if (characterSessions.get(issued.accountKey) !== issued) return;
+    retryCharacterSessionRenewal(issued, `platform request failed: ${sessionErrorText(issued, error)}`);
+    return;
   }
+
+  // Logout/disconnect may have ended the session while the request was in flight.
+  if (characterSessions.get(issued.accountKey) !== issued) return;
+  if (result.ok) {
+    issued.expiresAt = Date.parse(result.json?.expiresAt) || Date.now() + DEFAULT_CHARACTER_SESSION_TTL_SECONDS * 1000;
+    if (issued.failedRenewals > 0) {
+      log(`gameplay session for ${issued.username} recovered after ${issued.failedRenewals} failed renewal(s)`);
+    }
+    issued.failedRenewals = 0;
+    scheduleCharacterSessionRenewal(issued);
+    return;
+  }
+  if (isAuthoritativeCharacterSessionRefusal(result.status)) {
+    const reason = result.json?.error ? `: ${result.json.error}` : "";
+    forgetCharacterSession(issued);
+    warn(`the platform ended the gameplay session for ${issued.username} (HTTP ${result.status}${reason}); logging out`);
+    const player = api.core.World.getPlayerByName?.(issued.username);
+    if (player) player.requestLogout?.();
+    return;
+  }
+
+  const reason = result.json?.error ? `: ${result.json.error}` : "";
+  retryCharacterSessionRenewal(issued, `HTTP ${result.status}${reason}`);
+}
+
+/** End one exact platform session. Best effort: the lease may already be gone. */
+async function endCharacterSession(issued, reason) {
+  if (!lease || !issued?.token) return;
+  try {
+    await platformFetch(
+      `/api/server/character-sessions/${encodeURIComponent(issued.token)}?reason=${encodeURIComponent(reason)}`,
+      { method: "DELETE", token: lease.token },
+    );
+  } catch (error) {
+    warn(`could not end the gameplay session for ${issued.username}: ${sessionErrorText(issued, error)}`);
+  }
+}
+
+/**
+ * End a player's hosted gameplay session (logout, disconnect or ban). The
+ * account key always points at the newest login, so a socket that closes after a
+ * reconnect must not delete the session the replacement login is using.
+ */
+async function closeCharacterSession(event) {
+  const username = typeof event === "string" ? event : event?.username;
+  const player = typeof event === "string" ? null : event?.player;
+  if (!username) return;
+  const key = Accounts.accountOf(username) ?? Accounts.key(username);
+  const issued = characterSessions.get(key);
+  if (!issued) return;
+  if (issued.superseded) return;
+  // A different player object owns this mapping: a newer login replaced this one.
+  if (player && issued.player && issued.player !== player) return;
+  if (player && !issued.player) {
+    const live = api && api.core && api.core.World ? api.core.World.getPlayerByName?.(username) : null;
+    if (live && live !== player) return;
+  }
+  characterSessions.delete(key);
+  if (issued.timer) clearTimeout(issued.timer);
+  issued.timer = null;
+  await endCharacterSession(issued, "logout");
 }
 
 /**
@@ -2006,10 +2114,18 @@ module.exports = {
     // A logout or disconnect ends the platform gameplay session. The account's
     // other characters cannot log in while a fresh session is live; a crash
     // leaves a stale lease the 60-second reclaim window recovers.
-    pluginApi.onPlayerLogout((event) => void closeCharacterSession(event.username));
-    pluginApi.onPlayerDisconnect((event) => void closeCharacterSession(event.username));
+    pluginApi.onPlayerLogout((event) => void closeCharacterSession(event));
+    pluginApi.onPlayerDisconnect((event) => {
+      // The source separates a clean logout from a socket drop or a replaced login,
+      // which is what a "keeps logging me out" report needs from the server log.
+      if (platform.url && !platform.worldSecret) {
+        log(`${event?.username ?? "a player"} disconnected (${event?.source ?? "removed"})`);
+      }
+      void closeCharacterSession(event);
+    });
     // Apply the platform's authoritative ticket rank after the player object exists.
     pluginApi.onPlayerLogin((event) => {
+      bindCharacterSessionPlayer(event?.username, event?.player);
       try {
         staffController.onLogin(event.player);
       } catch (error) {
@@ -2026,7 +2142,7 @@ module.exports = {
       if (leaseTimer) clearTimeout(leaseTimer);
       if (enrollmentTimer) clearInterval(enrollmentTimer);
       for (const issued of characterSessions.values()) {
-        if (issued.timer) clearInterval(issued.timer);
+        if (issued.timer) clearTimeout(issued.timer);
       }
     });
   },
@@ -2053,6 +2169,22 @@ module.exports = {
       lifecycleReporter = input.lifecycleReporter ?? null;
       if (input.publicKeyFetcher !== undefined) publicKeyFetcher = input.publicKeyFetcher;
     },
+    configureCharacterSessionsForTests: (input = {}) => {
+      if (input.platformUrl !== undefined) platform = { ...platform, url: String(input.platformUrl) };
+      if (input.lease !== undefined) lease = input.lease;
+      if (input.api !== undefined) api = input.api;
+      if (input.clear === true) {
+        for (const issued of characterSessions.values()) {
+          if (issued.timer) clearTimeout(issued.timer);
+        }
+        characterSessions.clear();
+      }
+    },
+    startCharacterSession,
+    renewCharacterSession,
+    characterSessionForTests: (accountKey) => characterSessions.get(accountKey) ?? null,
+    closeCharacterSession,
+    bindCharacterSessionPlayer,
     configureStaffForTests: (input = {}) => {
       if (input.api !== undefined) api = input.api;
       if (input.userAccounts !== undefined) userAccounts = input.userAccounts;

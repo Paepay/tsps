@@ -13,6 +13,9 @@ const ATTR = Object.freeze({
 
 const REGION_ID = /^[a-z0-9-]{1,40}$/;
 
+/** Developer-only command base that `::levelup master` is authorized against. */
+const MASTER_COMMAND = "levelupmaster";
+
 let api = null;
 let templateId = null;
 let contract = null;
@@ -621,11 +624,27 @@ function masterSkills(player) {
   return true;
 }
 
+/**
+ * `::levelup` is open to every player, so its `master` subcommand needs its own rank check. It
+ * asks the command permission system about a developer-only command base, so world.json
+ * overrides and platform-resolved hosted staff behave as they do for every other command.
+ * Fails closed when that system is unavailable.
+ */
+function mayUseMaster(player) {
+  return api.core.PluginManager?.playerHasCommandRights?.(player, MASTER_COMMAND) === true;
+}
+
 function command({ player, parts }) {
   if (!active()) return false;
   const action = String(parts[1] ?? "").toLowerCase();
   const value = parts.slice(2).join(" ").trim();
-  if (action === "master") return masterSkills(player);
+  if (action === "master") {
+    if (!mayUseMaster(player)) {
+      player.sendMessage("You do not have permission to use this command.");
+      return true;
+    }
+    return masterSkills(player);
+  }
   if (action === "skill" && value) return unlockSkill(player, value);
   if (action === "region" && value) return unlockRegion(player, value);
   if (action === "relic" && value) return unlockRelic(player, value);
@@ -634,7 +653,9 @@ function command({ player, parts }) {
   player.sendMessage(`Regions: ${state.regions.map((region) => region.name).join(", ")}. Relics chosen: ${state.relics.length}.`);
   if (state.pendingRegionMilestone) player.sendMessage(`Region reward pending at ${state.pendingRegionMilestone} skills.`);
   if (state.pendingRelicMilestone) player.sendMessage(`Relic reward pending at ${state.pendingRelicMilestone} skills.`);
-  player.sendMessage("Choices: ::levelup skill <name> | ::levelup region <id/name> | ::levelup relic <1-3> | ::levelup master.");
+  player.sendMessage(
+    `Choices: ::levelup skill <name> | ::levelup region <id/name> | ::levelup relic <1-3>${mayUseMaster(player) ? " | ::levelup master" : ""}.`,
+  );
   return true;
 }
 
@@ -704,6 +725,7 @@ module.exports = {
     api.onCanGainExperience(canGainExperience);
     api.onCustomEvent("combat:developer-protection", developerProtection);
     api.registerCommand("levelup", command, api.core.PlayerRights.NONE, "View Level-Up progression or choose a skill, region or relic");
+    api.registerCommand(MASTER_COMMAND, ({ player }) => (active() ? masterSkills(player) : false), api.core.PlayerRights.DEVELOPER, "Developer: unlock every Level-Up skill at level 99 (also ::levelup master)");
     api.registerCommand("resetrelics", ({ player }) => resetRelics(player), api.core.PlayerRights.DEVELOPER, "Clear every Level-Up relic pick so earned milestones can be chosen again");
     api.registerCommand("resetareas", ({ player }) => resetAreas(player), api.core.PlayerRights.DEVELOPER, "Reset Level-Up areas to Misthalin so earned region milestones can be chosen again");
     require("./levelup/Interface.LevelUpWorld").attach(api);
