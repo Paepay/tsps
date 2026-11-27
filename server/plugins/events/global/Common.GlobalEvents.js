@@ -213,6 +213,24 @@ function remainingSeconds(slot, now = Date.now()) {
   return Math.max(0, Math.ceil((slot.endsAt - now) / 1000));
 }
 
+/**
+ * The countdown text the website's /play page shows (`remainingLabel` in src/pages/play.ts),
+ * so the in-game interface and the website read the same: "45s", "5m 12s", "1h 29m", "2d 3h".
+ * It is derived from the activation's end time, never from a stored remainder, so it ticks.
+ */
+function remainingLabel(slotOrEndsAt, now = Date.now()) {
+  const endsAt = slotOrEndsAt !== null && typeof slotOrEndsAt === "object" ? slotOrEndsAt.endsAt : slotOrEndsAt;
+  const milliseconds = Number(endsAt) - now;
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "ending";
+  const seconds = Math.ceil(milliseconds / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
 function instanceOf(eventId) {
   return activeByEventId(eventId)?.instanceId ?? null;
 }
@@ -291,10 +309,29 @@ function activateFor(eventId, minutes, actor = "") {
   return activate(eventId, { actor, startedAt, endsAt: startedAt + Math.round(duration * 60_000) });
 }
 
+/** An activation seen for the first time this recently is still news worth announcing. */
+const FRESH_ANNOUNCE_MS = 2 * 60_000;
+const announcedInstances = new Set();
+
+/**
+ * Tell everyone on this world a global event started, once per activation. The announcement
+ * names who activated it, how long it runs and what it does, so players know what changed.
+ */
 function announceStarted(slot, event) {
-  const text = api?.core
-    ? message("activated", { activator: slot.activatedBy || "A world event", event: event.name })
-    : null;
+  if (!api?.core || !slot || !event) return;
+  if (slot.instanceId) {
+    if (announcedInstances.has(slot.instanceId)) return;
+    announcedInstances.add(slot.instanceId);
+    // The set only guards a few minutes of repeat reads; keep it from growing for a long uptime.
+    if (announcedInstances.size > 200) announcedInstances.delete(announcedInstances.values().next().value);
+  }
+  const duration = remainingLabel(slot.endsAt, Number(slot.startedAt) || Date.now());
+  const text = message("activated", {
+    activator: slot.activatedBy || "A world event",
+    event: event.name,
+    duration: duration === "ending" ? "a short while" : duration,
+    summary: slot.summary || event.summary || "",
+  }).trim();
   if (!text) return;
   for (const player of api.core.World.getPlayers()) player?.sendMessage?.(text);
 }
@@ -437,8 +474,13 @@ function applyPlatformWorld(events, { announce = true, reason = "platform" } = {
       event: definition(slot.eventId),
     });
   }
+  const now = Date.now();
   for (const slot of started) {
-    if (announce) announceStarted(slot, definition(slot.eventId));
+    // Syncs that must stay quiet (login, opening the interface) used to swallow an activation
+    // they happened to see first. A genuinely new activation is announced by whichever sync
+    // sees it first; an old one (a world restart, a late login) stays quiet.
+    const fresh = now - slot.startedAt <= FRESH_ANNOUNCE_MS;
+    if (announce || fresh) announceStarted(slot, definition(slot.eventId));
   }
   broadcast();
   changed("platform-sync", { reason });
@@ -520,7 +562,7 @@ function message(key, values = {}) {
   return template.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
 }
 
-/** Command base the in-game Events interface is authorized against (Developer-only). */
+/** Command base the in-game Events interface is authorized against (everyone unless restricted). */
 const INTERFACE_COMMAND = "events";
 
 /**
@@ -692,6 +734,7 @@ module.exports = {
   instanceOf,
   liveInstance,
   remainingSeconds,
+  remainingLabel,
   newInstanceId,
   activate,
   activateFor,
@@ -719,7 +762,7 @@ module.exports = {
   testing: {
     setStoreFile(file) { storeFile = file; },
     load,
-    reset() { state = emptyState(); worldStateKnown = false; },
+    reset() { state = emptyState(); worldStateKnown = false; announcedInstances.clear(); },
     setState(raw) { state = normalize(raw); worldStateKnown = true; },
   },
 };

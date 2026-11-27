@@ -93,6 +93,14 @@ end and expiry. Claiming and deleting are blocked while in combat or for 10 seco
 their equipment level and combat gates are waived (quest, resource and activity checks still
 apply), and only one loan may be held at a time.
 
+A Master's Arsenal loan can only be worn, taken off and destroyed. Its inventory menu is
+`Wield` and `Destroy` (the base item's Drop, Check, Operate and charge options are gone, and any
+other option the server receives is refused). Every item-on-item, item-on-object, item-on-NPC,
+item-on-player, item-on-ground-item and spell-on-item use is refused through `onCanUseItem` (the
+`use` and `magic` actions), which runs before any plugin's own handler so load order cannot let
+another plugin transform, charge, imbue, gift or cast on a loan. The Omnishop's `omnishop:can-sell`
+check also refuses it. A worn loan is held back from the bank by `onCanBankItem` as well.
+
 The event's two purpose-made items are their own custom items: `Banker's note (e)` (50006, based
 on the real 28767) and `Sage's greaves (e)` (50007, based on the greaves at 28771). They
 deliberately do not reuse the league relic ids (`BANKERS_NOTE` 28767 and the league `Sage's
@@ -148,6 +156,43 @@ older real id is purged rather than migrated: `migrateLegacy` deliberately never
 Arsenal binding, because that would mint a permanent weapon. Only the Banker's note's pre-split
 copies are migrated back to the player's real relic.
 
+## The Events interface
+
+`::events` (every player; the blue partyhat HUD icon opens it too, and the client's **Global
+Events** plugin switches the icon on or off) opens a three-tab interface. An operator can
+restrict it again with a `world.json` command override; the icon and every route follow it.
+`::globalevent` (start/stop) stays Developer-only. All of it is server-declared (`global/Interface.GlobalEvents.js`) and driven
+by the generic custom-interface runtime, so it needs no Global Events code in the client.
+
+| Tab | Shows |
+| --- | --- |
+| **Live** | One row per category slot: the running event with its countdown, or an "empty" slot row. |
+| **Activate** | Every event under Combat / Skilling / Utility headers, with the player's token count. |
+| **Claimable** | The temporary event items the player can claim. |
+
+- **Countdown.** Times use the website's `/play` format (`45s`, `5m 12s`, `1h 29m`, `2d 3h`; see
+  `Common.remainingLabel`) and tick once a second while the interface is open. The server resends
+  the rows only when the text changed, so an idle interface costs nothing.
+- **Symbols.** Rows and the details panel use the website's Combat, Skilling and Utility symbols
+  as server sprites (`server/data/sprites/30101-30103` at 22x22 for rows, `30111-30113` at 32x32
+  for the panel). Edit the PNGs, not the ids.
+- **Descriptions.** Selecting any row, running or not, shows the event's full description. The
+  first useful row is selected when a tab opens, so the panel is never blank.
+- **One action per row.** A running event offers **Disable for me** / **Enable for me**, a free
+  event offers **Activate (uses 1 token)**, and an event whose category slot is taken offers
+  nothing. The platform still decides every activation; hiding the button only avoids offering
+  something it would refuse.
+- **Tokens.** They belong to the player's PaeScape (Discord) account, not to a character or a
+  world, work on any world, and each activation spends exactly one for good. The panel says so.
+
+### Announcements
+
+Every activation is announced in chat to everyone on the world once, naming who started it, how
+long it runs and what it does. The platform world poll (every 10 s) is what notices an activation
+made on the website. A sync that is meant to be quiet (login, opening the interface) still
+announces an activation that began within the last two minutes and has not been announced, so it
+cannot swallow the announcement; an older one (a late login, a world restart) stays quiet.
+
 ## Opting out
 
 The platform scopes opt-outs to **account x event id**, not to a world or one activation. The
@@ -164,8 +209,8 @@ depended on it; opting back in may claim one loan while the same event runs.
 ## Event tokens and activation
 
 The platform owns token prices, balances and durations (every event currently lasts 90 minutes and
-is bought on the website with PaePoints). A player activates from the **::events** interface: select
-any event, then **Activate**. No inventory item is involved, and the world never judges token
+is bought on the website with PaePoints). A player activates from the **::events** interface: open
+the **Activate** tab, select an event, then **Activate**. No inventory item is involved, and the world never judges token
 ownership; it forwards the click and the platform answers. The world makes **one** atomic
 activation call:
 
