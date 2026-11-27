@@ -250,7 +250,7 @@
   },
   "combatLock": { "postCombatSeconds": 10 },
   "messages": {
-    "activated": "<col=ffd27f>[Global Event]</col> {activator} activated {event} for this world.",
+    "activated": "<col=ffd27f>[Global Event]</col> {activator} activated {event} for this world for {duration}. {summary}",
     "ended": "<col=ffd27f>[Global Event]</col> {event} has ended.",
     "slotBusy": "A {category} event is already running on this world.",
     "expired": "A temporary Global Event item you were carrying expired and has been removed.",
@@ -291,7 +291,7 @@
     "tokensPath": "/events/tokens",
     "preferencesPath": "/events/preferences",
     "activatePath": "/events/activate",
-    "syncIntervalMs": 30000,
+    "syncIntervalMs": 10000,
     "requestTimeoutMs": 10000
   }
 }
