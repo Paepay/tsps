@@ -161,10 +161,12 @@ export type CustomInterfaceDeclaration = {
     /**
      * Tabs switched client-side, with no wait for the server. The data component then holds a
      * catalog of every row once, and `layoutComponent` receives
-     * `{ active?, tabs: [[rowId | { header }]] }`: each tab's rows in order, with section
-     * headers. A tab click (still sent to the server) shows that tab's rows, recolours the
-     * labels and, with `clearQuery`, empties the search. A layout without `active` keeps the
-     * player's current tab, so a refresh can't pull them back to an older one.
+     * `{ active?, selected?, tabs: [[rowId | { header }]] }`: each tab's rows in order, with
+     * section headers. A tab click (still sent to the server) shows that tab's rows, recolours
+     * the labels and, with `clearQuery`, empties the search. A layout without `active` keeps the
+     * player's current tab, so a refresh can't pull them back to an older one. `selected` is the
+     * row the select panel shows (a positive id) or empties (0), so the server can pick a
+     * sensible row when a tab opens; without it the player's own selection stays.
      */
     tabs?: {
         components: number[];
@@ -193,6 +195,18 @@ export type CustomInterfaceRow = {
     searchOnly?: boolean;
     /** Text for the declared select panel, by name; server markup is kept. */
     panel?: Record<string, string>;
+    /**
+     * A server sprite (id 30000+, see /api/sprites) drawn in place of the item `icon`, in the
+     * row's icon slot and in the select panel's icon.
+     */
+    sprite?: number;
+    /** The sprite for the select panel's (usually larger) icon; `sprite` is used when absent. */
+    panelSprite?: number;
+    /**
+     * The select panel's `showComponents` this row wants visible; the rest are hidden. Without
+     * it every one is shown, which is how a panel with a single action behaves.
+     */
+    show?: number[];
 };
 
 function toRow(row: any): CustomInterfaceRow {
@@ -200,6 +214,9 @@ function toRow(row: any): CustomInterfaceRow {
         id: row.id | 0,
         name: String(row.name ?? ""),
         icon: Number.isInteger(row.icon) ? row.icon : undefined,
+        sprite: Number.isInteger(row.sprite) && row.sprite >= 0 ? row.sprite : undefined,
+        panelSprite: Number.isInteger(row.panelSprite) && row.panelSprite >= 0 ? row.panelSprite : undefined,
+        show: Array.isArray(row.show) ? row.show.filter((component: unknown) => Number.isInteger(component)) : undefined,
         detail: typeof row.detail === "string" ? row.detail : undefined,
         terms: typeof row.terms === "string" ? row.terms : undefined,
         header: row.header === true,
@@ -432,6 +449,10 @@ export class CustomInterfaceRuntime {
                 : [];
             const opened = Number.isInteger(layout?.active);
             if (opened) this.activeTab = layout.active;
+            if (Number.isInteger(layout?.selected)) {
+                if (layout.selected > 0) this.selectedRowId = layout.selected;
+                else this.clearSelection();
+            }
             this.applyTabLabels();
             this.sourceRows = this.tabRows();
             this.scheduleFetch(opened);
@@ -563,22 +584,69 @@ export class CustomInterfaceRuntime {
         }
         const icon = select.iconComponent === undefined ? undefined : this.widget(select.iconComponent);
         if (icon) {
-            const itemId = row.icon ?? -1;
+            const spriteId = row.panelSprite ?? row.sprite ?? -1;
+            const itemId = spriteId >= 0 ? -1 : row.icon ?? -1;
             icon.itemId = itemId;
             icon.itemQuantity = itemId >= 0 ? 1 : 0;
             icon.itemAmount = itemId >= 0 ? 1 : 0;
+            this.setIconSprite(icon, spriteId);
             markWidgetInteractionDirty(icon);
             this.deps.widgetManager.invalidateWidgetRender(icon);
         }
+        // A row that names its own `show` list gets exactly those components; any other row
+        // keeps the original behaviour of showing them all.
         for (const component of select.showComponents ?? []) {
-            const widget = this.widget(component);
-            if (!widget) continue;
-            if (!widget.hidden && !widget.isHidden) continue;
-            widget.hidden = false;
-            widget.isHidden = false;
-            markWidgetInteractionDirty(widget);
-            // Showing can change layout, which hidden widgets skip.
-            this.deps.widgetManager.invalidateWidget(widget, "custom-interface-select");
+            this.setSelectComponentShown(component, !row.show || row.show.includes(component));
+        }
+    }
+
+    /** Shows or hides one select-panel component, redrawing only when its state changes. */
+    private setSelectComponentShown(component: number, shown: boolean): void {
+        const widget = this.widget(component);
+        if (!widget) return;
+        const hidden = !shown;
+        if (!!widget.hidden === hidden && !!widget.isHidden === hidden) return;
+        widget.hidden = hidden;
+        widget.isHidden = hidden;
+        markWidgetInteractionDirty(widget);
+        // Showing can change layout, which hidden widgets skip.
+        this.deps.widgetManager.invalidateWidget(widget, "custom-interface-select");
+    }
+
+    /** Empties the select panel: no row is selected, so there are no details or actions. */
+    private clearSelection(): void {
+        const select = this.declaration?.list?.select;
+        this.selectedRowId = undefined;
+        if (!select) return;
+        for (const component of Object.values(select.texts ?? {})) this.setText(component, "");
+        const icon = select.iconComponent === undefined ? undefined : this.widget(select.iconComponent);
+        if (icon) {
+            icon.itemId = -1;
+            icon.itemQuantity = 0;
+            icon.itemAmount = 0;
+            this.setIconSprite(icon, -1);
+            markWidgetInteractionDirty(icon);
+            this.deps.widgetManager.invalidateWidgetRender(icon);
+        }
+        for (const component of select.showComponents ?? []) this.setSelectComponentShown(component, false);
+    }
+
+    /** What a graphic widget drew before a row's server sprite replaced it, to put back after. */
+    private iconSpriteOriginals = new WeakMap<object, number>();
+
+    /**
+     * Draws a server sprite in an icon widget, or gives the widget's own artwork back. Rows
+     * without a sprite never touch the widget, so other interfaces are unaffected.
+     */
+    private setIconSprite(icon: any, spriteId: number): void {
+        if (spriteId >= 0) {
+            if (!this.iconSpriteOriginals.has(icon)) {
+                this.iconSpriteOriginals.set(icon, typeof icon.spriteId === "number" ? icon.spriteId : -1);
+            }
+            icon.spriteId = spriteId;
+        } else if (this.iconSpriteOriginals.has(icon)) {
+            icon.spriteId = this.iconSpriteOriginals.get(icon);
+            this.iconSpriteOriginals.delete(icon);
         }
     }
 
@@ -1090,7 +1158,9 @@ export class CustomInterfaceRuntime {
             text.hidden = hidden;
             text.isHidden = hidden;
 
-            const itemId = !row || row.header
+            // A server sprite takes the icon slot in place of an item.
+            const spriteId = row && !row.header && text !== icon ? row.sprite ?? -1 : -1;
+            const itemId = !row || row.header || spriteId >= 0
                 ? -1
                 : text !== icon
                   ? row.icon ?? -1
@@ -1100,8 +1170,9 @@ export class CustomInterfaceRuntime {
             icon.itemId = itemId;
             icon.itemQuantity = itemId >= 0 ? 1 : 0;
             icon.itemAmount = itemId >= 0 ? 1 : 0;
+            this.setIconSprite(icon, spriteId);
             if (text !== icon) {
-                icon.hidden = hidden || itemId < 0;
+                icon.hidden = hidden || (itemId < 0 && spriteId < 0);
                 icon.isHidden = icon.hidden;
             }
             text.text = !row

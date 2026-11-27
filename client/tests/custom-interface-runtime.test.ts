@@ -393,6 +393,84 @@ async function main(): Promise<void> {
     assert.equal(widgets.get(tabUid(40)).text, "Zulrah (favourite)", "the selection redraws from a new catalog");
     runtime.onInterfaceClosed(TAB_GROUP);
 
+    // Rows can wear a server sprite, a row names the panel buttons it wants, and the server can
+    // choose (or empty) the selection when a tab opens.
+    const SPRITE_GROUP = 30090;
+    const spriteUid = (component: number) => (SPRITE_GROUP << 16) | component;
+    setCustomInterface({
+        groupId: SPRITE_GROUP,
+        widgets: [{ uid: spriteUid(0), parentUid: -1 }],
+        dataComponent: 2,
+        list: {
+            viewComponent: 3, slotCount: 3, columns: 1, rowHeight: 20,
+            iconStart: 10, labelStart: 20, backgroundStart: 30, itemLabel: "%name%detail", clickable: true,
+            select: { texts: { title: 40, action: 44 }, iconComponent: 42, showComponents: [43, 44, 45] },
+        },
+        tabs: {
+            components: [50, 51], labelComponents: [60, 61], labels: ["Live", "Activate"], layoutComponent: 4,
+        },
+    });
+    for (const component of [2, 3, 4, 10, 11, 12, 20, 21, 22, 30, 31, 32, 40, 42, 43, 44, 45, 50, 51, 60, 61]) {
+        widgets.set(spriteUid(component), { uid: spriteUid(component), width: 200, height: 60, scrollY: 0 });
+    }
+    for (const component of [43, 44, 45]) {
+        widgets.get(spriteUid(component)).hidden = true;
+        widgets.get(spriteUid(component)).isHidden = true;
+    }
+    widgets.get(spriteUid(10)).spriteId = 77;
+    runtime.onInterfaceOpened(SPRITE_GROUP);
+    runtime.handleSetText(spriteUid(2), JSON.stringify([
+        { id: 1, name: "Berserker", sprite: 30101, panelSprite: 30111, detail: " - Live 1h 29m", show: [43, 44], panel: { title: "Berserker", action: "Disable for me" } },
+        { id: 2, name: "Plain", icon: 4151, panel: { title: "Plain" } },
+        { id: 200, name: "Combat slot", sprite: 30102, show: [], panel: { title: "Combat slot" } },
+        { id: 3, name: "Bad", sprite: -4, show: "nope", panelSprite: 1.5 },
+    ]));
+    runtime.handleSetText(spriteUid(4), JSON.stringify({ active: 0, selected: 1, tabs: [[1, 2, 200], [2]] }));
+    assert.equal(widgets.get(spriteUid(10)).spriteId, 30101, "a row's server sprite fills its icon");
+    assert.equal(widgets.get(spriteUid(10)).itemId, -1, "and replaces any item");
+    assert.equal(widgets.get(spriteUid(10)).hidden, false, "a sprite row shows its icon");
+    assert.equal(widgets.get(spriteUid(11)).itemId, 4151, "a row with an item still shows the item");
+    assert.equal(widgets.get(spriteUid(11)).spriteId, undefined, "and never touches the widget's sprite");
+    assert.equal(widgets.get(spriteUid(12)).spriteId, 30102);
+    assert.equal(widgets.get(spriteUid(20)).text, "Berserker - Live 1h 29m");
+    assert.equal(widgets.get(spriteUid(40)).text, "Berserker", "the server's selected row fills the panel");
+    assert.equal(widgets.get(spriteUid(42)).spriteId, 30111, "the panel icon uses the row's panel sprite");
+    assert.equal(widgets.get(spriteUid(42)).itemId, -1);
+    assert.deepEqual([43, 44, 45].map((component) => !!widgets.get(spriteUid(component)).hidden), [false, false, true],
+        "only the buttons the row names are shown");
+    assert.equal(widgets.get(spriteUid(44)).text, "Disable for me", "a button caption is panel text like any other");
+
+    runtime.handleRowOp(200, 1);
+    assert.equal(widgets.get(spriteUid(42)).spriteId, 30102, "a row without a panel sprite uses its row sprite");
+    assert.deepEqual([43, 44, 45].map((component) => !!widgets.get(spriteUid(component)).hidden), [true, true, true],
+        "a row with an empty show list offers no action");
+    runtime.handleRowOp(2, 1);
+    assert.equal(widgets.get(spriteUid(42)).itemId, 4151);
+    assert.equal(widgets.get(spriteUid(42)).spriteId, -1, "the panel icon gives its own artwork back");
+    assert.deepEqual([43, 44, 45].map((component) => !!widgets.get(spriteUid(component)).hidden), [false, false, false],
+        "a row with no show list keeps showing every component");
+
+    runtime.handleSetText(spriteUid(4), JSON.stringify({ tabs: [[1, 2, 200], [2]], selected: 1 }));
+    assert.equal(widgets.get(spriteUid(40)).text, "Berserker", "the server can pick the row");
+    runtime.handleSetText(spriteUid(4), JSON.stringify({ tabs: [[1, 2, 200], [2]] }));
+    assert.equal(widgets.get(spriteUid(40)).text, "Berserker", "a layout without selected keeps the player's pick");
+    runtime.handleSetText(spriteUid(4), JSON.stringify({ tabs: [[1, 2, 200], [2]], selected: 0 }));
+    assert.equal(widgets.get(spriteUid(40)).text, "", "selected 0 empties the panel");
+    assert.equal(widgets.get(spriteUid(42)).itemId, -1);
+    assert.equal(widgets.get(spriteUid(42)).spriteId, -1);
+    assert.deepEqual([43, 44, 45].map((component) => !!widgets.get(spriteUid(component)).hidden), [true, true, true]);
+    runtime.handleSetText(spriteUid(2), JSON.stringify([{ id: 1, name: "Berserker", panel: { title: "Back" } }]));
+    assert.equal(widgets.get(spriteUid(40)).text, "", "an emptied panel stays empty until a row is chosen");
+
+    runtime.handleSetText(spriteUid(2), JSON.stringify([
+        { id: 1, name: "Berserker", sprite: 30101 },
+        { id: 2, name: "Plain", icon: 4151 },
+    ]));
+    runtime.handleWidgetOp(SPRITE_GROUP, 51);
+    assert.equal(widgets.get(spriteUid(10)).spriteId, 77, "a slot that stops showing a sprite gets its own art back");
+    assert.equal(widgets.get(spriteUid(10)).itemId, 4151);
+    runtime.onInterfaceClosed(SPRITE_GROUP);
+
     // A long list arrives in parts, joined in their declared order.
     const PART_GROUP = 30011;
     const partUid = (component: number) => (PART_GROUP << 16) | component;
