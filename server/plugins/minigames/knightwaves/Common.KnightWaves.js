@@ -10,6 +10,14 @@
  * The room's walkable floor was read from the cache collision at plane 2: the large doors at
  * 2751,3507-3508 open onto it from the west, the dummies stand on its north edge at y 3514, and
  * the walls close it at x 2748/2768 and y 3497/3517.
+ *
+ * Quest XP audit (issue #242): quest modules pay their experience from `onReward`, which a
+ * Quests-off world never calls (`QuestRuntime.completeAllQuests` sets the stages directly), and
+ * their later claims (trainers, reclaimed lamps, Dragon Slayer II's training) ask
+ * `experienceWithheld`, which the auto-completion now sets for every quest. The Knight Waves are
+ * the one activity outside the quest modules whose completion pays quest XP (King's Ransom's
+ * training reward), so Rewards.KnightWaves withholds it when the Quests plugin is off; the other
+ * activities' XP is their own gameplay and stays.
  */
 
 const WAVE_ATTRIBUTE = "knight-waves:wave";
@@ -76,6 +84,11 @@ function kingsRansomComplete(player) {
   const request = { player, key: KINGS_RANSOM_KEY, complete: null };
   api.emitCustomEvent("quest:is-complete", request);
   return request.complete === true;
+}
+
+/** A Quests-off world auto-completes every quest: activity XP tied to those quests is withheld. */
+function questsAutoCompleted() {
+  return core?.PluginManager?.getPluginSwitch?.("Quests") === false;
 }
 
 /** How many knights this player has already beaten (0-8). */
@@ -150,6 +163,7 @@ module.exports = {
   MESSAGES,
   init,
   kingsRansomComplete,
+  questsAutoCompleted,
   completed,
   setCompleted,
   knightAt,

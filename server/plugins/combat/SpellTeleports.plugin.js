@@ -105,7 +105,7 @@ const tile = (coordinates) => coordinates && new core.Location(...coordinates);
 function landing(centre) {
   if (!centre) return centre;
   // The Watchtower's tower top and Ape Atoll's landing keep their one tile (docs/teleport-tablets.md): around them the
-  // square holds tiles the player can't walk out of (outside the tower's walls; a sealed pocket on Ape Atoll).
+  // square holds tiles the player can't walk out of (outside the tower's walls; the Temple of Marimbo's upper room).
   if (FIXED_LANDINGS.some((name) => standardCentre(name)?.equals(centre))) return centre;
   const tiles = [];
   for (let dx = -LANDING_RADIUS; dx <= LANDING_RADIUS; dx++) {

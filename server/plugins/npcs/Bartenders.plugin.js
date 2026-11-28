@@ -9,9 +9,13 @@
  *   Bartender (Dancing Donkey Inn)   1311  receive 4ksfKE
  *   Bartender (The Sheared Ram)      7546  receive dqIAGj
  * Dragon Inn's Greenman's Ale has only a purchase message (x6UKzD), costing 10 coins.
+ * Falador's Rising Sun Inn keepers (Emily 1315, Kaylee 1316, Tina 1317) sell Asgarnian Ale,
+ * Wizard's Mind Bomb and Dwarven Stout for 3 coins; their transcripts guard each sale behind
+ * "If the player has 3 or more coins:" and play a refusal branch when it is not answered.
  */
 const BEER_PRICE = 2;
 const GREENMANS_ALE_PRICE = 10;
+const FALADOR_DRINK_PRICE = 3;
 const BLUE_MOON_PINT_MESSAGE = "reFUlS";
 
 /** Step id -> transcript page that owns it. */
@@ -20,6 +24,15 @@ const DRINK_PURCHASES = new Map([
   ["4ksfKE", { page: "Bartender (Dancing Donkey Inn)", price: BEER_PRICE, item: "BEER" }],
   ["dqIAGj", { page: "Bartender (The Sheared Ram)", price: BEER_PRICE, item: "BEER" }],
   ["x6UKzD", { page: "Bartender (Dragon Inn)", price: GREENMANS_ALE_PRICE, item: "GREENMANS_ALE", message: true }],
+  ["4yxJCW", { page: "Emily", price: FALADOR_DRINK_PRICE, item: "ASGARNIAN_ALE" }],
+  ["zzMVBD", { page: "Emily", price: FALADOR_DRINK_PRICE, item: "WIZARDS_MIND_BOMB" }],
+  ["gsb3Ku", { page: "Emily", price: FALADOR_DRINK_PRICE, item: "DWARVEN_STOUT" }],
+  ["sDOJm1", { page: "Kaylee", price: FALADOR_DRINK_PRICE, item: "ASGARNIAN_ALE" }],
+  ["HdmZhe", { page: "Kaylee", price: FALADOR_DRINK_PRICE, item: "WIZARDS_MIND_BOMB" }],
+  ["6PAoLg", { page: "Kaylee", price: FALADOR_DRINK_PRICE, item: "DWARVEN_STOUT" }],
+  ["7SIise", { page: "Tina", price: FALADOR_DRINK_PRICE, item: "ASGARNIAN_ALE" }],
+  ["cS16vT", { page: "Tina", price: FALADOR_DRINK_PRICE, item: "WIZARDS_MIND_BOMB" }],
+  ["zXvg6E", { page: "Tina", price: FALADOR_DRINK_PRICE, item: "DWARVEN_STOUT" }],
 ]);
 
 /** Exact Wiki condition prose for these pages, and the answer it means. */
@@ -30,6 +43,8 @@ const COIN_CONDITIONS = new Map([
   ["if the player does not have enough coins:", { price: BEER_PRICE, enough: false }],
   ["if the player has 10 coins:", { price: GREENMANS_ALE_PRICE, enough: true }],
   ["if the player does not have 10 coins:", { price: GREENMANS_ALE_PRICE, enough: false }],
+  ["if the player has 3 or more coins:", { price: FALADOR_DRINK_PRICE, enough: true }],
+  ["if the player does not have 3 or more coins:", { price: FALADOR_DRINK_PRICE, enough: false }],
 ]);
 
 const page = (event, want) => (event.pages ?? []).some((entry) => entry.page === want);
@@ -99,7 +114,7 @@ function pintMessage(core, event) {
 
 module.exports = {
   name: "Bartenders",
-  description: "Makes the Blue Moon Inn, Dancing Donkey, Sheared Ram and Dragon Inn bartenders take coins and hand over a beer or Greenman's ale.",
+  description: "Makes the Blue Moon Inn, Dancing Donkey, Sheared Ram, Dragon Inn and Falador Rising Sun Inn bartenders take coins and hand over their drinks.",
   register(api) {
     api.onNpcDialogueCondition(answerCoins.bind(null, api.core));
     api.onCustomEvent("npc-dialogue:action", buyDrink.bind(null, api.core));

@@ -176,9 +176,9 @@
       "tab": "places",
       "group": "Standard spellbook",
       "tile": [
-        2796,
         2798,
-        0
+        2799,
+        1
       ],
       "icon": "lawrune",
       "description": "Where the Standard spellbook's Ape Atoll Teleport lands.",

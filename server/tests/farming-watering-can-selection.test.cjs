@@ -90,8 +90,26 @@ test('a missing or mismatched selected slot never consumes an earlier matching c
     }
 });
 test('automatic watering without an item slot retains its existing can search', t => {
-    const f = prepare(t);
-    assert.equal(Patches.water(f.player), true);
-    assert.equal(f.first.getId(), Data.itemId('Watering can(7)'));
-    assert.equal(f.selected.getId(), f.id);
+  const f = prepare(t);
+  assert.equal(Patches.water(f.player), true);
+  assert.equal(f.first.getId(), Data.itemId('Watering can(7)'));
+  assert.equal(f.selected.getId(), f.id);
+});
+
+test('an empty can at a water source fills every carried can in one action (#216)', t => {
+  const f = prepare(t);
+  const empty = Data.itemId('Watering can');
+  f.first.setId(empty);
+  f.selected.setId(empty);
+  const gricoller = Data.itemId("Gricoller's can");
+  f.inventory.add(new core.Item(gricoller), false);
+  f.inventory.forSlot(2).setMetaValue('farming:water', 0);
+  t.mock.method(core.ObjectDefinition, 'forPlayer', () => ({ getName: () => 'Well' }));
+  hooks.onItemOnObject({ player: f.player, itemId: empty, itemSlot: 0,
+    object: { getId: () => 999999 }, location: { x: 2500, y: 2500, z: 0 } });
+  assert.equal(f.inventory.forSlot(0).getId(), Data.itemId('Watering can(8)'));
+  assert.equal(f.inventory.forSlot(1).getId(), Data.itemId('Watering can(8)'),
+    'the second carried can fills too');
+  assert.equal(f.inventory.forSlot(2).getMetaValue('farming:water'), 1000,
+    "a carried Gricoller's can fills as well");
 });

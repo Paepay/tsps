@@ -59,14 +59,30 @@ function processed(skill, itemId) {
   return null;
 }
 
+/**
+ * The global Abundance event (skills/global-events) runs before this relic, so its extra raw
+ * resource is already in the inventory. Take it back and fold it into this gather so it is
+ * delivered processed with the rest (#240, #241).
+ */
+function takeAbundanceExtra(request) {
+  const announced = Math.max(0, Number(request.abundanceExtra) || 0);
+  if (announced <= 0) return 0;
+  const inventory = request.player.getInventory();
+  const taken = Math.min(announced, inventory.getAmount(request.itemId));
+  if (taken > 0) inventory.deleteNumber(request.itemId, taken);
+  return taken;
+}
+
 function process(request) {
   const { player, amount } = request;
   if (request.stored >= amount || !wearsBoots(player)) return;
   const result = processed(request.skill, request.itemId);
   if (!result) return;
+  const abundance = takeAbundanceExtra(request);
   processing.set(request, request.itemId);
+  request.amount = amount + abundance;
   request.itemId = result.itemId;
-  if (result.xp > 0) player.getSkillManager().addExperiences(result.skill, result.xp * (amount - request.stored));
+  if (result.xp > 0) player.getSkillManager().addExperiences(result.skill, result.xp * (request.amount - request.stored));
 }
 
 /** What nobody stored goes to the inventory as the processed item, in the raw item's place. */

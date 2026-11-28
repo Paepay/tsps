@@ -134,6 +134,25 @@ function addLoot(loot, id, amount) {
   else loot.push({ id, amount });
 }
 
+/**
+ * The elite clue tertiary goes through the clue system's capacity and scroll-box rules, as the
+ * Gauntlet chest does: after X Marks the Spot the player receives the tier's scroll box, and a
+ * player already at the tier's limit receives nothing (the tier's warning still fires). The
+ * roll itself has already happened; only delivery is filtered.
+ */
+function rollEliteClue(player, I) {
+  const api = Shared.api();
+  const receive = { player, tier: "elite", allowed: null };
+  api?.emitCustomEvent?.("treasure-trails:can-receive", receive);
+  if (receive.allowed === false) {
+    api?.emitCustomEvent?.("treasure-trails:missed-clue", { player, tier: "elite" });
+    return null;
+  }
+  const clue = { player, itemId: I.CLUE_SCROLL_ELITE_, box: false };
+  api?.emitCustomEvent?.("treasure-trails:clue-item", clue);
+  return clue.itemId;
+}
+
 /** The source the chest's unique roll names on "drops:chance". */
 const CHANCE_SOURCE = "Theatre of Blood";
 
@@ -196,7 +215,10 @@ function rollRaid(raid, random = Math.random) {
       }
     }
     const own = standing(member);
-    if (random() < table.clue * own) addLoot(loot, I.CLUE_SCROLL_ELITE_, 1);
+    if (random() < table.clue * own) {
+      const clue = rollEliteClue(player, I);
+      if (clue != null) addLoot(loot, clue, 1);
+    }
     if (random() < table.pet * own) addLoot(loot, I.LIL_ZIK, 1);
     if (inTarget) {
       if (random() < table.dust * own) addLoot(loot, I.SANGUINE_DUST, 1);

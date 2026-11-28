@@ -63,7 +63,7 @@ test("the standard Ape Atoll Teleport still casts from the standard book", async
   const f = caster(t, core.MagicSpellbook.NORMAL);
   for (const [id, n] of [[563, 2], [555, 2], [554, 2], [1963, 1]]) f.p.getInventory().add(new core.Item(id, n), false);
   await click(f, core.CacheDefinitions.getSpellByName("Ape Atoll Teleport").widgetId);
-  assert.deepEqual([f.p.getLocation().getX(), f.p.getLocation().getY()], [2798, 2799],
-    "the safe upstairs section of the Temple of Marimbo, not the wall below it");
+  assert.deepEqual([f.p.getLocation().getX(), f.p.getLocation().getY(), f.p.getLocation().getZ()], [2798, 2799, 1],
+    "the safe upstairs section of the Temple of Marimbo, not the ground floor or the wall below it");
   assert.equal(f.p.getInventory().getAmount(1963), 0, "the banana went");
 });

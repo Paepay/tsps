@@ -75,6 +75,7 @@ function offered(by) {
 /** onCanTrade: between group mates, neither may be offered more than they may still receive. */
 function canTrade(event) {
   const { player, target } = event;
+  if (Common.isDeveloper(player) || Common.isDeveloper(target)) return;
   if (event.allow === false || !Common.isGroupIronman(player) || !groupMates(player, target)) return;
   for (const [receiver, giver] of [[player, target], [target, player]]) {
     const left = remaining(receiver);

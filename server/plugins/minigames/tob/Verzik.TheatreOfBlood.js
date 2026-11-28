@@ -1606,29 +1606,50 @@ function pickupDawnbringer(event) {
   if (!room || room.phase !== 1) event.handled = true;
 }
 
-/** The skeleton in Xarpus' room holds the Dawnbringer once Xarpus is beaten. */
+/** Per raid, the players who have already taken their Dawnbringer from the skeleton. */
+const dawnbringerTaken = new WeakMap();
+
+function takenBy(raid) {
+  let taken = dawnbringerTaken.get(raid);
+  if (!taken) dawnbringerTaken.set(raid, taken = new WeakSet());
+  return taken;
+}
+
+/**
+ * The skeleton in Xarpus' room holds the Dawnbringer once Xarpus is beaten. Each player takes
+ * their own staff from it, as the Wiki's "the skeleton ... gives a Dawnbringer" does; the
+ * searched form is therefore their own object, not a shared or world-wide replacement.
+ */
 function searchSkeleton(event) {
   const { player } = event;
   const raid = Raid.raidOf(player);
   if (!raid) return false;
-  const xarpus = raid.room;
-  if (!xarpus || xarpus.key !== "XARPUS" || !xarpus.isCompleted()) {
+  const room = raid.room;
+  const atXarpus = raid.member(player).roomKey === "XARPUS";
+  const complete = raid.completedRooms?.has("XARPUS") === true
+    || (room?.key === "XARPUS" && room.isCompleted());
+  if (!complete || (!atXarpus && room?.key !== "XARPUS")) {
     player.sendMessage("You can't search this until the challenge is complete.");
     return true;
   }
-  const { Item, ObjectManager } = Shared.core();
+  const taken = takenBy(raid);
+  if (taken.has(player)) return true;
+  const { Item, GameObject, ObjectManager } = Shared.core();
   const inventory = player.getInventory();
   if (inventory.getFreeSlots() <= 0) {
     player.sendMessage("You don't have enough inventory space to take the Dawnbringer.");
     return true;
   }
+  taken.add(player);
   inventory.add(new Item(DAWNBRINGER, 1), false);
   inventory.refreshItems();
   const skeleton = event.object;
   if (skeleton) {
-    const location = skeleton.getLocation();
-    ObjectManager.deregister(skeleton, true);
-    xarpus.placeObject(OBJECT.SKELETON_SEARCHED, { x: location.getX(), y: location.getY(), z: location.getZ() }, skeleton.getType(), skeleton.getFace());
+    // Only this player sees the searched skeleton: the base map loc stays for everyone else,
+    // and for later raids, instead of being deregistered world-wide.
+    const searched = new GameObject(OBJECT.SKELETON_SEARCHED, skeleton.getLocation().clone(),
+      skeleton.getType(), skeleton.getFace(), raid.area).setOwner(player);
+    ObjectManager.register(searched, true);
   }
   Shared.statement(player, "You find the Dawnbringer; you feel a pulse of energy burst through it.");
   return true;

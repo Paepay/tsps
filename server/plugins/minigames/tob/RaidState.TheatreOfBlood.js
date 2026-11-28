@@ -272,6 +272,7 @@ class Room {
     if (this.stage === STAGE.COMPLETED) return;
     this.stage = STAGE.COMPLETED;
     const raid = this.raid;
+    raid.completedRooms.add(this.key);
     const ticks = Shared.cycle() - (this.startCycle || Shared.cycle());
     raid.totalTicks += ticks;
     raid.roomTicks[this.key] = ticks;
@@ -466,6 +467,8 @@ class Raid {
     this.spectators = new Set();
     /** Combat Achievement tasks already failed this raid. */
     this.failedTasks = new Set();
+    /** Room keys the party has cleared, kept after a room is torn down (the Xarpus skeleton). */
+    this.completedRooms = new Set();
     this.over = false;
     this.failed = false;
     for (const player of party.members) this.add(player);

@@ -57,22 +57,46 @@ const { locationRequirement, DROP_LOCATIONS } = __internals;
 const limitedRows = () => [...__internals.tablesByNpc.values()].flat().flatMap((table) =>
   ["entries", "tertiary"].flatMap((field) => (table[field] || [])
     .filter((entry) => locationRequirement(entry)).map((entry) => ({ table, field, entry, place: locationRequirement(entry) }))));
+const placesOf = (requirement) => requirement.places ?? [requirement.place];
 
 test("every place a drop note names has bounds", () => {
-  const missing = [...new Set(limitedRows().map((row) => row.place.place))].filter((place) => !DROP_LOCATIONS[place]?.boxes?.length);
+  const missing = [...new Set(limitedRows().flatMap((row) => placesOf(row.place)))].filter((place) => !DROP_LOCATIONS[place]?.boxes?.length);
   assert.deepEqual(missing, []);
 });
 
 test("rows limited to a place are kept inside it and removed outside it", () => {
   const places = new Set();
   for (const { table, field, entry, place } of limitedRows()) {
-    places.add(place.place);
-    const [x1, y1] = DROP_LOCATIONS[place.place].boxes[0];
-    const keeps = (x, y) => __internals.withoutOtherLocations(table, npc("Monster", x, y))[field].includes(entry);
-    assert.equal(keeps(x1 + 1, y1 + 1), !place.not, `${table.table_id} ${entry.name} inside ${place.place}`);
-    assert.equal(keeps(2903, 9780), place.not, `${table.table_id} ${entry.name} in Taverley Dungeon`);
+    for (const name of placesOf(place)) {
+      places.add(name);
+      const [x1, y1] = DROP_LOCATIONS[name].boxes[0];
+      const keeps = (x, y) => __internals.withoutOtherLocations(table, npc("Monster", x, y))[field].includes(entry);
+      assert.equal(keeps(x1 + 1, y1 + 1), !place.not, `${table.table_id} ${entry.name} inside ${name}`);
+      assert.equal(keeps(2903, 9780), place.not, `${table.table_id} ${entry.name} in Taverley Dungeon`);
+    }
   }
   assert.deepEqual([...places].sort(), Object.keys(DROP_LOCATIONS).filter((key) => key !== "$comment").sort());
+});
+
+test("dark beasts drop crystal shards only in Prifddinas or the Iorwerth Dungeon", () => {
+  // Wiki (Dark beast): the note is "Crystal shards are only dropped when they are killed while
+  // the player is in Prifddinas or the Iorwerth Dungeon." The same table serves the Mourner
+  // Tunnels' 19 dark beasts, which must not drop shards (#236).
+  const table = [...__internals.tablesByNpc.values()].flat().find((candidate) => candidate.table_id === "dark_beast");
+  const rolls = (x, y) => {
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+      return __internals.rollTable(table, player, npc("Dark beast", x, y)).some((drop) => drop.itemId === 23962);
+    } finally {
+      Math.random = random;
+    }
+  };
+  assert.equal(rolls(1988, 4659), false, "Mourner Tunnels");
+  assert.equal(rolls(2033, 4662), false, "Mourner Tunnels, western end");
+  assert.equal(rolls(3158, 12427), true, "Iorwerth Dungeon");
+  assert.equal(rolls(3225, 6050), true, "Prifddinas");
+  assert.equal(rolls(2903, 9780), false, "Taverley Dungeon");
 });
 
 test("a blue dragon rolls its frozen tear only in the Ruins of Tapoyauik", () => {

@@ -232,8 +232,10 @@ function defineDoorData({ ObjectIdentifiers: O }) {
 
   // Curtains do not swing: the open loc is a drawn-back curtain model (1534: 879/880 vs the
   // closed 1533's 884/885) that replaces the closed one on the same tile with the same rotation.
-  // These floor trapdoors likewise replace their model in place.
-  IN_PLACE_DOOR_IDS = new Set([O.CURTAIN_3, O.TRAPDOOR_4, O.TRAPDOOR_5]);
+  // These floor trapdoors likewise replace their model in place. The Temple of Marimbo's trapdoor
+  // (4879 -> 4880) must stay on 2807,2785: the generic swing would put the open leaf one tile east,
+  // in the wall/building exterior (issue 226).
+  IN_PLACE_DOOR_IDS = new Set([O.CURTAIN_3, O.TRAPDOOR_4, O.TRAPDOOR_5, O.TRAPDOOR_20]);
 
   // Doors that swing to the far side of their wall: the open leaf stays on the closed leaf's tile,
   // turned a quarter, instead of stepping onto the next tile. buildDoorCatalog adds every door

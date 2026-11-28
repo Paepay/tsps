@@ -2700,3 +2700,18 @@ test('opening from inside a doorway can clear along the other same-side axis whe
     assert.deepEqual(ops.at(-1), ['register', 1536, 2650, 3298, 1]);
   } finally { h.restore(); }
 });
+
+test('the Temple of Marimbo trapdoor opens on its own tile, not one east (issue 226)', () => {
+  const cacheObjects = new Map([4879, 4880, 4881].map((id) => [id, CacheDefinitions.getObject(id)]));
+  const h = buildHarness({ cacheObjects });
+  try {
+    h.place(4879, 2807, 2785, 2);
+    const ops = h.click(4879, 2807, 2785, 2, 'Open', 'Trapdoor', 22, null, 0, [2806, 2785]);
+    const registered = ops.find(([op, id]) => op === 'register' && id === 4880);
+    assert.ok(registered, `the open trapdoor is registered: ${JSON.stringify(ops)}`);
+    assert.deepEqual(registered.slice(2, 4), [2807, 2785], 'the open leaf stays on the closed trapdoor tile');
+    assert.equal(registered[4], 2, 'and keeps its rotation');
+    assert.ok(!ops.some(([op, id, x]) => op === 'register' && id === 4880 && x === 2808),
+      'it does not move one tile east, outside the building');
+  } finally { h.restore(); }
+});

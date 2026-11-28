@@ -2349,7 +2349,7 @@ test("Minion: skips a demonic gorilla's id-driven protection prayer and falls ba
   }
 });
 
-test("Minion: never attacks a non-attackable NPC such as a slayer master, but still fights an attackable one (#133)", (t) => {
+test("Minion: never attacks a non-attackable NPC or an interaction-only combat option, but still fights an attackable one (#133, #238)", (t) => {
   const player = cases(MINION).relic;
   player.setAttribute(Minion().ITEMS_ATTRIBUTE, null);
   const formulas = core.AccuracyFormulasDpsCalc;
@@ -2380,6 +2380,13 @@ test("Minion: never attacks a non-attackable NPC such as a slayer master, but st
   Minion().tick(player, minion);
   assert.equal(shown.animations.length, 0, "the minion never attacks a non-attackable NPC");
   assert.equal(shown.npc, null, "and does not take its style's look");
+  assert.equal(following, player, "it follows its owner instead");
+  // Charge/Douse are registered combat options so the engine routes those clicks as combat,
+  // but they are interactions, not monsters with an Attack option (#238).
+  definition = { getName: () => "Totem", isAttackable: () => true, isAttackableMonster: () => false };
+  Minion().tick(player, minion);
+  assert.equal(shown.animations.length, 0, "the minion never attacks an interaction-only combat option");
+  assert.equal(shown.npc, null, "and does not take its style's look for it");
   assert.equal(following, player, "it follows its owner instead");
   definition = { getName: () => "Goblin", isAttackable: () => true };
   Minion().tick(player, minion);

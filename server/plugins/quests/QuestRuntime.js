@@ -956,6 +956,9 @@ function registerQuestDefinitions(api, names) {
 function completeAllQuests(player) {
   if (!player || player.isPlayerBot?.()) return false;
   let changed = false;
+  const previousWithheld = player.getAttribute(EXPERIENCE_WITHHELD_ATTRIBUTE);
+  const withheld = new Set(Array.isArray(previousWithheld) ? previousWithheld : []);
+  let withheldChanged = false;
   for (const quest of quests) {
     const completedAt = Number(quest.completionValue ?? 2);
     let stage = quest.getStage(player);
@@ -964,10 +967,20 @@ function completeAllQuests(player) {
       stage = completedAt;
       changed = true;
     }
+    // Quests-off completion never ran the quest, so its XP (and every post-quest XP claim
+    // that checks experienceWithheld) stays unpaid just as it would for a quest pack.
+    if (!withheld.has(quest.key)) {
+      withheld.add(quest.key);
+      withheldChanged = true;
+    }
     // Quests-off completion sets the saved stage directly, so quests whose native varbits
     // normally change from "quest:stage-changed" must restore them here. This also heals saves
     // made before that restoration existed, which already have the completed stage.
     quest.restoreStageState?.(player, stage);
+  }
+  if (withheldChanged) {
+    player.setAttribute(EXPERIENCE_WITHHELD_ATTRIBUTE, [...withheld]);
+    changed = true;
   }
   sendQuestVarps({ player });
   const totalPoints = quests.reduce((sum, quest) => sum + (Number(quest.questPoints) || 0), 0);

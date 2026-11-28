@@ -291,9 +291,7 @@ class GauntletRun {
     this.timer?.stop?.();
     this.hunllef?.stop();
     Resources.stopGathering(this.player);
-    runs.delete(this.player.getUsername());
     const player = this.player;
-    player.setAttribute(ATTR_RUN, null);
     const now = Shared.core().World.getProcessCycle();
     if (reason === "death") {
       recordStat(player, "deaths", this.mode);
@@ -305,6 +303,11 @@ class GauntletRun {
 
     const leave = () => {
       Shared.clearItems(player);
+      // The run, and its marker, must outlive the fade: until the kit is actually taken a death
+      // still has to be protected from dropping Gauntlet items into a grave or Death's Office
+      // (issue #221). Forget them only now that the inventory and equipment are empty.
+      forgetRun(this);
+      player.setAttribute(ATTR_RUN, null);
       player.resetAttributes();
       const sender = player.getPacketSender();
       sender.closeSubInterface(Shared.OVERLAY_HUD_UID);

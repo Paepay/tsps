@@ -20,7 +20,7 @@ function objectAt(id, x, y) {
   };
 }
 
-function player({ inventory = {}, levels = {} } = {}) {
+function player({ inventory = {}, levels = {}, equipped = [] } = {}) {
   const messages = [];
   const items = new Map(Object.entries(inventory).map(([id, amount]) => [Number(id), amount]));
   return {
@@ -33,6 +33,7 @@ function player({ inventory = {}, levels = {} } = {}) {
       getItems: () => [...items.entries()].map(([id, amount]) => ({ getId: () => id, getAmount: () => amount })),
       deleteNumber: (id, amount) => items.set(id, Math.max(0, (items.get(id) ?? 0) - amount)),
     }),
+    getEquipment: () => ({ getItems: () => equipped.map((id) => ({ getId: () => id })) }),
     getSkillManager: () => ({
       getCurrentLevel: (skill) => levels[skill] ?? 99,
       addExperiences: () => {},
@@ -50,6 +51,7 @@ function fixture() {
       forId: (id) => ({ getName: () => ({
         1511: "Logs", 1513: "Magic logs", 1517: "Maple logs", 1515: "Yew logs",
         11337: "Mangled bones", 11338: "Chewed bones", 590: "Tinderbox", 1351: "Rune axe",
+        1363: "Rune battleaxe", 1275: "Rune pickaxe",
         861: "Magic shortbow", 855: "Yew longbow", 837: "Crossbow",
       }[id] ?? "") }),
     },
@@ -113,6 +115,22 @@ test("construct refuses without an axe or logs and does not consume anything", (
   const noLogs = player({ inventory: { 1351: 1 } });
   T.construct({ player: noLogs, object: objectAt(T.PYRE_SITE, 2503, 3498) });
   assert.equal(f.events.length, 0);
+});
+
+test("a worn axe carves a pyre ship, while a worn battleaxe or pickaxe does not", () => {
+  fixture();
+  const worn = player({ inventory: { 1513: 1 }, equipped: [1351] });
+  T.itemOnSite({ player: worn, object: objectAt(T.PYRE_SITE, 2503, 3498), objectId: T.PYRE_SITE, itemId: 1513, handled: false });
+  assert.equal(worn.getInventory().getAmount(1513), 0);
+  assert.equal(worn.messages.at(-1), "You place the logs on the pyre.");
+
+  for (const tool of [1363, 1275]) {
+    fixture();
+    const p = player({ inventory: { 1513: 1 }, equipped: [tool] });
+    T.itemOnSite({ player: p, object: objectAt(T.PYRE_SITE, 2503, 3498), objectId: T.PYRE_SITE, itemId: 1513, handled: false });
+    assert.equal(p.getInventory().getAmount(1513), 1, `${tool} is not a carving axe`);
+    assert.equal(p.messages.at(-1), "You need an axe to carve the pyre.");
+  }
 });
 
 test("lighting a bones pyre needs a tinderbox or bow and grants Firemaking experience", () => {

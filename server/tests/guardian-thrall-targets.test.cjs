@@ -225,6 +225,47 @@ test("Guardian refuses Araxxor's harvestable corpse, so it cannot remove task KC
   Guardian.dismiss(owner, true);
 });
 
+test("Guardian ignores a scripted combat-option NPC such as a Nightmare totem (#238)", (t) => {
+  // Charge/Douse are registered combat options so the engine routes those clicks as combat.
+  // That makes isAttackable true, but they are interactions, not monsters with an Attack option.
+  const options = core.NpcDefinition.combatOptions;
+  const saved = options ? new Set(options) : null;
+  if (saved) t.after(() => { options.clear(); for (const option of saved) options.add(option); });
+  core.NpcDefinition.addCombatOption("Charge");
+  core.NpcDefinition.addCombatOption("Douse");
+  const totem = core.NpcDefinition.forId(9435);
+  const row = core.NpcDefinition.forId(14152);
+  const monster = core.NpcDefinition.forId(ARAXXOR);
+  assert.equal(totem.isAttackable(), true, "the engine still routes the totem's Charge as combat");
+  assert.equal(totem.isAttackableMonster(), false, "but Charge is not an Attack option");
+  assert.equal(row.isAttackable(), true, "the engine still routes the row's Douse as combat");
+  assert.equal(row.isAttackableMonster(), false, "but Douse is not an Attack option");
+  assert.equal(monster.isAttackableMonster(), true, "a real monster keeps its Attack option");
+
+  const target = {
+    isNpc: () => true,
+    isRegistered: () => true,
+    isUntargetable: () => false,
+    isNeedsPlacement: () => false,
+    isDyingFunction: () => false,
+    getId: () => 9435,
+    getHitpoints: () => 100,
+    getCurrentDefinition: () => totem,
+    getDefinition: () => totem,
+    getCombat: () => { throw new Error("the guardian must reject the totem before its combat"); },
+  };
+  const { player: owner } = player({ target });
+  const state = summon(t, owner);
+
+  for (let tick = 0; tick < 6; tick++) assert.equal(Guardian.tick(owner, state), true);
+
+  assert.equal(Guardian.targetOf(owner), null, "an interaction-only combat option is not a fight");
+  assert.equal(state.npc.animations.length, 0, "it never swings at the totem");
+  assert.equal(state.npc.interactions.length, 0, "it never faces/interacts with the totem");
+  assert.equal(state.npc.getFollowing(), owner, "it follows its owner instead");
+  Guardian.dismiss(owner, true);
+});
+
 test("Guardian still attacks a live attackable combat target, in its weakest defence style", (t) => {
   const queued = [];
   const live = {

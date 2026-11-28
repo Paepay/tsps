@@ -114,7 +114,9 @@ function actor(npcId, items = [], at = [3300, 3300, 0]) {
       await next();
     }
   }
-  const talkTo = () => PM.emitNpcInteraction({ player: p, npc, npcId, action: "Talk-to", clickType: 1, handled: false });
+  // NPCOptionPacketListener passes the resolved cache variant, so a multinpc spawn such as the
+  // gnomeball-house Zooknock 7194 reaches content hooks as ZOOKNOCK_4 (7171).
+  const talkTo = () => PM.emitNpcInteraction({ player: p, npc, npcId: npc.getContentId(p), action: "Talk-to", clickType: 1, handled: false });
   return { p, npc, npcId, lines, messages, choose, playToEnd, talkTo, tick, useItemOnItem, readItem,
     count: (id) => p.getInventory().getAmount(id) };
 }
@@ -213,7 +215,10 @@ test("Quests off: Kuradal's post-quest notes hand-out and reading unlock synapse
 
 test("Quests off: Zooknock's post-quest choice hands a zombie greegree", async () => {
   const { ItemIdentifiers: I } = core;
-  const a = actor(core.NpcIdentifiers.ZOOKNOCK_4);
+  // npc-spawns.json's house above the gnomeball field is multinpc 7194; on an MM2-complete
+  // world it transforms to ZOOKNOCK_4 (7171), which is what the reclaim hooks read.
+  const a = actor(7194);
+  assert.equal(a.npc.getContentId(a.p), core.NpcIdentifiers.ZOOKNOCK_4, "the spawn resolves to the post-quest Zooknock");
   a.talkTo();
   await a.choose("Monkey talisman.");
   await a.choose("Next.");
@@ -225,7 +230,7 @@ test("Quests off: Zooknock's post-quest choice hands a zombie greegree", async (
 
 test("Quests off: a Zooknock bank placeholder does not count as owning the greegree", async () => {
   const { ItemIdentifiers: I } = core;
-  const a = actor(core.NpcIdentifiers.ZOOKNOCK_4);
+  const a = actor(7194);
   a.p.getBank(0).add(new core.Item(I.ZOMBIE_MONKEY_GREEGREE, 0), false);
   assert.equal(a.p.getBank(0).getAmount(I.ZOMBIE_MONKEY_GREEGREE), 0, "stored as a placeholder");
   assert.equal(a.p.getBank(0).contains(I.ZOMBIE_MONKEY_GREEGREE), true, "the placeholder is still present");

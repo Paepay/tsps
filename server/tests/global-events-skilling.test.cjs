@@ -207,7 +207,7 @@ test("Infernal Gathering burns logs, smelts ore and cooks fish with the right XP
   assert.equal(usual.stored, 0, "an opted-out player keeps the log");
 });
 
-test("Production Master batches the whole eligible inventory, with no arbitrary cap", () => {
+test("Production Master batches the whole eligible inventory, with the event's inventory-sized caps", () => {
   Common.testing.reset();
   activate("production-master");
   const p = player();
@@ -216,13 +216,22 @@ test("Production Master batches the whole eligible inventory, with no arbitrary 
     emit("skills:actions-per-cycle", event);
     return event.actions;
   };
-  assert.equal(request(core.Skill.SMITHING, "smelt"), Number.MAX_SAFE_INTEGER);
-  assert.equal(request(core.Skill.HERBLORE, "clean"), Number.MAX_SAFE_INTEGER);
-  assert.equal(request(core.Skill.FLETCHING, "arrows"), Number.MAX_SAFE_INTEGER, "no per-kind cap");
+  // global-events.json production-master.config: 28 actions (one inventory) and 10 for the
+  // stackable arrow/bolt/dart recipes. The loops coerce actions with `| 0`, so a sentinel such
+  // as MAX_SAFE_INTEGER became -1 and made one item per cycle (#239).
+  assert.equal(request(core.Skill.SMITHING, "smelt"), 28);
+  assert.equal(request(core.Skill.SMITHING, "smith"), 28, "all smithed items, not just bars");
+  assert.equal(request(core.Skill.HERBLORE, "clean"), 28);
+  assert.equal(request(core.Skill.FLETCHING, "logs"), 28, "all fletching bow/log batches");
+  assert.equal(request(core.Skill.FLETCHING, "stringing"), 28);
+  assert.equal(request(core.Skill.FLETCHING, "arrows"), 10, "the stackable recipe's own cap");
+  assert.equal(request(core.Skill.FLETCHING, "bolts"), 10);
+  assert.equal(request(core.Skill.FLETCHING, "tipped"), 10);
+  assert.equal(request(core.Skill.FLETCHING, "darts"), 10);
   assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.FEATHER }] }),
-    Number.MAX_SAFE_INTEGER, "a stackable secondary is consumed per potion, not duplicated");
+    28, "a stackable secondary is consumed per potion, not duplicated");
   assert.equal(request(core.Skill.HERBLORE, "mix", { ingredients: [{ id: I.GUAM_LEAF }] }),
-    Number.MAX_SAFE_INTEGER);
+    28);
   assert.equal(request(core.Skill.ATTACK, "smelt"), 1, "a skill outside the batch list is untouched");
   assert.equal(request(core.Skill.SMITHING, "not-a-kind"), 1);
 

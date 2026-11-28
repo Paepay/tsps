@@ -8,9 +8,11 @@
  *
  * The owner's combat target is the only target domain: an interaction such as pickpocketing is not
  * an attack, so it never authorises the guardian. Before every attack the NPC must still be a
- * live, registered, attackable target that the owner may attack now. That excludes skilling NPCs
- * and NPC remains/corpses, including Araxxor's harvestable corpse (id 13669), without naming any
- * one encounter here. The guardian never acquires a target of its own.
+ * live, registered monster with an Attack option that the owner may attack now. That excludes
+ * skilling NPCs, NPC remains/corpses (including Araxxor's harvestable corpse, id 13669), and
+ * interaction-only targets whose option is merely routed through combat (the Nightmare's totems'
+ * Charge, the Royal Titans' rows' Douse/Melt), without naming any one encounter here. The
+ * guardian never acquires a target of its own.
  */
 const Common = require("./Common.LeagueRelics");
 
@@ -69,6 +71,9 @@ function targetOf(player) {
   // The transformed form's own answer catches harvestable remains and other non-combat NPCs.
   const definition = target.getCurrentDefinition?.() ?? target.getDefinition?.();
   if (definition?.isAttackable?.() === false) return null;
+  // isAttackable also accepts scripted combat options (Charge, Douse, Melt), which are
+  // interactions, not monsters to fight. Only an NPC with an Attack option of its own counts.
+  if (definition?.isAttackableMonster?.() === false) return null;
   const combat = core.CombatFactory;
   if (combat?.validTarget && !combat.validTarget(player, target)) return null;
   if (combat?.canAttackPermission

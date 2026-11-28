@@ -44,6 +44,13 @@
       "down": { "id": 15648, "x": 2571, "y": 3295, "z": 1 },
       "landing": { "x": 2571, "y": 3294, "z": 1 },
       "downLanding": { "x": 2571, "y": 3298, "z": 0 }
+    },
+    {
+      "name": "Temple of Marimbo trapdoor (Ape Atoll; the climbing rope is 6416 tiles north, beyond the generic 6400-tile underground search; the landings match MonkeyMadnessI.Quest's TEMPLE_DUNGEON_LANDING/TEMPLE_SURFACE_LANDING)",
+      "up": { "id": 4881, "x": 2808, "y": 9201, "z": 0 },
+      "down": { "id": 4880, "x": 2807, "y": 2785, "z": 0 },
+      "landing": { "x": 2807, "y": 2784, "z": 0 },
+      "downLanding": { "x": 2808, "y": 9200, "z": 0 }
     }
   ]
 }

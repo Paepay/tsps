@@ -94,6 +94,15 @@ the rsprox index. Ticks below are counts of events across them.
   the current is gone. A player who clicked on the hit tick first moved 3 ticks later, every time.
 - **Recorded difference:** hits are 8-17; the Wiki's 22 is used.
 
+## The bind (lightning and fire)
+
+- Both the lightning's paralysis (3 ticks) and the fire's stun (7 ticks) are a bind: the Wiki's
+  currents "will bind the player", the stunned player "can still attack it", and in the chamber
+  "Teleports will still work". It is the engine's freeze timer, so it runs out on its own count;
+  a later bind extends one still running, never shortens it. Before issue 6432 it was a movement
+  block, released by a wall-clock check that the tick task nearly always failed: the player stayed
+  stuck (no walking, teleports or door) until the next bind released it.
+
 ## Fire (flame)
 
 - The Hydra walks to its spawn tile (1364, 10265), diagonal steps first. A player in the way doesn't

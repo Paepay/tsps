@@ -1,7 +1,7 @@
 // Run after `yarn build`: node --test tests/teleport-fixed-landings.test.cjs
 // The Watchtower and Ape Atoll teleports keep their one landing tile (docs/teleport-tablets.md): around them the 5x5
-// square holds tiles outside the tower top's walls and a sealed 2-tile pocket on Ape Atoll, which only the cache's
-// clipping shows (the tablet-destination test loads none, so every tile looked open).
+// square holds tiles outside the tower top's walls and the Temple of Marimbo's upstairs room on Ape Atoll, which only
+// the cache's clipping shows (the tablet-destination test loads none, so every tile looked open).
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { before, test } = require('node:test');
@@ -10,6 +10,7 @@ const { CachePipeline } = require('../dist/game/cache/CachePipeline');
 const { PluginManager } = require('../dist/plugins/PluginManager');
 const { CacheDefinitions } = require('../dist/game/cache/CacheDefinitions');
 const { RegionManager } = require('../dist/game/collision/RegionManager');
+const { Location } = require('../dist/game/model/Location');
 const { TeleportHandler } = require('../dist/game/model/teleportation/TeleportHandler');
 const SpellTeleports = require('../plugins/combat/SpellTeleports.plugin');
 
@@ -21,7 +22,7 @@ before(async () => {
   await CachePipeline.initialize(path.resolve(__dirname, '..'));
   core = PluginManager.getCoreApi();
   RegionManager.init();
-  for (const [x, y] of [[2549, 3112], [2796, 2798], [3212, 3424]]) RegionManager.loadMapFiles(x, y);
+  for (const [x, y] of [[2549, 3112], [2798, 2799], [3212, 3424]]) RegionManager.loadMapFiles(x, y);
   SpellTeleports.register({
     core, persistAttribute: () => {}, onPlayerLogin: () => {}, onInterfaceActionClick: () => {}, onCustomEvent: () => {},
     onItemAction: (handler) => { useTablet = handler; },
@@ -54,8 +55,32 @@ const at = (tile) => tile && [tile.getX(), tile.getY(), tile.getZ()];
 test('Watchtower and Ape Atoll Teleport land on their own tile, every cast', () => {
   for (let i = 0; i < 300; i++) {
     assert.deepEqual(at(cast('Watchtower Teleport')), [2549, 3112, 2], 'the tower top');
-    assert.deepEqual(at(cast('Ape Atoll Teleport')), [2796, 2798, 0]);
+    assert.deepEqual(at(cast('Ape Atoll Teleport')), [2798, 2799, 1], 'the safe upstairs room next to Hafuba');
   }
+});
+
+test('Ape Atoll lands in the safe upstairs room next to Hafuba, with the stairs reachable', () => {
+  // Hafuba's spawn (npc-spawns.json) is 2797,2798 on plane 1; the Wiki puts the spell next to her.
+  const landing = new Location(2798, 2799, 1);
+  assert.equal(RegionManager.blocked(landing, null), false, 'the landing tile is walkable');
+  assert.ok(landing.getX() === 2798 && landing.getY() === 2799 && landing.getZ() === 1);
+  // The upper room's exits are the Climb-down staircases (4755 at 2795,2795 and 2799,2795). A bounded
+  // flood from the landing must reach a standing tile beside one of them; it must not be a sealed room.
+  const seen = new Set(['2798,2799']);
+  const queue = [[2798, 2799]];
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 2780 || nx > 2820 || ny < 2780 || ny > 2820) continue;
+      const key = `${nx},${ny}`;
+      if (seen.has(key) || RegionManager.blocked(new Location(nx, ny, 1), null)) continue;
+      seen.add(key);
+      queue.push([nx, ny]);
+    }
+  }
+  assert.ok(seen.has('2794,2795'), 'the tile beside the west Climb-down staircase is reachable');
+  assert.ok(seen.size > 30, 'the landing opens onto the upstairs floor, not a sealed pocket');
 });
 
 test("the Watchtower tablet's Break lands on the same tile", () => {

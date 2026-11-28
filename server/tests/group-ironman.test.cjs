@@ -14,6 +14,7 @@ Server.installProductionPathResolver();
 const { CachePipeline } = require("../dist/game/cache/CachePipeline");
 const { PluginManager } = require("../dist/plugins/PluginManager");
 const { Player } = require("../dist/game/entity/impl/player/Player");
+const { PlayerRights } = require("../dist/game/model/rights/PlayerRights");
 const { Item } = require("../dist/game/model/Item");
 const { Misc } = require("../dist/util/Misc");
 const { DisplayNames } = require("../dist/game/entity/impl/player/DisplayNames");
@@ -357,6 +358,9 @@ test("a new member's receipts from the group are limited week by week, on trades
   offering(carl, []);
   assert.equal(canTrade(alice, carl), false);
   assert.equal(said(carl), message("capReached", { left: "1,000,000" }));
+  alice.setRights(PlayerRights.DEVELOPER);
+  assert.equal(canTrade(alice, carl), null, "a Discord Developer is never over the cap");
+  alice.setRights(PlayerRights.NONE);
   offering(alice, [new Item(COINS, 600_000)]);
   assert.equal(canTrade(alice, carl), null);
   for (const handler of hooks.get("onTradeCompleted")) handler({ player: carl, partner: alice, received: [new Item(COINS, 600_000)], given: [] });

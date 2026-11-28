@@ -23,6 +23,7 @@ let resetPrayers = 0;
 let customHandlers = new Map();
 let xp = [];
 let now = 0;
+let questsEnabled = true;
 
 beforeEach(() => {
   tasks = [];
@@ -35,6 +36,7 @@ beforeEach(() => {
   prayerSyncs = [];
   xp = [];
   now = 0;
+  questsEnabled = true;
 });
 
 class StubArea {
@@ -69,6 +71,7 @@ const core = {
   RegionManager: {},
   World: { getProcessCycle: () => now },
   ObjectIdentifiers: { LARGE_DOOR_73: 25594, LARGE_DOOR_74: 25595 },
+  PluginManager: { getPluginSwitch: (name) => name === "Quests" ? questsEnabled : undefined },
 };
 
 plugin.register({
@@ -318,6 +321,18 @@ test("completion pays the four XP rewards and grants Camelot once", () => {
   // Re-entering is refused, and a second completion event pays nothing again.
   customHandlers.get("knight-waves:completed")[0]({ player: p });
   assert.equal(xp.length, 4);
+});
+
+test("completion on a Quests-off world keeps the unlocks but pays no XP", () => {
+  questsEnabled = false;
+  const p = player({ wave: 7 });
+  enter(p);
+  hooks.npcDeath({ npc: spawned.at(-1) });
+  assert.equal(p.attrs.get("knight-waves:rewards"), true);
+  assert.deepEqual(xp, [], "auto-completed quests do not pay the Knight Waves XP");
+  assert.ok(!p.messages.includes(Common.MESSAGES.reward), "no XP reward line");
+  assert.equal(respawnGrants.length, 1, "Camelot respawn is still granted");
+  assert.equal(prayerSyncs.length, 1, "Chivalry and Piety synchronization still runs");
 });
 
 test("the squire plays the activity transcript before and after completion", () => {

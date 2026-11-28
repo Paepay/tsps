@@ -10,6 +10,7 @@ import { formatRespawn, respawnSecondsLeft } from "./respawn";
 
 type Rgba = [number, number, number, number];
 type Point = [number, number];
+type Rect = { x: number; y: number; w: number; h: number };
 type Shape = { points: Point[]; stroke: Rgba; fill: Rgba; width: number };
 type Text = { text: string; x: number; y: number; color: number; center: boolean };
 type Dot = { x: number; y: number; color: Rgba; radius: number };
@@ -29,6 +30,8 @@ const WHITE = 0xffffff;
 export class NpcOverlay implements WidgetOverlay {
     readonly drawBelowWidgets = true;
     private frame?: Frame;
+    /** The draw's font loader, for measuring names while reporting coverage. */
+    private fontLoader?: WidgetOverlayDrawContext["fontLoader"];
 
     constructor(private readonly plugin: NpcIndicatorsPlugin) {}
 
@@ -37,9 +40,34 @@ export class NpcOverlay implements WidgetOverlay {
         return this.frame.signature;
     }
 
+    /**
+     * The device rects the next draw will paint. A moving tagged NPC's signature changes every
+     * frame; without this the widget layer repaints the whole HUD for each change (#223).
+     */
+    coverage(): Rect[] | undefined {
+        const frame = this.frame ?? (this.frame = this.build());
+        const rects: Rect[] = [];
+        for (const shape of frame.shapes) rects.push(bounds(shape.points, shape.width));
+        for (const dot of frame.dots) {
+            const r = dot.radius + 1;
+            rects.push({ x: dot.x - r, y: dot.y - r, w: 2 * r, h: 2 * r + 1 });
+        }
+        const font = frame.texts.length > 0 ? this.fontLoader?.(frame.font.id) : undefined;
+        if (frame.texts.length > 0 && !font) return undefined;
+        const { scale } = frame.font;
+        const h = 16 * scale;
+        for (const text of frame.texts) {
+            const w = (font ? font.measure(text.text) : 0) * scale;
+            const x = text.center ? text.x - w / 2 : text.x;
+            rects.push({ x: x - 2, y: text.y - h, w: w + 4, h: h + 4 * scale });
+        }
+        return rects;
+    }
+
     draw(context: WidgetOverlayDrawContext): { x: number; y: number; w: number; h: number }[] {
         const frame = this.frame ?? this.build();
         this.frame = undefined;
+        this.fontLoader = context.fontLoader;
         if (frame.shapes.length + frame.texts.length + frame.dots.length === 0) return [];
         const glr = context.renderer as any;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -182,6 +210,16 @@ export class NpcOverlay implements WidgetOverlay {
             frame.texts.push({ text, x: p[0], y: p[1] + 6, color: WHITE, center: true });
         }
     }
+}
+
+/** A rect around projected points with a pad on every side, as draw's grow() bounds them. */
+function bounds(points: readonly Point[], pad: number): Rect {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of points) {
+        minX = Math.min(minX, x - pad); minY = Math.min(minY, y - pad);
+        maxX = Math.max(maxX, x + pad); maxY = Math.max(maxY, y + pad);
+    }
+    return Number.isFinite(minX) ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : { x: 0, y: 0, w: 0, h: 0 };
 }
 
 function rgb(argb: number): number {

@@ -252,7 +252,7 @@
         "dropRate": { "fromTier": { "1": 2, "4": 5 } },
         "runEnergy": { "fromTier": 1 },
         "scrollBoxes": { "fromTier": 1 },
-        "minigamePoints": { "fromTier": { "1": 4, "4": 8 }, "minigames": ["pest-control", "soul-wars", "castle-wars", "guardians-of-the-rift", "mage-training-arena", "volcanic-mine", "giants-foundry", "mastering-mixology", "mahogany-homes", "tithe-farm", "brimhaven-agility-arena", "warriors-guild", "hallowed-sepulchre", "rooftop-agility", "shooting-stars", "barbarian-assault"] },
+        "minigamePoints": { "fromTier": { "1": 4, "4": 8 }, "minigames": ["pest-control", "soul-wars", "castle-wars", "guardians-of-the-rift", "mage-training-arena", "volcanic-mine", "giants-foundry", "mastering-mixology", "mahogany-homes", "tithe-farm", "brimhaven-agility-arena", "warriors-guild", "hallowed-sepulchre", "rooftop-agility", "shooting-stars", "barbarian-assault", "vale-totems"] },
         "slayer": { "fromTier": 3, "pointsMultiplier": 5, "freeTasks": 0, "biggerAndBadder": true, "superiorChance": 50 },
         "combatXp": { "fromTier": 3, "multiplier": 1.5, "skills": ["ATTACK", "STRENGTH", "DEFENCE", "RANGED", "MAGIC", "HITPOINTS", "PRAYER"] }
       }

@@ -73,6 +73,20 @@ function yieldCount(player, amount) {
   return amount;
 }
 
+/**
+ * The global Abundance event (skills/global-events) runs its `storage:gather` before this relic's,
+ * so it has already placed its extra raw resource in the inventory. Take that copy back so the
+ * processed yield replaces it instead of sitting beside it (#240, #241).
+ */
+function takeAbundanceExtra(request) {
+  const announced = Math.max(0, Number(request.abundanceExtra) || 0);
+  if (announced <= 0) return 0;
+  const inventory = request.player.getInventory();
+  const taken = Math.min(announced, inventory.getAmount(request.itemId));
+  if (taken > 0) inventory.deleteNumber(request.itemId, taken);
+  return taken;
+}
+
 function deliver(player, itemId, count) {
   if (count <= 0) return true;
   const endless = Common.data.effects.endlessHarvest;
@@ -89,7 +103,8 @@ function burnLogs(request) {
   const fire = { logId: itemId, xp: null };
   api.emitCustomEvent("firemaking:log-xp", fire);
   if (!(fire.xp > 0)) return;
-  const count = yieldCount(player, amount);
+  const abundance = takeAbundanceExtra(request);
+  const count = yieldCount(player, amount + abundance);
   const outfit = { player, multiplier: 1 };
   api.emitCustomEvent("firemaking:xp-multiplier", outfit);
   player.getSkillManager().addExperiences(core.Skill.FIREMAKING, fire.xp * count * outfit.multiplier);
@@ -106,10 +121,15 @@ function smeltOre(request) {
   const bar = { oreId: itemId, outputId: smeltBars.get(itemId), allowSecondary: true, barId: null, xp: null };
   api.emitCustomEvent("smithing:bar-for-ore", bar);
   if (!bar.barId) return;
-  const count = yieldCount(player, amount);
-  if (!deliver(player, bar.barId, count)) return;
+  const abundance = takeAbundanceExtra(request);
+  const count = yieldCount(player, amount + abundance);
+  if (!deliver(player, bar.barId, count)) {
+    if (abundance > 0) player.getInventory().adds(itemId, abundance);
+    return;
+  }
   if (bar.xp > 0) player.getSkillManager().addExperiences(core.Skill.SMITHING, bar.xp * count);
-  const extra = count - amount;
+  // Abundance already paid the extra's gathering XP when it placed the raw resource.
+  const extra = Math.max(0, count - amount - abundance);
   if (extra > 0 && xp > 0) player.getSkillManager().addExperiences(core.Skill.MINING, (xp * extra) / amount);
   request.stored = amount;
   request.gatherProcessed = true;
@@ -121,12 +141,16 @@ function cookFish(request) {
   const cooked = { rawId: itemId, cookedId: null, xp: null };
   api.emitCustomEvent("cooking:cooked", cooked);
   if (!cooked.cookedId) return;
-  const count = yieldCount(player, amount);
-  if (!deliver(player, cooked.cookedId, count)) return;
+  const abundance = takeAbundanceExtra(request);
+  const count = yieldCount(player, amount + abundance);
+  if (!deliver(player, cooked.cookedId, count)) {
+    if (abundance > 0) player.getInventory().adds(itemId, abundance);
+    return;
+  }
   if (cooked.xp > 0) player.getSkillManager().addExperiences(core.Skill.COOKING, cooked.xp * count);
   player.performGraphic(new core.Graphic(BURN_GRAPHIC, 0, BURN_GRAPHIC_HEIGHT));
   player.getPacketSender().sendSoundEffect(core.Sound.FIRE_SUCCESSFUL.getId(), 1, 0, 1);
-  const extra = count - amount;
+  const extra = Math.max(0, count - amount - abundance);
   if (extra > 0 && xp > 0) player.getSkillManager().addExperiences(core.Skill.FISHING, (xp * extra) / amount);
   request.stored = amount;
   request.gatherProcessed = true;

@@ -1519,6 +1519,10 @@ export class PluginManager {
   }
 
   public static emitCanTrade(player: any, target: any): boolean | null {
+    // A Discord Developer trades on every world, game mode and account type; no plugin gate applies.
+    if (PluginManager.isDeveloper(player) || PluginManager.isDeveloper(target)) {
+      return null;
+    }
     if (PluginManager.canTradeHooks.length === 0) {
       return null;
     }
@@ -1537,11 +1541,19 @@ export class PluginManager {
     if (!event || event.handled || !event.player || !event.target) {
       return false;
     }
+    if (PluginManager.isDeveloper(event.player) || PluginManager.isDeveloper(event.target)) {
+      return false;
+    }
     for (const hook of PluginManager.tradeRequestHooks) {
       if (event.handled) break;
       PluginManager.executeHook(hook, event, "trade_request", "trade_request");
     }
     return event.handled === true;
+  }
+
+  /** The in-game DEVELOPER rank (the platform applies it from the Discord Developer role). */
+  public static isDeveloper(player: any): boolean {
+    return player?.getRights?.()?.getId?.() === PlayerRights.DEVELOPER.getId();
   }
 
   /** Observer-only: fires once per player after a completed trade, before the post-trade save. */

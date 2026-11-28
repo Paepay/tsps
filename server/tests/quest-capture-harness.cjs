@@ -30,6 +30,41 @@ h.setup = async function setup(regions) {
 };
 h.teardown = () => PM.emitServerShutdown({});
 
+/**
+ * A Quests-off world for the interactions the quest modules normally own. The Quests plugin is
+ * never loaded; QuestAutoComplete registers the quest definitions (so h.quest still works) and its
+ * shims, exactly as a world with the plugin switched off does. Only the named non-quest plugins
+ * are registered, because the directory load would load the Quests plugin too.
+ */
+h.setupQuestsOff = async function setupQuestsOff(regions, { pluginFiles = [] } = {}) {
+  await CachePipeline.initialize(path.resolve(__dirname, ".."));
+  h.core = PM.getCoreApi();
+  h.core.ObjectDefinition.init();
+  h.core.RegionManager.init();
+  for (const [x, y] of regions) h.core.RegionManager.loadMapFiles(x, y);
+  const real = PM.createApi("QuestsOffHarness");
+  const overridden = Object.create(h.core);
+  Object.defineProperty(overridden, "PluginManager", {
+    value: { getPluginSwitch: (name) => (name === "Quests" ? false : undefined) },
+  });
+  Object.defineProperty(overridden, "WorldDefinition", { value: { isMembersWorld: () => true } });
+  const api = new Proxy(real, {
+    get(target, property) {
+      if (property === "core") return overridden;
+      const value = target[property];
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  for (const file of pluginFiles) {
+    const plugin = require(path.resolve(__dirname, "..", "plugins", file));
+    if (typeof plugin === "function") plugin(api);
+    else plugin.register(api);
+  }
+  require("../plugins/quests/QuestAutoComplete.plugin.js").register(api);
+  PM.emitServerStartup({});
+  return api;
+};
+
 h.quest = (key = h.key) => QuestRuntime.getRegisteredQuests().findLast((entry) => entry.key === key);
 h.stage = (f) => h.quest().getStage(f.player);
 

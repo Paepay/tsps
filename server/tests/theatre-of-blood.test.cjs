@@ -19,7 +19,7 @@ const Lobby = require('../plugins/minigames/tob/Lobby.TheatreOfBlood');
 const RaidUnit = require('../plugins/minigames/tob/Raid.TheatreOfBlood');
 const Retrieval = require('../plugins/minigames/tob/Retrieval.TheatreOfBlood');
 
-const hooks = { prompts: [] };
+const hooks = { prompts: [], object: [] };
 
 /** Any hook registration the units make that a test doesn't need is a no-op. */
 function fakeApi() {
@@ -41,7 +41,7 @@ function fakeApiBase() {
       hooks.customHandlers[name] = [...(hooks.customHandlers[name] ?? []), handler];
     },
     persistAttribute() {},
-    onObjectInteraction() {},
+    onObjectInteraction: (handler, actions) => { hooks.object.push({ handler, actions }); },
     onInterfaceActionButton: (uid, handler) => { (hooks.buttons ??= {})[uid] = handler; },
     onZoneEnter() {},
     onZoneExit() {},
@@ -63,6 +63,25 @@ function choose(text) {
   const index = prompt.args.indexOf(text);
   assert.ok(index >= 0, `option "${text}" in ${JSON.stringify(prompt.args.filter((a) => typeof a === 'string'))}`);
   prompt.args[index + 1](prompt.player);
+}
+
+/** Fires an object click through the registered object hooks, in registration order like the engine. */
+function interactObject(player, object, clickType = 1) {
+  const definition = object.getDefinition();
+  const event = {
+    player, object, definition, objectId: object.getId(), clickType,
+    option: definition.getInteractions()[clickType - 1],
+    location: { x: object.getLocation().getX(), y: object.getLocation().getY(), z: object.getLocation().getZ() },
+    handled: false,
+  };
+  for (const entry of hooks.object) {
+    if (event.handled) break;
+    if (typeof entry.handler === 'function') { entry.handler(event); continue; }
+    if (entry.handler !== definition.getName()) continue;
+    const action = entry.actions?.[event.option];
+    if (action && action(event) !== false) event.handled = true;
+  }
+  return event;
 }
 
 function fakeContainer(capacity) {
@@ -611,6 +630,93 @@ test('Xarpus: 12 exhumed for a trio and 15 for four (Wiki)', () => {
   assert.equal(EXHUMED.count[4], 15);
 });
 
+test('the Xarpus skeleton gives the Dawnbringer and becomes its searched form (issue #232)', () => {
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const { raid, players: [solo] } = startRaid(['Bones']);
+  raid.buildRoom('XARPUS');
+  const xarpus = raid.room;
+  raid.member(solo).roomKey = 'XARPUS';
+  xarpus.complete();
+  assert.equal(xarpus.isCompleted(), true);
+  const tile = new Location(3171, 4397, 1);
+  const skeleton = MapObjects.getType(tile, 10, raid.area);
+  assert.equal(skeleton?.getId(), 32741, 'the skeleton stands on the way out of Xarpus');
+  const event = interactObject(solo, skeleton);
+  assert.equal(event.handled, true, 'Search is handled');
+  assert.equal(solo.getInventory().getAmount(I.DAWNBRINGER), 1);
+  assert.equal(MapObjects.getType(tile, 10, raid.area)?.getId(), 32742, 'the skeleton is left searched');
+  raid.dispose();
+});
+
+test('a party member going on first does not take the Xarpus skeleton from the others (issue #232)', () => {
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const { raid, players: [leader, behind] } = startRaid(['Ahead', 'Behind']);
+  raid.buildRoom('XARPUS');
+  raid.member(leader).roomKey = 'XARPUS';
+  raid.member(behind).roomKey = 'XARPUS';
+  raid.room.complete();
+  raid.advance(leader);
+  assert.equal(raid.room.key, 'VERZIK', 'the leader has gone through the door');
+  assert.equal(raid.member(behind).roomKey, 'XARPUS', 'the other member is still at Xarpus');
+  const tile = new Location(3171, 4397, 1);
+  const skeleton = MapObjects.getType(tile, 10, raid.area);
+  assert.equal(skeleton?.getId(), 32741);
+  const event = interactObject(behind, skeleton);
+  assert.equal(event.handled, true);
+  assert.equal(behind.getInventory().getAmount(I.DAWNBRINGER), 1, 'the resting member can still take the staff');
+  raid.dispose();
+});
+
+test('each member takes their own Dawnbringer from the Xarpus skeleton (issue #232)', () => {
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const { raid, players: [first, second] } = startRaid(['FirstStaff', 'SecondStaff']);
+  raid.buildRoom('XARPUS');
+  raid.member(first).roomKey = 'XARPUS';
+  raid.member(second).roomKey = 'XARPUS';
+  raid.room.complete();
+  const tile = new Location(3171, 4397, 1);
+
+  const firstEvent = interactObject(first, MapObjects.get(32741, tile, raid.area));
+  assert.equal(firstEvent.handled, true);
+  assert.equal(first.getInventory().getAmount(I.DAWNBRINGER), 1);
+  const firstSearched = MapObjects.getPrivateArea(first, 32742, tile);
+  assert.equal(firstSearched?.getOwner(), first, 'the first player sees their own searched skeleton');
+
+  // The second player's client still shows the base skeleton, so their click resolves that object.
+  const secondEvent = interactObject(second, MapObjects.get(32741, tile, raid.area));
+  assert.equal(secondEvent.handled, true);
+  assert.equal(second.getInventory().getAmount(I.DAWNBRINGER), 1, 'one player\'s search does not consume the other\'s');
+  assert.equal(MapObjects.getPrivateArea(second, 32742, tile)?.getOwner(), second);
+  raid.dispose();
+});
+
+test('searching the Xarpus skeleton does not remove it from a later raid (issue #232)', () => {
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const tile = new Location(3171, 4397, 1);
+
+  const first = startRaid(['FirstRaid']);
+  first.raid.buildRoom('XARPUS');
+  first.raid.member(first.players[0]).roomKey = 'XARPUS';
+  first.raid.room.complete();
+  const skeleton = MapObjects.getType(tile, 10, first.raid.area);
+  assert.equal(skeleton?.getId(), 32741);
+  const event = interactObject(first.players[0], skeleton);
+  assert.equal(event.handled, true);
+  assert.equal(first.players[0].getInventory().getAmount(I.DAWNBRINGER), 1);
+  first.raid.dispose();
+
+  const later = startRaid(['LaterRaid']);
+  later.raid.buildRoom('XARPUS');
+  later.raid.member(later.players[0]).roomKey = 'XARPUS';
+  later.raid.room.complete();
+  const laterSkeleton = MapObjects.getType(tile, 10, later.raid.area);
+  assert.equal(laterSkeleton?.getId(), 32741, 'the base map skeleton is still in the world');
+  const laterEvent = interactObject(later.players[0], laterSkeleton);
+  assert.equal(laterEvent.handled, true);
+  assert.equal(later.players[0].getInventory().getAmount(I.DAWNBRINGER), 1, 'the later raid can still take a staff');
+  later.raid.dispose();
+});
+
 test('Verzik: only poisoned weapons hurt Nylocas Athanatos', () => {
   const Verzik = require('../plugins/minigames/tob/Verzik.TheatreOfBlood');
   require('../dist/game/task/impl/CombatPoisonEffect').CombatPoisonData.init();
@@ -775,6 +881,65 @@ test('rewards: a unique replaces the commons; no contribution gets the cabbage; 
     const definition = ItemDefinition.forId(entry.id);
     assert.ok(definition.isStackable() || definition.isNoted(), `${entry.id} stacks or is noted`);
   }
+  raid.dispose();
+});
+
+/** Real treasure-trails handlers for one test, restored afterwards. */
+function withTreasureTrailHandlers(t, handlers) {
+  const names = Object.keys(handlers);
+  const saved = new Map(names.map(name => [name, hooks.customHandlers?.[name]]));
+  hooks.customHandlers ??= {};
+  for (const [name, list] of Object.entries(handlers)) hooks.customHandlers[name] = list;
+  t.after(() => {
+    for (const [name, list] of saved) {
+      if (list) hooks.customHandlers[name] = list;
+      else delete hooks.customHandlers[name];
+    }
+  });
+}
+
+/** Unique roll fails, three common rolls pass, then the tertiary clue roll is forced to 0. */
+function clueRollSequence(clue = 0) {
+  const values = [0.99, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, clue, 0.99];
+  let index = 0;
+  return () => values[index++];
+}
+
+test("the elite clue tertiary goes through the clue capacity service: a scroll box after X Marks the Spot", (t) => {
+  const Rewards = require('../plugins/minigames/tob/Rewards.TheatreOfBlood');
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const seen = [];
+  withTreasureTrailHandlers(t, {
+    'treasure-trails:can-receive': [(request) => { seen.push(`can:${request.tier}`); request.allowed = true; }],
+    'treasure-trails:clue-item': [(request) => {
+      seen.push(`item:${request.itemId}`);
+      assert.equal(request.itemId, I.CLUE_SCROLL_ELITE_, 'the vault rolls the elite clue scroll');
+      request.box = true;
+      request.itemId = I.SCROLL_BOX_ELITE_;
+    }],
+  });
+  const { raid, players: [solo] } = startRaid(['ClueBox']);
+  raid.member(solo).roomStats('MAIDEN').damage = 500;
+  const loot = Rewards.rollRaid(raid, clueRollSequence()).loot.get(solo);
+  assert.deepEqual(seen, ['can:elite', `item:${I.CLUE_SCROLL_ELITE_}`]);
+  assert.ok(loot.some((entry) => entry.id === I.SCROLL_BOX_ELITE_), 'the box replaces the scroll');
+  assert.equal(loot.some((entry) => entry.id === I.CLUE_SCROLL_ELITE_), false);
+  raid.dispose();
+});
+
+test("a player at the elite clue limit receives no clue and the tier's warning fires", (t) => {
+  const Rewards = require('../plugins/minigames/tob/Rewards.TheatreOfBlood');
+  const I = PluginManager.getCoreApi().ItemIdentifiers;
+  const missed = [];
+  withTreasureTrailHandlers(t, {
+    'treasure-trails:can-receive': [(request) => { request.allowed = false; }],
+    'treasure-trails:missed-clue': [(request) => { missed.push(request.tier); }],
+  });
+  const { raid, players: [solo] } = startRaid(['ClueCap']);
+  raid.member(solo).roomStats('MAIDEN').damage = 500;
+  const loot = Rewards.rollRaid(raid, clueRollSequence()).loot.get(solo);
+  assert.deepEqual(missed, ['elite']);
+  assert.equal(loot.some((entry) => entry.id === I.CLUE_SCROLL_ELITE_ || entry.id === I.SCROLL_BOX_ELITE_), false);
   raid.dispose();
 });
 

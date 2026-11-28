@@ -98,6 +98,7 @@ function character(name, profile, tier = 0, leagueType = 4) {
 
 const TRAILBLAZER = 4;
 const ECHOES = 5;
+const DEMONIC_PACTS = 6;
 
 function ask(name, payload) {
   for (const handler of custom[name] ?? []) handler(payload);
@@ -131,7 +132,7 @@ test("combat XP: Raging Echoes tier 3 doubles the combat skills on top of the le
 });
 
 test("minigame points: Trailblazer Reloaded 3x/5x/8x at tiers 2/5/7, Raging Echoes 4x/8x at tiers 1/4", () => {
-  const points = (player, amount = 10) => ask("minigame:points", { player, minigame: "pest-control", points: amount }).points;
+  const points = (player, amount = 10, minigame = "pest-control") => ask("minigame:points", { player, minigame, points: amount }).points;
   assert.equal(points(character("tr1", "league", 1)), 10, "tier 1 is below Trailblazer's first boost");
   assert.equal(points(character("tr2", "league", 2)), 30);
   assert.equal(points(character("tr4", "league", 4)), 30, "tier 4 keeps 3x");
@@ -144,6 +145,17 @@ test("minigame points: Trailblazer Reloaded 3x/5x/8x at tiers 2/5/7, Raging Echo
   assert.equal(points(character("re0", "league", 0, ECHOES)), 10, "no relic yet");
   assert.equal(points(character("main", "main")), 10);
   assert.equal(points(character("tr2b", "league", 2), 0), 0, "nothing to multiply");
+});
+
+test("Demonic Pacts' minigame points include Vale totem offerings, and only there (#215)", () => {
+  const points = (player, minigame = "vale-totems", amount = 10) =>
+    ask("minigame:points", { player, minigame, points: amount }).points;
+  assert.equal(points(character("dp1", "league", 1, DEMONIC_PACTS)), 40, "tier 1 is 4x");
+  assert.equal(points(character("dp3", "league", 3, DEMONIC_PACTS)), 40, "tier 3 keeps 4x");
+  assert.equal(points(character("dp4", "league", 4, DEMONIC_PACTS)), 80, "tier 4 is 8x");
+  assert.equal(points(character("tr4", "league", 4, TRAILBLAZER)), 10, "Trailblazer does not list it");
+  assert.equal(points(character("re4", "league", 4, ECHOES)), 10, "Raging Echoes does not list it");
+  assert.equal(points(character("main", "main")), 10);
 });
 
 test("slayer: 5x task points from the first task, Bigger and Badder free and superiors 1/50, from TR tier 4 / RE tier 3", () => {

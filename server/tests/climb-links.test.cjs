@@ -82,6 +82,20 @@ test('declared Wizards Tower pair links both ways from plugin data', () => {
     assert.deepEqual(lands(down, ClimbLinks.DOWN, new Location(3105, 3162, 0)), [3104, 9576, 0]);
 });
 
+test('the Temple of Marimbo trapdoor reaches its climbing rope and back', () => {
+    const { GameObject } = require('../dist/game/entity/impl/object/GameObject');
+    const closed = mapObject(2807, 2785, 0, 4879);
+    const open = new GameObject(4880, closed.getLocation(), closed.getType(), closed.getFace(), null);
+    assert.deepEqual(lands(open, ClimbLinks.DOWN, new Location(2806, 2785, 0)), [2808, 9200, 0],
+        'Climb-down lands beside the rope, 6416 tiles north');
+    const rope = mapObject(2808, 9201, 0, 4881);
+    assert.deepEqual(lands(rope, ClimbLinks.UP, new Location(2808, 9200, 0)), [2807, 2784, 0],
+        'Climb-up lands beside the trapdoor');
+    for (const [x, y] of [[2808, 9200], [2807, 2784]]) {
+        assert.equal(RegionManager.blocked(new Location(x, y, 0), null), false, `landing ${x},${y} is walkable`);
+    }
+});
+
 test('the Forthos Ruin staircase returns to the surface across the offset between regions', () => {
     const upstairs = new Location(1670, 3569, 0);
     const downstairs = new Location(1800, 9968, 0);

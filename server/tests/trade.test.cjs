@@ -8,6 +8,7 @@ Server.installProductionPathResolver();
 const { ItemDefinition } = require("../dist/game/definition/ItemDefinition");
 const { Item } = require("../dist/game/model/Item");
 const { PlayerStatus } = require("../dist/game/model/PlayerStatus");
+const { PlayerRights } = require("../dist/game/model/rights/PlayerRights");
 const { Inventory } = require("../dist/game/model/container/impl/Inventory");
 const { Trading } = require("../dist/game/content/Trading");
 const { ObjType } = require("../dist/game/cache/codec/rs/config/objtype/ObjType");
@@ -440,6 +441,48 @@ test("either trader's area can refuse a request before any trade state changes",
     assert.deepEqual([alice.getTrading().getInteract(), bob.getTrading().getInteract()], before);
     assert.equal(bob.packets.length, 0);
     assert.ok(alice.messages.includes('You cannot trade here.'));
+  }
+});
+
+test("a Discord Developer trades through area and global refusals on either side", (t) => {
+  t.mock.method(PluginManager, "emitCanTrade", () => false);
+  for (const developerSide of ["requester", "target"]) {
+    const alice = createPlayer(`alice-${developerSide}`, 1);
+    const bob = createPlayer(`bob-${developerSide}`, 2);
+    const area = { canTrade: () => false };
+    alice.getArea = bob.getArea = () => area;
+    (developerSide === "requester" ? alice : bob).getRights = () => PlayerRights.DEVELOPER;
+
+    alice.getTrading().requestTrade(bob);
+
+    assert.equal(alice.getTrading().getInteract(), bob);
+    assert.ok(bob.packets.some((packet) => packet.includes("wishes to trade with you.")),
+      "the Developer's request is sent despite the area and plugin gates");
+  }
+});
+
+test("plugin trade hooks never gate a Discord Developer", () => {
+  const developer = { getUsername: () => "dev", getDisplayName: () => "Dev", getRights: () => PlayerRights.DEVELOPER };
+  const ordinary = { getUsername: () => "other", getDisplayName: () => "Other", getRights: () => PlayerRights.NONE };
+  let canTradeCalled = 0;
+  let requestCalled = 0;
+  PluginManager.canTradeHooks.push({ handler: (event) => { canTradeCalled += 1; event.allow = false; } });
+  PluginManager.tradeRequestHooks.push({ handler: (event) => { requestCalled += 1; event.handled = true; } });
+  try {
+    for (const [player, target] of [[developer, ordinary], [ordinary, developer]]) {
+      assert.equal(PluginManager.emitCanTrade(player, target), null);
+      assert.equal(PluginManager.emitTradeRequest({ player, target, handled: false }), false);
+    }
+    assert.equal(canTradeCalled, 0);
+    assert.equal(requestCalled, 0);
+
+    assert.equal(PluginManager.emitCanTrade(ordinary, ordinary), false, "ordinary accounts still hit the hooks");
+    assert.equal(PluginManager.emitTradeRequest({ player: ordinary, target: ordinary, handled: false }), true);
+    assert.equal(canTradeCalled, 1);
+    assert.equal(requestCalled, 1);
+  } finally {
+    PluginManager.canTradeHooks.pop();
+    PluginManager.tradeRequestHooks.pop();
   }
 });
 

@@ -1005,10 +1005,23 @@ function itemOnObject(event) {
                 player.sendMessage("This water pump is damaged."); return;
             }
             if (player.getInventory().forSlot(event.itemSlot)?.getId() === id) {
-                const can = player.getInventory().forSlot(event.itemSlot);
-                if (core.CacheDefinitions.getItem(id).name === "Gricoller's can") can.setMetaValue(GRICOLLER_WATER_META, 1000);
-                else can.setId(Data.itemId("Watering can(8)"));
-                player.getInventory().refreshItems();
+                // Filling one can starts a run that fills every can the player carries (Wiki,
+                // Watering can: "The process of filling watering cans will automatically
+                // continue once started"), not just the one clicked.
+                const inventory = player.getInventory();
+                let filled = false;
+                for (const can of inventory.getItems()) {
+                    if (!can) continue;
+                    const name = core.CacheDefinitions.getItem(can.getId())?.name;
+                    if (name === "Gricoller's can") {
+                        can.setMetaValue(GRICOLLER_WATER_META, 1000);
+                        filled = true;
+                    } else if (/^Watering can(?:\([1-8]\))?$/.test(name ?? "") && can.getId() !== Data.itemId("Watering can(8)")) {
+                        can.setId(Data.itemId("Watering can(8)"));
+                        filled = true;
+                    }
+                }
+                if (filled) inventory.refreshItems();
             }
         }
         return;

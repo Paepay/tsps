@@ -474,7 +474,12 @@ export function registerClientOps(handlers: HandlerMap): void {
             Math.min(512, Math.floor(((clampedCamAngleX - 128) * 512) / 255)),
         );
         camera.snapToPitch(pitch);
-        camera.snapToYaw(camAngleY & 2047);
+        // CS2's yaw runs the other way round the compass from Camera.yaw. Script 7045 registers
+        // the compass ops 1-4 as North/East/South/West; script 1050 answers them with
+        // cam_forceangle(_, 0/1536/1024/512), so CS2 1536 is east and 512 is west. Our internal
+        // yaw is the reverse (512 faces east), matching the Hallowvale capture at t6659. Invert
+        // so north/south stay put and east/west are not mirrored (#217).
+        camera.snapToYaw((-camAngleY) & 2047);
     });
 
     handlers.set(Opcodes.CAM_GETANGLE_XA, (ctx) => {
@@ -492,7 +497,8 @@ export function registerClientOps(handlers: HandlerMap): void {
     handlers.set(Opcodes.CAM_GETANGLE_YA, (ctx) => {
         const osrsClient = (ctx.widgetManager as any).osrsClient;
         const camera = osrsClient?.camera;
-        ctx.pushInt(camera ? (camera.yaw | 0) & 2047 : 0);
+        // Report the same CS2 convention CAM_FORCEANGLE accepts.
+        ctx.pushInt(camera ? (-(camera.yaw | 0)) & 2047 : 0);
     });
 
     handlers.set(Opcodes.CAM_SETFOLLOWHEIGHT, (ctx) => {

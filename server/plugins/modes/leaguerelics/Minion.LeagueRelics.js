@@ -208,6 +208,9 @@ function targetOf(player) {
   // and CombatFactory's permission check alone does not ask that (#133).
   const definition = target.getCurrentDefinition?.() ?? target.getDefinition?.();
   if (definition?.isAttackable?.() === false) return null;
+  // isAttackable also accepts interaction-only options routed through combat (the Nightmare's
+  // totems' Charge, the Royal Titans' rows' Douse/Melt). Those are not monsters to fight (#238).
+  if (definition?.isAttackableMonster?.() === false) return null;
   if (DATA.spared.includes(definition?.getName?.())) return null;
   if (core.CombatFactory.canAttackPermission(player, target) !== core.CanAttackResponse.CAN_ATTACK) return null;
   return target;

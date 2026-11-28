@@ -36,6 +36,13 @@ function isGroupIronman(player) {
   return variantOfMode(modeOf(player)) !== null;
 }
 
+/** A Discord Developer trades on any world, whatever account mode they or their partner hold. */
+function isDeveloper(player) {
+  const rights = player?.getRights?.();
+  const developer = api?.core?.PlayerRights?.DEVELOPER;
+  return rights != null && developer != null && rights.getId?.() === developer.getId?.();
+}
+
 function setMode(player, mode) {
   if (modeOf(player) === mode) return;
   api.emitCustomEvent("ironman:set-mode", { player, mode });
@@ -74,7 +81,7 @@ function tellGroup(group, key, values, except = null) {
 }
 
 module.exports = {
-  init, variantOfMode, modeOfVariant, modeOf, isGroupIronman, setMode, groupOf, onlinePlayer, message, tell, tellGroup,
+  init, variantOfMode, modeOfVariant, modeOf, isGroupIronman, isDeveloper, setMode, groupOf, onlinePlayer, message, tell, tellGroup,
   get data() { return data; },
   get api() { return api; },
 };

@@ -558,6 +558,28 @@ test('dying, teleporting and logging out are handled by the run', () => {
   assert.equal(player.inventory.getValidItems().length, 0);
 });
 
+test('a death during the exit fade still keeps the run kit out of graves and Death\'s Office (issue #221)', () => {
+  bindHooks();
+  const player = fakePlayer('Leaving');
+  const run = Run.startRun(player, { random: seeded(6) });
+  ticks(3);
+  const carried = player.inventory.getValidItems().length + player.equipment.getValidItems().length;
+  assert.ok(carried > 0, 'the run kit is held');
+  run.end('exit');
+  assert.equal(Run.runOf(player), run, 'the run survives until the fade takes the kit');
+  assert.equal(player.getAttribute(Run.ATTR_RUN), 'regular', 'the run marker is still set');
+  const drop = { player, shouldDrop: null };
+  hooks.drops[0](drop);
+  assert.equal(drop.shouldDrop, false, 'nothing may be dropped while the kit is held');
+  const death = { player, handled: false };
+  hooks.death[0](death);
+  assert.equal(death.handled, true, 'the run handles a death during its own exit');
+  ticks(2);
+  assert.equal(Run.runOf(player), null, 'the fade then ends the run');
+  assert.equal(player.getAttribute(Run.ATTR_RUN), null);
+  assert.equal(player.inventory.getValidItems().length + player.equipment.getValidItems().length, 0);
+});
+
 test('passing the barrier from its corridor starts the fight and lands on the arena floor', () => {
   bindHooks();
   const player = fakePlayer('Eager');

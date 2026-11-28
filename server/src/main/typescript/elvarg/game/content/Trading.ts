@@ -4,6 +4,7 @@ import { ItemOnGroundManager } from "../entity/impl/grounditem/ItemOnGroundManag
 import { Player } from "../entity/impl/player/Player";
 import { Item } from "../model/Item";
 import { PlayerStatus } from "../model/PlayerStatus";
+import { PlayerRights } from "../model/rights/PlayerRights";
 import { SecondsTimer } from "../model/SecondsTimer";
 import { ItemContainer } from "../model/container/ItemContainer";
 import { StackType } from "../model/container/StackType";
@@ -151,10 +152,17 @@ export class Trading {
     }
 
     private static canTrade(player: Player, target: Player): boolean {
+        if (Trading.isDeveloper(player) || Trading.isDeveloper(target)) return true;
         for (const area of new Set([player.getArea?.(), target.getArea?.()])) {
             if (area && PluginManager.callArea(area, "canTrade", player, target) === false) return false;
         }
         return PluginManager.emitCanTrade(player, target) !== false;
+    }
+
+    /** A Discord Developer trades on every world, game mode and account type, and in every area. */
+    private static isDeveloper(player: any): boolean {
+        const developer = PlayerRights.DEVELOPER.getId();
+        return player?.getRights?.()?.getId?.() === developer;
     }
 
     public requestTrade(t_: Player) {

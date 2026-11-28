@@ -1,5 +1,16 @@
 {
-  "$comment": "Places named by 'Only dropped in X' / 'only dropped by those found in the X' notes on rows of npc-drops.json, as [x1, y1, x2, y2] boxes on any plane. The cache's world map areas (index 19 details) only name whole regions (Varlamore Underground, Kourend Underground, Stronghold of Security's origin), not these places, so each box is the extent of the Wiki-listed monsters' spawns in npc-spawns.json plus a margin. The test fails when a note names a place missing here.",
+  "$comment": "Places named by 'Only dropped in X' / 'only dropped by those found in the X' / 'only dropped when ... in X or Y' notes on rows of npc-drops.json, as [x1, y1, x2, y2] boxes on any plane. The cache's world map areas (index 19 details) only name whole regions (Varlamore Underground, Kourend Underground, Stronghold of Security's origin), not these places, so each box is the extent of the Wiki-listed monsters' spawns in npc-spawns.json plus a margin. The test fails when a note names a place missing here.",
+  "Prifddinas": {
+    "source": "plugins/skills/woodcutting/PrifddinasShards.Woodcutting.js's city music-map area (area 26): x 3200-3327, y 6016-6143 on plane 0. Iorwerth Dungeon is the crystal-shard slayer area and has its own box.",
+    "boxes": [
+      [
+        3200,
+        6016,
+        3327,
+        6143
+      ]
+    ]
+  },
   "Ruins of Tapoyauik": {
     "source": "Spawns of the blue dragons, icefiends, ice giants, Frost nagua and chilled jellies in the Ruins: x 1575-1722, y 9604-9658. Excludes the Fortis guards at y 9565-9575.",
     "boxes": [

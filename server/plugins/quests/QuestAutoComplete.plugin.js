@@ -63,6 +63,7 @@ function attach(api) {
     require("./TheFinalDawn.Quests")(api);
     require("./WhileGuthixSleeps.Quests")(api);
     require("./MonkeyMadnessII.Quests")(api);
+    require("./ShadowsOfCustodia.Quests").register(api);
     require("./DrakansMedallion.Quests").register(api);
   }
   api.log?.(`QuestAutoComplete: Quests is off; ${definitions.length} quests count as complete`);

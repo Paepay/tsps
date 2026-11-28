@@ -82,6 +82,11 @@ function gather(request) {
     if (placedExtra > 0) inventory.adds(itemId, placedExtra);
   }
 
+  // A gathering processor registered after this handler (a league relic's burn/smelt/cook) must
+  // process the extra too. Tell it how many raw items Abundance already placed so it can include
+  // them, instead of leaving the extra raw beside the processed base yield (#240, #241).
+  if (placedExtra > 0) request.abundanceExtra = placedExtra;
+
   if (placedExtra > 0 && xp > 0) {
     player.getSkillManager().addExperiences(skill, (xp * placedExtra) / amount);
   }
@@ -222,8 +227,14 @@ function actionsPerCycle(request) {
   const batch = Common.config().production?.batch ?? effect?.config?.batch ?? {};
   const skill = Object.keys(batch).find((name) => core.Skill[name] === request.skill);
   if (!skill || !batch[skill].includes(request.kind)) return;
-  // Far above any real inventory; each loop still stops when its materials or space run out.
-  request.actions = Math.max(request.actions ?? 1, Number.MAX_SAFE_INTEGER);
+  // The loops coerce this with `| 0`, so Number.MAX_SAFE_INTEGER became -1 and every loop made
+  // one item. Use the event's inventory-sized cap; a stackable recipe (arrows, bolts, darts) has
+  // its own lower cap in the same config.
+  const config = effect?.config ?? {};
+  const maxActions = Number(config.maxActions) || 28;
+  const capped = Number(config.capped?.[request.kind]);
+  const actions = Number.isFinite(capped) && capped > 0 ? Math.min(maxActions, capped) : maxActions;
+  request.actions = Math.max(Number(request.actions) || 1, actions);
 }
 
 

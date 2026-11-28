@@ -18,6 +18,9 @@ const { PlayerSave } = require("../dist/game/entity/impl/player/persistence/Play
 const { GameConstants } = require("../dist/game/GameConstants");
 const { Skill } = require("../dist/game/model/Skill");
 const { Location } = require("../dist/game/model/Location");
+const { AreaManager } = require("../dist/game/model/areas/AreaManager");
+const { AccuracyFormulasDpsCalc } = require("../dist/game/content/combat/formula/AccuracyFormulasDpsCalc");
+const { MagicCombatMethod } = require("../dist/game/content/combat/method/impl/MagicCombatMethod");
 
 let core;
 const hooks = {};
@@ -397,6 +400,40 @@ test("Soul Stealer: a minimum hit of 10% of the max, and a 50% restore of a tent
     player.getSkillManager().setMaxLevels(Skill.HITPOINTS, 99, false);
     assert.deepEqual(resolved(player, rolled(player, true, 20)[1], 0.2), [50, 0]);
   }
+});
+
+test("Soul Stealer sustains on a single-target Ice Barrage but not when it strikes two (#230)", (t) => {
+  const who = cases(SOUL_STEALER);
+  const { relic } = who;
+  const skills = relic.getSkillManager();
+  skills.setMaxLevels(Skill.HITPOINTS, 99, false);
+  skills.setMaxLevels(Skill.PRAYER, 70, false);
+  skills.setCurrentLevel(Skill.HITPOINTS, 50, false);
+  skills.setCurrentLevel(Skill.PRAYER, 0, false);
+  relic.getCombat().setCastSpell(core.CombatSpells.ICE_BARRAGE.getSpell());
+  t.mock.method(AreaManager, "inMulti", () => false);
+  t.mock.method(AccuracyFormulasDpsCalc, "rollAccuracy", () => true);
+  const hits = new MagicCombatMethod().hits(relic, who.main);
+  assert.equal(hits.length, 1, "out of multicombat a barrage launches one hit");
+  const [hit] = hits;
+  hit.isAccurate = () => true;
+  hit.getTotalDamage = () => 30;
+  const damage = new core.HitDamage(30, core.HitMask.BLUE);
+  hooks.onCombatHitDamage({ attacker: relic, target: who.main, combatType: core.CombatType.MAGIC, hit, damage, accurate: true });
+  Math.random = () => 0.2;
+  hooks.onCombatHitResolved({ attacker: relic, target: who.main, hit });
+  assert.deepEqual([relic.getHitpoints(), skills.getCurrentLevel(Skill.PRAYER)], [53, 3],
+    "the single-target barrage restores like any landed hit");
+
+  // The same cycle's launch strikes a second target: neither hit sustains.
+  skills.setCurrentLevel(Skill.HITPOINTS, 50, false);
+  skills.setCurrentLevel(Skill.PRAYER, 0, false);
+  const splash = fakeHit({ getCombatType: () => core.CombatType.MAGIC, getCombatMethod: () => new MagicCombatMethod() });
+  hooks.onCombatHitDamage({ attacker: relic, target: who.without, combatType: core.CombatType.MAGIC, hit: splash,
+    damage: new core.HitDamage(30, core.HitMask.BLUE), accurate: true });
+  hooks.onCombatHitResolved({ attacker: relic, target: who.main, hit });
+  assert.deepEqual([relic.getHitpoints(), skills.getCurrentLevel(Skill.PRAYER)], [50, 0],
+    "an attack that struck two targets does not sustain");
 });
 
 test("Weapon Master: specials land on NPCs for at least 20% of the max, 30% energy a cycle, and 25 hitpoints buy a special", () => {
@@ -788,6 +825,34 @@ test("Equilibrium on the real addExperience path: an untrained Sailing is not th
   assert.equal(bonuses.length, 1);
   assert.equal(bonuses[0][0], Skill.ATTACK);
   assert.ok(Math.abs(bonuses[0][1] - total * 0.2) < 1e-9, `the bonus is a fifth of ${total}: ${bonuses[0][1]}`);
+});
+
+test("Equilibrium's least-experienced bonus skips a locked skill (#228)", () => {
+  const { relic } = cases(EQUILIBRIUM_TRAILBLAZER, 4);
+  const skills = relic.getSkillManager();
+  const leagueSkills = Skill.values().filter((skill) => skill !== Skill.SAILING);
+  for (const skill of leagueSkills) {
+    skills.skills.experience[skill.getIndex()] = 13034431;
+    skills.skills.maxLevel[skill.getIndex()] = 99;
+    skills.skills.level[skill.getIndex()] = 99;
+  }
+  // Woodcutting has no experience but is locked; Fishing is the lowest skill that can still gain.
+  skills.skills.experience[Skill.WOODCUTTING.getIndex()] = 0;
+  skills.skills.maxLevel[Skill.WOODCUTTING.getIndex()] = 1;
+  skills.skills.level[Skill.WOODCUTTING.getIndex()] = 1;
+  skills.skills.experience[Skill.FISHING.getIndex()] = 100;
+  skills.skills.maxLevel[Skill.FISHING.getIndex()] = 2;
+  skills.skills.level[Skill.FISHING.getIndex()] = 2;
+  skills.setSkillLocked(Skill.WOODCUTTING, true);
+  const total = leagueSkills.reduce((sum, skill) => sum + skills.getMaxLevel(skill), 0);
+  assert.equal(total, 21 * 99 + 1 + 2);
+  const gain = (skill) => {
+    const before = skills.getExperience(skill);
+    emit("skills:experience-gained", { player: relic, skill, experience: 10, multiplied: true });
+    return skills.getExperience(skill) - before;
+  };
+  assert.equal(gain(Skill.FISHING), Math.floor(total * 0.2), "the lowest unlocked skill gets a fifth");
+  assert.equal(gain(Skill.COOKING), Math.floor(total * 0.1), "other skills keep a tenth");
 });
 
 test.after(() => {

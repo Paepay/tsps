@@ -248,6 +248,27 @@ test('re-entering a parked chamber keeps the same chamber and dead general',asyn
   assert.equal([...core.World.getNpcs()].some(n=>n?.__godwarsChamber?.area===area&&n.getId()===generalId),false,'re-entering does not reset the general\'s respawn');
 });
 
+test('a death in a God Wars chamber puts the grave outside the boss door (issue #220)',async t=>{
+  const f=actor(t),{area}=await enterBandos(f),faction=area.faction;
+  const expected={x:faction.door.outside[0],y:faction.door.outside[1],z:faction.door.outside[2]??0};
+  const privateDeath={player:f.player,location:f.player.getLocation(),tile:null,feeMultiplier:1};
+  PM.emitCustomEvent('gravestones:grave-location',privateDeath);
+  assert.deepEqual(privateDeath.tile,expected,'a private chamber moves its grave outside the door');
+
+  area.leave(f.player,false);
+  assert.equal(f.player.getPrivateArea(),null);
+  const inside=Common.toLocation(faction.door.inside);
+  f.player.moveTo(inside);
+  const sharedDeath={player:f.player,location:inside,tile:null,feeMultiplier:1};
+  PM.emitCustomEvent('gravestones:grave-location',sharedDeath);
+  assert.deepEqual(sharedDeath.tile,expected,'the shared chamber moves its grave outside too');
+
+  f.player.moveTo(Common.toLocation([2860,3542,0]));
+  const elsewhere={player:f.player,location:f.player.getLocation(),tile:null,feeMultiplier:1};
+  PM.emitCustomEvent('gravestones:grave-location',elsewhere);
+  assert.equal(elsewhere.tile,null,'deaths outside a chamber are left to the normal rules');
+});
+
 test('Crystal of memories returns to the public Bandos chamber (issue #127)',async t=>{
   const Crystal=require('../plugins/modes/leaguerelics/CrystalOfMemories.LeagueRelics');
   const f=actor(t),faction=Common.factionByKey('bandos'),source=new core.Location(2870,5360,2),landing=Common.toLocation(faction.door.landing);

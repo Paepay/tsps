@@ -52,6 +52,27 @@ for (let i = 0; i < 20; i++) {
 assert.ok(scriptAngles.every(Number.isInteger), "native CS2 camera-angle reads remain integers");
 assert.equal(new Set(scriptAngles).size, 3, "render precision must not change native angle quantization");
 
+// Compass script 7045 registers Look North/East/South/West as ops 1-4; script 1050 answers them
+// with cam_forceangle(_, 0/1536/1024/512). Those CS2 yaws run opposite to Camera.yaw, where 512
+// faces east, so forcing east must set 512 and forcing west 1536 (#217).
+const forceCtx: any = { widgetManager: { osrsClient: { camera } }, intStack: [0, 0], intStackSize: 2 };
+const force = (camAngleX: number, camAngleY: number) => {
+    forceCtx.intStack = [camAngleX, camAngleY];
+    forceCtx.intStackSize = 2;
+    handlers.get(Opcodes.CAM_FORCEANGLE)!(forceCtx, 0 as any);
+    return camera.getYaw();
+};
+assert.equal(force(256, 0), 0, "Look North");
+assert.equal(force(256, 1536), 512, "CS2 east is internal east");
+assert.equal(force(256, 1024), 1024, "Look South");
+assert.equal(force(256, 512), 1536, "CS2 west is internal west, not mirrored");
+for (const yaw of [0, 512, 1024, 1536]) {
+    camera.snapToYaw(yaw);
+    scriptAngles.length = 0;
+    handlers.get(Opcodes.CAM_GETANGLE_YA)!(ctx, 0 as any);
+    assert.equal(scriptAngles.pop(), (-yaw) & 2047, `CAM_GETANGLE_YA reports the CS2 yaw for ${yaw}`);
+}
+
 const roofMap = { mapX: 0, mapY: 0, getTileRenderFlag: (_plane: number, x: number, y: number) => x === 0 && y === 0 ? TILE_FLAG_UNDER_ROOF : 0 };
 const roofMaps: any = { getMap: () => roofMap, getMapForWorldTile: () => roofMap };
 const roofInput = { playerRawPlane: 0, roofsHidden: false,

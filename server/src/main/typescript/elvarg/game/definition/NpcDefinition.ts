@@ -188,6 +188,16 @@ export class NpcDefinition {
         return this.attackable || (this.actions ?? []).some((action) => NpcDefinition.isCombatOption(action));
     }
 
+    /**
+     * Whether the NPC has an Attack option of its own, i.e. it is a monster a player can fight.
+     * {@link isAttackable} also accepts plugin options routed through combat (Douse, Melt,
+     * Charge) so the engine answers those clicks; they are interactions, not targets for a
+     * follower such as the Guardian or an Arceuus thrall (issue #238).
+     */
+    public isAttackableMonster(): boolean {
+        return this.attackable;
+    }
+
     /** Menu options that start a fight, as "Attack" does: ones plugins add, such as the Nightmare's totems' "Charge". */
     private static combatOptions = new Set<string>(["attack"]);
 

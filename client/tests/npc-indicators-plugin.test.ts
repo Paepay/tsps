@@ -8,6 +8,7 @@ import { NpcEcs } from "../game/ecs/NpcEcs";
 import { ClientPluginManager } from "../game/plugins/ClientPluginManager";
 import { NpcIndicatorsConfig } from "../game/plugins/npcindicators/NpcIndicatorsConfig";
 import { NpcIndicatorsPlugin } from "../game/plugins/npcindicators/NpcIndicatorsPlugin";
+import { NpcOverlay } from "../game/plugins/npcindicators/NpcOverlay";
 import { MenuTargetType } from "../rs/MenuEntry";
 import { bindNpcEvents } from "../runelite/impl/NpcEventSource";
 import type { SimpleMenuEntry } from "../ui/menu/MenuEngine";
@@ -100,6 +101,34 @@ async function main(): Promise<void> {
     bindNpcEvents(npcs, (event) => pluginBus.post(event));
     await plugin.start();
     assert.ok(plugin.highlightedNpcs.has(goblin), "rebuild finds loaded NPCs by name");
+
+    // #223: a moving tagged NPC changes the overlay signature every frame. The widget layer uses
+    // coverage() to repaint only what moved, so it must be finite and follow the NPC.
+    set("drawNames", true);
+    assert.equal(new NpcOverlay(plugin).coverage(), undefined,
+        "text coverage waits for the draw's font loader");
+    set("drawNames", false);
+    const overlay = plugin.widgetOverlay as NpcOverlay;
+    const renderer = new Proxy({}, { get: () => () => {} });
+    const font = { measure: (text: string) => text.length * 7, maxAscent: 12, maxDescent: 4 };
+    const fontLoader = () => font as any;
+    const plainRects = overlay.coverage()!;
+    assert.ok(plainRects.length > 0, "the hull and minimap dot report coverage");
+    assert.ok(plainRects.every((r) => Number.isFinite(r.x) && Number.isFinite(r.y) && r.w >= 0 && r.h >= 0));
+    overlay.draw({ renderer, fontLoader } as any);
+    set("drawNames", true);
+    const namedRects = overlay.coverage()!;
+    assert.ok(namedRects.length > plainRects.length, "the name adds its measured rect");
+    assert.ok(namedRects.every((r) => Number.isFinite(r.x) && Number.isFinite(r.y) && r.w > 0 && r.h > 0));
+    const beforeMove = overlay.signature();
+    const beforeBounds = namedRects.map((r) => [r.x, r.y, r.w, r.h].join(",")).join("|");
+    npcs.setXY(goblin, 448 + 128, 448);
+    assert.notEqual(overlay.signature(), beforeMove, "the signature tracks the NPC");
+    // The widget layer calls signature() before coverage(), so this is the next draw's frame.
+    const movedRects = overlay.coverage()!;
+    assert.notEqual(movedRects.map((r) => [r.x, r.y, r.w, r.h].join(",")).join("|"), beforeBounds,
+        "coverage follows the moved NPC");
+    set("drawNames", false);
 
     const chicken = npcAt(CHICKEN, 3205, 3205);
     npcs.setServerMapping(chicken, 12);

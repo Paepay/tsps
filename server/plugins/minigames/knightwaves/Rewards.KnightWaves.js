@@ -11,14 +11,15 @@ const Common = require("./Common.KnightWaves");
 function complete({ player }) {
   if (!player || player.getAttribute(Common.REWARD_ATTRIBUTE) === true) return;
   player.setAttribute(Common.REWARD_ATTRIBUTE, true);
+  const questsAutoCompleted = Common.questsAutoCompleted();
   const skills = player.getSkillManager?.();
-  if (skills) {
+  if (skills && !questsAutoCompleted) {
     for (const name of ["ATTACK", "STRENGTH", "DEFENCE", "HITPOINTS"]) {
       const skill = Common.core.Skill?.[name];
       if (skill !== undefined) skills.addExperiences(skill, Common.REWARD_XP);
     }
   }
-  player.sendMessage?.(Common.MESSAGES.reward);
+  if (!questsAutoCompleted) player.sendMessage?.(Common.MESSAGES.reward);
   Common.api.emitCustomEvent("respawn-point:grant", {
     player, key: Common.CAMELOT_RESPAWN, set: true,
   });

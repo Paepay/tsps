@@ -529,6 +529,71 @@ function buyAt(player, npcId, choice, label) {
   finishDialogue(player);
 }
 
+/** Kaylee's page opens with "What ales are you serving?"; Emily and Tina show the drinks straight away. */
+function buyDrinkAt(player, npcId, choice, label) {
+  PluginManager.emitNpcInteraction(bartenderEvent(player, npcId));
+  let prompt = advanceToPrompt(player);
+  if (!prompt?.options.includes(choice)) {
+    assert.ok(prompt?.options.includes('What ales are you serving?'), `${label}: missing the ale menu in ${JSON.stringify(prompt?.options)}`);
+    choosePrompt(player, 'What ales are you serving?');
+    prompt = advanceToPrompt(player);
+  }
+  assert.ok(prompt?.options.includes(choice), `${label}: missing ${choice} in ${JSON.stringify(prompt?.options)}`);
+  choosePrompt(player, choice);
+  finishDialogue(player);
+}
+
+test("Falador's Rising Sun Inn keepers take 3 coins for each drink and refuse when they are short", () => {
+  const { cleanup } = registerBartendersDispatch();
+  registerRealDialogues();
+  try {
+    const I = core.ItemIdentifiers;
+    const drinks = [
+      ['One Asgarnian Ale, please.', I.ASGARNIAN_ALE],
+      ["I'll try the Mind Bomb.", I.WIZARDS_MIND_BOMB],
+      ['Can I have a Dwarven Stout?', I.DWARVEN_STOUT],
+    ];
+    for (const [npcId, name] of [[1315, 'Emily'], [1316, 'Kaylee'], [1317, 'Tina']]) {
+      for (const [choice, item] of drinks) {
+        for (const coins of [2, 3, 4]) {
+          const player = realPlayer();
+          player.items.set(I.COINS, coins);
+          buyDrinkAt(player, npcId, choice, `${name} ${choice} with ${coins} coins`);
+          const bought = coins >= 3 ? 1 : 0;
+          assert.equal(player.items.get(item) ?? 0, bought, `${name} ${choice} with ${coins} coins`);
+          assert.equal(player.items.get(I.COINS), coins - (bought ? 3 : 0), `${name} ${choice} coins left`);
+          if (!bought) {
+            assert.ok(player.dialogueTexts.some((text) => /I said 3 coins!/.test(text)), `${name} refuses on 2 coins`);
+            assert.ok(player.dialogueTexts.some((text) => /come back another day/.test(text)), `${name} ends the refusal`);
+          }
+        }
+      }
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("the 3-coin Falador conditions are answered instead of falling through to the refusal branch", () => {
+  const { cleanup } = registerBartendersDispatch();
+  try {
+    const I = core.ItemIdentifiers;
+    const conditionHook = PluginManager.npcDialogueConditionHooks.find((hook) => hook.pluginName === 'BartendersTest').handler;
+    const player = realPlayer();
+    const emily = [{ page: 'Emily' }];
+    player.items.set(I.COINS, 3);
+    assert.equal(conditionHook({ player, text: 'If the player has 3 or more coins:', pages: emily }), true);
+    assert.equal(conditionHook({ player, text: 'If the player does not have 3 or more coins:', pages: emily }), false);
+    player.items.set(I.COINS, 2);
+    assert.equal(conditionHook({ player, text: 'If the player has 3 or more coins:', pages: emily }), false);
+    assert.equal(conditionHook({ player, text: 'If the player does not have 3 or more coins:', pages: emily }), true);
+    assert.equal(conditionHook({ player, text: 'If the player has 3 or more coins:', pages: [{ page: 'Hetty' }] }), null,
+      'another page does not answer the Falador conditions');
+  } finally {
+    cleanup();
+  }
+});
+
 test('Bartenders charge the canonical 2 coins and add one beer, with safe refusal and repeat buys', () => {
   const { cleanup } = registerBartendersDispatch();
   registerRealDialogues();

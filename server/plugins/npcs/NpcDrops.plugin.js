@@ -93,6 +93,12 @@ const QUEST_REQUIREMENT_NOTE = /^Quest requirement: WikiQuestDropRequirement\(qu
  */
 const LOCATION_NOTE = /[Oo]nly dropped (?:in|by [^.,]*?\b(not )?(?:on|in|within)) (?:the )?([A-Z][\w']*(?: (?:of |the )?[A-Z][\w']*)*)(?:[.,]|$)/;
 /**
+ * The two-place form of the same footnote: "Crystal shards are only dropped when they are killed
+ * while the player is in Prifddinas or the Iorwerth Dungeon." A row limited to either place
+ * would otherwise drop everywhere its table is shared (Mourner Tunnels, Taverley, ...).
+ */
+const DUAL_LOCATION_NOTE = /[Oo]nly dropped when [^.]*?\bin (?:the )?([A-Z][\w']*(?: (?:of |the )?[A-Z][\w']*)*) or (?:the )?([A-Z][\w']*(?: (?:of |the )?[A-Z][\w']*)*)/;
+/**
  * A Wiki drop subsection that names one of the places with bounds ("Chasm of Fire tertiary"):
  * its rows are drops of that place's monsters only. The greater, black and lesser demons share
  * one table across the world (Catacombs, Chasm, ...), so the section is the only place the
@@ -314,7 +320,10 @@ function questRequirement(entry) {
   return entry.quest_requirement = requirement;
 }
 
-/** The place a row is limited to, as { place, not }, or null. Cached on the entry like the quest requirement. */
+/**
+ * The place a row is limited to, as { place, not } or { places, not }, or null. Cached on the
+ * entry like the quest requirement.
+ */
 function locationRequirement(entry) {
   if (entry.location_requirement !== undefined) return entry.location_requirement;
   let found = null;
@@ -322,6 +331,11 @@ function locationRequirement(entry) {
     const match = LOCATION_NOTE.exec(note);
     if (match && !match[2].startsWith("Wilderness")) {
       found = { place: match[2], not: !!match[1] };
+      break;
+    }
+    const dual = DUAL_LOCATION_NOTE.exec(note);
+    if (dual) {
+      found = { places: [dual[1], dual[2]], not: false };
       break;
     }
   }
@@ -332,20 +346,24 @@ function locationRequirement(entry) {
   return entry.location_requirement = found;
 }
 
-/** Whether the NPC stands where the row's place says (or, for "not on", elsewhere). */
+/** Whether the NPC stands where the row's place (or either of its places) says. */
 function inRequiredLocation(entry, npc) {
   const requirement = locationRequirement(entry);
   if (!requirement) return true;
-  const boxes = DROP_LOCATIONS[requirement.place]?.boxes;
-  if (!boxes) {
-    if (!unknownConditionTypes.has(requirement.place)) {
-      unknownConditionTypes.add(requirement.place);
-      console.warn(`[NpcDrops] no bounds for the drop place '${requirement.place}'; its rows are not limited`);
-    }
-    return true;
-  }
+  const places = requirement.places ?? [requirement.place];
   const at = npc?.getLocation?.();
-  const inside = !!at && boxes.some(([x1, y1, x2, y2]) => at.getX() >= x1 && at.getX() <= x2 && at.getY() >= y1 && at.getY() <= y2);
+  let inside = false;
+  for (const place of places) {
+    const boxes = DROP_LOCATIONS[place]?.boxes;
+    if (!boxes) {
+      if (!unknownConditionTypes.has(place)) {
+        unknownConditionTypes.add(place);
+        console.warn(`[NpcDrops] no bounds for the drop place '${place}'; its rows are not limited`);
+      }
+      return true;
+    }
+    if (at && boxes.some(([x1, y1, x2, y2]) => at.getX() >= x1 && at.getX() <= x2 && at.getY() >= y1 && at.getY() <= y2)) inside = true;
+  }
   return inside !== requirement.not;
 }
 

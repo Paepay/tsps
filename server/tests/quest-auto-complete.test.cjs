@@ -257,6 +257,25 @@ test('a Quests-off world restores quest-native state at complete, including save
   assertCompletedWorldState(healed, 'a save completed before native state was restored');
 });
 
+test('auto-completed quests withhold every post-quest XP claim', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false));
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  for (const handler of hooks.login) handler({ player });
+
+  const withheld = player.getAttribute(QuestRuntime.EXPERIENCE_WITHHELD_ATTRIBUTE);
+  const registered = QuestRuntime.getRegisteredQuests();
+  const keys = [...new Set(registered.map((quest) => quest.key))];
+  const byKey = new Map(registered.map((quest) => [quest.key, quest]));
+  assert.ok(Array.isArray(withheld));
+  assert.equal(new Set(withheld).size, keys.length, 'every quest is withheld once');
+  for (const key of keys) {
+    assert.ok(withheld.includes(key), key + ' is withheld');
+    assert.equal(withheld.filter((entry) => entry === key).length, 1, key + ' appears once');
+    assert.equal(byKey.get(key).experienceWithheld(player), true, key + ' claims pay nothing');
+  }
+});
+
 test('an older saved character is migrated and stays complete after a save and reload', () => {
   const saves = [];
   const { api, hooks } = recordingApi(coreWithQuestSwitch(false, saves));
@@ -327,6 +346,23 @@ test('a Level-Up Quests-off world restores the quest-owned shops and Ape gate, a
   assert.equal(chivalry.bypass, true);
   assert.equal(piety.bypass, true);
   assert.equal(other.bypass, false, 'only the Knight Waves prayers are handed out');
+});
+
+test("a Quests-off world enters and leaves the Stalker Den through its main Cave", () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false), { template: 'level_up' });
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  const cave = hooks.objectInteraction.get('Cave');
+  assert.ok(cave?.Enter && cave?.Exit, 'the Stalker Den Cave has its Enter and Exit handlers');
+  cave.Enter({ player, objectId: 56439 });
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [1296, 9767, 0],
+    'the main entrance lands on the den side of the cave');
+  // Other "Cave" objects share the cache name; they must not be swallowed by this shim.
+  assert.equal(cave.Enter({ player, objectId: 12345 }), false);
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [1296, 9767, 0]);
+  cave.Exit({ player, objectId: 56440 });
+  assert.deepEqual([player.position.x, player.position.y, player.position.z], [1295, 3376, 0],
+    'the exit lands back at the Custodia Pass mouth');
 });
 
 test('a Quests-off world offers and sells Eblis his ancient staff after Desert Treasure I', () => {

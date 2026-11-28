@@ -437,6 +437,19 @@ function respawnInChamber(event) {
   Common.later(Common.data.respawnTicks, () => chamber.area.spawn(chamber.row, chamber.slot));
 }
 
+/**
+ * A death inside a general's chamber puts the grave outside that boss's door. A private chamber
+ * is ended or rebuilt around a new copy, and the shared room is not an instance at all, so a grave
+ * left on the death tile would sit in a place the player cannot re-enter (issue #220).
+ */
+function graveOutside(request) {
+  if (!request?.player) return;
+  const inside = chamberOf(request.player);
+  if (!inside) return;
+  const [x, y, z] = inside[0].door.outside;
+  request.tile = { x, y, z: z ?? 0 };
+}
+
 function attachChambers(api) {
   loadChamberSpawns();
   api.persistAttribute(Common.ALTAR_ATTRIBUTE);
@@ -450,6 +463,7 @@ function attachChambers(api) {
   api.onObjectFirstClick(altars, pray);
   api.onObjectSecondClick(altars, teleportOut);
   api.onCustomEvent("godwars:chamber-recall", recallPrivate);
+  api.onCustomEvent("gravestones:grave-location", graveOutside);
   api.onNpcDeath(respawnInChamber);
 }
 

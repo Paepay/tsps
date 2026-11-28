@@ -125,7 +125,8 @@ export class ArceuusThralls {
                 const definition = npc?.getCurrentDefinition?.() ?? npc?.getDefinition?.();
                 if (!target?.isNpc() || !target.isRegistered() || target.isUntargetable()
                     || npc?.isDyingFunction?.() === true || target.getHitpoints() <= 0
-                    || definition?.isAttackable?.() === false) {
+                    || definition?.isAttackable?.() === false
+                    || definition?.isAttackableMonster?.() === false) {
                     if (thrall.getFollowing() !== player) {
                         thrall.getMovementQueue().reset();
                         thrall.setAttribute(THRALL_PURSUIT_KEY, null);

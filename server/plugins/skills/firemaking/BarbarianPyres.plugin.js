@@ -79,8 +79,10 @@ function isBow(itemId) {
   return name.endsWith("bow") && !name.includes("crossbow") && !NON_FIREMAKING_BOWS.has(name);
 }
 
-function hasAxe(inventory) {
-  return inventory.getItems().some((item) => item && isAxe(item.getId()));
+/** The Wiki's "an axe" is any axe the player carries, worn or in the backpack. */
+function hasAxe(player) {
+  const worn = player.getEquipment?.()?.getItems?.() ?? [];
+  return [...player.getInventory().getItems(), ...worn].some((item) => item && isAxe(item.getId()));
 }
 
 function carriedLog(inventory) {
@@ -163,7 +165,7 @@ function buildPyre(player, object, logsId) {
     return true;
   }
   const inventory = player.getInventory();
-  if (!hasAxe(inventory)) {
+  if (!hasAxe(player)) {
     player.sendMessage("You need an axe to carve the pyre.");
     return true;
   }

@@ -26,6 +26,9 @@ function leagueSkills() {
 function leastExperienced(manager) {
   let least = null;
   for (const skill of leagueSkills()) {
+    // A locked skill cannot gain experience, so it must not take the least-experienced bonus
+    // from the skills the player can actually train.
+    if (manager.isSkillLocked?.(skill) === true) continue;
     if (least === null || manager.getExperience(skill) < manager.getExperience(least)) least = skill;
   }
   return least;
