@@ -1,8 +1,8 @@
 // Run after 'yarn build': node --test tests/ape-atoll-quests-off.test.cjs
 // A Quests-off world auto-completes Monkey Madness II at login. That is exactly what the real
 // Greegrees area reads, so the Wiki's MM2-gated Ape Atoll natives must stop hunting a human
-// (issue 208). Monkey archers and scorpions keep their own cache aggression: their Wiki infoboxes
-// have no MM2 gate, so "behaves as completed" leaves them aggressive.
+// (issue 208). The Ape Atoll page makes every surface inhabitant tolerant after MM2, so monkey
+// archers and scorpions calm too; monkey zombies and skeletal apes are the stated exceptions (#250).
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { before, test } = require("node:test");
@@ -101,15 +101,22 @@ test("MM2-gated Ape Atoll natives are passive after the Quests-off auto-completi
   assert.equal(hunts(t, GUARD_2, [2803, 2785, 0], [2803, 2786, 0]), false, "monkey guard 5276");
 });
 
-test("monkey archers keep their own aggression (no MM2 gate on the Wiki infobox)", (t) => {
-  assert.equal(hunts(t, ARCHER, [2780, 2773, 0], [2780, 2774, 0]), true);
+test("monkey archers are passive after the Quests-off auto-completion (#250)", (t) => {
+  assert.equal(hunts(t, ARCHER, [2768, 2768, 0], [2769, 2768, 0]), false, "5272");
+  assert.equal(hunts(t, 5273, [2713, 2753, 0], [2714, 2753, 0]), false, "5273");
+  assert.equal(hunts(t, 5274, [2752, 2754, 0], [2753, 2754, 0]), false, "5274");
 });
 
-test("scorpions keep their own combat-level aggression gate after MM2", (t) => {
+test("scorpions are passive after the Quests-off auto-completion (#250)", (t) => {
   setLevel(50);
   try {
-    assert.equal(hunts(t, SCORPION, [2762, 2749, 0], [2762, 2750, 0]), true);
+    assert.equal(hunts(t, SCORPION, [2762, 2749, 0], [2762, 2750, 0]), false);
   } finally {
     setLevel(90);
   }
+});
+
+test("monkey zombies and skeletal apes remain aggressive on a Quests-off world (#250 exceptions)", (t) => {
+  assert.equal(hunts(t, 5281, [2694, 9115, 0], [2695, 9115, 0]), true, "monkey zombie 5281");
+  assert.equal(hunts(t, 5237, [2704, 9105, 0], [2705, 9105, 0]), true, "skeleton 5237");
 });

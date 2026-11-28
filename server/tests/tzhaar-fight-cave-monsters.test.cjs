@@ -5,7 +5,7 @@
 //
 // Real: the plugin, the map, the run resumed by the plugin's own login hook, npc_option for the attack, the combat loop.
 // Fixture seams: only that one login hook is called, so other plugins' login work stays out of it; ticks are
-// driven by hand, Jad is flagged combat:no-regen, as unhit here he'd regain 10% a tick and hide any healing, the player's hitpoints are topped up each tick so a run survives, and monsters are moved
+// driven by hand, Jad is flagged combat:no-regen, as unhit here he'd regain 10% a tick and hide any healing, the player's hitpoints are topped up each tick so a run survives (the #243 test turns that off to die), and monsters are moved
 // with setLocation to where the capture stood them. No client ran.
 process.env.DISABLE_PLAYER_BOTS = "1";
 const assert = require("node:assert/strict");
@@ -17,6 +17,7 @@ const { PluginManager: PM } = require("../dist/plugins/PluginManager");
 const { Player } = require("../dist/game/entity/impl/player/Player");
 const { PlayerSession } = require("../dist/net/PlayerSession");
 const { ClientConnection } = require("../dist/net/NetworkBuilder");
+const { NpcDefinitionLoader } = require("../dist/game/definition/loader/impl/NpcDefinitionLoader");
 const Plugin = require("../plugins/minigames/TzhaarFightCaves.plugin");
 
 const ATTR_WAVE = "tzhaar:fight-cave-wave";
@@ -72,12 +73,12 @@ function resume(t, wave) {
 const inCave = (f) => (f.p.getPrivateArea()?.entities ?? []).filter((entity) => entity.isNpc?.());
 const alive = (f, id) => inCave(f).filter((npc) => npc.getId() === id && npc.getHitpoints() > 0);
 
-function tick(f, count) {
+function tick(f, count, heal = true) {
   for (let i = 0; i < count; i++) {
     core.World.processCycle++;
     core.TaskManager.process();
     f.c.processTurnPackets();
-    f.p.setHitpoints(990);
+    if (heal) f.p.setHitpoints(990);
     f.p.needsPlacement = false;
     f.p.process();
     PM.emitPlayerProcess({ player: f.p });
@@ -120,6 +121,36 @@ test("wave 31 in a real run spawns one Ket-Zek", (t) => {
   tick(f, 5);
   assert.equal(alive(f, core.NpcIdentifiers.KET_ZEK).length, 1);
   assert.equal(inCave(f).length, 1, "and nothing else");
+});
+
+// #243: "mobs only get me down to 1 HP, won't kill me". Nothing in the cave, the hit queue or
+// Mobile.decrementHealth floors a player at 1; a cave monster's real hit takes the last hitpoint
+// and appendDeath runs. Real definitions (the loader GameBuilder runs) so the max hit is the
+// cache's, not the loader-less default of 1.
+test("a Fight Cave monster's hit takes a 1-HP player to 0 and kills them (#243)", async (t) => {
+  await new NpcDefinitionLoader().load();
+  const { NpcIdentifiers: N } = core;
+  const f = resume(t, 7); // one Tok-Xil
+  waitForWave(f, N.TOK_XIL_4);
+  const [tok] = alive(f, N.TOK_XIL_4);
+  const maxHit = core.NpcDefinition.forId(tok.getId()).getMaxHit();
+  assert.ok(maxHit >= 1, `control: the cache's own Tok-Xil max hit (${maxHit})`);
+  f.p.setAutoRetaliate(false);
+  f.p.getCombat().reset();
+  const at = f.p.getLocation();
+  put(tok, at.getX() + 1, at.getY());
+  f.p.setHitpoints(1);
+  tok.getCombat().attack(f.p);
+  let lowest = 1;
+  let died = false;
+  for (let i = 0; i < 40 && !died; i++) {
+    tick(f, 1, false);
+    lowest = Math.min(lowest, f.p.getHitpoints());
+    died = f.p.getHitpoints() <= 0 || f.p.isDyingReturn();
+  }
+  t.diagnostic(`lowest ${lowest}, dying ${f.p.isDyingReturn()}, distance ${tok.calculateDistance(f.p)}`);
+  assert.equal(died, true, "the cave's monster must be able to kill a 1-HP player");
+  assert.ok(lowest <= 0, `a hit took the player below 1 HP (lowest ${lowest})`);
 });
 
 test("a monster that can't get to the player keeps it, and comes on when it can", (t) => {

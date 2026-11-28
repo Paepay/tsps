@@ -41,7 +41,9 @@ function available() {
 }
 
 function userIdOf(player) {
-  return Common.platformUserId(player?.getUsername?.());
+  // The login ticket's identity for this session first: a linked account must never look
+  // unlinked because the character-name map missed.
+  return Common.platformUserIdFor(player);
 }
 
 function linked(player) {
@@ -60,6 +62,17 @@ function tokenMessage(player, key, values = {}) {
   const text = Common.message(key, values);
   if (text) player?.sendMessage?.(text);
   return text;
+}
+
+/**
+ * The unlinked answer. Background refreshes (login, opening the interface, the 15-second token
+ * reread) stay quiet: the interface's own row already says the account is not linked, and the
+ * login hook can run before the session's ticket identity is stamped on the player. An explicit
+ * action the player just took is told why it did nothing.
+ */
+function unlinked(player, announce = false) {
+  if (announce) tokenMessage(player, "tokenAccountUnlinked");
+  return { ok: false, error: "unlinked" };
 }
 
 function numberFrom(...values) {
@@ -159,10 +172,7 @@ function tokensPath(userId) {
 async function refreshAccount(player) {
   if (!available()) return { ok: false, error: "unavailable" };
   const userId = userIdOf(player);
-  if (!userId) {
-    tokenMessage(player, "tokenAccountUnlinked");
-    return { ok: false, error: "unlinked" };
-  }
+  if (!userId) return unlinked(player);
   const result = await call(player, accountPath(userId), { method: "GET" }, "account refresh");
   if (!result.ok) {
     tokenMessage(player, result.status === 403 ? "tokenNotMember" : "tokenUnavailable");
@@ -187,10 +197,7 @@ async function refreshAccount(player) {
 async function refreshTokens(player) {
   if (!available()) return { ok: false, error: "unavailable" };
   const userId = userIdOf(player);
-  if (!userId) {
-    tokenMessage(player, "tokenAccountUnlinked");
-    return { ok: false, error: "unlinked" };
-  }
+  if (!userId) return unlinked(player);
   const result = await call(player, tokensPath(userId), { method: "GET" }, "token refresh");
   if (!result.ok) {
     tokenMessage(player, result.status === 403 ? "tokenNotMember" : "tokenUnavailable");
@@ -228,10 +235,7 @@ async function setPreference(player, eventId, disabled) {
   const event = Common.definition(eventId);
   if (!event) return { ok: false, error: "unknown-event" };
   const userId = userIdOf(player);
-  if (!userId) {
-    tokenMessage(player, "tokenAccountUnlinked");
-    return { ok: false, error: "unlinked" };
-  }
+  if (!userId) return unlinked(player, true);
   const result = await call(player, PREFERENCES_PATH, {
     method: "PUT",
     body: preferenceBody(userId, eventId, disabled),
@@ -299,10 +303,7 @@ async function activate(player, eventId) {
     return { ok: false, error: "unavailable" };
   }
   const userId = userIdOf(player);
-  if (!userId) {
-    tokenMessage(player, "tokenAccountUnlinked");
-    return { ok: false, error: "unlinked" };
-  }
+  if (!userId) return unlinked(player, true);
   const key = `${userId}:${eventId}`;
   if (pending.has(key)) {
     tokenMessage(player, "tokenPending");

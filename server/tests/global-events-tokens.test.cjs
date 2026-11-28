@@ -260,3 +260,25 @@ test("the platform helpers use the documented shapes", () => {
   assert.deepEqual(helpers.tokenRows({ tokens: [{ eventId: "berserker", quantity: 2 }, { eventId: "nope", quantity: 4 }] }),
     [{ eventId: "berserker", quantity: 2 }]);
 });
+
+test("a ticket-authenticated session stays linked when the character-name map misses", async () => {
+  const p = player("renamed");
+  p.paeScapeStaffUserId = "user-1";
+  assert.equal(Tokens.linked(p), true, "the session's ticket identity is authoritative");
+  const result = await Tokens.refreshTokens(p);
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.map((call) => call.route), ["/events/tokens?userId=user-1"]);
+  assert.equal(p.messages.filter((message) => /not linked/.test(message)).length, 0,
+    "a linked session is never told it is unlinked");
+});
+
+test("automatic refreshes never spam an unlinked session; an explicit action still answers", async () => {
+  const p = player("stranger");
+  for (let refresh = 0; refresh < 5; refresh++) await Tokens.refreshTokens(p);
+  await Tokens.refreshAccount(p);
+  assert.equal(p.messages.filter((message) => /not linked to a PaeScape account/.test(message)).length, 0,
+    "login/interface/15-second refreshes stay quiet; the panel already shows the state");
+  await Tokens.activate(p, "berserker");
+  assert.equal(p.messages.filter((message) => /not linked to a PaeScape account/.test(message)).length, 1,
+    "the click that asked is told why nothing happened");
+});

@@ -467,4 +467,4 @@ function attachChambers(api) {
   api.onNpcDeath(respawnInChamber);
 }
 
-module.exports = { attachChambers, instanceOf, _test: { end, park, recallPrivate, isolatedAccount, isLeagueCharacter, isLevelUpCharacter, leagueRules, startPrivate } };
+module.exports = { attachChambers, instanceOf, leagueRules, _test: { end, park, recallPrivate, isolatedAccount, isLeagueCharacter, isLevelUpCharacter, leagueRules, startPrivate } };

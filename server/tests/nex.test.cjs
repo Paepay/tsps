@@ -492,3 +492,56 @@ test("an eligible Ironman keeps a personal Nex reward after a shared kill", asyn
   assert.ok(ironRoll.after.includes(565) && placed.some((drop) => drop.owner === iron && drop.id === 565), "the Ironman's personal reward survives the shared-kill filter");
   assert.ok(!iron.messages.includes(Iron.message("sharedKill")), "no shared-kill refusal for an eligible Nex reward");
 });
+
+/** A player standing west of the inner prison door, with the Zarosian essence the test gives. */
+function prisonPlayer(essence) {
+  const attributes = new Map([["godwars:essence-ancient", essence]]);
+  let keys = 1;
+  return {
+    getAttribute: (key) => attributes.get(key),
+    setAttribute: (key, value) => attributes.set(key, value),
+    getLocation: () => ({ getX: () => 2899 }),
+    getMovementQueue: () => ({ reset() {} }),
+    setPositionToFace: () => {},
+    getPacketSender: () => ({ sendVarbit: () => {}, sendInterfaceRemoval: () => {}, getVarbit: () => 0 }),
+    isRegistered: () => true,
+    moveTo: () => {},
+    getInventory: () => ({ contains: () => keys > 0, delete: () => { keys -= 1; } }),
+    essence: () => attributes.get("godwars:essence-ancient"),
+    keys: () => keys,
+  };
+}
+
+test("league characters enter the Ancient Prison's inner door free, like the generals' doors", () => {
+  const Prison = require("../plugins/bosses/nex/Prison.Nex");
+  const GodWarsCommon = require("../plugins/bosses/godwars/Common.GodWars");
+  GodWarsCommon.init(fakeApi);
+  fakeApi.core.Task = class { constructor() {} stop() {} };
+  fakeApi.core.TaskManager = { submit: () => {} };
+  const door = { getLocation: () => ({ getX: () => 2900 }) };
+
+  // Normal worlds still pay the 40 Ancient essence.
+  const normal = prisonPlayer(40);
+  Prison.innerDoor({ player: normal, object: door });
+  assert.equal(normal.essence(), 0, "the shared door still spends its essence");
+  assert.equal(normal.keys(), 1);
+
+  // A league character enters without essence and without melting an ecumenical key.
+  const emit = fakeApi.emitCustomEvent;
+  fakeApi.emitCustomEvent = (name, payload) => {
+    if (name === "league:profile") payload.league = "trailblazer";
+    else emit(name, payload);
+  };
+  try {
+    const league = prisonPlayer(40);
+    Prison.innerDoor({ player: league, object: door });
+    assert.equal(league.essence(), 40, "league entry spends no Ancient essence");
+    assert.equal(league.keys(), 1, "league entry does not consume an ecumenical key");
+    const poor = prisonPlayer(0);
+    Prison.innerDoor({ player: poor, object: door });
+    assert.equal(poor.essence(), 0);
+    assert.equal(poor.keys(), 1, "even short of essence a league character keeps the key");
+  } finally {
+    fakeApi.emitCustomEvent = emit;
+  }
+});

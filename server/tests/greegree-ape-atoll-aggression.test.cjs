@@ -144,6 +144,35 @@ test("Monkey Madness II gate, guard row: aggressive before completing it, not af
   } finally { mm2Complete = false; }
 });
 
+const ARCHER = core.NpcIdentifiers.MONKEY_ARCHER;       // 5272, cl86
+const ARCHER_2 = core.NpcIdentifiers.MONKEY_ARCHER_2;     // 5273, cl86
+const ARCHER_3 = core.NpcIdentifiers.MONKEY_ARCHER_3;     // 5274, cl86
+const ZOMBIE = core.NpcIdentifiers.MONKEY_ZOMBIE;         // 5281, cl98 (Ape Atoll Dungeon)
+const APE_SKELETON = core.NpcIdentifiers.SKELETON_34;     // 5237, cl142 (Ape Atoll Dungeon)
+
+test("human form: monkey archers 5272, 5273 and 5274 are aggressive before Monkey Madness II (#250)", (t) => {
+  assert.equal(hunts(human(at(2769, 2768)), npc(t, ARCHER, at(2768, 2768))), true, "5272");
+  assert.equal(hunts(human(at(2714, 2753)), npc(t, ARCHER_2, at(2713, 2753))), true, "5273");
+  assert.equal(hunts(human(at(2753, 2754)), npc(t, ARCHER_3, at(2752, 2754))), true, "5274");
+});
+
+test("Monkey Madness II complete: the monkey archers calm too (#250)", (t) => {
+  mm2Complete = true;
+  try {
+    assert.equal(hunts(human(at(2769, 2768)), npc(t, ARCHER, at(2768, 2768))), false, "5272");
+    assert.equal(hunts(human(at(2714, 2753)), npc(t, ARCHER_2, at(2713, 2753))), false, "5273");
+    assert.equal(hunts(human(at(2753, 2754)), npc(t, ARCHER_3, at(2752, 2754))), false, "5274");
+  } finally { mm2Complete = false; }
+});
+
+test("Monkey Madness II complete: monkey zombies and skeletal apes remain aggressive (Wiki exceptions)", (t) => {
+  mm2Complete = true;
+  try {
+    assert.equal(hunts(human(at(2695, 9115)), npc(t, ZOMBIE, at(2694, 9115))), true, "monkey zombie 5281");
+    assert.equal(hunts(human(at(2705, 9105)), npc(t, APE_SKELETON, at(2704, 9105))), true, "skeleton 5237");
+  } finally { mm2Complete = false; }
+});
+
 test("not flipped: the level 5 bird, the level 11 bird and the stingray stay passive", (t) => {
   assert.equal(hunts(human(at(2696, 2710)), npc(t, BIRD_LEVEL_5, at(2696, 2709))), false, "bird level 5");
   assert.equal(hunts(human(at(2741, 2713)), npc(t, BIRD_LEVEL_11, at(2741, 2712))), false, "bird level 11 (Wiki: Nature Altar)");

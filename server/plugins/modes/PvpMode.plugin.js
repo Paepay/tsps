@@ -1,5 +1,6 @@
 const { Task } = require("../../src/main/typescript/elvarg/game/task/Task");
 const { GameConstants } = require("../../src/main/typescript/elvarg/game/GameConstants");
+const { PrayerData } = require("../../src/main/typescript/elvarg/game/content/PrayerHandler");
 const Presets = require("./pvp/Presets.PvpMode");
 
 function openPresets({ player }) {
@@ -55,10 +56,15 @@ function openPresetsAfterDeath({ victim }) {
 }
 
 /**
- * Presets assume the unlocked prayers, so PvP mode hands them out without the quests and scrolls,
- * but only to an account that may load presets: an Ironman (every league character) earns them.
+ * Presets assume Chivalry and Piety, so PvP mode hands those out without King's Ransom, but only
+ * to an account that may load presets: an Ironman (every league character) earns them. Rigour,
+ * Augury and Preserve keep their prayer-scroll requirement (#245): those three are earned by
+ * reading their scroll, never by the preset bypass.
  */
+const SCROLL_PRAYERS = new Set([PrayerData.RIGOUR, PrayerData.AUGURY, PrayerData.PRESERVE]);
+
 function bypassPrayerUnlocks(event) {
+  if (SCROLL_PRAYERS.has(event.prayer)) return;
   if (Presets.accountMayUsePresets(event.player)) event.bypass = true;
 }
 

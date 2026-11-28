@@ -73,6 +73,7 @@ import { GuidePlugin } from "../../../game/plugins/optimalquestguide/GuidePlugin
 import { ShortestPathPlugin } from "../../../game/plugins/shortestpath/ShortestPathPlugin";
 import { AgilityTrackerPlugin } from "../../../game/plugins/agilitytracker/AgilityTrackerPlugin";
 import { RooftopAgilityPlugin } from "../../../game/plugins/rooftopagility/RooftopAgilityPlugin";
+import { SailingPlugin } from "../../../game/plugins/sailing/SailingPlugin";
 import { GatheringTrackerPlugin } from "../../../game/plugins/gatheringtracker/GatheringTrackerPlugin";
 import { SlayerTrackerPlugin } from "../../../game/plugins/slayertracker/SlayerTrackerPlugin";
 import type { LegacyConfigMigration } from "../../impl/LegacyConfigMigration";
@@ -159,6 +160,7 @@ export const CORE_PLUGINS: ReadonlyArray<PluginClass> = [
     CustomXpDropsPlugin,
     AgilityTrackerPlugin,
     RooftopAgilityPlugin,
+    SailingPlugin,
     GatheringTrackerPlugin,
     SlayerTrackerPlugin,
     GuidePlugin,

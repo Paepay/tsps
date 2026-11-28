@@ -1056,6 +1056,19 @@ function killContext(player, npc) {
 }
 
 /**
+ * Whether the player already owns one, in the pack, worn or banked. A quest-conditional row that
+ * a plugin has just allowed must not hand out another copy: Rag and Bone Man II's bones drop only
+ * while the player still needs one, and keeping it in the inventory or bank is enough (#244).
+ */
+function ownsQuestItem(player, itemId) {
+  if (!player) return false;
+  if ((Number(player.getInventory?.()?.getAmount?.(itemId)) || 0) > 0) return true;
+  const worn = player.getEquipment?.()?.getItems?.() ?? [];
+  if (worn.some((item) => item?.getId?.() === itemId)) return true;
+  return (player.getBanks?.() ?? []).some((bank) => (Number(bank?.getAmount?.(itemId)) || 0) > 0);
+}
+
+/**
  * Quest plugins answer `npc-drops:quest-item` `{ player, npc, npcId, itemId, requirement,
  * allowed }` for the rows the Wiki gates behind a quest: `allowed: true` drops a row that the
  * 1/1 conditional rule in rollTable would skip, `false` suppresses one that rolled. Leaving it
@@ -1076,6 +1089,10 @@ function questItemVerdicts(player, npc, table) {
         allowed: undefined,
       };
       pluginApi?.emitCustomEvent("npc-drops:quest-item", request);
+      // A quest handler allowing the row means "this kill may supply it", not "give another one":
+      // suppress a duplicate while the player already has the item (the quest's own bones are
+      // unique, and a banked copy is enough). No plugin means the row keeps its normal handling.
+      if (request.allowed === true && ownsQuestItem(player, entry.item_id)) request.allowed = false;
       verdicts.set(entry.item_id, request.allowed);
     }
   }

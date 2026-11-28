@@ -19,6 +19,7 @@
  */
 const Common = require("./Common.Nex");
 const GodWars = require("../godwars/Common.GodWars");
+const Chambers = require("../godwars/Chambers.GodWars");
 const Rules = require("../godwars/Rules.GodWars");
 
 const DOOR_OPEN = 26506;
@@ -227,12 +228,20 @@ function outerDoor({ player, object }) {
   return true;
 }
 
-/** Into the safe room: 40 ancient essence (or an ecumenical key), spent on the way in. */
+/**
+ * Into the safe room: 40 ancient essence (or an ecumenical key), spent on the way in. League
+ * characters enter free, as they do at the generals' doors (Chambers.openDoor issue #202):
+ * OSRS leagues do not charge kill count or essence for God Wars access.
+ */
 function innerDoor({ player, object }) {
   const { prison } = Common.data;
   const entering = player.getLocation().getX() < object.getLocation().getX();
   if (!entering) {
     walkThrough(player, object, -2);
+    return true;
+  }
+  if (Chambers.leagueRules(player)) {
+    walkThrough(player, object, 2);
     return true;
   }
   const { ItemIdentifiers } = Common.core;

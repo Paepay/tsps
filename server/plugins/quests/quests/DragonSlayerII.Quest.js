@@ -2691,6 +2691,20 @@ module.exports = function registerDragonSlayerII(api) {
       if (value === S.TO_LITHKREN && player?.getAttribute?.(ATTR_JARDRIC_TALKED)) return 60;
       return nativeStage(value, player);
     },
+    // Quests-off completion never runs this quest's hooks, so restore the cache-visible state a
+    // finished Dragon Slayer II leaves behind: the native progress milestone, the Fremennik sea
+    // state Torfinn's Ungael option and the Rellekka boat's Travel read (ds2_frem 20 or more),
+    // and the post-quest Lithkren/Vorkath flags. Runs on auto-complete and on every login, so
+    // saves completed before this restore existed are healed too.
+    restoreStageState: (player, value) => {
+      if (value < S.COMPLETE) return;
+      player.setAttribute(ATTR_VORKATH_DEFEATED, true);
+      player.setAttribute(ATTR_ROWBOAT_BUILT, true);
+      player.setAttribute(ATTR_LITHKREN_ARRIVED, true);
+      const sender = player.getPacketSender?.();
+      sender?.sendVarbit?.(6104, NATIVE_STAGE[S.COMPLETE]);
+      sender?.sendVarbit?.(VARBIT_UNGAEL_EXIT, 30);
+    },
     startedValue: S.START, completionValue: S.COMPLETE, questPoints: 5,
     xpRewards: [
       { skillId: Skill.SMITHING.getIndex(), amount: 80000, label: "Smithing" },

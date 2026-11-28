@@ -412,6 +412,17 @@ module.exports = function registerFrozenDoorQuest(api) {
     questPoints: 0,
     otherRewards: ["Access to Nex in the Ancient Prison"],
     buildJournal,
+    // Quests-off completion sets the saved stage directly and runs none of this miniquest's
+    // hooks, so restore what finishing it leaves the client and the prison: frozen_door at 10,
+    // Ashuelot in her safe-room banking form (nex_story_npc 2 transforms multinpc 11296 to the
+    // 11289 banker), and the Frozen Door unsealed. Called at login too, healing older saves.
+    restoreStageState: (player, value) => {
+      if (value < STAGE_COMPLETE) return;
+      player.setAttribute(UNLOCKED_ATTRIBUTE, true);
+      player.getPacketSender().sendVarbit(QUEST_VARBIT, value | 0);
+      setStory(player, STORY_BANKING);
+      sendState(player);
+    },
   });
 
   api.persistAttribute(LETTER_ATTRIBUTE, false);

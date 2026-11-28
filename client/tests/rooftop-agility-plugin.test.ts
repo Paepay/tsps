@@ -79,30 +79,31 @@ assert.equal(RooftopAgilityConfig.items.fillColor.default, 0x4000e5ff, "transluc
 
 const config = inject(ConfigManager);
 config.setConfigValue(RooftopAgilityConfig, "showClickboxes", true);
-ClientState.baseX = 3200;
-ClientState.baseY = 3200;
+// A real Varrock rooftop box: the gap stands on plane 3 and the wall on plane 1.
+ClientState.baseX = 3183;
+ClientState.baseY = 3389;
 ClientState.plane = 0;
 
 const rooftop: SceneLoc = {
-    id: ObjectID.ROOFTOPS_DRAYNOR_WALLCLIMB,
-    tileX: 3205,
-    tileY: 3205,
-    plane: 0,
+    id: ObjectID.ROOFTOPS_VARROCK_WALLSCRAMBLE,
+    tileX: 3196,
+    tileY: 3401,
+    plane: 3,
     shape: 10,
     rotation: 0,
 };
 const unrelated: SceneLoc = {
     id: ObjectID.AGILITYARENA_MONKEYBARS_MIDDLE,
-    tileX: 3206,
-    tileY: 3205,
+    tileX: 3200,
+    tileY: 3400,
     plane: 0,
     shape: 10,
     rotation: 0,
 };
 const otherPlane: SceneLoc = {
-    id: ObjectID.ROOFTOPS_DRAYNOR_TIGHTROPE_1,
-    tileX: 3207,
-    tileY: 3205,
+    id: ObjectID.ROOFTOPS_VARROCK_WALLSWING,
+    tileX: 3192,
+    tileY: 3416,
     plane: 1,
     shape: 10,
     rotation: 0,
@@ -139,8 +140,9 @@ async function main(): Promise<void> {
     const plugin = new RooftopAgilityPlugin(client);
     await plugin.start();
     plugin.onGameTick();
-    assert.equal(plugin.objects.length, 1, "only the rooftop obstacle on the player's plane");
-    assert.equal(plugin.objects[0], rooftop);
+    assert.equal(plugin.objects.length, 2, "rooftop obstacles on every plane are found");
+    assert.ok(plugin.objects.includes(rooftop), "the plane-3 gap is found");
+    assert.ok(plugin.objects.includes(otherPlane), "the plane-1 wall is found");
 
     assert.ok(plugin.widgetOverlay.signature() !== "", "a loaded obstacle has a draw signature");
     const strokes: number[][] = [];
@@ -151,8 +153,8 @@ async function main(): Promise<void> {
             drawPolygon: (_points: unknown, color: number[]) => fills.push(color),
         },
     } as any);
-    assert.equal(strokes.length, 1);
-    assert.equal(fills.length, 1);
+    assert.equal(strokes.length, 2);
+    assert.equal(fills.length, 2);
     assert.deepEqual(strokes[0].map((value) => Math.round(value * 255)), [0, 229, 255, 255]);
     assert.deepEqual(fills[0].map((value) => Math.round(value * 255)), [0, 229, 255, 64]);
     assert.equal(rects.length, 1, "the overlay reports the covered screen rect");

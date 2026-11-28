@@ -23,4 +23,6 @@ Config group `rooftopagility`:
 - **Border width** - border width in pixels.
 
 The clickbox is the screen hull of the object model's world-space bounds, the same projection
-Object Markers uses, and it is drawn only on the player's current plane.
+Object Markers uses. Rooftop courses stack their obstacles on planes 0-3, so the plugin scans all
+four planes inside the course areas derived from the cache's map placements; scanning only the
+player's current plane hid every gap, ledge or rope that stood a level above or below it.

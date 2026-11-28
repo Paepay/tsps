@@ -208,6 +208,7 @@ function registerPvpMode() {
   const pvpMode = require("../plugins/modes/PvpMode.plugin");
   let bypass = null;
   pvpMode.register({
+    core: { PlayerRights: { NONE: 0 } },
     getTaskManager: () => ({}),
     registerCommand() {},
     onPlayerDefeated() {},
@@ -245,7 +246,8 @@ test("PvP mode's bypass skips an account barred from presets, so an Ironman or l
       "the prayer book is told they are locked when the account becomes an Ironman");
 
     const main = player();
-    assert.notEqual(denied("RIGOUR", main).disabled, true, "a normal account keeps the preset prayers");
+    assert.notEqual(denied("CHIVALRY", main).disabled, true, "a normal account keeps the preset quest prayers");
+    assert.equal(denied("RIGOUR", main).disabled, true, "scroll prayers still need their scroll (#245)");
   } finally {
     bypassHook = null;
   }
@@ -255,30 +257,33 @@ test("a prayer whose unlock goes away is turned off when the unlocks re-sync", (
   bypassHook = (event) => { event.bypass = true; };
   try {
     const { player: p } = nativePlayer(t);
-    PrayerHandler.activatePrayerPrayerId(p, PrayerHandler.RIGOUR);
-    assert.equal(p.getPrayerActive()[PrayerHandler.RIGOUR], true, "on while the bypass applies");
+    PrayerHandler.activatePrayerPrayerId(p, PrayerHandler.CHIVALRY);
+    assert.equal(p.getPrayerActive()[PrayerHandler.CHIVALRY], true, "on while the bypass applies");
     customEventHooks.get("prayer:sync-unlocks")({ player: p });
-    assert.equal(p.getPrayerActive()[PrayerHandler.RIGOUR], true, "still unlocked: left on");
+    assert.equal(p.getPrayerActive()[PrayerHandler.CHIVALRY], true, "still unlocked: left on");
     bypassHook = null;
     customEventHooks.get("prayer:sync-unlocks")({ player: p });
-    assert.equal(p.getPrayerActive()[PrayerHandler.RIGOUR], false, "locked again: turned off");
+    assert.equal(p.getPrayerActive()[PrayerHandler.CHIVALRY], false, "locked again: turned off");
   } finally {
     bypassHook = null;
   }
 });
 
-test("a PvP-mode login shows the preset prayers unlocked without persisting the bypass", (t) => {
+test("a PvP-mode login unlocks Chivalry and Piety but not the scroll prayers (#245)", (t) => {
   bypassHook = registerPvpMode();
   try {
     const { player: p, varbits } = nativePlayer(t);
     loginHook({ player: p });
 
-    assert.deepEqual(varbits, [[3909, 8], [5453, 1], [5451, 1], [5452, 1], [16097, 0], [16098, 0]],
-      "the client is told every prayer is usable, as PrayerHandler already says");
+    assert.deepEqual(varbits, [[3909, 8], [5453, 0], [5451, 0], [5452, 0], [16097, 0], [16098, 0]],
+      "Chivalry and Piety are usable, but the scroll prayers stay locked without their scrolls");
     assert.equal(p.getAttribute("prayer:rigour-unlocked"), undefined, "the bypass is not persisted");
     assert.equal(p.getAttribute("prayer:preserve-unlocked"), undefined);
-    assert.notEqual(denied("RIGOUR", p).disabled, true);
+    assert.equal(denied("RIGOUR", p).disabled, true, "Rigour still needs its dexterous prayer scroll");
+    assert.equal(denied("AUGURY", p).disabled, true, "Augury still needs its arcane prayer scroll");
+    assert.equal(denied("PRESERVE", p).disabled, true, "Preserve still needs its torn prayer scroll");
     assert.notEqual(denied("CHIVALRY", p).disabled, true);
+    assert.notEqual(denied("PIETY", p).disabled, true);
 
     // A preset load or an ordinary Prayer refresh must not overwrite the client state.
     varbits.length = 0;
@@ -290,7 +295,7 @@ test("a PvP-mode login shows the preset prayers unlocked without persisting the 
   }
 });
 
-test("a sync request re-sends the effective unlocks, bypass included", () => {
+test("a sync request keeps the scroll prayers locked for a preset account (#245)", () => {
   const p = player();
   customEventHooks.get("prayer:sync-unlocks")({ player: p });
   assert.deepEqual(p.varbits, [[3909, 0], [5453, 0], [5451, 0], [5452, 0], [16097, 0], [16098, 0]],
@@ -301,7 +306,7 @@ test("a sync request re-sends the effective unlocks, bypass included", () => {
   try {
     p.varbits.length = 0;
     customEventHooks.get("prayer:sync-unlocks")({ player: p });
-    assert.deepEqual(p.varbits, [[3909, 8], [5453, 1], [5451, 1], [5452, 1], [16097, 0], [16098, 0]]);
+    assert.deepEqual(p.varbits, [[3909, 8], [5453, 0], [5451, 0], [5452, 0], [16097, 0], [16098, 0]]);
     assert.equal(p.attrs.size, 0, "the bypass never writes the earned attributes");
   } finally {
     bypassHook = null;

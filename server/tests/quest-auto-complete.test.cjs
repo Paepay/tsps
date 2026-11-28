@@ -105,6 +105,8 @@ function fakePlayer(bot = false) {
     getLocation: () => location,
     getArea: () => null,
     getBanks: () => [],
+    // A real player always has these; tests that need contents call withInventory.
+    getInventory: () => ({ contains: () => false, getAmount: () => 0, adds: () => true, deleteNumber: () => 0, getFreeSlots: () => 28 }),
     getEquipment: () => ({ getItems: () => [] }),
     sendMessage: (message) => sent.push(['message', message]),
     isRegistered: () => true,
@@ -658,4 +660,32 @@ test("a Quests-off world offers every Drakan's medallion destination", () => {
 
   assert.deepEqual(DrakansMedallion._test.destinationsFor(player).map((entry) => entry.label),
     ['Ver Sinhaza', 'Darkmeyer', 'Slepe', 'Castle Drakan']);
+});
+
+test('a Quests-off world restores Dragon Slayer II ferry access to Ungael and Lithkren', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false));
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  for (const handler of hooks.login) handler({ player });
+
+  const frem = api.core.CacheDefinitions.getVarbitId('ds2_frem');
+  assert.equal(player.getPacketSender().getVarbit(frem), 30, 'ds2_frem is past 20, so Torfinn and the boat show their travel');
+  assert.ok(player.getPacketSender().getVarbit(6104) >= 65, 'the native progress shows the Lithkren rowboat built');
+  assert.equal(player.getAttribute('dragon-slayer-ii:lithkren-arrived'), true, 'post-quest Lithkren access is recorded');
+  const boat = api.core.CacheDefinitions.getLocId('fremennik_boat_ungael');
+  assert.equal(ObjectDefinition.forPlayer(boat, player)?.getInteractions?.()[0], 'Travel',
+    'the Rellekka boat offers Travel after Quests-off completion');
+});
+
+test('a Quests-off world restores the Frozen Door completion and Ashuelot the banker', () => {
+  const { api, hooks } = recordingApi(coreWithQuestSwitch(false));
+  QuestAutoComplete.register(api);
+  const player = fakePlayer();
+  withInventory(player);
+  for (const handler of hooks.login) handler({ player });
+
+  assert.equal(player.getPacketSender().getVarbit(13175), 10, 'frozen_door is complete');
+  assert.equal(player.getPacketSender().getVarbit(13182), 2, 'nex_story_npc shows the safe-room banking form');
+  assert.equal(player.getAttribute('frozen-door:story'), 2);
+  assert.equal(player.getAttribute('nex:frozen-door-unlocked'), true, 'the Frozen Door is unsealed');
 });

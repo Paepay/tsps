@@ -9,7 +9,7 @@ import type { OsrsClient } from "../../OsrsClient";
 import type { SceneLoc } from "../../scene/SceneGeometry";
 import { RooftopAgilityConfig } from "./RooftopAgilityConfig";
 import { RooftopAgilityOverlay } from "./RooftopAgilityOverlay";
-import { isRooftopObstacle } from "./RooftopObstacles";
+import { collectRooftopObstacles } from "./RooftopObstacles";
 
 const GROUP = RooftopAgilityConfig.group;
 /** Tiles on a scene side (RuneLite's Constants.SCENE_SIZE). */
@@ -68,26 +68,12 @@ export class RooftopAgilityPlugin extends Plugin {
         return toRuneLiteGameState((this.osrsClient as any)?.gameState) === GameState.LOGGED_IN;
     }
 
-    playerPlane(): number {
-        const client: any = this.osrsClient;
-        const players = client.playerEcs;
-        const index = players?.getIndexForServerId?.(client.controlledPlayerServerId);
-        return index === undefined ? ClientState.plane | 0 : players.getLevel(index) | 0;
-    }
-
-    /** Finds the rooftop obstacle locs on the player's plane in the loaded scene. */
+    /** Finds the rooftop obstacle locs on every plane in the loaded scene. */
     rebuild(): void {
         const objects: SceneLoc[] = [];
         const geometry = this.osrsClient.sceneGeometry;
         if (this.isStarted() && geometry && this.isLoggedIn() && this.config.showClickboxes()) {
-            const plane = this.playerPlane();
-            for (let x = ClientState.baseX; x < ClientState.baseX + SCENE_SIZE; x++) {
-                for (let y = ClientState.baseY; y < ClientState.baseY + SCENE_SIZE; y++) {
-                    for (const loc of geometry.locsAtTile(x, y, plane)) {
-                        if (isRooftopObstacle(loc.id)) objects.push(loc);
-                    }
-                }
-            }
+            objects.push(...collectRooftopObstacles(geometry, ClientState.baseX, ClientState.baseY, SCENE_SIZE));
         }
         this.objects = objects;
     }

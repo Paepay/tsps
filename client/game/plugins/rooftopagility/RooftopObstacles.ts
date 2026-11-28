@@ -1,4 +1,5 @@
 import * as ObjectID from "@runelite/api/gameval/ObjectID";
+import type { SceneGeometry, SceneLoc } from "../../scene/SceneGeometry";
 
 /** A rooftop agility course and the obstacle loc ids its server course data uses. */
 export type RooftopCourse = {
@@ -135,6 +136,41 @@ export const ROOFTOP_COURSES: readonly RooftopCourse[] = [
     ]),
 ];
 
+/** A loaded-scene box that holds one copy of a rooftop course's obstacle spawns. */
+export type RooftopArea = {
+    readonly course: string;
+    readonly minX: number;
+    readonly maxX: number;
+    readonly minY: number;
+    readonly maxY: number;
+};
+
+const area = (course: string, minX: number, minY: number, maxX: number, maxY: number): RooftopArea =>
+    ({ course, minX, minY, maxX, maxY });
+
+/**
+ * Where the ten courses' obstacle locs stand in the cache's map, padded for the client's
+ * multi-tile loc origins. The courses span planes 0-3 (a roof segment is often a plane above the
+ * one before it), and Ardougne, Prifddinas and Varrock also have a second copy used by instances.
+ * Built from `server/scripts/dump-loc.ts` placements; `rooftop-agility-cache.test.ts` checks every
+ * course id is present in the cache inside its boxes.
+ */
+export const ROOFTOP_AREAS: readonly RooftopArea[] = [
+    area("Al Kharid Rooftop", 3261, 3155, 3326, 3203),
+    area("Ardougne Rooftop", 2645, 3288, 2681, 3326),
+    area("Ardougne Rooftop", 3349, 5912, 3385, 5950),
+    area("Canifis Rooftop", 3470, 3468, 3518, 3512),
+    area("Draynor Village Rooftop", 3080, 3247, 3111, 3287),
+    area("Falador Rooftop", 3003, 3324, 3058, 3369),
+    area("Pollnivneach Rooftop", 3341, 2954, 3375, 3008),
+    area("Prifddinas Agility Course", 2235, 3382, 2302, 3440),
+    area("Prifddinas Agility Course", 3250, 6098, 3302, 6192),
+    area("Rellekka Rooftop", 2613, 3646, 2662, 3685),
+    area("Seers' Village Rooftop", 2692, 3453, 2737, 3500),
+    area("Varrock Rooftop", 3183, 3389, 3248, 3424),
+    area("Varrock Rooftop", 3887, 4861, 3948, 4896),
+];
+
 const COURSE_BY_OBSTACLE = new Map<number, string>();
 for (const rooftopCourse of ROOFTOP_COURSES) {
     for (const id of rooftopCourse.obstacles) COURSE_BY_OBSTACLE.set(id, rooftopCourse.name);
@@ -146,6 +182,43 @@ export const ROOFTOP_OBSTACLE_IDS: ReadonlySet<number> = new Set(COURSE_BY_OBSTA
 /** Whether a loaded loc is one of the rooftop courses' obstacles. */
 export function isRooftopObstacle(id: number): boolean {
     return COURSE_BY_OBSTACLE.has(id);
+}
+
+/**
+ * Every rooftop obstacle loc in the loaded scene. Rooftop courses stack obstacles on planes 0-3,
+ * so all four are scanned inside the cache-derived course boxes rather than only the player's
+ * plane: a single-plane scan hides every gap, ledge or rope on another level. Tiles outside the
+ * course boxes (the rest of the 104x104 scene) are skipped, keeping the per-tick cost low.
+ */
+export function collectRooftopObstacles(
+    geometry: Pick<SceneGeometry, "locsAtTile">,
+    baseX: number,
+    baseY: number,
+    sceneSize = 104,
+): SceneLoc[] {
+    const objects: SceneLoc[] = [];
+    const seen = new Set<string>();
+    for (const courseArea of ROOFTOP_AREAS) {
+        const minX = Math.max(courseArea.minX, baseX);
+        const maxX = Math.min(courseArea.maxX, baseX + sceneSize - 1);
+        const minY = Math.max(courseArea.minY, baseY);
+        const maxY = Math.min(courseArea.maxY, baseY + sceneSize - 1);
+        if (minX > maxX || minY > maxY) continue;
+        for (let plane = 0; plane < 4; plane++) {
+            for (let x = minX; x <= maxX; x++) {
+                for (let y = minY; y <= maxY; y++) {
+                    for (const loc of geometry.locsAtTile(x, y, plane)) {
+                        if (!isRooftopObstacle(loc.id)) continue;
+                        const key = `${loc.id},${loc.tileX},${loc.tileY},${loc.plane},${loc.shape},${loc.rotation}`;
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        objects.push(loc);
+                    }
+                }
+            }
+        }
+    }
+    return objects;
 }
 
 /** The rooftop course an obstacle belongs to, if any. */

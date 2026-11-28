@@ -123,6 +123,26 @@ test('Rag and Bone Man bones only drop while their quest still needs them', asyn
     const heldDrops = itemIds(withLuckyDrops(() => roll(holdingBone, 'giant_rat_drop_table3', core.NpcIdentifiers.GIANT_RAT_4)));
     assert.ok(heldDrops.includes(bones), 'the giant rat still drops its regular bones');
     assert.ok(!heldDrops.includes(giantRatBone), 'another giant rat bone does not drop while one is carried');
+
+    // Fire giant bone (#244): one copy only, in the pack or the bank, while II still needs it.
+    const fireGiantBone = core.ItemIdentifiers.FIRE_GIANT_BONE;
+    const fireGiant = player();
+    fireGiant.setAttribute('quest.rag_and_bone_man_ii.stage', 1);
+    assert.ok(itemIds(withLuckyDrops(() => roll(fireGiant, 'fire_giant', core.NpcIdentifiers.FIRE_GIANT))).includes(fireGiantBone),
+        'the fire giant bone drops while Rag and Bone Man II still needs it');
+
+    const fireGiantHolding = player();
+    fireGiantHolding.setAttribute('quest.rag_and_bone_man_ii.stage', 1);
+    fireGiantHolding.getPacketSender = () => new Proxy({}, { get: () => () => {} });
+    fireGiantHolding.getInventory().adds(fireGiantBone, 1);
+    assert.ok(!itemIds(withLuckyDrops(() => roll(fireGiantHolding, 'fire_giant', core.NpcIdentifiers.FIRE_GIANT))).includes(fireGiantBone),
+        'a carried fire giant bone stops another dropping');
+
+    const fireGiantBanked = player();
+    fireGiantBanked.setAttribute('quest.rag_and_bone_man_ii.stage', 1);
+    fireGiantBanked.getBanks()[0] = { getAmount: (id) => id === fireGiantBone ? 1 : 0 };
+    assert.ok(!itemIds(withLuckyDrops(() => roll(fireGiantBanked, 'fire_giant', core.NpcIdentifiers.FIRE_GIANT))).includes(fireGiantBone),
+        'a banked fire giant bone stops another dropping');
 });
 
 test('Between a Rock owns page 1 instead of the unconditional scorpion table', async () => {

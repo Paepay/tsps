@@ -91,6 +91,19 @@ function platformUserId(name) {
   return userId ? String(userId) : null;
 }
 
+/**
+ * The platform account id for this player's session. A hosted login ticket already resolved
+ * the account, and the PaeScape plugin keeps it on the player (`paeScapeStaffUserId`) for the
+ * whole session, so prefer that identity: it stays correct when the character-name map misses
+ * (different display/login formatting, a stale entry, or a process that loaded no map).
+ * Configured (password) worlds and previews have no ticket identity and fall back to the name.
+ */
+function platformUserIdFor(player) {
+  const session = player?.paeScapeStaffUserId;
+  if (session !== undefined && session !== null && String(session).trim() !== "") return String(session);
+  return platformUserId(player?.getUsername?.());
+}
+
 function parseTime(value) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
   const parsed = Date.parse(String(value ?? ""));
@@ -669,7 +682,7 @@ function worldId() {
  */
 function accountOf(player) {
   const name = String(player?.getUsername?.() ?? "");
-  const userId = platformUserId(name);
+  const userId = platformUserIdFor(player);
   return userId ? `platform:${userId}` : name;
 }
 
@@ -717,6 +730,7 @@ module.exports = {
   config,
   hosted,
   platformUserId,
+  platformUserIdFor,
   catalog,
   definitions,
   definition,

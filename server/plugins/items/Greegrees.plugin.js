@@ -98,6 +98,24 @@ let pluginApi;
 // human (2 x 38 = 76). Its infobox says plain "Yes" with no Monkey Madness II clause, while the Wiki Aggressiveness page says
 // nearly all Ape Atoll monsters stop being aggressive after Monkey Madness II; the MM2 gate is applied (conservative).
 const HUMAN_AGGRESSIVE_NATIVES = new Set([5238, 5242, 5243, 5244, 5275, 5276]);
+/**
+ * The Wiki's Ape Atoll page: after Monkey Madness II "all surface inhabitants become tolerant",
+ * except monkey zombies and skeletal apes (5237, 5281-5283), which stay aggressive without a
+ * greegree. The NPC's own tile keeps the zoo, Kruk's Dungeon and the rest of the map out of this
+ * rule; maniacal monkeys and demonic gorillas are outside these zones.
+ */
+const MM2_STILL_AGGRESSIVE = new Set([5237, 5281, 5282, 5283]);
+
+function atApeAtoll(npc) {
+  const location = npc?.getLocation?.();
+  return !!location && (within(location, APE_ATOLL) || within(location, APE_ATOLL_DUNGEONS));
+}
+
+/** MM2 is complete, or the world auto-completes quests (QuestAutoComplete's switch). */
+function monkeyMadnessIIComplete(player) {
+  if (questComplete(player, "monkey_madness_ii")) return true;
+  return pluginApi?.core?.PluginManager?.getPluginSwitch?.("Quests") === false;
+}
 /** Players whose login has finished; equipment changes before it are the login's own. */
 const bootstrapped = new WeakSet();
 
@@ -270,9 +288,17 @@ function createGreegreeArea() {
       return false;
     }
 
-    /** "In monkey form, monsters on the island become non-aggressive" (Wiki). */
-    npcAggression(player) {
-      return player.getAttribute(FORM_ATTRIBUTE) ? false : null;
+    /**
+     * "In monkey form, monsters on the island become non-aggressive" (Wiki). In human form,
+     * Monkey Madness II calms every native in the zones, not just the flipped ones: the Ape Atoll
+     * page says all surface inhabitants become tolerant, and monkey archers are named in #250.
+     * Monkey zombies and skeletal apes are the Wiki's stated exceptions; they keep their data
+     * aggression. The tolerance timer and the range still apply (NpcAggression).
+     */
+    npcAggression(player, npc) {
+      if (player.getAttribute(FORM_ATTRIBUTE)) return false;
+      if (!npc || !atApeAtoll(npc) || !monkeyMadnessIIComplete(player)) return null;
+      return MM2_STILL_AGGRESSIVE.has(npc.getId()) ? null : false;
     }
 
     /**
@@ -281,9 +307,9 @@ function createGreegreeArea() {
      */
     npcAggressionOverride(player, npc) {
       if (player.getAttribute(FORM_ATTRIBUTE)) return null;
+      if (!atApeAtoll(npc)) return null;
+      if (monkeyMadnessIIComplete(player)) return null;
       if (!HUMAN_AGGRESSIVE_NATIVES.has(npc.getId())) return null;
-      if (!within(npc.getLocation(), APE_ATOLL) && !within(npc.getLocation(), APE_ATOLL_DUNGEONS)) return null;
-      if (questComplete(player, "monkey_madness_ii")) return null;
       return { aggressive: true, ignoreCombatLevel: true };
     }
   }
